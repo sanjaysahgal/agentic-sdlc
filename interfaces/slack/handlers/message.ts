@@ -144,8 +144,9 @@ async function runPmAgent(params: {
     await update(
       `${prefix}The *${featureName}* product spec is saved and approved. :white_check_mark:\n\n` +
       `*What happens next:*\n` +
-      `A UX designer picks up the spec and produces the screens and user flows before any engineering begins. ` +
-      `If you're the designer on this one, go to *#feature-${featureName}* and let the system know you're ready to start the design phase.\n\n` +
+      `A UX designer produces the screens and user flows before any engineering begins. ` +
+      `If you're wearing the designer hat on this one, just say so right here in this channel and the design phase will begin.\n\n` +
+      `To confirm the approved state or check where any feature stands, go to *#all-health360* and ask — the system will give you a live status update.\n\n` +
       `The product specialist's job on this feature is done. The spec is the source of truth from here.`
     )
     return
