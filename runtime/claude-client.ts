@@ -1,36 +1,30 @@
-/**
- * Claude API client wrapper.
- * Handles conversation history and context injection for all agents.
- */
-
 import Anthropic from "@anthropic-ai/sdk"
+import { Message } from "./conversation-store"
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-export interface Message {
-  role: "user" | "assistant"
-  content: string
-}
-
-export async function chat(
-  systemPrompt: string,
-  context: string,
-  history: Message[],
+export async function runAgent(params: {
+  systemPrompt: string
+  history: Message[]
   userMessage: string
-): Promise<string> {
-  const messages: Message[] = [
-    ...history,
+}): Promise<string> {
+  const { systemPrompt, history, userMessage } = params
+
+  const messages: Anthropic.MessageParam[] = [
+    ...history.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    })),
     { role: "user", content: userMessage },
   ]
 
-  const response = await anthropic.messages.create({
+  const response = await client.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system: `${systemPrompt}\n\n${context}`,
+    max_tokens: 4096,
+    system: systemPrompt,
     messages,
   })
 
-  const content = response.content[0]
-  if (content.type !== "text") throw new Error("Unexpected response type")
-  return content.text
+  const block = response.content[0]
+  return block.type === "text" ? block.text : ""
 }

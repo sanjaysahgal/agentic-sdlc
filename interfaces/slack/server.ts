@@ -1,8 +1,7 @@
-import { app } from "./app.js"
-
-const port = parseInt(process.env.PORT ?? "3001")
+import "dotenv/config"
+import app from "./app"
 
 ;(async () => {
-  await app.start(port)
-  console.log(`⚡ agentic-sdlc Slack bot running on port ${port}`)
+  await app.start()
+  console.log("⚡ agentic-sdlc Slack bot running in Socket Mode")
 })()

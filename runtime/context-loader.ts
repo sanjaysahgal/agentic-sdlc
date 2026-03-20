@@ -1,48 +1,20 @@
-/**
- * Context Loader
- *
- * Reads relevant files from the target repo and bundles them
- * into the Claude API call as context. This is what makes the
- * pm agent aware of Health360 specifically — without it,
- * Claude has no knowledge of the product vision or conventions.
- */
+import { readFile } from "./github-client"
 
-import { Octokit } from "@octokit/rest"
+// Loads the context an agent needs from the target repo.
+// Called fresh on every message so agents always see current specs.
 
-export interface RepoConfig {
-  owner: string
-  repo: string
-  branch?: string
+export type AgentContext = {
+  productVision: string
+  featureConventions: string
+  systemArchitecture: string
 }
 
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
-
-async function readFile(config: RepoConfig, path: string): Promise<string> {
-  try {
-    const response = await octokit.repos.getContent({
-      owner: config.owner,
-      repo: config.repo,
-      path,
-      ref: config.branch ?? "main",
-    })
-    const data = response.data as { content: string }
-    return Buffer.from(data.content, "base64").toString("utf-8")
-  } catch {
-    return `[File not found: ${path}]`
-  }
-}
-
-export async function loadPMContext(config: RepoConfig): Promise<string> {
-  const [productVision, featureClaude] = await Promise.all([
-    readFile(config, "specs/product/PRODUCT_VISION.md"),
-    readFile(config, "specs/features/CLAUDE.md"),
+export async function loadAgentContext(): Promise<AgentContext> {
+  const [productVision, featureConventions, systemArchitecture] = await Promise.all([
+    readFile("specs/product/PRODUCT_VISION.md"),
+    readFile("specs/features/CLAUDE.md"),
+    readFile("specs/architecture/system-architecture.md"),
   ])
 
-  return `
-## PRODUCT VISION (authoritative — do not contradict)
-${productVision}
-
-## FEATURE SPEC CONVENTIONS (follow exactly when creating specs)
-${featureClaude}
-`.trim()
+  return { productVision, featureConventions, systemArchitecture }
 }
