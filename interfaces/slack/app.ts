@@ -40,14 +40,7 @@ app.message(async ({ message, client }) => {
 
   const threadTs = msg.thread_ts ?? msg.ts
 
-  // Show typing indicator while agent processes — pulses every 4s for the full duration
-  const typingInterval = setInterval(() => {
-    client.conversations.typing({ channel: msg.channel }).catch(() => {})
-  }, 4000)
-  client.conversations.typing({ channel: msg.channel }).catch(() => {})
-
-  try {
-    if (channelName.startsWith("feature-")) {
+  if (channelName.startsWith("feature-")) {
     const channelState = getChannelState(channelName)
     await handleFeatureChannelMessage({
       channelName,
@@ -57,16 +50,13 @@ app.message(async ({ message, client }) => {
       client,
       channelState,
     })
-    } else {
-      await handleGeneralChannelMessage({
-        channelId: msg.channel,
-        threadTs,
-        userMessage: text,
-        client,
-      })
-    }
-  } finally {
-    clearInterval(typingInterval)
+  } else {
+    await handleGeneralChannelMessage({
+      channelId: msg.channel,
+      threadTs,
+      userMessage: text,
+      client,
+    })
   }
 })
 
