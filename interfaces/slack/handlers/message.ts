@@ -4,7 +4,6 @@ import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent } from 
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { createSpecPR, saveDraftSpec, getInProgressFeatures } from "../../../runtime/github-client"
 import { classifyIntent, detectPhase, AgentType } from "../../../runtime/agent-router"
-import { runAgent as callClaude } from "../../../runtime/claude-client"
 
 function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
@@ -34,115 +33,26 @@ export function setChannelState(channelName: string, state: ChannelState): void 
   channelStateStore.set(channelName, state)
 }
 
-// Builds a plain-English routing explanation based on feature phase.
-// Tells the human which agent is handling the message and why,
-// and what the next phase after this one will be.
-async function buildRoutingExplanation(featureName: string, agent: AgentType): Promise<string> {
-  const features = await getInProgressFeatures()
-  const feature = features.find((f) => f.featureName === featureName)
-  const phase = feature?.phase ?? "product-spec-in-progress"
+// Builds a plain-English routing note explaining which agent is handling this and why.
+// Falls back gracefully if GitHub is unavailable.
+async function buildRoutingNote(featureName: string, agent: AgentType): Promise<string> {
+  let phaseDescription = "the product spec is being shaped"
+  let nextStep = "once approved, a UX designer will produce the screens and flows before any engineering begins"
 
-  const phaseDescriptions: Record<string, { current: string; next: string }> = {
-    "product-spec-in-progress": {
-      current: "the product spec for this feature is being shaped — what the feature does, who it's for, and what success looks like",
-      next: "once the product spec is approved, a UX designer will produce the screens and user flows before any engineering begins",
-    },
-    "product-spec-approved-awaiting-design": {
-      current: "the product spec is approved and design is the next step",
-      next: "once the design spec is approved, an architect will produce the engineering plan",
-    },
-    "design-in-progress": {
-      current: "the design spec is being shaped — screens, user flows, and component decisions",
-      next: "once the design spec is approved, an architect will produce the engineering plan",
-    },
-    "design-approved-awaiting-engineering": {
-      current: "both product and design specs are approved — engineering planning is the next step",
-      next: "once the engineering plan is approved, engineers will begin building",
-    },
-  }
-
-  const desc = phaseDescriptions[phase] ?? phaseDescriptions["product-spec-in-progress"]
-
-  const agentNames: Record<string, string> = {
-    pm: "product specialist",
-    architect: "software architect",
-    design: "UX design specialist",
-    backend: "backend engineer",
-    frontend: "frontend engineer",
-    qa: "QA specialist",
-  }
-
-  const agentName = agentNames[agent] ?? agent
-
-  return `_Routing to the **${agentName}** — ${desc.current}. ${desc.next}._\n\n_If you'd like a different specialist on this, just say so and explain why — I'll either agree or explain why this is the right choice right now._\n\n---`
-}
-
-// Detects whether a message is requesting a different agent than the one confirmed.
-async function detectOverrideRequest(userMessage: string, currentAgent: AgentType): Promise<{ isOverride: boolean; requestedAgent: string }> {
-  const response = await callClaude({
-    systemPrompt: `You detect whether a user is requesting to switch to a different AI specialist.
-Current specialist: ${currentAgent}.
-Reply with JSON only: { "isOverride": true/false, "requestedAgent": "name or empty string" }
-An override is when the user explicitly asks to use a different agent, role, or specialist.
-Normal questions, corrections, and feedback are NOT overrides.`,
-    history: [],
-    userMessage,
-  })
   try {
-    const parsed = JSON.parse(response.replace(/```json|```/g, "").trim())
-    return { isOverride: parsed.isOverride ?? false, requestedAgent: parsed.requestedAgent ?? "" }
+    const features = await getInProgressFeatures()
+    const feature = features.find((f) => f.featureName === featureName)
+    if (feature?.phase === "product-spec-approved-awaiting-design") {
+      phaseDescription = "the product spec is approved and design is the next step"
+      nextStep = "once the design spec is approved, an architect will produce the engineering plan"
+    }
   } catch {
-    return { isOverride: false, requestedAgent: "" }
+    // GitHub unavailable — use defaults
   }
-}
 
-// Evaluates whether a requested override makes sense given current feature phase.
-// Either agrees and switches, or pushes back with explanation.
-async function handleOverride(params: {
-  channelName: string
-  channelId: string
-  threadTs: string
-  userMessage: string
-  requestedAgent: string
-  currentAgent: AgentType
-  client: any
-}): Promise<void> {
-  const { channelName, channelId, threadTs, userMessage, requestedAgent, currentAgent, client } = params
-  const featureName = getFeatureName(channelName)
-  const features = await getInProgressFeatures()
-  const feature = features.find((f) => f.featureName === featureName)
-  const phase = feature?.phase ?? "product-spec-in-progress"
+  const agentLabel = agent === "pm" ? "product specialist" : agent
 
-  const evaluation = await callClaude({
-    systemPrompt: `You are the routing intelligence for an AI-powered SDLC system. A human is requesting to switch from the current specialist to a different one.
-
-The workflow sequence is strictly:
-1. Product spec (product specialist / pm agent) — what the feature does, for whom, why
-2. Design spec (UX design specialist) — screens, user flows, component decisions
-3. Engineering spec (software architect) — how to build it technically
-4. Build (engineers)
-5. QA (QA specialist)
-
-Current feature phase: ${phase}
-Current specialist: ${currentAgent}
-Requested specialist: ${requestedAgent}
-Human's message: "${userMessage}"
-
-Evaluate whether the switch makes sense:
-- If the requested specialist belongs to a phase that hasn't been reached yet (e.g. designer when product spec isn't approved), push back clearly but respectfully. Explain what needs to happen first and why the sequence matters.
-- If the requested specialist makes sense (e.g. the human has a legitimate reason, or the phase supports it), agree and explain.
-- If the requested specialist is the same as current but phrased differently, clarify.
-
-Respond in plain English, conversational, no jargon. Be direct. One short paragraph.`,
-    history: [],
-    userMessage,
-  })
-
-  await client.chat.postMessage({
-    channel: channelId,
-    thread_ts: threadTs,
-    text: evaluation,
-  })
+  return `_Routing to the **${agentLabel}** — ${phaseDescription}. ${nextStep}._\n_If you'd like a different specialist, just say so — I'll explain or accommodate._\n\n---`
 }
 
 export async function handleFeatureChannelMessage(params: {
@@ -154,32 +64,26 @@ export async function handleFeatureChannelMessage(params: {
   channelState: ChannelState
 }): Promise<void> {
   const { channelName, threadTs, userMessage, channelId, client, channelState } = params
-  const featureName = getFeatureName(channelName)
 
   const confirmedAgent = getConfirmedAgent(threadTs)
 
-  // Confirmed agent for this thread — check for override request first
+  // Confirmed agent — run directly, no overhead
+  if (confirmedAgent === "pm") {
+    await runPmAgent({ channelName, channelId, threadTs, userMessage, client })
+    return
+  }
+
   if (confirmedAgent) {
-    const { isOverride, requestedAgent } = await detectOverrideRequest(userMessage, confirmedAgent as AgentType)
-    if (isOverride) {
-      await handleOverride({ channelName, channelId, threadTs, userMessage, requestedAgent, currentAgent: confirmedAgent as AgentType, client })
-      return
-    }
-
-    if (confirmedAgent === "pm") {
-      await runPmAgent({ channelName, channelId, threadTs, userMessage, client })
-      return
-    }
-
+    // Agent confirmed but not yet implemented
     await client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
-      text: `The *${confirmedAgent} agent* is coming soon. The product specialist is active right now — ask me anything about the product spec.`,
+      text: `The *${confirmedAgent} agent* is coming soon. The product specialist is active right now — ask anything about the product spec.`,
     })
     return
   }
 
-  // New thread — classify intent, explain routing, then run the agent
+  // New thread — classify, explain routing, run agent
   const phase = detectPhase({
     productSpecApproved: channelState.productSpecApproved,
     engineeringSpecApproved: channelState.engineeringSpecApproved,
@@ -187,19 +91,12 @@ export async function handleFeatureChannelMessage(params: {
   const history = getHistory(threadTs)
   const suggestedAgent = await classifyIntent({ message: userMessage, history, phase })
 
-  // Store confirmed agent immediately — override requests handled conversationally
   setConfirmedAgent(threadTs, suggestedAgent)
 
-  // Build and post routing explanation, then run agent — both appear in the thread
-  const routingNote = await buildRoutingExplanation(featureName, suggestedAgent)
+  const routingNote = await buildRoutingNote(getFeatureName(channelName), suggestedAgent)
 
   if (suggestedAgent === "pm") {
-    const context = await loadAgentContext(featureName)
-    const systemPrompt = buildPmSystemPrompt(context, featureName)
-    const response = await runAgent({ systemPrompt, history, userMessage })
-    appendMessage(threadTs, { role: "user", content: userMessage })
-    appendMessage(threadTs, { role: "assistant", content: response })
-    await postPmResponse({ channelId, threadTs, featureName, response, routingNote, client })
+    await runPmAgent({ channelName, channelId, threadTs, userMessage, client, routingNote })
     return
   }
 
@@ -210,15 +107,15 @@ export async function handleFeatureChannelMessage(params: {
   })
 }
 
-// Runs the pm agent for confirmed threads (no routing note needed)
 async function runPmAgent(params: {
   channelName: string
   channelId: string
   threadTs: string
   userMessage: string
   client: any
+  routingNote?: string
 }): Promise<void> {
-  const { channelName, channelId, threadTs, userMessage, client } = params
+  const { channelName, channelId, threadTs, userMessage, client, routingNote } = params
   const featureName = getFeatureName(channelName)
   const context = await loadAgentContext(featureName)
   const systemPrompt = buildPmSystemPrompt(context, featureName)
@@ -228,19 +125,6 @@ async function runPmAgent(params: {
   appendMessage(threadTs, { role: "user", content: userMessage })
   appendMessage(threadTs, { role: "assistant", content: response })
 
-  await postPmResponse({ channelId, threadTs, featureName, response, routingNote: null, client })
-}
-
-// Posts the pm agent response, handling draft auto-save and PR creation
-async function postPmResponse(params: {
-  channelId: string
-  threadTs: string
-  featureName: string
-  response: string
-  routingNote: string | null
-  client: any
-}): Promise<void> {
-  const { channelId, threadTs, featureName, response, routingNote, client } = params
   const filePath = `specs/features/${featureName}/${featureName}.product.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
 
@@ -269,7 +153,7 @@ async function postPmResponse(params: {
     await client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
-      text: `The spec is saved and ready for review: ${prUrl}\n\nOnce it's approved there, the design phase begins — a UX designer will produce the screens and flows before any engineering starts.`,
+      text: `The spec is saved and ready for review: ${prUrl}\n\nOnce approved, the design phase begins — a UX designer will produce the screens and flows before any engineering starts.`,
     })
     return
   }
