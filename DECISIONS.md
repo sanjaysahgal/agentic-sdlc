@@ -94,6 +94,16 @@ This file tracks decisions that are correct for a small team today but need to c
 
 ---
 
+## Feature phase read from GitHub on every message
+
+**Now:** Every incoming message triggers a live GitHub API call to determine the feature's current phase (what files exist on main vs branch).
+
+**Why it works now:** Low traffic, one feature, one team. The latency (~200-300ms) is acceptable.
+
+**At scale:** With many features and many users messaging simultaneously, hitting GitHub on every message creates unnecessary API load and adds latency to every response. The phase state should be cached (in Redis or similar) and invalidated only when a spec file is merged to main — which is an infrequent event. The cache key is `featureName → phase`, TTL can be long since phase only changes on explicit approval.
+
+---
+
 ## No audit trail
 
 **Now:** There is no log of which agent ran, what it read, what decision was made, and when.
