@@ -5,9 +5,9 @@ const owner = process.env.GITHUB_OWNER!
 const repo = process.env.GITHUB_REPO!
 
 // Read a file from the repo. Returns empty string if not found.
-export async function readFile(path: string): Promise<string> {
+export async function readFile(path: string, ref?: string): Promise<string> {
   try {
-    const response = await octokit.repos.getContent({ owner, repo, path })
+    const response = await octokit.repos.getContent({ owner, repo, path, ...(ref ? { ref } : {}) })
     const data = response.data as { content: string }
     return Buffer.from(data.content, "base64").toString("utf-8")
   } catch {

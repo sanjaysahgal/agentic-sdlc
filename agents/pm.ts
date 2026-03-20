@@ -62,6 +62,11 @@ Use this exact structure:
 <anything unresolved that engineering or design needs to answer>
 \`\`\`
 
+## Current draft spec (your starting point)
+${context.currentDraft
+  ? `The following draft has already been saved for this feature. Continue from it — do not start over:\n\n${context.currentDraft}`
+  : "No draft saved yet. This is a fresh feature."}
+
 ## Constraints — read these before every response
 ### Product Vision
 ${context.productVision}

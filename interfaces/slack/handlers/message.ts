@@ -127,7 +127,7 @@ async function runPmAgent(params: {
 }): Promise<void> {
   const { channelName, channelId, threadTs, userMessage, client } = params
   const featureName = channelName.replace(/^feature-/, "")
-  const context = await loadAgentContext()
+  const context = await loadAgentContext(featureName)
   const systemPrompt = buildPmSystemPrompt(context, featureName)
   const history = getHistory(threadTs)
 
