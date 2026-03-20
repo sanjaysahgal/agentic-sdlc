@@ -1,12 +1,7 @@
 import "dotenv/config"
 import { App } from "@slack/bolt"
-import {
-  handleFeatureChannelMessage,
-  handleAgentConfirmation,
-  getChannelState,
-} from "./handlers/message"
+import { handleFeatureChannelMessage, getChannelState } from "./handlers/message"
 import { handleGeneralChannelMessage } from "./handlers/general"
-import { AgentType } from "../../runtime/agent-router"
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -22,11 +17,11 @@ app.event("channel_created", async ({ event, client }) => {
 
   await client.chat.postMessage({
     channel: event.channel.id,
-    text: `👋 Hi — I'm your agent for *${channelName.replace("feature-", "")}*. Tell me what you're thinking and we'll shape this into a spec together.`,
+    text: `Hi — I'm the product specialist for *${channelName.replace("feature-", "")}*. Tell me what you're thinking and we'll shape this into a spec together.`,
   })
 })
 
-// Handle messages in feature- channels
+// Route all messages — feature channels to their agent, everything else to concierge
 app.message(async ({ message, client }) => {
   const msg = message as {
     channel: string
@@ -45,7 +40,14 @@ app.message(async ({ message, client }) => {
 
   const threadTs = msg.thread_ts ?? msg.ts
 
-  if (channelName.startsWith("feature-")) {
+  // Show typing indicator while agent processes — pulses every 4s for the full duration
+  const typingInterval = setInterval(() => {
+    client.conversations.typing({ channel: msg.channel }).catch(() => {})
+  }, 4000)
+  client.conversations.typing({ channel: msg.channel }).catch(() => {})
+
+  try {
+    if (channelName.startsWith("feature-")) {
     const channelState = getChannelState(channelName)
     await handleFeatureChannelMessage({
       channelName,
@@ -55,36 +57,17 @@ app.message(async ({ message, client }) => {
       client,
       channelState,
     })
-  } else {
-    await handleGeneralChannelMessage({
-      channelId: msg.channel,
-      threadTs,
-      userMessage: text,
-      client,
-    })
+    } else {
+      await handleGeneralChannelMessage({
+        channelId: msg.channel,
+        threadTs,
+        userMessage: text,
+        client,
+      })
+    }
+  } finally {
+    clearInterval(typingInterval)
   }
-})
-
-// Handle agent confirmation button clicks
-const agentTypes: Array<AgentType | "other"> = ["pm", "architect", "backend", "frontend", "qa", "pgm", "spec-validator", "eng-mgr", "infra", "data", "other"]
-
-agentTypes.forEach((agent) => {
-  app.action(`confirm_agent_${agent}`, async ({ body, client, ack }) => {
-    await ack()
-
-    const channelId = body.channel?.id ?? ""
-    const channelInfo = await client.conversations.info({ channel: channelId })
-    const channelName = channelInfo.channel?.name ?? ""
-    const channelState = getChannelState(channelName)
-
-    await handleAgentConfirmation({
-      channelName,
-      channelId,
-      selectedAgent: agent,
-      client,
-      channelState,
-    })
-  })
 })
 
 export default app
