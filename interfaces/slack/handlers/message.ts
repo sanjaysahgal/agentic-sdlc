@@ -2,7 +2,7 @@ import { loadAgentContext } from "../../../runtime/context-loader"
 import { runAgent } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
-import { createSpecPR, saveDraftSpec, getInProgressFeatures } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, getInProgressFeatures } from "../../../runtime/github-client"
 import { classifyIntent, detectPhase, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 
@@ -139,19 +139,15 @@ async function runPmAgent(params: {
 
   if (isCreateSpecIntent(response)) {
     const specContent = extractSpecContent(response)
-    await update(`${prefix}Saving the final spec and sending it for review...`)
-    const prUrl = await createSpecPR({
-      featureName,
-      filePath,
-      content: specContent,
-      prTitle: `[SPEC] ${featureName} · product.md`,
-      prBody: `Product spec for **${featureName}**.\n\nShaped in #feature-${featureName}.\n\n**Checklist:**\n- [ ] Aligns with product vision\n- [ ] Personas correctly identified\n- [ ] Acceptance criteria are testable\n- [ ] Non-goals are explicit`,
-    })
-    await client.chat.postMessage({
-      channel: channelId,
-      thread_ts: threadTs,
-      text: `The spec is saved and ready for review: ${prUrl}\n\nOnce approved, the design phase begins — a UX designer will produce the screens and flows before any engineering starts.`,
-    })
+    await update(`${prefix}Saving the final spec...`)
+    await saveApprovedSpec({ featureName, filePath, content: specContent })
+    await update(
+      `${prefix}The *${featureName}* product spec is saved and approved. :white_check_mark:\n\n` +
+      `*What happens next:*\n` +
+      `A UX designer picks up the spec and produces the screens and user flows before any engineering begins. ` +
+      `If you're the designer on this one, go to *#feature-${featureName}* and let the system know you're ready to start the design phase.\n\n` +
+      `The product specialist's job on this feature is done. The spec is the source of truth from here.`
+    )
     return
   }
 

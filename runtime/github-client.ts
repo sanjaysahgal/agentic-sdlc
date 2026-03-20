@@ -90,6 +90,41 @@ export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
   return features
 }
 
+// Saves the final approved spec to the feature branch.
+// If the file is already on main (previously merged), updates it in place on main.
+// Returns "already-on-main" | "saved"
+export async function saveApprovedSpec(params: {
+  featureName: string
+  filePath: string
+  content: string
+}): Promise<"already-on-main" | "saved"> {
+  const { featureName, filePath, content } = params
+  const branch = `spec/${featureName}-product`
+
+  // Check if already on main — if so, update in place
+  let mainFileSha: string | undefined
+  try {
+    const existing = await octokit.repos.getContent({ owner, repo, path: filePath })
+    mainFileSha = (existing.data as { sha: string }).sha
+  } catch {
+    // Not on main yet
+  }
+
+  if (mainFileSha) {
+    await octokit.repos.createOrUpdateFileContents({
+      owner, repo, path: filePath,
+      message: `[SPEC] ${featureName} · product.md — final approved`,
+      content: Buffer.from(content).toString("base64"),
+      sha: mainFileSha,
+    })
+    return "already-on-main"
+  }
+
+  // Save to branch (same as draft flow) — human merges to make it official
+  await saveDraftSpec({ featureName, filePath, content })
+  return "saved"
+}
+
 // Commit a new file and open a PR against main.
 // Returns the PR URL.
 export async function createSpecPR(params: {
