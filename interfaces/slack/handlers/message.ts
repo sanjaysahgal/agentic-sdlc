@@ -4,6 +4,7 @@ import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent } from 
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { createSpecPR, saveDraftSpec, getInProgressFeatures } from "../../../runtime/github-client"
 import { classifyIntent, detectPhase, AgentType } from "../../../runtime/agent-router"
+import { withThinking } from "./thinking"
 
 function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
@@ -67,14 +68,15 @@ export async function handleFeatureChannelMessage(params: {
 
   const confirmedAgent = getConfirmedAgent(threadTs)
 
-  // Confirmed agent — run directly, no overhead
+  // Confirmed agent — run directly with thinking indicator
   if (confirmedAgent === "pm") {
-    await runPmAgent({ channelName, channelId, threadTs, userMessage, client })
+    await withThinking({ client, channelId, threadTs, run: async (update) => {
+      await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update })
+    }})
     return
   }
 
   if (confirmedAgent) {
-    // Agent confirmed but not yet implemented
     await client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
@@ -84,27 +86,25 @@ export async function handleFeatureChannelMessage(params: {
   }
 
   // New thread — classify, explain routing, run agent
-  const phase = detectPhase({
-    productSpecApproved: channelState.productSpecApproved,
-    engineeringSpecApproved: channelState.engineeringSpecApproved,
-  })
-  const history = getHistory(threadTs)
-  const suggestedAgent = await classifyIntent({ message: userMessage, history, phase })
+  await withThinking({ client, channelId, threadTs, run: async (update) => {
+    const phase = detectPhase({
+      productSpecApproved: channelState.productSpecApproved,
+      engineeringSpecApproved: channelState.engineeringSpecApproved,
+    })
+    const history = getHistory(threadTs)
+    const suggestedAgent = await classifyIntent({ message: userMessage, history, phase })
 
-  setConfirmedAgent(threadTs, suggestedAgent)
+    setConfirmedAgent(threadTs, suggestedAgent)
 
-  const routingNote = await buildRoutingNote(getFeatureName(channelName), suggestedAgent)
+    const routingNote = await buildRoutingNote(getFeatureName(channelName), suggestedAgent)
 
-  if (suggestedAgent === "pm") {
-    await runPmAgent({ channelName, channelId, threadTs, userMessage, client, routingNote })
-    return
-  }
+    if (suggestedAgent === "pm") {
+      await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update, routingNote })
+      return
+    }
 
-  await client.chat.postMessage({
-    channel: channelId,
-    thread_ts: threadTs,
-    text: `${routingNote}\n\nThe *${suggestedAgent} agent* is coming soon. The product specialist is active right now.`,
-  })
+    await update(`${routingNote}\n\nThe *${suggestedAgent} agent* is coming soon. The product specialist is active right now.`)
+  }})
 }
 
 async function runPmAgent(params: {
@@ -113,9 +113,10 @@ async function runPmAgent(params: {
   threadTs: string
   userMessage: string
   client: any
+  update: (text: string) => Promise<void>
   routingNote?: string
 }): Promise<void> {
-  const { channelName, channelId, threadTs, userMessage, client, routingNote } = params
+  const { channelName, channelId, threadTs, userMessage, client, update, routingNote } = params
   const featureName = getFeatureName(channelName)
   const context = await loadAgentContext(featureName)
   const systemPrompt = buildPmSystemPrompt(context, featureName)
@@ -132,17 +133,13 @@ async function runPmAgent(params: {
     const draftContent = extractDraftSpec(response)
     await saveDraftSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
-    await client.chat.postMessage({
-      channel: channelId,
-      thread_ts: threadTs,
-      text: `${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`,
-    })
+    await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
     return
   }
 
   if (isCreateSpecIntent(response)) {
     const specContent = extractSpecContent(response)
-    await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: `${prefix}Saving the final spec and sending it for review...` })
+    await update(`${prefix}Saving the final spec and sending it for review...`)
     const prUrl = await createSpecPR({
       featureName,
       filePath,
@@ -158,5 +155,5 @@ async function runPmAgent(params: {
     return
   }
 
-  await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: `${prefix}${response}` })
+  await update(`${prefix}${response}`)
 }
