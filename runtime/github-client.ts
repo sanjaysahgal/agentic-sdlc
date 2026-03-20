@@ -56,6 +56,40 @@ export async function saveDraftSpec(params: {
   })
 }
 
+// Returns the current status of all features in flight.
+// Determines phase by checking which spec files exist on main vs only on branches.
+export type FeatureStatus = {
+  featureName: string
+  phase: "product-spec-in-progress" | "product-spec-approved-awaiting-design" | "design-in-progress" | "design-approved-awaiting-engineering"
+}
+
+export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
+  const features: FeatureStatus[] = []
+
+  // List all branches matching spec/*
+  const branches = await octokit.paginate(octokit.repos.listBranches, { owner, repo, per_page: 100 })
+  const specBranches = branches.filter((b) => b.name.startsWith("spec/") && b.name.endsWith("-product"))
+
+  for (const branch of specBranches) {
+    const featureName = branch.name.replace("spec/", "").replace("-product", "")
+    const productSpecPath = `specs/features/${featureName}/${featureName}.product.md`
+    const designSpecPath = `specs/features/${featureName}/${featureName}.design.md`
+
+    const productOnMain = await readFile(productSpecPath) // empty string = not on main
+    const designOnMain = await readFile(designSpecPath)
+
+    if (designOnMain) {
+      features.push({ featureName, phase: "design-approved-awaiting-engineering" })
+    } else if (productOnMain) {
+      features.push({ featureName, phase: "product-spec-approved-awaiting-design" })
+    } else {
+      features.push({ featureName, phase: "product-spec-in-progress" })
+    }
+  }
+
+  return features
+}
+
 // Commit a new file and open a PR against main.
 // Returns the PR URL.
 export async function createSpecPR(params: {

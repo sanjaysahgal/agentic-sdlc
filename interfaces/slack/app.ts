@@ -5,6 +5,7 @@ import {
   handleAgentConfirmation,
   getChannelState,
 } from "./handlers/message"
+import { handleGeneralChannelMessage } from "./handlers/general"
 import { AgentType } from "../../runtime/agent-router"
 
 const app = new App({
@@ -39,22 +40,29 @@ app.message(async ({ message, client }) => {
 
   const channelInfo = await client.conversations.info({ channel: msg.channel })
   const channelName = channelInfo.channel?.name ?? ""
-  if (!channelName.startsWith("feature-")) return
-
   const text = msg.text?.trim()
   if (!text) return
 
   const threadTs = msg.thread_ts ?? msg.ts
-  const channelState = getChannelState(channelName)
 
-  await handleFeatureChannelMessage({
-    channelName,
-    threadTs,
-    userMessage: text,
-    channelId: msg.channel,
-    client,
-    channelState,
-  })
+  if (channelName.startsWith("feature-")) {
+    const channelState = getChannelState(channelName)
+    await handleFeatureChannelMessage({
+      channelName,
+      threadTs,
+      userMessage: text,
+      channelId: msg.channel,
+      client,
+      channelState,
+    })
+  } else {
+    await handleGeneralChannelMessage({
+      channelId: msg.channel,
+      threadTs,
+      userMessage: text,
+      client,
+    })
+  }
 })
 
 // Handle agent confirmation button clicks
