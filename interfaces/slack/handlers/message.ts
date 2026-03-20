@@ -10,6 +10,17 @@ function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
 }
 
+// Returns the current phase of a feature by reading GitHub state.
+// Falls back to "product-spec-in-progress" if GitHub is unavailable.
+async function getFeaturePhase(featureName: string): Promise<string> {
+  try {
+    const features = await getInProgressFeatures()
+    return features.find((f) => f.featureName === featureName)?.phase ?? "product-spec-in-progress"
+  } catch {
+    return "product-spec-in-progress"
+  }
+}
+
 export type ChannelState = {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean
@@ -68,8 +79,19 @@ export async function handleFeatureChannelMessage(params: {
 
   const confirmedAgent = getConfirmedAgent(threadTs)
 
-  // Confirmed agent — run directly with thinking indicator
+  // Confirmed agent — check phase first, then run
   if (confirmedAgent === "pm") {
+    // If the product spec is already approved, the pm agent's job is done.
+    // Redirect to the current phase rather than re-opening spec shaping.
+    const currentPhase = await getFeaturePhase(getFeatureName(channelName))
+    if (currentPhase === "product-spec-approved-awaiting-design") {
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `The product spec for *${getFeatureName(channelName)}* is already approved. :white_check_mark:\n\nThe next step is UX design — a designer needs to produce the screens and user flows before any engineering begins. If you're wearing the designer hat, just say so here and the design phase will begin.`,
+      })
+      return
+    }
     await withThinking({ client, channelId, threadTs, run: async (update) => {
       await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update })
     }})
@@ -85,8 +107,19 @@ export async function handleFeatureChannelMessage(params: {
     return
   }
 
-  // New thread — classify, explain routing, run agent
+  // New thread — check phase first, then classify and run
   await withThinking({ client, channelId, threadTs, run: async (update) => {
+    const currentPhase = await getFeaturePhase(getFeatureName(channelName))
+    if (currentPhase === "product-spec-approved-awaiting-design") {
+      setConfirmedAgent(threadTs, "pm") // store so follow-ups hit the same check
+      await update(
+        `The product spec for *${getFeatureName(channelName)}* is already approved. :white_check_mark:\n\n` +
+        `The next step is UX design — a designer needs to produce the screens and user flows before any engineering begins. ` +
+        `If you're wearing the designer hat, just say so here and the design phase will begin.`
+      )
+      return
+    }
+
     const phase = detectPhase({
       productSpecApproved: channelState.productSpecApproved,
       engineeringSpecApproved: channelState.engineeringSpecApproved,
