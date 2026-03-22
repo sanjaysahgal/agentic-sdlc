@@ -1,6 +1,8 @@
 // Posts a "Thinking..." placeholder immediately, then updates it with the real response.
 // This gives instant visual feedback while the agent processes.
 
+import { incrementActiveRequests, decrementActiveRequests } from "../../../runtime/request-tracker"
+
 export async function withThinking(params: {
   client: any
   channelId: string
@@ -30,6 +32,7 @@ export async function withThinking(params: {
     })
   }
 
+  incrementActiveRequests()
   try {
     await run(update)
   } catch (err: unknown) {
@@ -37,7 +40,10 @@ export async function withThinking(params: {
     const msg = isOverloaded
       ? "The AI is overloaded right now. Please try again in a moment."
       : "Something went wrong. Please try again."
+    console.error("[withThinking] agent error:", err)
     await update(msg).catch(() => {})
     throw err
+  } finally {
+    decrementActiveRequests()
   }
 }
