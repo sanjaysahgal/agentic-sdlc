@@ -23,7 +23,25 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ## Active (next up)
 
-### Step 4 — Architect agent (engineering spec)
+### Step 1 (immediate) — Error logging + cross-phase escalation for design agent
+
+Two fixes needed before the next design session. Both are independent of the architect agent and address real gaps in the running system today.
+
+**Error logging:**
+Add structured error logging to `withThinking` so "Something went wrong" failures are diagnosable. Currently the error is swallowed after being shown to the user — no record of what actually failed. At minimum: `console.error` with timestamp, channel, thread, agent, and the raw error. This is a prerequisite for production deployment — you cannot operate a production system without knowing why it fails.
+
+**Cross-phase escalation — design agent → PM:**
+When the design agent surfaces a `[blocking: yes] [type: product]` question mid-conversation, it currently tells the human to "bring in the PM" — which means manually opening a new thread, relaying the question without context, and carrying the answer back. This step makes that handoff automatic:
+- Design agent detects a blocking product question
+- Offers to pull the PM agent into the current thread with the specific question and relevant spec context as a primer
+- PM agent opens with a concrete answer proposal, not discovery questions
+- No manual relay, no context loss
+
+This pattern is built once here for the design agent, then extended to the architect agent in Step 2.
+
+---
+
+### Step 2 — Architect agent (engineering spec)
 
 The architect is a principal engineer with deep expertise in system design, API contracts, data modeling, and scalability. Their job is to translate an approved design spec into a precise engineering spec that backend and frontend engineer agents can implement without guessing.
 
@@ -49,16 +67,16 @@ The architect is a principal engineer with deep expertise in system design, API 
 - Spec link on approval-ready: shares a direct GitHub link to the draft spec (same pattern as pm and design agents)
 
 **Substeps:**
-- **4a** — Architect agent persona: principal engineer mindset, reads full spec chain before first response, leads with a structural proposal (data model + API surface) not discovery questions
-- **4b** — Engineering spec format: define `<feature>.engineering.md` structure, section by section
-- **4c** — Cross-phase escalation (reactive layer): when the architect surfaces a `[blocking: yes]` question owned by an upstream phase (product or design), it stops and offers to pull that agent into the thread with the specific question as context. The upstream agent opens with a concrete answer proposal, not discovery questions. Design agent gets the same pattern for product-owned blocking questions — built once here, applied to both.
-- **4d** — Full wiring: phase routing (`design-approved-awaiting-engineering`), context loading (full spec chain), draft auto-save, conflict + gap detection, approval detection, thinking indicator ("Architect is thinking...")
+- **2a** — Architect agent persona: principal engineer mindset, reads full spec chain before first response, leads with a structural proposal (data model + API surface) not discovery questions
+- **2b** — Engineering spec format: define `<feature>.engineering.md` structure, section by section
+- **2c** — Cross-phase escalation extended: architect agent gets the same reactive escalation pattern built in Step 1 — when it surfaces a `[blocking: yes]` question owned by product or design, it offers to pull that agent into the thread with context
+- **2d** — Full wiring: phase routing (`design-approved-awaiting-engineering`), context loading (full spec chain), draft auto-save, conflict + gap detection, approval detection, thinking indicator ("Architect is thinking...")
 
 ---
 
-### Step 5 — Orchestrator agent
+### Step 3 — Orchestrator agent
 
-A dedicated agent that owns proactive phase coordination across all in-flight features. Distinct from the concierge (which is the inbound human front door) — the orchestrator is the outbound system coordinator. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows.
+A dedicated agent that owns proactive phase coordination across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows.
 
 **Responsibilities:**
 - Owns the canonical routing table: which agent handles which phase — single source of truth, replaces hardcoded routing in the message handler
@@ -68,16 +86,13 @@ A dedicated agent that owns proactive phase coordination across all in-flight fe
 - At every phase handoff, scans the outgoing spec for unresolved `[blocking: yes]` questions owned by upstream agents — blocks the handoff until resolved
 - Replaces GitHub Actions as the handoff trigger mechanism — no separate GitHub Actions step needed
 
-**Cross-phase question escalation (two-layer model):**
-- **Reactive (individual agents — Step 4c):** Agent surfaces a blocking upstream question mid-conversation, offers to pull the upstream agent in immediately
-- **Proactive (orchestrator — this step):** At every handoff, scans specs for unresolved blocking questions that slipped through the reactive layer and blocks the advance until resolved
-
-**Why this replaces GitHub Actions (previously Step 5):**
-A separate GitHub Actions handoff step would be superseded by the orchestrator anyway. The orchestrator owns all phase-transition logic natively — triggering it from GitHub merge events is one implementation detail inside the orchestrator, not a standalone step.
+**Cross-phase escalation — two layers working together:**
+- **Reactive (Steps 1 + 2c):** Agent detects a blocking upstream question mid-conversation and pulls the right agent into the thread immediately
+- **Proactive (this step):** At every handoff, scans specs for unresolved blocking questions that slipped through the reactive layer and blocks the phase advance until resolved
 
 ---
 
-### Step 6 — Spec-validator agent
+### Step 4 — Spec-validator agent
 
 An automated quality gate that runs before any spec can advance to the next phase. Distinct from the spec auditor (which checks for conflicts with vision/architecture) — the validator checks structural completeness and internal consistency.
 
@@ -96,14 +111,19 @@ An automated quality gate that runs before any spec can advance to the next phas
 
 ---
 
-### Step 7 — Redis persistence + agentic-sdlc production deployment
+### Step 5 — Redis persistence + agentic-sdlc production deployment + observability
 
-Deploy the SDLC engine to always-on infrastructure before building the full engineering execution layer. Building 4+ more agents on a localhost process is the wrong order — infrastructure migration after the fact risks breaking assumptions baked into the agents.
+Deploy the SDLC engine to always-on infrastructure. Observability is bundled here — you cannot operate a production system without being able to see what it's doing. These three things ship together.
 
 **Redis persistence:**
 - Conversation history moves from in-memory to Redis — survives bot restarts, scales across multiple processes
 - Confirmed agent state moves from disk to Redis — consistent across all bot instances
 - Session TTL configurable per workspace
+
+**Observability (bundled — not deferred):**
+- Structured logging per agent invocation: timestamp, workspace, channel, thread, agent, intent markers, GitHub operations, latency
+- Error logging with full context: what failed, which agent, which thread, raw error — extends the basic error logging from Step 1
+- Log aggregation service (Datadog, Logtail, or equivalent)
 
 **agentic-sdlc deployment:**
 - Dockerfile with Node.js runtime, tsx compilation, environment variable injection
@@ -115,35 +135,17 @@ Deploy the SDLC engine to always-on infrastructure before building the full engi
 
 **Deployment target:** Railway, Fly.io, or equivalent — chosen when this step is active.
 
-**Prerequisite:** Orchestrator (Step 5) — routing must be centralised before the bot runs in a multi-instance environment.
+**Prerequisite:** Orchestrator (Step 3) — routing must be centralised before the bot runs in a multi-instance environment.
 
 ---
 
-### Step 8 — Basic observability
+### Step 6 — pgm agent + engineer agents (backend + frontend)
 
-Structured logging before any customer app code is written. You cannot debug a production system without a record of what happened.
-
-**What gets logged per agent invocation:**
-- Timestamp, workspace, channel, thread ID
-- Which agent was invoked and in which mode
-- Which context was loaded: spec file paths, git SHAs of files read
-- Intent markers detected (INTENT: CREATE_DESIGN_SPEC, DRAFT_SPEC_START, etc.)
-- Any GitHub operations triggered (branch created, file saved)
-- Latency (message received → response sent)
-
-**Storage:** Structured JSON to a log aggregation service (Datadog, Logtail, or equivalent).
-
-**Not in this step:** Full audit trail with PII redaction and compliance-grade retention — that's Step 13. This step is the minimum needed to operate a production system.
-
----
-
-### Step 9 — pgm agent + engineer agents (backend + frontend)
-
-Three agents that work from an approved engineering spec to produce and ship code. This is where "autonomous" actually happens — the first time a feature goes from spec to merged, tested code without a human writing a line.
+Three agents that work from an approved engineering spec to produce and ship code. This is where "autonomous" actually happens.
 
 **pgm agent (Program Manager):**
 - Reads the approved engineering spec and decomposes it into discrete, dependency-ordered work items
-- Each work item: title, acceptance criteria, which agent handles it (backend/frontend), estimated complexity, dependencies on other work items
+- Each work item: title, acceptance criteria, which agent handles it (backend/frontend), estimated complexity, dependencies
 - Posts work items to the feature channel for human review before any code is written
 - Work items saved as `<feature>.workitems.md` in the target repo for traceability
 - No code is written until work items are human-approved
@@ -163,12 +165,11 @@ Three agents that work from an approved engineering spec to produce and ship cod
 
 **Shared constraints:**
 - All agents read the full spec chain — no partial context
-- Conflict detection applies to code output, not just specs
 - PRs are opened against the customer's app repo (`agentic-health360`), not the platform repo
 
 ---
 
-### Step 10 — QA agent
+### Step 7 — QA agent
 
 Generates feature-specific test plans from acceptance criteria and validates shipped code against them. Blocks merges when criteria are unmet.
 
@@ -182,17 +183,15 @@ Generates feature-specific test plans from acceptance criteria and validates shi
 - Accessibility test cases derived from the design spec Accessibility section
 - Regression risk areas: which existing features could be affected by this change
 
-**Where the output lives:** `specs/features/<feature>/<feature>.qa.md` in the customer repo (`agentic-health360`). Distinct from the platform's own test suite (`agentic-sdlc/tests/`) which tests the SDLC engine itself.
-
 **Gate:** QA agent reviews shipped PRs against the test plan. PRs that fail acceptance criteria are flagged with specific failures before merge. Human makes the final merge decision.
 
-**Prerequisite:** Engineer agents (Step 9).
+**Prerequisite:** Engineer agents (Step 6).
 
 ---
 
-### Step 11 — agentic-cicd: customer app deployment pipeline
+### Step 8 — agentic-cicd: customer app deployment pipeline
 
-The second half of the licensed platform. A customer who has the SDLC engine but no deployment pipeline cannot ship anything. This step makes the pipeline a first-class platform deliverable.
+The second half of the licensed platform. A customer who has the SDLC engine but no deployment pipeline cannot ship anything. This step makes the pipeline a first-class platform deliverable and is the point at which health360 ships to real users.
 
 **What agentic-cicd provides for a customer app:**
 - Build pipeline: installs dependencies, runs type-check, runs tests, builds production bundle
@@ -203,93 +202,91 @@ The second half of the licensed platform. A customer who has the SDLC engine but
 - Secrets management: customer's production secrets stored as pipeline secrets, never in repos
 
 **What makes this a platform feature (not customer-specific):**
-The pipeline is templated and configurable — a new customer plugs in their repo, deployment target, and secrets. The same pipeline that deploys health360 deploys any future customer's app. WorkspaceConfig gains a deployment section alongside the existing GitHub and Slack config.
+The pipeline is templated and configurable — a new customer plugs in their repo, deployment target, and secrets. WorkspaceConfig gains a deployment section alongside the existing GitHub and Slack config.
 
-**health360 specifically:** `agentic-health360` is the reference implementation. Once this step is complete, onboarding ships to real health360 users — the first end-to-end proof that the platform works.
+**health360 milestone:** Once this step is complete, onboarding ships to real health360 users — the first end-to-end proof that the full autonomous pipeline works.
 
 ---
 
-### Step 12 — Multi-workspace support
+### Step 9 — Multi-workspace support
 
 Make agentic-sdlc serve multiple customer teams simultaneously without code changes.
 
 **What changes:**
 - Single bot process handles multiple Slack workspaces
 - Each workspace has its own WorkspaceConfig stored in a database, not environment variables
-- Environment variables become a single-workspace shortcut (still valid for solo teams), not the production pattern
+- Environment variables remain valid for single-workspace (solo team) deployments
 - `/sdlc setup` Slack command walks a new workspace through configuration interactively
-- Per-workspace cost controls and rate limiting (each Anthropic API call is billed to the workspace)
+- Per-workspace cost controls and rate limiting
 
-**Why after Step 11:**
-Multi-workspace requires the full platform to exist first — you can't onboard a second customer to a platform that hasn't shipped its first app. health360 shipping (Step 11) is the proof point that makes onboarding a second customer credible.
+**Why after Step 8:**
+Multi-workspace requires the full pipeline to exist first. health360 shipping (Step 8) is the proof point that makes onboarding a second customer credible.
 
 ---
 
-### Step 13 — Full audit trail
+### Step 10 — Full audit trail
 
-Extend the basic observability from Step 8 into a compliance-grade audit trail.
+Extend the basic observability from Step 5 into a compliance-grade audit trail.
 
-**Additions beyond Step 8:**
+**Additions beyond Step 5:**
 - User message content with PII pattern redaction
 - Agent response content (truncated for storage efficiency)
 - Full context load record: exact git SHAs of every file read per invocation
-- Configurable retention policy per workspace (e.g. 90 days for standard, 7 years for regulated industries)
+- Configurable retention policy per workspace
 - Export API: workspace admin can export their audit log on demand
 
 **Why this ordering:**
-Basic observability (Step 8) handles operational debugging. The full audit trail is a compliance and enterprise sales feature — it becomes relevant when multiple paying customers are running in production.
+The basic observability in Step 5 handles operational debugging. The full audit trail is a compliance and enterprise sales feature — relevant when multiple paying customers are running in production.
 
 ---
 
-### Step 14 — Figma integration
+### Step 11 — Figma integration + brand token support
 
-Agent creates and iterates on a Figma file directly via the Figma API. Fold brand token reading into this step via a `brandPath` in WorkspaceConfig.
+Agent creates Figma files directly via the Figma API on design spec approval. Brand token reading folded in via `brandPath` in WorkspaceConfig.
 
-**What this adds to the design agent:**
-- On design spec approval, agent creates a Figma file with frames matching the spec's screen inventory
+**What this adds:**
+- On design spec approval, agent creates a Figma file with frames matching the screen inventory
 - Designer reviews in Figma, gives feedback in Slack, agent iterates
 - Approved Figma link stored in `<feature>.design.md`
-- `WorkspaceConfig` gains `brandPath` — design agent reads brand tokens (colors, typography, spacing) from the customer's repo and applies them when creating Figma frames
+- `WorkspaceConfig` gains `brandPath` — design agent reads brand tokens from the customer's repo and applies them when generating Figma frames
 
-**Note on brand data:**
-Brand tokens are customer-specific — health360's brand lives in `agentic-health360`, a future customer's brand lives in their repo. The platform reads from wherever `brandPath` points. agentic-sdlc does not own or define brand.
+**Note on brand data:** Brand tokens are customer-specific. health360's brand lives in `agentic-health360`. The platform reads from wherever `brandPath` points — it does not own or define brand.
 
 ---
 
-### Step 15 — Vision refinement channel
+### Step 12 — Vision refinement channel
 
-A dedicated Slack channel (e.g. `#product-vision`) where the pm agent operates in a distinct mode: not spec shaping for a feature, but interrogating and strengthening the product vision itself.
+A dedicated Slack channel where the pm agent interrogates and strengthens the product vision itself — not spec shaping for a feature, but product strategy.
 
 **What vision-refinement mode does:**
 - Reads `PRODUCT_VISION.md` fully before every response
-- Asks hard questions: "Who is the user in this vision — a care manager or a patient? The answer shapes every feature."
-- Identifies gaps: vision sections that are undefined, contradictory, or too vague to constrain a spec
+- Asks hard questions and identifies gaps: undefined sections, contradictions, vague constraints
 - Proposes concrete changes to `PRODUCT_VISION.md` via PR — human reviews and merges
-- After a merge, verifies the updated vision against existing approved specs — flags any specs that need revisiting
+- After a merge, verifies the updated vision against existing approved specs and flags any that need revisiting
 
 **Why last:**
-Most valuable once several features have been specced and shipped, and patterns in the vision start to show under real usage. Not on the critical path to the first autonomous deployment.
+Most valuable once several features have shipped and patterns in the vision show under real usage.
 
 ---
 
 ## Completed
 
-- **UX Design agent (Steps 3a–3c)** — persona (globally accessible, consumer mindset, holistic end-to-end thinking, leads with proposals not discovery questions), design spec format (`<feature>.design.md`: Figma link, Design Direction, Brand, Screens with states + interactions, User Flows per user story, Accessibility, Open Questions), full wiring: phase routing, context loading (approved product spec from main + design draft from branch), draft auto-save after every agreed decision, conflict + gap detection, approval detection, thinking indicator ("UX Designer is thinking..."), spec link on approval-ready, visualisation offer (Figma AI / Builder.io / Anima)
-- **Automated test suite (platform)** — 129 tests across 11 files: routing, phase detection, pm agent helpers, spec auditor, GitHub client, context loader, concierge, conversation store, design agent, spec utils, workspace config, integration tests for message handler. All platform tests — zero real API calls, all external dependencies mocked.
-- **Blocking gate** — [blocking: yes] open questions prevent spec approval for both pm and design agents; gate enforced in code, not just prompt
+- **Progressive status updates** — withThinking placeholder cycles through visible stages (reading spec, writing, auditing, saving) so the human knows what's happening
+- **UX Design agent (Steps 3a–3c)** — persona, design spec format, full wiring: phase routing, context loading, draft auto-save, conflict + gap detection, approval detection, thinking indicator, spec link on approval-ready, visualisation offer (Figma AI / Builder.io / Anima)
+- **Automated test suite (platform)** — 129 tests across 11 files. All platform tests — zero real API calls, all external dependencies mocked.
+- **Blocking gate** — [blocking: yes] open questions prevent spec approval for both pm and design agents; enforced in code, not just prompt
 - **Gap detection history persistence** — gap question stored in conversation history so agent correctly interprets follow-up replies
-- **Proactive open questions surfacing** — pm agent appends unresolved `[blocking: yes]` questions after every exchange, unprompted
-- **All-agent conflict + gap detection** — spec auditor runs on every draft save; conflict blocks save; gap flags for human decision; vision/arch gate re-reads from GitHub to verify
-- **Spec link on approval-ready** — all spec-producing agents share a direct GitHub link to the current draft when the spec is ready for approval; documented in AGENTS.md as a non-negotiable convention for all future agents
+- **Proactive open questions surfacing** — pm agent appends unresolved [blocking: yes] questions after every exchange, unprompted
+- **All-agent conflict + gap detection** — spec auditor runs on every draft save; conflict blocks save; gap flags for human decision
+- **Spec link on approval-ready** — all spec-producing agents share a direct GitHub link to the draft; documented in AGENTS.md as a non-negotiable convention
 - **pm agent with expert persona** — spec shaping, draft auto-save, approval detection
-- **Concierge agent** — role-aware entry point, live feature status from GitHub, agent feedback tracking (surfaces as GitHub issue)
-- **ACTIVE_AGENTS registry** — single source of truth for active agents; concierge prompt built from it; invariant test catches regressions when new agents are added
-- **Structured open questions** — `[type: design|engineering|product] [blocking: yes|no]` format enforced across all agents
-- **Approved spec context mode** — pm agent handles all messages post-approval; revisions require re-approval
-- **Workspace config layer** — all product-specific coordinates in WorkspaceConfig, zero hardcoding; new team onboards via `.env` only
-- **Product context available from any channel** — concierge and pm agent load vision + architecture from GitHub via Haiku relevance filtering
-- **Phase-aware routing** — approved specs handled by pm agent in approved-spec mode; design phase routes to UX Design agent
-- **Thinking indicator** — immediate feedback while agent processes; label reflects the active agent ("UX Designer is thinking...")
+- **Concierge agent** — role-aware entry point, live feature status from GitHub
+- **ACTIVE_AGENTS registry** — single source of truth for active agents
+- **Structured open questions** — [type: design|engineering|product] [blocking: yes|no] enforced across all agents
+- **Approved spec context mode** — pm agent handles post-approval messages; revisions require re-approval
+- **Workspace config layer** — all product-specific coordinates in WorkspaceConfig, zero hardcoding
+- **Phase-aware routing** — design phase routes to UX Design agent; approved specs handled in approved-spec mode
+- **Thinking indicator** — immediate feedback; label reflects active agent
 - **Disk persistence for confirmed agents** — survives bot restarts
-- **90s API timeout + 20-message history cap** — prevents indefinite hangs on long conversations
-- **Doc sync enforcement** — CLAUDE.md Definition of Done table + CI check in `.github/workflows/doc-sync-check.yml`
+- **90s API timeout + 20-message history cap** — prevents indefinite hangs
+- **Doc sync enforcement** — CLAUDE.md Definition of Done + CI check
