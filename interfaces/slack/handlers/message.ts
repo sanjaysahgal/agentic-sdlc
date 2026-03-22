@@ -180,13 +180,14 @@ async function runPmAgent(params: {
   await update("_Product Manager is reading the spec..._")
   const context = await loadAgentContext(featureName)
 
+
   // If the message is asking about the product as a whole (vision, architecture, principles),
   // answer from context directly — the pm agent is not the right framing for product-level questions.
   if (!readOnly) {
     const scope = await classifyMessageScope(userMessage)
     if (scope === "product-context") {
       const prefix = routingNote ? `${routingNote}\n\n` : ""
-      await update("_Product Manager is writing..._")
+      await update("_Product Manager is thinking..._")
       await update(
         `${prefix}_Answering from the ${loadWorkspaceConfig().productName} product context:_\n\n` +
         await runAgent({
@@ -204,7 +205,7 @@ async function runPmAgent(params: {
   const systemPrompt = buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext)
   const history = getHistory(threadTs)
 
-  await update("_Product Manager is writing..._")
+  await update("_Product Manager is thinking..._")
   const response = await runAgent({ systemPrompt, history, userMessage })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
@@ -306,7 +307,7 @@ async function runDesignAgent(params: {
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
   const history = getHistory(threadTs)
 
-  await update("_UX Designer is writing..._")
+  await update("_UX Designer is thinking..._")
   const response = await runAgent({ systemPrompt, history, userMessage })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
