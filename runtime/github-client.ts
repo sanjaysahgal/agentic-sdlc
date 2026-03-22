@@ -1,8 +1,8 @@
 import { Octokit } from "@octokit/rest"
+import { loadWorkspaceConfig } from "./workspace-config"
 
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
-const owner = process.env.GITHUB_OWNER!
-const repo = process.env.GITHUB_REPO!
+const { githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
 
 // Read a file from the repo. Returns empty string if not found.
 export async function readFile(path: string, ref?: string): Promise<string> {
@@ -15,44 +15,66 @@ export async function readFile(path: string, ref?: string): Promise<string> {
   }
 }
 
-// Save a draft spec to the feature branch without opening a PR.
-// Creates the branch if it doesn't exist. Updates the file if it does.
+// Internal: saves a file to a branch, creating the branch from main if needed.
+async function saveDraftFile(params: {
+  branch: string
+  filePath: string
+  content: string
+  commitMessage: string
+}): Promise<void> {
+  const { branch, filePath, content, commitMessage } = params
+
+  const mainRef = await octokit.git.getRef({ owner, repo, ref: "heads/main" })
+  const mainSha = mainRef.data.object.sha
+
+  try {
+    await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: mainSha })
+  } catch {
+    // Branch already exists
+  }
+
+  let fileSha: string | undefined
+  try {
+    const existing = await octokit.repos.getContent({ owner, repo, path: filePath, ref: branch })
+    fileSha = (existing.data as { sha: string }).sha
+  } catch {
+    // File doesn't exist yet
+  }
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner, repo, path: filePath, message: commitMessage,
+    content: Buffer.from(content).toString("base64"),
+    branch, sha: fileSha,
+  })
+}
+
+// Save a draft product spec to the feature branch without opening a PR.
 export async function saveDraftSpec(params: {
   featureName: string
   filePath: string
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
-  const branch = `spec/${featureName}-product`
+  await saveDraftFile({
+    branch: `spec/${featureName}-product`,
+    filePath,
+    content,
+    commitMessage: `[DRAFT] ${featureName} · product.md`,
+  })
+}
 
-  // Get main branch SHA
-  const mainRef = await octokit.git.getRef({ owner, repo, ref: "heads/main" })
-  const mainSha = mainRef.data.object.sha
-
-  // Create branch if it doesn't exist
-  try {
-    await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: mainSha })
-  } catch {
-    // Branch already exists — that's fine, we'll just update the file
-  }
-
-  // Check if file already exists on the branch (needed for SHA to update)
-  let fileSha: string | undefined
-  try {
-    const existing = await octokit.repos.getContent({ owner, repo, path: filePath, ref: branch })
-    fileSha = (existing.data as { sha: string }).sha
-  } catch {
-    // File doesn't exist yet — create it
-  }
-
-  await octokit.repos.createOrUpdateFileContents({
-    owner,
-    repo,
-    path: filePath,
-    message: `[DRAFT] ${featureName} · product.md`,
-    content: Buffer.from(content).toString("base64"),
-    branch,
-    sha: fileSha,
+// Save a draft design spec to the feature branch without opening a PR.
+export async function saveDraftDesignSpec(params: {
+  featureName: string
+  filePath: string
+  content: string
+}): Promise<void> {
+  const { featureName, filePath, content } = params
+  await saveDraftFile({
+    branch: `spec/${featureName}-design`,
+    filePath,
+    content,
+    commitMessage: `[DRAFT] ${featureName} · design.md`,
   })
 }
 
@@ -72,8 +94,9 @@ export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
 
   for (const branch of specBranches) {
     const featureName = branch.name.replace("spec/", "").replace("-product", "")
-    const productSpecPath = `specs/features/${featureName}/${featureName}.product.md`
-    const designSpecPath = `specs/features/${featureName}/${featureName}.design.md`
+    const { paths } = loadWorkspaceConfig()
+    const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
+    const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
 
     const productOnMain = await readFile(productSpecPath) // empty string = not on main
     const designOnMain = await readFile(designSpecPath)
@@ -122,6 +145,66 @@ export async function saveApprovedSpec(params: {
 
   // Save to branch (same as draft flow) — human merges to make it official
   await saveDraftSpec({ featureName, filePath, content })
+  return "saved"
+}
+
+// Opens a GitHub issue tagged agent-feedback to track feedback about AI agent behavior.
+export async function saveAgentFeedback(params: {
+  feedback: string
+  submittedBy?: string
+}): Promise<void> {
+  const { feedback, submittedBy } = params
+  const body = submittedBy
+    ? `**Submitted by:** ${submittedBy}\n\n${feedback}`
+    : feedback
+
+  try {
+    // Ensure the label exists (idempotent)
+    try {
+      await octokit.issues.createLabel({ owner, repo, name: "agent-feedback", color: "e4e669" })
+    } catch {
+      // Label already exists
+    }
+
+    await octokit.issues.create({
+      owner,
+      repo,
+      title: `Agent feedback: ${feedback.slice(0, 72).replace(/\n.*/s, "")}`,
+      body,
+      labels: ["agent-feedback"],
+    })
+  } catch {
+    // Non-fatal — feedback logging should never break the conversation
+  }
+}
+
+// Saves the final approved design spec. Updates in place if already on main.
+export async function saveApprovedDesignSpec(params: {
+  featureName: string
+  filePath: string
+  content: string
+}): Promise<"already-on-main" | "saved"> {
+  const { featureName, filePath, content } = params
+
+  let mainFileSha: string | undefined
+  try {
+    const existing = await octokit.repos.getContent({ owner, repo, path: filePath })
+    mainFileSha = (existing.data as { sha: string }).sha
+  } catch {
+    // Not on main yet
+  }
+
+  if (mainFileSha) {
+    await octokit.repos.createOrUpdateFileContents({
+      owner, repo, path: filePath,
+      message: `[SPEC] ${featureName} · design.md — final approved`,
+      content: Buffer.from(content).toString("base64"),
+      sha: mainFileSha,
+    })
+    return "already-on-main"
+  }
+
+  await saveDraftDesignSpec({ featureName, filePath, content })
   return "saved"
 }
 
