@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>agentic-sdlc</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<style>
+  :root {
+    --red:   #e63946;
+    --white: #f0f0f0;
+    --dim:   #888;
+    --bg:    #0a0a0a;
+    --card:  #0e0e0e;
+    --border:#1e1e1e;
+    --mono:  'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  .reveal-viewport, .reveal { background: var(--bg); }
+  .reveal .slides { text-align: left; }
+  .reveal .slides section {
+    height: 900px;
+    padding: 0 80px;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .reveal .slides section.top { justify-content: flex-start; padding-top: 60px; }
+
+  /* Reset */
+  .reveal h1,.reveal h2,.reveal h3,.reveal p,
+  .reveal ul,.reveal ol,.reveal li { margin: 0; text-transform: none; }
+
+  .reveal .eyebrow {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase !important;
+    color: var(--red);
+    margin-bottom: 20px;
+  }
+  .reveal .eyebrow.appendix { color: #444; }
+
+  .reveal h1 {
+    font-size: 96px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--white);
+  }
+
+  .reveal h2 {
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    color: var(--white);
+    margin-bottom: 32px;
+  }
+
+  .reveal h2.tight { margin-bottom: 20px; }
+
+  .reveal .sub {
+    font-size: 26px;
+    color: var(--dim);
+    font-weight: 400;
+    line-height: 1.5;
+    margin-top: 16px;
+  }
+
+  .reveal .statement {
+    font-size: 44px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--white);
+  }
+
+  .reveal p { font-size: 22px; line-height: 1.65; color: #bbb; }
+  .reveal .dim { color: #555; font-size: 18px; margin-top: 16px; }
+
+  .reveal .accent { color: var(--red); }
+
+  .reveal code {
+    font-family: var(--mono);
+    font-size: 0.85em;
+    background: #1a1a1a;
+    color: var(--red);
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+
+  /* Pills */
+  .pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 32px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 500; padding: 7px 16px; border-radius: 20px; border: 1px solid; }
+  .pill.red   { color: #e63946; border-color: #3a1015; background: #160508; }
+  .pill.green { color: #4ade80; border-color: #1a3a23; background: #0a180e; }
+  .pill.gray  { color: #888;    border-color: #252525; background: #111; }
+  .pill .dot  { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* ── PROBLEM SLIDE ── */
+  .problem-list { margin-top: 8px; }
+  .problem-item { padding: 20px 0; border-bottom: 1px solid #1a1a1a; display: flex; gap: 24px; align-items: baseline; }
+  .problem-item:last-child { border-bottom: none; }
+  .problem-item .num { font-size: 14px; font-weight: 700; color: var(--red); flex-shrink: 0; }
+  .problem-item .text { font-size: 26px; font-weight: 500; color: #d0d0d0; line-height: 1.3; }
+
+  /* ── IDEA GRID ── */
+  .idea-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+  .idea-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; }
+  .idea-card .role { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red); margin-bottom: 10px; }
+  .idea-card .desc { font-size: 19px; color: #999; line-height: 1.5; }
+  .idea-card strong { color: #ddd; font-weight: 600; }
+
+  /* ── ARCH LAYERS ── */
+  .arch-layers { display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr; align-items: center; gap: 0; }
+  .arch-layer { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px 28px; }
+  .arch-layer .layer-label { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--red); margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .arch-item { padding: 12px 0; border-bottom: 1px solid #161616; }
+  .arch-item:last-child { border-bottom: none; }
+  .arch-item .item-name { font-size: 20px; font-weight: 600; color: #d0d0d0; }
+  .arch-item .item-detail { font-size: 14px; color: #555; margin-top: 3px; }
+  .arch-arrow { display: flex; align-items: center; justify-content: center; color: #252525; font-size: 24px; }
+
+  /* ── STEP BADGE ── */
+  .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--red);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .step.blue { background: #2a6090; }
+  .step-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .step-label .proto {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: #444;
+    white-space: nowrap;
+  }
+
+  /* ── DATA FLOW (simplified) ── */
+  .flow-simple {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    gap: 16px;
+    align-items: start;
+    margin-top: 8px;
+  }
+  .flow-client { display: flex; flex-direction: column; gap: 10px; }
+  .client-box {
+    background: #130508;
+    border: 1px solid #3a1015;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .client-box .icon { font-size: 28px; margin-bottom: 6px; }
+  .client-box .label { font-size: 14px; font-weight: 700; color: #e0e0e0; }
+  .client-box .sub-label { font-size: 11px; color: #666; margin-top: 2px; }
+  .flow-middle { display: flex; flex-direction: column; gap: 8px; }
+  .flow-step {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .flow-box {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .flow-box.relay  { }
+  .flow-box.bot    { border-color: #1a2a3a; background: #080f18; }
+  .flow-box.return { }
+  .flow-box .fb-host { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; margin-bottom: 6px; }
+  .flow-box.bot .fb-host { color: #3a6a8a; }
+  .flow-box .fb-name { font-size: 18px; font-weight: 700; color: #d0d0d0; }
+  .flow-box .fb-detail { font-size: 14px; color: #555; margin-top: 4px; line-height: 1.5; }
+  .flow-conn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0;
+    color: #2a2a2a;
+    font-size: 14px;
+  }
+  .flow-conn .proto { font-size: 10px; font-family: var(--mono); color: #3a3a3a; margin-bottom: 2px; }
+  .flow-conn .step-num { font-size: 10px; color: var(--red); font-weight: 700; }
+  .flow-apis { display: flex; flex-direction: column; gap: 10px; }
+  .api-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .api-box .a-host { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; margin-bottom: 4px; }
+  .api-box .a-name { font-size: 16px; font-weight: 700; color: #d0d0d0; }
+  .api-box .a-detail { font-size: 12px; color: #555; margin-top: 3px; }
+
+  /* ── PIPELINE ── */
+  .pipeline { display: flex; align-items: stretch; gap: 0; }
+  .phase { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 10px; text-align: center; display: flex; flex-direction: column; gap: 6px; }
+  .phase.live { border-color: #3a1015; background: #130508; }
+  .phase .ph-num { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; }
+  .phase.live .ph-num { color: var(--red); }
+  .phase .ph-name { font-size: 17px; font-weight: 700; color: #c0c0c0; }
+  .phase.live .ph-name { color: var(--white); }
+  .phase .ph-agent { font-size: 13px; color: #555; }
+  .phase .ph-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; margin-top: 4px; align-self: center; }
+  .ph-badge.live-badge    { background: #1a0608; border: 1px solid #4a1018; color: var(--red); }
+  .ph-badge.planned-badge { background: #111; border: 1px solid #222; color: #444; }
+  .phase-arrow { display: flex; align-items: center; color: #222; font-size: 18px; padding: 0 6px; flex-shrink: 0; }
+  .pipeline-note { margin-top: 20px; padding: 16px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; font-size: 17px; color: #555; }
+  .pipeline-note strong { color: #888; }
+
+  /* ── CI/CD ── */
+  .cicd-flow { display: flex; align-items: stretch; gap: 0; margin: 24px 0 20px; }
+  .cicd-step { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 14px; text-align: center; display: flex; flex-direction: column; gap: 6px; }
+  .cicd-step.cicd-prod { border-color: #1a3a23; background: #0a180e; }
+  .cicd-icon { font-size: 22px; line-height: 1; color: var(--dim); }
+  .cicd-step.cicd-prod .cicd-icon { color: #4ade80; }
+  .cicd-label { font-size: 15px; font-weight: 700; color: var(--white); }
+  .cicd-sub { font-size: 12px; color: #555; }
+  .cicd-arrow { display: flex; align-items: center; color: #222; font-size: 18px; padding: 0 6px; flex-shrink: 0; }
+  .cicd-checks { background: #0e0e0e; border: 1px solid #1a1a1a; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+  .cicd-check-label { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; margin-bottom: 10px; }
+  .cicd-checks-row { display: flex; gap: 28px; }
+  .cicd-check { font-size: 15px; color: #888; }
+  .cicd-check strong { color: #bbb; font-weight: 600; }
+
+  /* ── SPEC AUDIT ── */
+  .audit-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .audit-card { border-radius: 14px; padding: 32px 28px; border: 1px solid; }
+  .audit-card.ok       { background: #080f08; border-color: #1a3a1a; }
+  .audit-card.conflict { background: #130508; border-color: #3a1015; }
+  .audit-card.gap      { background: #0f0d04; border-color: #3a3010; }
+  .audit-label { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+  .audit-card.ok .audit-label       { color: #4ade80; }
+  .audit-card.conflict .audit-label { color: var(--red); }
+  .audit-card.gap .audit-label      { color: #fbbf24; }
+  .audit-result { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .audit-card.ok .audit-result       { color: #4ade80; }
+  .audit-card.conflict .audit-result { color: var(--red); }
+  .audit-card.gap .audit-result      { color: #fbbf24; }
+  .audit-card p { font-size: 17px; color: #777; line-height: 1.55; }
+
+  /* ── LIVE TODAY ── */
+  .live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .live-agent { background: var(--card); border: 1px solid #3a1015; border-radius: 14px; padding: 30px 28px; }
+  .live-agent .agent-label { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red); margin-bottom: 10px; }
+  .live-agent h3 { font-size: 28px; font-weight: 800; margin-bottom: 18px; color: var(--white); }
+  .live-agent ul { list-style: none; }
+  .live-agent li { padding: 9px 0; border-bottom: 1px solid #161616; font-size: 17px; color: #888; display: flex; gap: 10px; }
+  .live-agent li:last-child { border-bottom: none; }
+  .li-dot { color: var(--red); flex-shrink: 0; }
+
+  /* ── PRINCIPLES ── */
+  .principles { display: flex; flex-direction: column; }
+  .principle { display: flex; gap: 32px; align-items: flex-start; padding: 26px 0; border-bottom: 1px solid #1a1a1a; }
+  .principle:last-child { border-bottom: none; }
+  .principle .p-num { font-size: 48px; font-weight: 800; color: #1c1c1c; flex-shrink: 0; width: 56px; letter-spacing: -0.04em; line-height: 1; }
+  .principle .p-body h3 { font-size: 26px; font-weight: 700; margin-bottom: 6px; color: var(--white); }
+  .principle .p-body p  { font-size: 18px; color: #666; line-height: 1.5; }
+
+  /* ── ROSTER ── */
+  .roster { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 16px; }
+  .roster-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 14px; }
+  .roster-card.live { border-color: #3a1015; background: #130508; }
+  .roster-card .r-phase { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #333; margin-bottom: 6px; }
+  .roster-card.live .r-phase { color: #8a2a35; }
+  .roster-card .r-name { font-size: 15px; font-weight: 700; color: #c0c0c0; margin-bottom: 4px; }
+  .roster-card.live .r-name { color: var(--white); }
+  .roster-card .r-desc { font-size: 12px; color: #555; line-height: 1.4; }
+
+  /* ── ROADMAP ── */
+  .roadmap { display: flex; flex-direction: column; margin-top: 16px; max-width: 800px; }
+  .roadmap-item { display: flex; gap: 18px; align-items: baseline; padding: 14px 0; border-bottom: 1px solid #161616; }
+  .roadmap-item:last-child { border-bottom: none; }
+  .r-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; min-width: 72px; text-align: center; }
+  .r-badge.now   { background: #160508; border: 1px solid #3a1015; color: var(--red); }
+  .r-badge.soon  { background: #111; border: 1px solid #252525; color: #666; }
+  .r-badge.later { background: #0d0d0d; border: 1px solid #1a1a1a; color: #3a3a3a; }
+  .r-text { font-size: 20px; color: #888; }
+  .r-text strong { color: #c0c0c0; font-weight: 600; }
+
+  /* ── APPENDIX ── */
+  .appendix-divider { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .reveal .appendix-tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+    color: #333; border: 1px solid #222; border-radius: 4px; padding: 4px 12px;
+    margin-bottom: 20px; display: inline-block;
+  }
+
+  /* appendix table */
+  .a-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  .a-table th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; padding: 10px 16px; border-bottom: 1px solid #1e1e1e; }
+  .a-table td { padding: 12px 16px; border-bottom: 1px solid #161616; font-size: 16px; }
+  .a-table td:first-child  { color: #888; }
+  .a-table td:nth-child(2) { color: #7dd3a8; font-family: var(--mono); font-size: 14px; }
+  .a-table td:last-child   { color: #666; font-size: 14px; }
+  .a-table tr:last-child td { border-bottom: none; }
+
+  /* appendix phase table */
+  .phase-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  .phase-table th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; padding: 10px 16px; border-bottom: 1px solid #1e1e1e; }
+  .phase-table td { padding: 14px 16px; border-bottom: 1px solid #161616; font-size: 16px; color: #888; }
+  .phase-table td:first-child { font-family: var(--mono); font-size: 13px; color: #555; }
+  .phase-table td:last-child { color: #ccc; }
+  .phase-table tr:last-child td { border-bottom: none; }
+
+  /* appendix detail cards */
+  .a-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .a-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; }
+  .a-card .ac-role { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red); margin-bottom: 8px; }
+  .a-card .ac-name { font-size: 18px; font-weight: 700; color: #d0d0d0; margin-bottom: 6px; }
+  .a-card p { font-size: 14px; color: #666; line-height: 1.55; }
+
+  /* appendix data flow detail */
+  .df-nodes { display: flex; align-items: stretch; gap: 0; flex-wrap: nowrap; margin-top: 16px; overflow-x: auto; }
+  .df-node { flex-shrink: 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 12px; text-align: center; min-width: 100px; display: flex; flex-direction: column; gap: 5px; }
+  .df-node.hl { border-color: #3a1015; background: #130508; }
+  .df-node .dn-tech { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--red); }
+  .df-node .dn-name { font-size: 13px; font-weight: 600; color: #d0d0d0; line-height: 1.3; }
+  .df-node .dn-detail { font-size: 10px; color: #555; line-height: 1.4; }
+  .df-arrow { display: flex; align-items: center; color: #222; font-size: 14px; padding: 0 3px; flex-shrink: 0; }
+
+  /* Progress */
+  .reveal .progress { color: var(--red); }
+  .reveal .slide-number { font-size: 12px; color: #333; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ════════════════════════════════════════
+     1 — TITLE
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">Engineering · March 2026</div>
+  <h1><span class="accent">agentic</span>-sdlc</h1>
+  <div class="sub">An AI-native platform for the full software development lifecycle</div>
+  <div class="pills">
+    <span class="pill red"><span class="dot"></span>Phase 1 live</span>
+    <span class="pill gray">Phases 2–5 in design</span>
+  </div>
+  <aside class="notes">Generic platform — not tied to any specific product. Any team plugs in their Slack + GitHub via .env.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     2 — PROBLEM
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The problem</div>
+  <div class="statement">Every handoff <span class="accent">loses something.</span></div>
+  <div class="problem-list" style="margin-top:32px;">
+    <div class="problem-item">
+      <div class="num">01</div>
+      <div class="text">Specs arrive with assumptions baked in — nobody asked the hard questions.</div>
+    </div>
+    <div class="problem-item">
+      <div class="num">02</div>
+      <div class="text">Design decisions get made silently in code.</div>
+    </div>
+    <div class="problem-item">
+      <div class="num">03</div>
+      <div class="text">QA finds in week 6 what a PM could have caught in week 1.</div>
+    </div>
+  </div>
+  <aside class="notes">Root cause: a process with no memory and no expert at every handoff point.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     3 — THE IDEA
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The idea</div>
+  <div class="statement">What if the best expert in the room<br>was <span class="accent">always</span> in the room?</div>
+  <div style="margin-top:44px; display:flex; flex-direction:column; gap:22px; max-width:860px;">
+    <div style="font-size:26px; color:#888; line-height:1.4; display:flex; gap:18px; align-items:baseline;"><span style="color:var(--red); font-weight:700; flex-shrink:0;">→</span>Not a chatbot. An opinionated specialist who has seen hundreds of specs fail.</div>
+    <div style="font-size:26px; color:#888; line-height:1.4; display:flex; gap:18px; align-items:baseline;"><span style="color:var(--red); font-weight:700; flex-shrink:0;">→</span>Reads every upstream decision before writing a single word.</div>
+    <div style="font-size:26px; color:#888; line-height:1.4; display:flex; gap:18px; align-items:baseline;"><span style="color:var(--red); font-weight:700; flex-shrink:0;">→</span>Won't advance until the hard questions have real answers.</div>
+  </div>
+  <aside class="notes">The key differentiator: they push back. They won't accept vague answers. They've seen hundreds of specs fail. Unlike a consultant, always available and never politically biased.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     4 — THE FULL TEAM
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The team</div>
+  <h2 class="tight">One specialist per phase — <span style="color:#444;">2 live · 8 planned</span></h2>
+  <div class="roster">
+    <div class="roster-card live">
+      <div class="r-phase">Entry · Live</div>
+      <div class="r-name">Concierge</div>
+      <div class="r-desc">Front door for every role. Live feature status from GitHub. Always plain English.</div>
+    </div>
+    <div class="roster-card live">
+      <div class="r-phase">Phase 1 · Live</div>
+      <div class="r-name">PM agent</div>
+      <div class="r-desc">Shapes ideas into specs. Asks the hard questions. Hard stop on conflicts.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Phase 2 · Planned</div>
+      <div class="r-name">Design agent</div>
+      <div class="r-desc">Screen inventory, user flows, component decisions. No silent UI choices.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Phase 3 · Planned</div>
+      <div class="r-name">Architect agent</div>
+      <div class="r-desc">Reads the full spec chain. No architecture without acknowledged tradeoffs.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Phase 4 · Planned</div>
+      <div class="r-name">PGM agent</div>
+      <div class="r-desc">Breaks engineering spec into GitHub Issues. Work items, not guesswork.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Phase 4 · Planned</div>
+      <div class="r-name">Backend agent</div>
+      <div class="r-desc">Implements server-side work items against the full spec chain.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Phase 4 · Planned</div>
+      <div class="r-name">Frontend agent</div>
+      <div class="r-desc">Implements UI from the design spec. Pixel-faithful. No silent decisions.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Phase 5 · Planned</div>
+      <div class="r-name">QA agent</div>
+      <div class="r-desc">Test plans from acceptance criteria. Blocks merges when criteria unmet.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Cross-cutting · Planned</div>
+      <div class="r-name">Spec validator</div>
+      <div class="r-desc">Automated quality gate. A spec that fails cannot advance.</div>
+    </div>
+    <div class="roster-card">
+      <div class="r-phase">Cross-cutting · Planned</div>
+      <div class="r-name">Eng-mgr agent</div>
+      <div class="r-desc">Escalation, conflict triage. Routes unresolved questions to the right human.</div>
+    </div>
+  </div>
+  <aside class="notes">Each agent owns exactly one domain — it escalates anything outside it. The persona in each system prompt defines the standard it holds every output to. These aren't chatbots — they have opinions and will push back.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     5 — ARCHITECTURE
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Architecture</div>
+  <h2 class="tight">Three deliberate layers</h2>
+  <div class="arch-layers">
+    <div class="arch-layer">
+      <div class="layer-label">Human interface</div>
+      <div class="arch-item"><div class="item-name">Slack</div><div class="item-detail">Where teams already work</div></div>
+      <div class="arch-item"><div class="item-name">GitHub Actions</div><div class="item-detail">Planned</div></div>
+      <div class="arch-item"><div class="item-name">Web portal</div><div class="item-detail">Planned</div></div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-layer">
+      <div class="layer-label">Agent runtime</div>
+      <div class="arch-item"><div class="item-name">Claude Sonnet</div><div class="item-detail">Spec shaping, reasoning</div></div>
+      <div class="arch-item"><div class="item-name">Claude Haiku</div><div class="item-detail">Classification, filtering, auditing</div></div>
+      <div class="arch-item"><div class="item-name">WorkspaceConfig</div><div class="item-detail">Zero hardcoding</div></div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-layer">
+      <div class="layer-label">State</div>
+      <div class="arch-item"><div class="item-name">GitHub</div><div class="item-detail">Specs, phase state, approval gates</div></div>
+      <div class="arch-item"><div class="item-name">Branches</div><div class="item-detail">No separate database needed</div></div>
+      <div class="arch-item"><div class="item-name">PRs / Issues</div><div class="item-detail">Gates and work items</div></div>
+    </div>
+  </div>
+  <aside class="notes">The runtime has zero dependency on Slack. Any interface can invoke the same agent logic untouched.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     6 — DATA FLOW
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Request flow — full loop</div>
+  <h2 class="tight" style="font-size:36px;">"I want to start a new feature"</h2>
+
+  <!--
+    Bot box spans BOTH rows via grid-row:span 2 — so steps 8 and 9 are visually
+    inside the same box and directly connected. No grid-row boundary between them.
+  -->
+  <div style="display:grid; grid-template-columns:150px 52px 1fr 52px 1fr; grid-template-rows:auto auto; gap:6px; align-items:stretch;">
+
+    <!-- USER top: sends -->
+    <div style="background:#130508; border:1px solid #3a1015; border-radius:10px; padding:14px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
+      <div style="font-size:10px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#8a2a35; margin-bottom:6px;">User's device</div>
+      <div style="font-size:24px;">📱 🖥️</div>
+      <div style="font-size:13px; font-weight:700; color:#e0e0e0; margin-top:6px;">Slack client</div>
+      <div style="font-size:11px; color:#555; margin-top:3px; font-style:italic;">"I want to start a new feature"</div>
+    </div>
+
+    <!-- ARROW col row 1: outbound → -->
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;">
+      <span class="step" style="width:24px;height:24px;font-size:12px;">1</span>
+      <span style="font-size:10px; font-family:var(--mono); color:#888;">HTTPS →</span>
+    </div>
+
+    <!-- SLACK top: routes outbound -->
+    <div class="flow-box relay" style="padding:14px 16px;">
+      <div class="fb-host">External · slack.com</div>
+      <div class="fb-name">Slack Platform</div>
+      <div class="fb-detail" style="margin-top:6px; font-size:12px;">Receives from any client. Pushes event down the persistent WebSocket your bot opened at startup — no inbound port needed.</div>
+    </div>
+
+    <!-- ARROW col row 1: outbound → -->
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;">
+      <span class="step blue" style="width:24px;height:24px;font-size:12px;">2</span>
+      <span style="font-size:10px; font-family:var(--mono); color:#4a90c4;">WebSocket →</span>
+    </div>
+
+    <!-- BOT: spans both rows — steps 3–9 all live here -->
+    <div class="flow-box bot" style="grid-row: span 2; padding:16px 18px; display:flex; flex-direction:column;">
+      <div style="font-size:10px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#2a5a7a; font-family:var(--mono); margin-bottom:5px;">YOUR PLATFORM CODE</div>
+      <div style="font-size:20px; font-weight:800; color:#e0e0e0; margin-bottom:2px;">agentic-sdlc</div>
+      <div style="font-size:11px; color:#3a6a8a; margin-bottom:12px;">localhost · Node.js · TypeScript</div>
+
+      <div style="display:flex; flex-direction:column; gap:5px; flex:1;">
+        <div style="display:flex; align-items:center; gap:7px;"><span class="step" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">3</span><span style="font-size:12px;color:#888;">Classifies intent</span></div>
+        <div style="display:flex; align-items:center; gap:7px; padding:4px 0; border-top:1px dashed #1a2a3a; border-bottom:1px dashed #1a2a3a;">
+          <span class="step" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">4</span>
+          <span style="font-size:12px;color:#888;flex:1;">Reads specs</span>
+          <span style="font-size:10px;color:#2a6090;font-family:var(--mono);">→ GitHub ①</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:7px;"><span class="step" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">5</span><span style="font-size:12px;color:#888;">Filters context</span></div>
+        <div style="display:flex; align-items:center; gap:7px; padding:4px 0; border-top:1px dashed #1a2a3a; border-bottom:1px dashed #1a2a3a;">
+          <span class="step" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">6</span>
+          <span style="font-size:12px;color:#888;flex:1;">Generates response</span>
+          <span style="font-size:10px;color:#8a4020;font-family:var(--mono);">→ Claude ②</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:7px; padding:4px 0; border-bottom:1px dashed #1a2a3a;">
+          <span class="step" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">7</span>
+          <span style="font-size:12px;color:#888;flex:1;">Audits draft</span>
+          <span style="font-size:10px;color:#8a4020;font-family:var(--mono);">→ Claude ②</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:7px; padding:4px 0; border-bottom:1px dashed #1a2a3a;">
+          <span class="step" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">8</span>
+          <span style="font-size:12px;color:#888;flex:1;">Writes draft</span>
+          <span style="font-size:10px;color:#2a6090;font-family:var(--mono);">→ GitHub ①</span>
+        </div>
+        <!-- Step 9 directly below step 8 — same box, no gap -->
+        <div style="display:flex; align-items:center; gap:7px; background:#0a1520; border-radius:6px; padding:6px 7px;">
+          <span class="step blue" style="width:20px;height:20px;font-size:10px;flex-shrink:0;">9</span>
+          <span style="font-size:12px;color:#4a90c4;flex:1;">Sends response ← WebSocket</span>
+        </div>
+      </div>
+
+      <!-- External services legend -->
+      <div style="margin-top:10px; padding-top:10px; border-top:1px solid #1a2a3a; display:flex; gap:8px;">
+        <div style="flex:1; background:#0d0a02; border:1px solid #3a2a10; border-radius:6px; padding:8px;">
+          <div style="font-size:9px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#7a5020; margin-bottom:3px;">② External AI</div>
+          <div style="font-size:13px; font-weight:700; color:#d0a060;">Anthropic API</div>
+          <div style="font-size:10px; color:#5a3a20; font-family:var(--mono); margin-top:2px; line-height:1.5;">api.anthropic.com<br>Sonnet + Haiku</div>
+        </div>
+        <div style="flex:1; background:#020d18; border:1px solid #103050; border-radius:6px; padding:8px;">
+          <div style="font-size:9px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#2a5a8a; margin-bottom:3px;">① Product repo</div>
+          <div style="font-size:13px; font-weight:700; color:#6090c0;">GitHub Specs</div>
+          <div style="font-size:10px; color:#2a4a6a; font-family:var(--mono); margin-top:2px; line-height:1.5;">health360/specs/<br>NOT the app code</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- USER bottom: receives response -->
+    <div style="background:#0a180e; border:1px solid #1a3a23; border-radius:10px; padding:14px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
+      <div style="font-size:20px; margin-bottom:6px;">💬</div>
+      <div style="font-size:13px; font-weight:700; color:#4ade80;">Response arrives</div>
+      <div style="font-size:11px; color:#555; margin-top:4px; font-style:italic;">"Sure! What's the feature about?"</div>
+    </div>
+
+    <!-- ARROW col row 2: return ← -->
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;">
+      <span style="font-size:10px; font-family:var(--mono); color:#888;">← HTTPS</span>
+      <span class="step" style="width:24px;height:24px;font-size:12px;">10</span>
+    </div>
+
+    <!-- SLACK bottom: delivers -->
+    <div class="flow-box relay" style="padding:14px 16px;">
+      <div class="fb-host">External · slack.com</div>
+      <div class="fb-name">Delivers to #feature-channel</div>
+      <div class="fb-detail" style="margin-top:6px; font-size:12px;">Pushes reply to all connected clients simultaneously — mobile, desktop, and web all receive it.</div>
+    </div>
+
+    <!-- ARROW col row 2: ← from bot step 9 -->
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;">
+      <span class="step blue" style="width:24px;height:24px;font-size:12px;">9</span>
+      <span style="font-size:10px; font-family:var(--mono); color:#4a90c4;">← WebSocket</span>
+    </div>
+
+  </div>
+
+  <aside class="notes">Key distinction: agentic-sdlc is YOUR platform code. It calls Anthropic (external AI) and reads/writes to the product repo specs on GitHub — NOT the product app code. The app code is separate, managed by agentic-cicd after QA.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     6b — DATA FLOW: INSIDE THE BOT
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Request flow — inside the bot</div>
+  <h2 class="tight">Every LLM call = persona + fresh context + history</h2>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:20px; align-items:start;">
+
+    <!-- LEFT: Claude API call anatomy -->
+    <div>
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#444; margin-bottom:12px;">Claude API call (every request)</div>
+      <div style="background:#080f18; border:1px solid #1a2a3a; border-radius:12px; padding:20px 22px; font-family:var(--mono); font-size:13px; line-height:2;">
+        <div style="color:#3a6a8a;">model:</div>
+        <div style="color:#7dd3a8; padding-left:16px; margin-bottom:12px;">claude-sonnet-4-6</div>
+
+        <div style="color:#3a6a8a;">system: [</div>
+        <div style="display:flex; align-items:center; gap:10px; padding:5px 0 5px 16px; border-left:2px solid #3a1015;">
+          <span style="font-size:10px; font-weight:700; background:#3a1015; color:#e63946; padding:2px 7px; border-radius:3px; white-space:nowrap; letter-spacing:0.05em;">PERSONA</span>
+          <span style="color:#c0a0a0; font-size:12px;">"Senior product leader, 15+ years…"</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:5px 0 5px 16px; border-left:2px solid #103050;">
+          <span style="font-size:10px; font-weight:700; background:#103050; color:#4a90c4; padding:2px 7px; border-radius:3px; white-space:nowrap; letter-spacing:0.05em;">GITHUB ①</span>
+          <span style="color:#6090c0; font-size:12px;">PRODUCT_VISION.md</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:5px 0 5px 16px; border-left:2px solid #103050;">
+          <span style="font-size:10px; font-weight:700; background:#103050; color:#4a90c4; padding:2px 7px; border-radius:3px; white-space:nowrap; letter-spacing:0.05em;">GITHUB ①</span>
+          <span style="color:#6090c0; font-size:12px;">SYSTEM_ARCHITECTURE.md</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:5px 0 5px 16px; border-left:2px solid #103050;">
+          <span style="font-size:10px; font-weight:700; background:#103050; color:#4a90c4; padding:2px 7px; border-radius:3px; white-space:nowrap; letter-spacing:0.05em;">GITHUB ①</span>
+          <span style="color:#6090c0; font-size:12px;">feature.product.md (current draft)</span>
+        </div>
+        <div style="color:#3a6a8a; padding-bottom:10px;">]</div>
+
+        <div style="color:#3a6a8a;">messages: [</div>
+        <div style="display:flex; align-items:center; gap:10px; padding:5px 0 5px 16px; border-left:2px solid #2a1a3a;">
+          <span style="font-size:10px; font-weight:700; background:#2a1a3a; color:#a070d0; padding:2px 7px; border-radius:3px; white-space:nowrap; letter-spacing:0.05em;">HISTORY</span>
+          <span style="color:#8060a0; font-size:12px;">prior turns — keyed by thread_ts</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:5px 0 5px 16px; border-left:2px solid #2a2a2a;">
+          <span style="font-size:10px; font-weight:700; background:#1a1a1a; color:#888; padding:2px 7px; border-radius:3px; white-space:nowrap; letter-spacing:0.05em;">CURRENT</span>
+          <span style="color:#666; font-size:12px;">this message</span>
+        </div>
+        <div style="color:#3a6a8a;">]</div>
+      </div>
+      <div style="margin-top:10px; font-size:13px; color:#444; font-style:italic; font-family:var(--mono);">GitHub re-read on every call — context is never stale.</div>
+    </div>
+
+    <!-- RIGHT: State storage -->
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#444; margin-bottom:0;">State storage</div>
+
+      <div style="background:#0a0a14; border:1px solid #2a1a3a; border-radius:10px; padding:16px 18px;">
+        <div style="font-size:15px; font-weight:700; color:#a070d0; margin-bottom:8px;">Conversation history</div>
+        <div style="font-size:13px; color:#555; font-family:var(--mono); margin-bottom:10px; line-height:1.8;">
+          <div>key: <span style="color:#7a6090;">thread_ts</span> <span style="color:#333;">(Slack thread ID)</span></div>
+          <div>value: <span style="color:#7a6090;">Message[]</span> <span style="color:#333;">(role + content)</span></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1; background:#111; border:1px solid #222; border-radius:6px; padding:8px 10px; font-size:12px;">
+            <div style="color:#555; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:3px;">Dev</div>
+            <div style="color:#888;">in-memory Map + disk JSON</div>
+          </div>
+          <div style="flex:1; background:#0a180e; border:1px solid #1a3a23; border-radius:6px; padding:8px 10px; font-size:12px;">
+            <div style="color:#2a6a3a; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:3px;">Prod (planned)</div>
+            <div style="color:#4ade80;">Redis</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:#0a0a14; border:1px solid #2a1a3a; border-radius:10px; padding:16px 18px;">
+        <div style="font-size:15px; font-weight:700; color:#8060a0; margin-bottom:8px;">Confirmed agents</div>
+        <div style="font-size:13px; color:#555; font-family:var(--mono); margin-bottom:10px; line-height:1.8;">
+          <div>key: <span style="color:#7a6090;">thread_ts</span></div>
+          <div>value: <span style="color:#7a6090;">"pm" | "concierge" | …</span></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1; background:#111; border:1px solid #222; border-radius:6px; padding:8px 10px; font-size:12px;">
+            <div style="color:#555; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:3px;">Dev</div>
+            <div style="color:#888;">.confirmed-agents.json</div>
+          </div>
+          <div style="flex:1; background:#0a180e; border:1px solid #1a3a23; border-radius:6px; padding:8px 10px; font-size:12px;">
+            <div style="color:#2a6a3a; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:3px;">Prod (planned)</div>
+            <div style="color:#4ade80;">Redis</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:#080808; border:1px solid #1a1a1a; border-radius:10px; padding:16px 18px;">
+        <div style="font-size:15px; font-weight:700; color:#555; margin-bottom:6px;">Phase &amp; spec state</div>
+        <div style="font-size:13px; color:#444; line-height:1.6;">Derived from GitHub branch names and merged files — no separate store needed. Any agent re-run on the same GitHub state produces the same result.</div>
+      </div>
+    </div>
+
+  </div>
+  <aside class="notes">The persona is baked into the agent's system prompt at code level. The GitHub context (vision, architecture, current draft) is loaded fresh on EVERY call via Octokit — the agent never works from a stale copy. The conversation history is the messages array — this is what makes it feel like a real conversation rather than a one-shot query. Confirmed agent binding (which agent owns this thread) survives bot restarts via disk JSON in dev, Redis in prod.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     7 — PIPELINE
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Feature pipeline</div>
+  <h2 class="tight">Every feature follows the same path</h2>
+  <div class="pipeline">
+    <div class="phase live">
+      <div class="ph-num">Phase 1</div>
+      <div class="ph-name">Product Spec</div>
+      <div class="ph-agent">pm agent</div>
+      <div class="ph-badge live-badge">Live</div>
+    </div>
+    <div class="phase-arrow">→</div>
+    <div class="phase">
+      <div class="ph-num">Phase 2</div>
+      <div class="ph-name">Design Spec</div>
+      <div class="ph-agent">design agent</div>
+      <div class="ph-badge planned-badge">Planned</div>
+    </div>
+    <div class="phase-arrow">→</div>
+    <div class="phase">
+      <div class="ph-num">Phase 3</div>
+      <div class="ph-name">Eng Spec</div>
+      <div class="ph-agent">architect agent</div>
+      <div class="ph-badge planned-badge">Planned</div>
+    </div>
+    <div class="phase-arrow">→</div>
+    <div class="phase">
+      <div class="ph-num">Phase 4</div>
+      <div class="ph-name">Build</div>
+      <div class="ph-agent">backend · frontend</div>
+      <div class="ph-badge planned-badge">Planned</div>
+    </div>
+    <div class="phase-arrow">→</div>
+    <div class="phase">
+      <div class="ph-num">Phase 5</div>
+      <div class="ph-name">QA</div>
+      <div class="ph-agent">qa agent</div>
+      <div class="ph-badge planned-badge">Planned</div>
+    </div>
+    <div class="phase-arrow">→</div>
+    <div class="phase">
+      <div class="ph-num">Phase 6</div>
+      <div class="ph-name">Deploy</div>
+      <div class="ph-agent">agentic-cicd</div>
+      <div class="ph-badge planned-badge">Planned</div>
+    </div>
+  </div>
+  <div class="pipeline-note">Each phase: a Slack conversation → a spec file in GitHub → <strong>no phase starts until the previous is explicitly approved by a human.</strong></div>
+  <aside class="notes">No auto-advancing. Human always decides to move forward. AI drafts and asks — never pushes.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     7b — SPEC AUDIT GATE
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Key mechanism</div>
+  <h2 class="tight">Every draft runs through an audit gate</h2>
+  <div class="audit-grid">
+    <div class="audit-card ok">
+      <div class="audit-label">OK</div>
+      <div class="audit-result">Draft saved</div>
+      <p>No conflicts, no gaps. Committed to the feature branch.</p>
+    </div>
+    <div class="audit-card conflict">
+      <div class="audit-label">Conflict</div>
+      <div class="audit-result">Save blocked</div>
+      <p>Contradicts product vision or architecture. Human must fix upstream — agent re-reads GitHub to verify.</p>
+    </div>
+    <div class="audit-card gap">
+      <div class="audit-label">Gap</div>
+      <div class="audit-result">Saved + flagged</div>
+      <p>Unresolved question. Saved as-is, required decision surfaced before approval.</p>
+    </div>
+  </div>
+  <p class="dim">Runs automatically after every agent response. The pattern all future agents inherit.</p>
+  <aside class="notes">Conflict is a hard block — the agent won't proceed until GitHub confirms the upstream doc was actually updated. It doesn't take the human's word for it.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     8 — LIVE TODAY
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Live today</div>
+  <h2 class="tight">Two agents — Phase 1 complete</h2>
+  <div class="live-grid">
+    <div class="live-agent">
+      <div class="agent-label">Entry point · always available</div>
+      <h3>Concierge</h3>
+      <ul>
+        <li><span class="li-dot">→</span>Front door for everyone — PM, engineer, designer, exec</li>
+        <li><span class="li-dot">→</span>Reads live feature state from GitHub on every message</li>
+        <li><span class="li-dot">→</span>Role-aware — calibrates to who's asking</li>
+        <li><span class="li-dot">→</span>Always plain English</li>
+      </ul>
+    </div>
+    <div class="live-agent">
+      <div class="agent-label">Phase 1 · product spec</div>
+      <h3>PM agent</h3>
+      <ul>
+        <li><span class="li-dot">→</span>Shapes feature ideas into product specs via conversation</li>
+        <li><span class="li-dot">→</span>Auto-saves draft to GitHub after every response</li>
+        <li><span class="li-dot">→</span>Hard stop on vision/architecture conflicts</li>
+        <li><span class="li-dot">→</span>Re-reads GitHub to verify fixes — never trusts verbal confirmation</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Both live and in daily use. The concierge lives in the main channel. PM agent drives spec conversations from first message to approval.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     9 — PRINCIPLES
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Design principles</div>
+  <h2 class="tight">What makes this different</h2>
+  <div class="principles">
+    <div class="principle">
+      <div class="p-num">01</div>
+      <div class="p-body">
+        <h3>Humans approve every gate</h3>
+        <p>AI drafts, surfaces, and asks — the human always decides to advance.</p>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="p-num">02</div>
+      <div class="p-body">
+        <h3>GitHub is the only source of truth</h3>
+        <p>All specs and phase state live in GitHub. Agents read from the source on every call — never from memory.</p>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="p-num">03</div>
+      <div class="p-body">
+        <h3>Zero hardcoding — any team, any repo</h3>
+        <p>New team onboards by changing <code>.env</code> only. No code changes required.</p>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">These are enforced in code — CLAUDE.md won't let a change through that violates them.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     10 — CLOSE
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">The vision</div>
+  <div class="statement" style="font-size:52px; max-width:900px; line-height:1.15;">An expert at every phase.<br>From first idea to <span class="accent">shipped code.</span></div>
+  <div style="margin-top:48px; font-size:22px; color:#444; line-height:1.6;">Phase 1 live. 8 agents in build. The pattern is set.</div>
+  <aside class="notes">The test suite is the hard gate before Phase 2 ships. Every behavior that exists today must be tested — that's done before the design agent starts. The pattern established in Phase 1 (conflict detection, audit gate, GitHub as truth) is the pattern every future agent inherits.</aside>
+</section>
+
+
+<!-- ════════════════════════════════════════
+     APPENDIX DIVIDER
+════════════════════════════════════════ -->
+<section class="appendix-divider">
+  <div class="appendix-tag">Appendix</div>
+  <h2 style="color:#333; font-size:40px; text-align:center;">Technical reference</h2>
+  <p style="color:#333; text-align:center; margin-top:12px;">Slides for reference — not part of the main talk</p>
+</section>
+
+<!-- ════════════════════════════════════════
+     A1 — TECH STACK
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow appendix">Appendix A1</div>
+  <h2 class="tight" style="font-size:38px;">Full tech stack</h2>
+  <table class="a-table">
+    <thead><tr><th>Component</th><th>Technology</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Spec shaping AI</td><td>claude-sonnet-4-6</td><td>Best reasoning for complex multi-turn spec conversations</td></tr>
+      <tr><td>Classification + filtering + audit</td><td>claude-haiku-4-5</td><td>Fast and cheap — doesn't need Sonnet's reasoning depth</td></tr>
+      <tr><td>Runtime</td><td>Node.js 20+ · TypeScript</td><td>Strong typing, async-native, large ecosystem</td></tr>
+      <tr><td>Slack integration</td><td>@slack/bolt v4</td><td>Official SDK · Socket Mode = no public URL needed</td></tr>
+      <tr><td>GitHub integration</td><td>@octokit/rest v21</td><td>Official GitHub REST SDK · full API coverage</td></tr>
+      <tr><td>AI SDK</td><td>@anthropic-ai/sdk v0.39</td><td>Official Anthropic SDK · streaming + tool use</td></tr>
+      <tr><td>Phase state</td><td>GitHub branches + files</td><td>Version-controlled, auditable, no extra database</td></tr>
+      <tr><td>Conversation history</td><td>In-memory + disk (dev) · Redis (prod)</td><td>Fast for dev · Redis for production reliability</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════
+     A2 — DATA FLOW DETAIL
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow appendix">Appendix A2</div>
+  <h2 class="tight" style="font-size:38px;">Data flow — full tech labels</h2>
+  <div class="df-nodes">
+    <div class="df-node hl"><div class="dn-tech">@slack/bolt</div><div class="dn-name">Socket Mode</div><div class="dn-detail">WebSocket<br>inbound event</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">Haiku</div><div class="dn-name">Intent classifier</div><div class="dn-detail">agent-router.ts<br>which agent?</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">@octokit/rest</div><div class="dn-name">Context loader</div><div class="dn-detail">reads vision,<br>arch, draft</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">Haiku</div><div class="dn-name">Relevance filter</div><div class="dn-detail">extracts relevant<br>context only</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">Sonnet</div><div class="dn-name">Agent</div><div class="dn-detail">agents/pm.ts<br>response + draft</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">Haiku</div><div class="dn-name">Spec auditor</div><div class="dn-detail">spec-auditor.ts<br>OK/conflict/gap</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">@octokit/rest</div><div class="dn-name">GitHub write</div><div class="dn-detail">github-client.ts<br>commit to branch</div></div>
+    <div class="df-arrow">→</div>
+    <div class="df-node hl"><div class="dn-tech">@slack/bolt</div><div class="dn-name">Response out</div><div class="dn-detail">plain English<br>to channel</div></div>
+  </div>
+  <p style="margin-top:20px; font-size:14px; color:#444; font-family:var(--mono);">Haiku on every cheap task. Sonnet only where deep reasoning is required.</p>
+</section>
+
+<!-- ════════════════════════════════════════
+     A3 — PHASE STATE DETECTION
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow appendix">Appendix A3</div>
+  <h2 class="tight" style="font-size:38px;">Phase state — GitHub is the source</h2>
+  <table class="phase-table">
+    <thead><tr><th>GitHub state</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td>Branch spec/&lt;feature&gt;-product exists, file not on main</td><td>Product spec in progress</td></tr>
+      <tr><td>&lt;feature&gt;.product.md merged to main</td><td>Product spec approved — awaiting design</td></tr>
+      <tr><td>Branch spec/&lt;feature&gt;-design exists</td><td>Design spec in progress</td></tr>
+      <tr><td>&lt;feature&gt;.design.md merged to main</td><td>Design approved — awaiting engineering</td></tr>
+      <tr><td>&lt;feature&gt;.engineering.md merged to main</td><td>Engineering approved — build phase</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:20px; font-size:15px; color:#444;">No external database. Any agent re-run on the same GitHub state produces the same result.</p>
+</section>
+
+<!-- ════════════════════════════════════════
+     A4 — WORKSPACE CONFIG
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow appendix">Appendix A4</div>
+  <h2 class="tight" style="font-size:38px;">WorkspaceConfig — zero hardcoding</h2>
+  <p style="margin-bottom:16px; font-size:18px; color:#666;">Every product-specific coordinate lives in one place, loaded from <code>.env</code> at startup.</p>
+  <table class="a-table">
+    <thead><tr><th>Config key</th><th>Example value</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td>PRODUCT_NAME</td><td>YourProductName</td><td>Concierge, pm agent</td></tr>
+      <tr><td>GITHUB_OWNER</td><td>your-org</td><td>All GitHub operations</td></tr>
+      <tr><td>GITHUB_REPO</td><td>your-repo</td><td>All GitHub operations</td></tr>
+      <tr><td>SLACK_MAIN_CHANNEL</td><td>general</td><td>Concierge routing</td></tr>
+      <tr><td>PATH_PRODUCT_VISION</td><td>specs/product/PRODUCT_VISION.md</td><td>Context loader</td></tr>
+      <tr><td>PATH_SYSTEM_ARCHITECTURE</td><td>specs/architecture/system-architecture.md</td><td>Context loader, spec auditor</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:16px; font-size:15px; color:#444;">New team onboards by changing <code>.env</code> only. No TypeScript changes required.</p>
+</section>
+
+<!-- ════════════════════════════════════════
+     A5 — CI/CD PIPELINE
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow appendix">Appendix A5</div>
+  <h2 class="tight" style="font-size:38px;">Phase 6 — agentic-cicd deploy pipeline</h2>
+  <div class="cicd-flow">
+    <div class="cicd-step">
+      <div class="cicd-icon">⌥</div>
+      <div class="cicd-label">PR opened</div>
+      <div class="cicd-sub">GitHub Actions triggers</div>
+    </div>
+    <div class="cicd-arrow">→</div>
+    <div class="cicd-step">
+      <div class="cicd-icon">▲</div>
+      <div class="cicd-label">Preview deploy</div>
+      <div class="cicd-sub">Vercel — unique URL per PR</div>
+    </div>
+    <div class="cicd-arrow">→</div>
+    <div class="cicd-step">
+      <div class="cicd-icon">✓</div>
+      <div class="cicd-label">QA sign-off</div>
+      <div class="cicd-sub">qa agent + human approval</div>
+    </div>
+    <div class="cicd-arrow">→</div>
+    <div class="cicd-step">
+      <div class="cicd-icon">⊕</div>
+      <div class="cicd-label">Merge to main</div>
+      <div class="cicd-sub">Gate: all checks green</div>
+    </div>
+    <div class="cicd-arrow">→</div>
+    <div class="cicd-step cicd-prod">
+      <div class="cicd-icon">⬡</div>
+      <div class="cicd-label">Production</div>
+      <div class="cicd-sub">Vercel global CDN</div>
+    </div>
+  </div>
+  <div class="cicd-checks">
+    <div class="cicd-check-label">Post-deploy checks</div>
+    <div class="cicd-checks-row">
+      <div class="cicd-check">🔬 <strong>Lighthouse CI</strong> — performance budget</div>
+      <div class="cicd-check">🎨 <strong>Percy</strong> — visual regression</div>
+      <div class="cicd-check">🟢 <strong>BetterStack</strong> — uptime heartbeat</div>
+    </div>
+  </div>
+  <p class="dim">Reusable GitHub Actions workflows in <code>agentic-cicd</code> — any product repo calls them. Planned for Phase 6.</p>
+  <aside class="notes">agentic-cicd is a separate repo with reusable GitHub Actions workflows: lint → typecheck → test → build → Vercel preview/prod → post-deploy checks. The product repo calls these workflows — it doesn't own them.</aside>
+</section>
+
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    transition: 'fade',
+    transitionSpeed: 'fast',
+    controls: false,
+    progress: true,
+    slideNumber: 'c/t',
+    keyboard: true,
+    center: false,
+    width: 1440,
+    height: 900,
+    margin: 0.04,
+    minScale: 0.2,
+    maxScale: 2.0,
+  });
+</script>
+</body>
+</html>
