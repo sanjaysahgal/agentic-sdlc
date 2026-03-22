@@ -76,19 +76,45 @@ The architect is a principal engineer with deep expertise in system design, API 
 
 ### Step 3 — Orchestrator agent
 
-A dedicated agent that owns proactive phase coordination across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows.
+A dedicated agent that owns proactive phase coordination AND continuous spec integrity monitoring across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
 
-**Responsibilities:**
+**Routing responsibilities:**
 - Owns the canonical routing table: which agent handles which phase — single source of truth, replaces hardcoded routing in the message handler
 - Watches feature phase state (via GitHub branch + file presence) and detects when a handoff is ready
-- Proactively notifies the right person in the right channel when a spec is approved and the next phase is ready
-- Detects stalls (spec approved but no activity for N days) and surfaces them to the relevant human
-- At every phase handoff, scans the outgoing spec for unresolved `[blocking: yes]` questions owned by upstream agents — blocks the handoff until resolved
+- At every phase handoff, scans the outgoing spec for unresolved `[blocking: yes]` questions — blocks the handoff until resolved
 - Replaces GitHub Actions as the handoff trigger mechanism — no separate GitHub Actions step needed
+
+**Proactive monitoring — runs on schedule and on GitHub push events:**
+- Re-validates all approved feature specs whenever an authoritative doc (`PRODUCT_VISION.md`, `DESIGN_SYSTEM.md`, `SYSTEM_ARCHITECTURE.md`) is updated — catches conflicts introduced by doc changes, not just new specs
+- Detects cross-feature conflicts: flags when a new spec contradicts a previously approved spec in the same domain (e.g. two features that define conflicting data models or contradictory user flows)
+- Detects stalls: spec approved but no activity in the next phase for N days — configurable per workspace
+- Never makes decisions — surfaces them. Every alert has one specific question for one named human.
+
+**Alert format — specific, actionable, zero ambiguity:**
+Every alert the Orchestrator posts follows this structure:
+- **Who must resolve it:** the specific role (`Product Manager`, `UX Designer`, `Architect`) and the Slack user mention (from WorkspaceConfig role mapping)
+- **What the conflict or issue is:** one sentence, precise
+- **Two concrete options:** what the human can do to resolve it
+- **Direct links:** the affected spec(s) and the relevant authoritative doc
+
+Example:
+> @sanjay — The `PRODUCT_VISION.md` was updated and now conflicts with the approved onboarding product spec.
+> **Decision needed: Product Manager**
+> The vision now says SSO-only auth, but the onboarding spec assumes email/password signup.
+> Options: (1) revise the onboarding spec (requires re-approval) or (2) roll back the vision change.
+> Spec: [link] · Vision: [link]
+
+**Role mapping — new WorkspaceConfig fields:**
+```
+SLACK_PM_USER         # Slack user ID for the Product Manager
+SLACK_DESIGNER_USER   # Slack user ID for the UX Designer
+SLACK_ARCHITECT_USER  # Slack user ID for the Architect
+```
+The `[type: product|design|engineering]` tag on every open question is how the Orchestrator knows which role to alert. These tags already exist on all open questions — the Orchestrator reads them.
 
 **Cross-phase escalation — two layers working together:**
 - **Reactive (Steps 1 + 2c):** Agent detects a blocking upstream question mid-conversation and pulls the right agent into the thread immediately
-- **Proactive (this step):** At every handoff, scans specs for unresolved blocking questions that slipped through the reactive layer and blocks the phase advance until resolved
+- **Proactive (this step):** Orchestrator continuously monitors the full spec chain and alerts the named human the moment a conflict or stall is detected — not just at phase handoff time
 
 ---
 
