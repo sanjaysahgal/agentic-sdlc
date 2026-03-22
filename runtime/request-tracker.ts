@@ -4,7 +4,7 @@
 
 let activeRequests = 0
 const DRAIN_POLL_MS = 200
-const DRAIN_TIMEOUT_MS = 120_000 // 2 minutes max wait
+const DRAIN_TIMEOUT_MS = 360_000 // 6 minutes max wait — must exceed Anthropic API timeout (5 min)
 
 export function incrementActiveRequests(): void {
   activeRequests++

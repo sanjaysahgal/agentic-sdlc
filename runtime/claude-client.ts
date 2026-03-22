@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { Message } from "./conversation-store"
 
-// 90 second timeout — long enough for complex spec responses, short enough
-// to surface a clean error in Slack rather than hanging indefinitely.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 90_000 })
+// 5 minute timeout — design and PM agents generate full spec drafts that can take
+// several minutes. 90s was too short and caused spurious timeouts on complex responses.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000 })
 
 // Cap history at 40 messages (20 exchanges) to prevent token explosion on long threads.
 // The system prompt + context already carries the full spec state — the agent
