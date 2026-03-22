@@ -36,10 +36,14 @@ export async function withThinking(params: {
   try {
     await run(update)
   } catch (err: unknown) {
-    const isOverloaded = err instanceof Error && err.message.includes("overloaded")
+    const errMsg = err instanceof Error ? err.message : ""
+    const isOverloaded = errMsg.includes("overloaded")
+    const isImageError = errMsg.includes("Could not process image") || errMsg.includes("image.source")
     const msg = isOverloaded
       ? "The AI is overloaded right now. Please try again in a moment."
-      : "Something went wrong. Please try again."
+      : isImageError
+        ? "I couldn't process the attached image. Try sending it as a PNG screenshot instead of directly from the camera roll."
+        : "Something went wrong. Please try again."
     console.error("[withThinking] agent error:", err)
     await update(msg).catch(() => {})
     throw err

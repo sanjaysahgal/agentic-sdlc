@@ -25,18 +25,30 @@ app.event("channel_created", async ({ event, client }) => {
 // Anthropic vision only supports these formats.
 const SUPPORTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 
+// Anthropic's per-image size limit.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024 // 5MB
+
 // Downloads a Slack-hosted file using the bot token (required for private URLs).
+// Returns null (and logs) if the format is unsupported or the file exceeds Anthropic's limit.
 async function fetchSlackImage(url: string, mimetype: string): Promise<UserImage | null> {
   if (!SUPPORTED_IMAGE_TYPES.has(mimetype)) return null
   try {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.warn(`[fetchSlackImage] download failed: ${res.status} ${url}`)
+      return null
+    }
     const buffer = await res.arrayBuffer()
+    if (buffer.byteLength > MAX_IMAGE_BYTES) {
+      console.warn(`[fetchSlackImage] image too large (${buffer.byteLength} bytes, limit 5MB): ${url}`)
+      return null
+    }
     // Use the Slack-declared mimetype — it's already validated above
     return { data: Buffer.from(buffer).toString("base64"), mediaType: mimetype }
-  } catch {
+  } catch (err) {
+    console.warn(`[fetchSlackImage] error fetching image:`, err)
     return null
   }
 }
