@@ -1,5 +1,5 @@
 import { getInProgressFeatures, saveAgentFeedback } from "../../../runtime/github-client"
-import { runAgent } from "../../../runtime/claude-client"
+import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage } from "../../../runtime/conversation-store"
 import { buildConciergeSystemPrompt } from "../../../agents/concierge"
 import { loadAgentContextForQuery } from "../../../runtime/context-loader"
@@ -13,9 +13,10 @@ export async function handleGeneralChannelMessage(params: {
   channelId: string
   threadTs: string
   userMessage: string
+  userImages?: UserImage[]
   client: any
 }): Promise<void> {
-  const { channelId, threadTs, userMessage, client } = params
+  const { channelId, threadTs, userMessage, userImages, client } = params
 
   await withThinking({ client, channelId, threadTs, agent: "Concierge", run: async (update) => {
     const [features, context, history] = await Promise.all([
@@ -25,7 +26,7 @@ export async function handleGeneralChannelMessage(params: {
     ])
 
     const systemPrompt = buildConciergeSystemPrompt(features, context)
-    const response = await runAgent({ systemPrompt, history, userMessage })
+    const response = await runAgent({ systemPrompt, history, userMessage, userImages })
 
     appendMessage(threadTs, { role: "user", content: userMessage })
     appendMessage(threadTs, { role: "assistant", content: response })

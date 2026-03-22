@@ -1,5 +1,5 @@
 import { loadAgentContext, loadDesignAgentContext } from "../../../runtime/context-loader"
-import { runAgent } from "../../../runtime/claude-client"
+import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent } from "../../../agents/design"
@@ -34,12 +34,13 @@ async function handleDesignPhase(params: {
   channelName: string
   featureName: string
   userMessage: string
+  userImages?: UserImage[]
   client: any
   update: (text: string) => Promise<void>
   routingNote?: string
 }): Promise<void> {
-  const { channelName, channelId, threadTs, featureName, userMessage, client, update, routingNote } = params
-  await runDesignAgent({ channelName, channelId, threadTs, featureName, userMessage, client, update, routingNote })
+  const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote } = params
+  await runDesignAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote })
 }
 
 export type ChannelState = {
@@ -92,18 +93,19 @@ export async function handleFeatureChannelMessage(params: {
   channelName: string
   threadTs: string
   userMessage: string
+  userImages?: UserImage[]
   channelId: string
   client: any
   channelState: ChannelState
 }): Promise<void> {
-  const { channelName, threadTs, userMessage, channelId, client, channelState } = params
+  const { channelName, threadTs, userMessage, userImages, channelId, client, channelState } = params
 
   const confirmedAgent = getConfirmedAgent(threadTs)
 
   // Confirmed agent — check phase first, then run
   if (confirmedAgent === "ux-design") {
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, client, update })
+      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
     }})
     return
   }
@@ -114,12 +116,12 @@ export async function handleFeatureChannelMessage(params: {
     if (currentPhase === "product-spec-approved-awaiting-design") {
       setConfirmedAgent(threadTs, "ux-design")
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-        await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, client, update })
+        await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       }})
       return
     }
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
-      await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update })
+      await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update })
     }})
     return
   }
@@ -139,7 +141,7 @@ export async function handleFeatureChannelMessage(params: {
   await withThinking({ client, channelId, threadTs, agent: thinkingLabel, run: async (update) => {
     if (currentPhase === "product-spec-approved-awaiting-design") {
       setConfirmedAgent(threadTs, "ux-design")
-      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, client, update })
+      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
     }
 
@@ -155,7 +157,7 @@ export async function handleFeatureChannelMessage(params: {
     const routingNote = await buildRoutingNote(getFeatureName(channelName), suggestedAgent)
 
     if (suggestedAgent === "pm") {
-      await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update, routingNote })
+      await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update, routingNote })
       return
     }
 
@@ -168,13 +170,14 @@ async function runPmAgent(params: {
   channelId: string
   threadTs: string
   userMessage: string
+  userImages?: UserImage[]
   client: any
   update: (text: string) => Promise<void>
   routingNote?: string
   readOnly?: boolean
   approvedSpecContext?: boolean
 }): Promise<void> {
-  const { channelName, channelId, threadTs, userMessage, client, update, routingNote, readOnly, approvedSpecContext } = params
+  const { channelName, channelId, threadTs, userMessage, userImages, client, update, routingNote, readOnly, approvedSpecContext } = params
   const featureName = getFeatureName(channelName)
 
   await update("_Product Manager is reading the spec..._")
@@ -206,7 +209,7 @@ async function runPmAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_Product Manager is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage })
+  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -295,12 +298,13 @@ async function runDesignAgent(params: {
   threadTs: string
   featureName: string
   userMessage: string
+  userImages?: UserImage[]
   client: any
   update: (text: string) => Promise<void>
   routingNote?: string
   readOnly?: boolean
 }): Promise<void> {
-  const { channelName, channelId, threadTs, featureName, userMessage, client, update, routingNote, readOnly } = params
+  const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly } = params
 
   await update("_UX Designer is reading the spec and design context..._")
   const context = await loadDesignAgentContext(featureName)
@@ -308,7 +312,7 @@ async function runDesignAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_UX Designer is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage })
+  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
