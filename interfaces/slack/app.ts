@@ -40,9 +40,15 @@ async function fetchSlackImage(url: string, mimetype: string): Promise<UserImage
       console.warn(`[fetchSlackImage] download failed: ${res.status} ${url}`)
       return null
     }
+    const responseMimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim()
     const buffer = await res.arrayBuffer()
+    // If Slack returns HTML, the bot token is missing the files:read scope
+    if (responseMimeType === "text/html") {
+      console.error(`[fetchSlackImage] got HTML — bot token missing files:read scope`)
+      throw new Error("MISSING_FILES_READ_SCOPE")
+    }
     if (buffer.byteLength > MAX_IMAGE_BYTES) {
-      console.warn(`[fetchSlackImage] image too large (${buffer.byteLength} bytes, limit 5MB): ${url}`)
+      console.warn(`[fetchSlackImage] image too large (${buffer.byteLength} bytes, limit 5MB)`)
       return null
     }
     // Use the Slack-declared mimetype — it's already validated above
@@ -72,11 +78,24 @@ app.message(async ({ message, client }) => {
   const rawFiles = msg.files ?? []
   if (!text && rawFiles.length === 0) return
 
-  // Download supported images for Claude vision. Unsupported formats (e.g. HEIC from iPhone)
-  // are skipped — if no supported images remain and there's no text, tell the user.
-  const userImages = (
-    await Promise.all(rawFiles.map((f) => fetchSlackImage(f.url_private, f.mimetype)))
-  ).filter(Boolean) as UserImage[]
+  // Download supported images for Claude vision. Detect scope errors early.
+  let userImages: UserImage[] = []
+  try {
+    userImages = (
+      await Promise.all(rawFiles.map((f) => fetchSlackImage(f.url_private, f.mimetype)))
+    ).filter(Boolean) as UserImage[]
+  } catch (err) {
+    if (err instanceof Error && err.message === "MISSING_FILES_READ_SCOPE") {
+      const threadTs = msg.thread_ts ?? msg.ts
+      await client.chat.postMessage({
+        channel: msg.channel,
+        thread_ts: threadTs,
+        text: ":warning: *Image sharing requires a Slack permission update.*\n\nThe bot needs the `files:read` scope to download images. To fix this:\n1. Go to *api.slack.com/apps* → your app → *OAuth & Permissions*\n2. Add `files:read` under *Bot Token Scopes*\n3. Click *Reinstall to Workspace*\n\nOnce done, image sharing will work.",
+      })
+      return
+    }
+    throw err
+  }
 
   const hasUnsupportedFiles = rawFiles.some((f) => !SUPPORTED_IMAGE_TYPES.has(f.mimetype) && f.mimetype.startsWith("image/"))
   if (!text && userImages.length === 0 && hasUnsupportedFiles) {
@@ -84,7 +103,7 @@ app.message(async ({ message, client }) => {
     await client.chat.postMessage({
       channel: msg.channel,
       thread_ts: threadTs,
-      text: "That image format isn't supported. Please send as JPEG, PNG, GIF, or WebP — screenshots from Mac work great. On iPhone, try taking a screenshot instead of sharing directly from the camera roll.",
+      text: "That image format isn't supported. Please send as JPEG, PNG, GIF, or WebP — screenshots from Mac work great.",
     })
     return
   }
