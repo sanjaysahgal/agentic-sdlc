@@ -17,7 +17,7 @@ app.event("channel_created", async ({ event, client }) => {
 
   await client.chat.postMessage({
     channel: event.channel.id,
-    text: `Hi — I'm the product specialist for *${channelName.replace("feature-", "")}*. Tell me what you're thinking and we'll shape this into a spec together.`,
+    text: `Hi — I'm the AI Product Manager for *${channelName.replace("feature-", "")}*. Tell me what you're thinking and we'll shape this into a spec together.`,
   })
 })
 
