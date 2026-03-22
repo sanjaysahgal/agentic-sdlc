@@ -176,6 +176,8 @@ async function runPmAgent(params: {
 }): Promise<void> {
   const { channelName, channelId, threadTs, userMessage, client, update, routingNote, readOnly, approvedSpecContext } = params
   const featureName = getFeatureName(channelName)
+
+  await update("_Product Manager is reading the spec..._")
   const context = await loadAgentContext(featureName)
 
   // If the message is asking about the product as a whole (vision, architecture, principles),
@@ -184,6 +186,7 @@ async function runPmAgent(params: {
     const scope = await classifyMessageScope(userMessage)
     if (scope === "product-context") {
       const prefix = routingNote ? `${routingNote}\n\n` : ""
+      await update("_Product Manager is writing..._")
       await update(
         `${prefix}_Answering from the ${loadWorkspaceConfig().productName} product context:_\n\n` +
         await runAgent({
@@ -201,6 +204,7 @@ async function runPmAgent(params: {
   const systemPrompt = buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext)
   const history = getHistory(threadTs)
 
+  await update("_Product Manager is writing..._")
   const response = await runAgent({ systemPrompt, history, userMessage })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
@@ -217,6 +221,7 @@ async function runPmAgent(params: {
 
   if (hasDraftSpec(response)) {
     const draftContent = extractDraftSpec(response)
+    await update("_Auditing draft against product vision and architecture..._")
     const audit = await auditSpecDraft({
       draft: draftContent,
       productVision: context.productVision,
@@ -249,6 +254,7 @@ async function runPmAgent(params: {
       return
     }
 
+    await update("_Saving draft to GitHub..._")
     await saveDraftSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
@@ -294,10 +300,13 @@ async function runDesignAgent(params: {
   readOnly?: boolean
 }): Promise<void> {
   const { channelName, channelId, threadTs, featureName, userMessage, client, update, routingNote, readOnly } = params
+
+  await update("_UX Designer is reading the spec and design context..._")
   const context = await loadDesignAgentContext(featureName)
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
   const history = getHistory(threadTs)
 
+  await update("_UX Designer is writing..._")
   const response = await runAgent({ systemPrompt, history, userMessage })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
@@ -313,6 +322,7 @@ async function runDesignAgent(params: {
 
   if (hasDraftDesignSpec(response)) {
     const draftContent = extractDraftDesignSpec(response)
+    await update("_Auditing draft against product vision and architecture..._")
     const audit = await auditSpecDraft({
       draft: draftContent,
       productVision: context.productVision,
@@ -345,6 +355,7 @@ async function runDesignAgent(params: {
       return
     }
 
+    await update("_Saving draft to GitHub..._")
     await saveDraftDesignSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").trim()
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
