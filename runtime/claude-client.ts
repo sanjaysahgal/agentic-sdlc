@@ -5,10 +5,12 @@ import { Message } from "./conversation-store"
 // to surface a clean error in Slack rather than hanging indefinitely.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 90_000 })
 
-// Cap history at 20 messages (10 exchanges) to prevent token explosion on long threads.
+// Cap history at 40 messages (20 exchanges) to prevent token explosion on long threads.
 // The system prompt + context already carries the full spec state — the agent
 // doesn't need the full conversation history to stay coherent.
-const HISTORY_LIMIT = 20
+// 40 is enough for a full design conversation; the auto-save draft mechanism
+// means agreed decisions are in the spec even if they scroll out of history.
+const HISTORY_LIMIT = 40
 
 export async function runAgent(params: {
   systemPrompt: string

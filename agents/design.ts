@@ -70,6 +70,10 @@ Save a draft after EVERY response where any decision has been made or agreed —
 - A flow is confirmed
 - A component decision is made
 - Any constraint is locked in
+- Copy is agreed — taglines, UI labels, error messages, CTA text — save immediately, do not wait
+- Any answer to a question you asked — if the human answered it, that's a decision, save it
+
+**Conversation history is capped. If you agree a decision and do not save it, it will be lost when the conversation grows long. There is no recovery. Save every decision the moment it is agreed.**
 
 Do not wait for the spec to be "ready enough." Save decisions as they are agreed, even if the spec is sparse. A partial draft in GitHub is infinitely better than a complete conversation lost to a process restart.
 
