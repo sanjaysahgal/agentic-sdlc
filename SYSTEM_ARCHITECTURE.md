@@ -10,13 +10,14 @@ Human Interface Layer       Agent Runtime Layer         State Layer
 Slack (primary)             Claude API                  GitHub
   #all-health360              claude-sonnet-4-6           specs/ (markdown)
   #feature-*                  claude-haiku-4-5            work-items/ (issues)
-  Button interactions         (intent classification)     branches (phase state)
-                                                          PRs (approval gates)
+                              (classification +           branches (phase state)
+                               relevance filtering)       PRs (approval gates)
 GitHub Actions (future)     GitHub API (Octokit)
-Web portal (future)           Read specs
-                              Save drafts
-                              Open review requests
-                              List in-progress features
+Web portal (future)           Read specs              WorkspaceConfig
+                              Save drafts               (env-driven, zero hardcoding)
+                              Open review requests      PRODUCT_NAME, GITHUB_OWNER
+                              List in-progress features GITHUB_REPO, SLACK_MAIN_CHANNEL
+                                                        PATH_* overrides
 ```
 
 ## The agent workflow
@@ -35,10 +36,10 @@ PHASE 1: Product Spec
   Output: <feature>.product.md
   Gate: PM explicit approval → review request opened
 
-PHASE 2: Design Spec  [planned]
+PHASE 2: Design Spec
   Channel: #feature-<name>
   Human: UX Designer
-  Agent: design agent
+  Agent: UX Design agent (claude-sonnet-4-6)
   Output: <feature>.design.md
   Gate: Designer explicit approval → review request opened
 
@@ -74,16 +75,36 @@ The system determines what phase a feature is in by reading GitHub — no separa
 ## Key components
 
 ### Concierge agent (`agents/concierge.ts`)
-The front door. Lives in the main Slack channel. Reads current feature state from GitHub on every message. Responds in plain English based on the person's role. Knows the full agent roster and what phase each role belongs to. Never uses technical jargon (no "PR", "branch", "commit").
+The front door. Lives in the main Slack channel. Reads current feature state from GitHub on every message. Loads product vision and system architecture via `loadAgentContextForQuery` — relevance-filtered to the user's question, always from the authoritative repo docs. Knows the full agent roster and what phase each role belongs to. Never uses technical jargon.
+
+### UX Design agent (`agents/design.ts`)
+Shapes the approved product spec into a design spec through conversation with the UX designer. Reads the approved product spec from main plus any existing design draft on every message — always working from the current source of truth. Leads with a concrete structural proposal rather than discovery questions. Enforces flows-before-screens and states-before-components discipline. Hard gate on design principle conflicts — stops and presents two paths (update the principle or change the design direction). Auto-saves drafts after every substantive response. Same conflict + gap detection gates as the pm agent via `spec-auditor.ts`.
+
+Context loading uses `loadDesignAgentContext` which reads both the approved product spec (from main) and the current design draft (from `spec/{feature}-design` branch) in parallel.
 
 ### pm agent (`agents/pm.ts`)
-Shapes feature briefs into product specs through conversation. Asks clarifying questions, pushes back on conflicts with product vision or architecture, surfaces edge cases. Auto-saves a draft to the feature branch after every substantive response. Opens a review request only on explicit approval signal. Reads the current saved draft at the start of every message so it always continues from the latest state — conversation history is supplementary, the draft is the source of truth.
+Shapes feature briefs into product specs through conversation. Auto-saves draft after every substantive response. Two hard enforcement gates:
+1. **Spec audit gate** — every draft runs through `spec-auditor.ts` before saving. Conflicts block the save. Gaps save but surface a required human decision.
+2. **Vision/architecture conflict gate** — if a proposal conflicts with vision or architecture, hard stop. Does not touch the spec until the human updates the upstream doc. Re-reads the doc from GitHub to verify before proceeding — does not take the human's word for it.
+
+Approved spec mode: once a spec is approved, the pm agent continues handling all messages in the feature channel. Revisions require explicit re-approval. Read-only mode available for cases where writes should be suppressed entirely.
+
+### WorkspaceConfig (`runtime/workspace-config.ts`)
+All product-specific coordinates in one place: product name, GitHub owner/repo, Slack main channel, spec file paths. Loaded from environment variables at startup. Zero hardcoded product references anywhere else in the codebase. A new team onboards by changing `.env` only — no code changes required.
 
 ### Intent classifier (`runtime/agent-router.ts`)
-Uses `claude-haiku-4-5` (faster, cheaper) to classify which agent should handle a message and what phase the feature is in. Routes to the right agent. On first message in a thread, surfaces a confirmation UI with Slack buttons. Confirmed agent is persisted to disk so bot restarts don't re-ask.
+Uses `claude-haiku-4-5` to classify message intent. Three classifiers:
+- `classifyIntent` — which agent should handle a new message (pm, architect, etc.)
+- `classifyMessageScope` — product-context question vs feature-specific question (used in feature channels to route product vision questions correctly)
+- `classifyApprovedPhaseIntent` — removed; replaced by pm agent handling all messages in approved-spec mode
 
 ### Context loader (`runtime/context-loader.ts`)
-Loads agent context from GitHub on every message: product vision, feature conventions, system architecture, and the current draft spec for the feature. All context is fresh on every call — no caching.
+Two modes:
+- `loadAgentContext(featureName?)` — full context for spec-shaping agents (pm, architect): product vision, feature conventions, system architecture, current draft. All fresh from GitHub on every call.
+- `loadAgentContextForQuery(query)` — relevance-filtered context for the concierge. Reads the same authoritative docs, uses Haiku to extract only what's relevant to the query. No truncation, no summary files — single source of truth.
+
+### Spec auditor (`runtime/spec-auditor.ts`)
+Runs after every pm agent draft, before saving. Uses Haiku to check the draft against product vision and architecture. Returns `ok`, `conflict` (blocks save, surfaces issue), or `gap` (saves but flags for human decision). Establishes the pattern for all future agents.
 
 ### GitHub client (`runtime/github-client.ts`)
 All GitHub operations: read files (any branch), save draft specs (commit to feature branch without opening review request), open review requests, list in-progress features from branch names.
@@ -103,6 +124,90 @@ In-memory conversation history per Slack thread (keyed by `thread_ts`). Confirme
 
 **Framework-agnostic runtime.** The agent logic (`agents/`, `runtime/`) has no dependency on Slack. `interfaces/slack/` is one delivery mechanism. A GitHub Actions trigger or a web portal could invoke the same runtime without touching the agent logic.
 
+**Single source of truth, no duplication.** Product vision, architecture, and specs live in the target repo. Agents read from them directly. No summary files, no cached copies, no hardcoded excerpts. Relevance filtering (Haiku) is used when only a subset is needed — not truncation.
+
+**Zero hardcoding.** Every product-specific coordinate lives in `WorkspaceConfig`. A new team onboards by setting env vars only.
+
+## Under the hood — how agents actually work
+
+This section explains the implementation in plain terms, for presentations or a refresher.
+
+### An "agent" is a system prompt, not a server
+
+There is no separate process, container, or model running for each agent. An agent in this codebase is:
+
+1. A function in `agents/*.ts` that builds a text string — the **system prompt** — containing the agent's persona, rules, constraints, and all the context it needs (product vision, architecture, current spec, conversation history)
+2. A call to the Claude API that sends that text along with the user's message
+3. A response that comes back as text, which the handler parses for action markers (`DRAFT_SPEC_START`, `INTENT: CREATE_SPEC`, etc.) and acts on
+
+Switching agents means switching which system prompt is built. The PM agent and the UX Design agent use the same Claude API call — they just give Claude different instructions.
+
+### The Claude API is the LLM
+
+"Claude API" means sending an HTTP request to Anthropic's servers asking Claude to generate a response. The flow:
+
+1. The code builds a system prompt + conversation history + the user's latest message
+2. It sends that as a request to `api.anthropic.com`, authenticated with `ANTHROPIC_API_KEY`
+3. Anthropic's servers run it through the Claude model (Sonnet for spec shaping, Haiku for fast classification tasks)
+4. The response text comes back
+
+**The model is always remote — nothing runs locally.** There is no LLM process on the host machine. Every time an agent responds, it is a network call to Anthropic. `runtime/claude-client.ts` is the only place in the codebase that touches the Anthropic SDK directly.
+
+### The "intelligence" lives in three places
+
+1. **The system prompt** — the persona, the rules, the hard gates, the tone. This is what makes the PM agent behave like a senior product leader and the UX Design agent think holistically about the full product experience.
+2. **The conversation history** — passed in with every message so the agent has memory of the current thread. Stored in `runtime/conversation-store.ts`.
+3. **The context loaded from GitHub** — product vision, system architecture, design principles, current draft spec. Read fresh from the authoritative repo on every call. No cached copies.
+
+Nothing is trained or fine-tuned. Every agent is Claude with different instructions and different context injected.
+
+### The hosting model
+
+**What you see in Activity Monitor: one `node` process.**
+
+`npm run dev` runs `tsx watch interfaces/slack/server.ts`. That starts a single Node.js process — the V8 JavaScript runtime — which loads and runs every `.ts` file in the platform: Slack listeners, routing logic, agent prompt builders, Claude API calls, GitHub reads. Everything. One process, one machine.
+
+`tsx` is the TypeScript loader. It strips TypeScript types and hands plain JavaScript to V8. You never compile manually in development — `tsx` does it in memory at startup. In production (Step 12) the code compiles to `.js` first with `tsc`, then runs with `node` directly.
+
+**What calls the process and what it calls:**
+
+```
+                    ┌─────────────────────────────┐
+                    │   node process (your mac)    │
+                    │                              │
+Slack ─────────────>│  Slack listener              │
+(WebSocket, inbound)│       ↓                      │
+                    │  router / agent logic         │
+                    │       ↓          ↓            │
+                    │  Claude API   GitHub API      │
+                    │  (outbound)   (outbound)      │
+                    │       ↓                      │
+Slack <─────────────│  post response               │
+(outbound)          │                              │
+                    └─────────────────────────────┘
+```
+
+**One inbound connection:** Slack pushes messages in via a persistent WebSocket (Socket Mode). When `npm run dev` starts, the Slack Bolt SDK opens an outbound WebSocket to Slack's servers. Slack holds it open and pushes message events down it. Your machine is never reachable from the internet — your process reached out first. This is why Socket Mode requires no public URL.
+
+**Three outbound calls the process makes:**
+- `api.anthropic.com` — Claude API: generate the agent response
+- `api.github.com` — GitHub API: read product vision, architecture docs, specs; write drafts and approved specs
+- `slack.com` — post the response back to the channel
+
+Nothing else calls the process. No browser clients, no HTTP endpoints, no other services. Everything is event-driven off that one WebSocket.
+
+Today that process runs locally (`npm run dev`). Step 12 in the backlog moves it to always-on infrastructure (Railway or Fly.io) — same process, different machine, stays running 24/7.
+
+### Why TypeScript
+
+The codebase is TypeScript (`.ts` files) compiled to JavaScript and run on Node.js.
+
+- **Type safety** — types like `AgentContext`, `FeatureStatus`, and `WorkspaceConfig` catch mistakes at compile time, before they reach real users. `npx tsc --noEmit` (run after every change) checks the whole codebase for type errors in seconds.
+- **Tooling** — VS Code autocomplete, go-to-definition, and safe refactoring are significantly better with TypeScript than plain JavaScript.
+- **No separate build step in development** — `tsx` (the dev runner) compiles and runs TypeScript directly.
+
+TypeScript source compiles to plain JavaScript for production. You never touch the compiled output directly.
+
 ## Technology choices
 
 | Component | Technology | Why |
@@ -113,6 +218,24 @@ In-memory conversation history per Slack thread (keyed by `thread_ts`). Confirme
 | GitHub integration | Octokit REST | Official GitHub SDK; full API coverage |
 | State persistence | GitHub branches + files | Version-controlled, auditable, no extra database |
 | Conversation history | In-memory + disk (dev) / Redis (prod) | Fast for dev; Redis for production reliability |
+
+## Test coverage
+
+The test suite lives in `tests/unit/` and runs with `npx vitest run`. 86 tests across 8 files. All external dependencies (Anthropic API, GitHub API, disk I/O) are mocked — no real API calls are made.
+
+| File | What it tests |
+|---|---|
+| `workspace-config.test.ts` | Env var loading, required var validation, defaults, PATH_* overrides |
+| `pm-agent.test.ts` | `isCreateSpecIntent`, `hasDraftSpec`, `extractDraftSpec`, `extractSpecContent` |
+| `agent-router.test.ts` | `detectPhase` (pure), `classifyIntent`, `classifyMessageScope`, `classifyApprovedPhaseIntent` (mocked Haiku) |
+| `spec-auditor.test.ts` | OK / CONFLICT / GAP responses, empty-docs short-circuit, model selection |
+| `github-client.test.ts` | `readFile`, `saveDraftSpec` (branch creation, idempotency), `saveApprovedSpec`, `getInProgressFeatures` phase detection |
+| `design-agent.test.ts` | `isCreateDesignSpecIntent`, `hasDraftDesignSpec`, `extractDraftDesignSpec`, `extractDesignSpecContent` |
+| `context-loader.test.ts` | `loadAgentContext` (draft path construction, parallel loading), `loadAgentContextForQuery` (relevance filtering), `summarizeForContext` |
+| `conversation-store.test.ts` | Thread isolation, confirmed agent persistence, `clearHistory`, startup without file |
+| `concierge.test.ts` | `buildConciergeSystemPrompt` — config injection, feature status for all phases, no markdown tables |
+
+**Mocking pattern:** `vi.hoisted()` for mock functions referenced in `vi.mock()` factories (factories run before module-level code). `function()` syntax (not arrow functions) for constructors used with `new`. Top-level `vi.mock()` per file, not nested inside `it()`.
 
 ## What's not in this repo
 

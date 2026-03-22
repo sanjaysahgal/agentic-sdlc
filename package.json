@@ -10,7 +10,9 @@
     "dev": "tsx watch interfaces/slack/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -24,7 +26,8 @@
   "devDependencies": {
     "@types/node": "^22.19.15",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   },
   "main": "index.js",
   "keywords": [],

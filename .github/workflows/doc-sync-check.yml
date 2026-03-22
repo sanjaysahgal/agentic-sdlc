@@ -1,0 +1,54 @@
+name: Doc Sync Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-docs:
+    name: Verify docs are updated with code changes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed
+        run: |
+          git diff --name-only origin/main...HEAD > /tmp/changed.txt
+          cat /tmp/changed.txt
+
+      - name: Check agents/ changes require AGENTS.md update
+        run: |
+          if grep -q "^agents/" /tmp/changed.txt; then
+            if ! grep -q "^AGENTS.md" /tmp/changed.txt; then
+              echo "❌ agents/ was modified but AGENTS.md was not updated."
+              echo "Every agent change must be reflected in AGENTS.md (persona, capabilities, inputs/outputs)."
+              exit 1
+            fi
+          fi
+
+      - name: Check runtime/ changes require SYSTEM_ARCHITECTURE.md update
+        run: |
+          if grep -q "^runtime/" /tmp/changed.txt; then
+            if ! grep -q "^SYSTEM_ARCHITECTURE.md" /tmp/changed.txt; then
+              echo "❌ runtime/ was modified but SYSTEM_ARCHITECTURE.md was not updated."
+              echo "Every runtime change that affects data flow, routing, or system behavior must be reflected in SYSTEM_ARCHITECTURE.md."
+              exit 1
+            fi
+          fi
+
+      - name: Check WorkspaceConfig changes require .env.example update
+        run: |
+          if grep -q "workspace-config" /tmp/changed.txt; then
+            if ! grep -q "^.env.example" /tmp/changed.txt; then
+              echo "❌ workspace-config.ts was modified but .env.example was not updated."
+              echo "Every new WorkspaceConfig field must have a corresponding entry in .env.example."
+              exit 1
+            fi
+          fi
+
+      - name: All doc checks passed
+        run: echo "✅ All documentation is in sync with code changes."
