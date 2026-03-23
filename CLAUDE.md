@@ -61,6 +61,30 @@ Before building the second piece of any system, a test suite must exist for the 
 
 ---
 
+## Subagent Strategy
+
+Use subagents for exploration, research, and parallel analysis — keep the main context focused on implementation decisions. One task per subagent. For broad codebase searches or multi-file analysis, always prefer an Explore subagent over inline grep/read loops.
+
+---
+
+## Self-Correction
+
+After any correction from the user, immediately save a feedback memory so the same mistake does not recur across sessions. Do not wait until the end of the session. The correction is only useful if it persists.
+
+---
+
+## Autonomous Bug Fixing
+
+When given a bug or failing test: fix it end-to-end without hand-holding. Read the error, trace the root cause, implement the fix, verify it works. Do not ask the human to confirm intermediate steps. Zero context-switching cost to the user is the goal.
+
+---
+
+## Demand Elegance
+
+For non-trivial changes: before presenting a solution, ask "is there a more elegant way?" If a fix feels hacky, implement the clean version — not the workaround. Skip this for obvious one-liners. Never sacrifice durability for elegance — the two are not in conflict here, they compound.
+
+---
+
 ## Definition of Done (Non-Negotiable)
 
 A task is NOT done until the following are updated to reflect the change:
