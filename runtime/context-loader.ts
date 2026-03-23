@@ -37,20 +37,27 @@ If the whole document is relevant, summarize it in 200 words.`,
 // Loads all approved specs of a given type from the features root on main.
 // Used by spec-producing agents for cross-feature coherence.
 // e.g. suffix = ".product.md" loads all approved product specs.
+// Times out after 10s — cross-feature coherence is an enhancement, not a hard dependency.
 async function loadApprovedSpecs(featuresRoot: string, suffix: string, excludeFeature?: string): Promise<string> {
-  const featureDirs = await listSubdirectories(featuresRoot)
-  if (featureDirs.length === 0) return ""
+  const timeout = new Promise<string>((resolve) => setTimeout(() => resolve(""), 10_000))
 
-  const specPromises = featureDirs
-    .filter((dir) => dir !== excludeFeature)
-    .map(async (dir) => {
-      const content = await readFile(`${featuresRoot}/${dir}/${dir}${suffix}`)
-      if (!content) return ""
-      return `### ${dir}\n${content}`
-    })
+  const load = async (): Promise<string> => {
+    const featureDirs = await listSubdirectories(featuresRoot)
+    if (featureDirs.length === 0) return ""
 
-  const specs = await Promise.all(specPromises)
-  return specs.filter(Boolean).join("\n\n---\n\n")
+    const specPromises = featureDirs
+      .filter((dir) => dir !== excludeFeature)
+      .map(async (dir) => {
+        const content = await readFile(`${featuresRoot}/${dir}/${dir}${suffix}`)
+        if (!content) return ""
+        return `### ${dir}\n${content}`
+      })
+
+    const specs = await Promise.all(specPromises)
+    return specs.filter(Boolean).join("\n\n---\n\n")
+  }
+
+  return Promise.race([load(), timeout])
 }
 
 // Loads full context — used by the PM agent (spec-shaping + CPO-level cross-feature coherence).
