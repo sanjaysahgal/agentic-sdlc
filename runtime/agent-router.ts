@@ -102,13 +102,20 @@ Respond with exactly one word: start-design, spec-query, proposal, or status`,
 // "Off-topic" means: status queries, general progress questions, concierge-type requests —
 // anything that does not require loading full spec context and running a large prompt.
 // Used as a short-circuit gate before expensive context loading.
+// Detects whether a message is off-topic for a specialist agent (design or architect).
+// "Off-topic" means ONLY cross-feature or global status queries — not questions about
+// this feature's spec. Asking "show me the current design spec" or "where are we in
+// the design" is ON-TOPIC — the agent owns that content and can show it.
+// Only redirect when the user is clearly asking about a different scope entirely.
 export async function isOffTopicForAgent(message: string, agentDomain: "design" | "engineering"): Promise<boolean> {
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 10,
-    system: `Is this message asking for general status, progress, or something outside ${agentDomain === "design" ? "UX design work (screens, flows, components, design decisions)" : "engineering spec work (data models, APIs, component architecture, technical decisions)"}?
-Off-topic examples: "what's the status", "give me the latest spec", "where are we", "what's in progress", "summarize everything", "what happened so far", "catch me up".
-On-topic: any actual ${agentDomain} question or decision.
+    system: `You are deciding whether to redirect a message away from a ${agentDomain === "design" ? "UX Design" : "Architect"} agent.
+Only redirect (off-topic) if the message is asking about OTHER features, the overall platform status, or something completely outside this feature.
+Do NOT redirect if the message is about this feature's ${agentDomain === "design" ? "design spec, screens, flows, decisions, or current design state" : "engineering spec, data model, APIs, or current engineering state"} — even if it's a read request like "show me the spec" or "what have we decided".
+Off-topic (redirect): "what features are in progress", "give me all in-progress specs", "what's the overall status", "what's been approved across the platform"
+On-topic (keep): "show me the design spec", "latest on the design", "where are we in the design", "what have we decided", "what's in the spec", "summarize the design so far", any design or engineering question
 Respond with exactly one word: off-topic or on-topic`,
     messages: [{ role: "user", content: message }],
   })
