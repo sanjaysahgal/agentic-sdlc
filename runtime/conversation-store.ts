@@ -1,6 +1,8 @@
 // Stores conversation history per Slack thread.
 // Keyed by thread_ts (Slack's unique thread identifier).
 // In production this would be Redis — for now in-memory + file persistence is sufficient.
+//
+// Both conversation history and confirmed agents survive bot restarts via disk persistence.
 
 import fs from "fs"
 import path from "path"
@@ -14,6 +16,7 @@ const store = new Map<string, Message[]>()
 const confirmedAgents = new Map<string, string>() // threadTs → confirmed agent type
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
+const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
 
 function loadConfirmedAgents(): void {
   try {
@@ -32,8 +35,26 @@ function persistConfirmedAgents(): void {
   fs.writeFileSync(CONFIRMED_AGENTS_FILE, JSON.stringify(obj, null, 2))
 }
 
-// Load from disk on startup
+function loadConversationHistory(): void {
+  try {
+    const raw = fs.readFileSync(CONVERSATION_HISTORY_FILE, "utf-8")
+    const parsed = JSON.parse(raw) as Record<string, Message[]>
+    for (const [threadTs, messages] of Object.entries(parsed)) {
+      store.set(threadTs, messages)
+    }
+  } catch {
+    // File doesn't exist yet — start fresh
+  }
+}
+
+function persistConversationHistory(): void {
+  const obj = Object.fromEntries(store)
+  fs.writeFileSync(CONVERSATION_HISTORY_FILE, JSON.stringify(obj, null, 2))
+}
+
+// Load both from disk on startup
 loadConfirmedAgents()
+loadConversationHistory()
 
 export function getHistory(threadTs: string): Message[] {
   return store.get(threadTs) ?? []
@@ -43,12 +64,14 @@ export function appendMessage(threadTs: string, message: Message): void {
   const history = store.get(threadTs) ?? []
   history.push(message)
   store.set(threadTs, history)
+  persistConversationHistory()
 }
 
 export function clearHistory(threadTs: string): void {
   store.delete(threadTs)
   confirmedAgents.delete(threadTs)
   persistConfirmedAgents()
+  persistConversationHistory()
 }
 
 // Once a user confirms an agent for a thread, store it so we skip confirmation on follow-ups
