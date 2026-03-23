@@ -98,6 +98,25 @@ Respond with exactly one word: start-design, spec-query, proposal, or status`,
   return valid.includes(text as (typeof valid)[number]) ? (text as (typeof valid)[number]) : "status"
 }
 
+// Detects whether a message is off-topic for a specialist agent (design or architect).
+// "Off-topic" means: status queries, general progress questions, concierge-type requests —
+// anything that does not require loading full spec context and running a large prompt.
+// Used as a short-circuit gate before expensive context loading.
+export async function isOffTopicForAgent(message: string, agentDomain: "design" | "engineering"): Promise<boolean> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 10,
+    system: `Is this message asking for general status, progress, or something outside ${agentDomain === "design" ? "UX design work (screens, flows, components, design decisions)" : "engineering spec work (data models, APIs, component architecture, technical decisions)"}?
+Off-topic examples: "what's the status", "give me the latest spec", "where are we", "what's in progress", "summarize everything", "what happened so far", "catch me up".
+On-topic: any actual ${agentDomain} question or decision.
+Respond with exactly one word: off-topic or on-topic`,
+    messages: [{ role: "user", content: message }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "on-topic"
+  return text === "off-topic"
+}
+
 export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean

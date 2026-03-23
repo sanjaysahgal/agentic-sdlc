@@ -5,7 +5,7 @@ import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSp
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, getInProgressFeatures } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft } from "../../../runtime/spec-auditor"
@@ -350,6 +350,20 @@ async function runDesignAgent(params: {
 }): Promise<void> {
   const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly } = params
 
+  // Short-circuit status/general queries before loading expensive design context.
+  // A "give me the latest spec" question in a design thread doesn't need the full
+  // design agent — it needs the concierge. Check fast with Haiku before loading anything.
+  if (!readOnly) {
+    const offTopic = await isOffTopicForAgent(userMessage, "design")
+    if (offTopic) {
+      const mainChannel = loadWorkspaceConfig().mainChannel
+      const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the UX Designer — I'm here when you're ready to work on screens, flows, or design decisions for this feature.`
+      appendMessage(threadTs, { role: "assistant", content: msg })
+      await update(msg)
+      return
+    }
+  }
+
   await update("_UX Designer is reading the spec and design context..._")
   const context = await loadDesignAgentContext(featureName)
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
@@ -460,6 +474,17 @@ async function runArchitectAgent(params: {
   readOnly?: boolean
 }): Promise<void> {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly } = params
+
+  if (!readOnly) {
+    const offTopic = await isOffTopicForAgent(userMessage, "engineering")
+    if (offTopic) {
+      const mainChannel = loadWorkspaceConfig().mainChannel
+      const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the Architect — I'm here when you're ready to work on data models, APIs, or engineering decisions for this feature.`
+      appendMessage(threadTs, { role: "assistant", content: msg })
+      await update(msg)
+      return
+    }
+  }
 
   await update("_Architect is reading the spec chain..._")
   const context = await loadArchitectAgentContext(featureName)

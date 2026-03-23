@@ -16,6 +16,7 @@ import {
   classifyIntent,
   classifyMessageScope,
   classifyApprovedPhaseIntent,
+  isOffTopicForAgent,
 } from "../../runtime/agent-router"
 
 // ─── detectPhase — pure logic, no mocks needed ────────────────────────────
@@ -119,5 +120,51 @@ describe("classifyMessageScope", () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "something-unexpected" }] })
     const result = await classifyMessageScope("??")
     expect(result).toBe("feature-specific")
+  })
+})
+
+// ─── isOffTopicForAgent ───────────────────────────────────────────────────────
+
+describe("isOffTopicForAgent", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("returns true when Claude says off-topic (status query to design agent)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "off-topic" }] })
+    const result = await isOffTopicForAgent("Give me the latest in progress spec", "design")
+    expect(result).toBe(true)
+  })
+
+  it("returns false when Claude says on-topic (design question)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "on-topic" }] })
+    const result = await isOffTopicForAgent("What components should the login screen have?", "design")
+    expect(result).toBe(false)
+  })
+
+  it("returns false when Claude says on-topic (engineering question)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "on-topic" }] })
+    const result = await isOffTopicForAgent("What should the data model look like for sessions?", "engineering")
+    expect(result).toBe(false)
+  })
+
+  it("falls back to on-topic (false) on unexpected Claude response — do not block on-topic work", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "something-unexpected" }] })
+    const result = await isOffTopicForAgent("something", "design")
+    expect(result).toBe(false)
+  })
+
+  it("passes the correct domain label to Haiku for design", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "on-topic" }] })
+    await isOffTopicForAgent("show me flows", "design")
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.system).toContain("UX design work")
+  })
+
+  it("passes the correct domain label to Haiku for engineering", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "on-topic" }] })
+    await isOffTopicForAgent("data model for users", "engineering")
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.system).toContain("engineering spec work")
   })
 })
