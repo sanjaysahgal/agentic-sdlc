@@ -84,7 +84,7 @@ export async function saveDraftDesignSpec(params: {
 // Determines phase by checking which spec files exist on main vs only on branches.
 export type FeatureStatus = {
   featureName: string
-  phase: "product-spec-in-progress" | "product-spec-approved-awaiting-design" | "design-in-progress" | "design-approved-awaiting-engineering"
+  phase: "product-spec-in-progress" | "product-spec-approved-awaiting-design" | "design-in-progress" | "design-approved-awaiting-engineering" | "engineering-in-progress"
 }
 
 export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
@@ -100,11 +100,17 @@ export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
     const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
     const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
 
+    const engineeringSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
     const productOnMain = await readFile(productSpecPath) // empty string = not on main
     const designOnMain = await readFile(designSpecPath)
+    const engineeringOnMain = await readFile(engineeringSpecPath)
 
-    if (designOnMain) {
-      features.push({ featureName, phase: "design-approved-awaiting-engineering" })
+    if (engineeringOnMain) {
+      // Engineering spec approved — build phase (not tracked here)
+    } else if (designOnMain) {
+      // Check if engineering branch exists (draft in progress)
+      const hasEngineeringBranch = branches.some((b) => b.name === `spec/${featureName}-engineering`)
+      features.push({ featureName, phase: hasEngineeringBranch ? "engineering-in-progress" : "design-approved-awaiting-engineering" })
     } else if (productOnMain) {
       features.push({ featureName, phase: "product-spec-approved-awaiting-design" })
     } else {
@@ -207,6 +213,51 @@ export async function saveApprovedDesignSpec(params: {
   }
 
   await saveDraftDesignSpec({ featureName, filePath, content })
+  return "saved"
+}
+
+// Save a draft engineering spec to the feature branch without opening a PR.
+export async function saveDraftEngineeringSpec(params: {
+  featureName: string
+  filePath: string
+  content: string
+}): Promise<void> {
+  const { featureName, filePath, content } = params
+  await saveDraftFile({
+    branch: `spec/${featureName}-engineering`,
+    filePath,
+    content,
+    commitMessage: `[DRAFT] ${featureName} · engineering.md`,
+  })
+}
+
+// Saves the final approved engineering spec. Updates in place if already on main.
+export async function saveApprovedEngineeringSpec(params: {
+  featureName: string
+  filePath: string
+  content: string
+}): Promise<"already-on-main" | "saved"> {
+  const { featureName, filePath, content } = params
+
+  let mainFileSha: string | undefined
+  try {
+    const existing = await octokit.repos.getContent({ owner, repo, path: filePath })
+    mainFileSha = (existing.data as { sha: string }).sha
+  } catch {
+    // Not on main yet
+  }
+
+  if (mainFileSha) {
+    await octokit.repos.createOrUpdateFileContents({
+      owner, repo, path: filePath,
+      message: `[SPEC] ${featureName} · engineering.md — final approved`,
+      content: Buffer.from(content).toString("base64"),
+      sha: mainFileSha,
+    })
+    return "already-on-main"
+  }
+
+  await saveDraftEngineeringSpec({ featureName, filePath, content })
   return "saved"
 }
 

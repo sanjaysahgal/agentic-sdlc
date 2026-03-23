@@ -1,9 +1,10 @@
-import { loadAgentContext, loadDesignAgentContext } from "../../../runtime/context-loader"
+import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker } from "../../../agents/design"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, getInProgressFeatures } from "../../../runtime/github-client"
+import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, getInProgressFeatures } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
@@ -85,12 +86,15 @@ async function buildRoutingNote(featureName: string, agent: AgentType): Promise<
     if (feature?.phase === "product-spec-approved-awaiting-design") {
       phaseDescription = "the product spec is approved and design is the next step"
       nextStep = "once the design spec is approved, an architect will produce the engineering plan"
+    } else if (feature?.phase === "design-approved-awaiting-engineering" || feature?.phase === "engineering-in-progress") {
+      phaseDescription = "the design spec is approved and engineering planning is the next step"
+      nextStep = "once the engineering spec is approved, the engineer agents will implement the feature"
     }
   } catch {
     // GitHub unavailable — use defaults
   }
 
-  const agentLabel = agent === "pm" ? "Product Manager" : agent
+  const agentLabel = agent === "pm" ? "Product Manager" : agent === "ux-design" ? "UX Designer" : agent === "architect" ? "Architect" : agent
 
   return `_Routing to the **${agentLabel}** — ${phaseDescription}. ${nextStep}._\n_If you'd like a different specialist, just say so — I'll explain or accommodate._\n\n---`
 }
@@ -134,6 +138,13 @@ export async function handleFeatureChannelMessage(params: {
     return
   }
 
+  if (confirmedAgent === "architect") {
+    await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
+      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+    }})
+    return
+  }
+
   if (confirmedAgent === "pm") {
     // If the product spec is already approved, route to the design phase.
     const currentPhase = await getFeaturePhase(getFeatureName(channelName))
@@ -161,11 +172,20 @@ export async function handleFeatureChannelMessage(params: {
 
   // New thread — check phase first, then classify and run
   const currentPhase = await getFeaturePhase(getFeatureName(channelName))
-  const thinkingLabel = currentPhase === "product-spec-approved-awaiting-design" ? "UX Designer" : undefined
+  const thinkingLabel =
+    currentPhase === "product-spec-approved-awaiting-design" ? "UX Designer" :
+    currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress" ? "Architect" :
+    undefined
   await withThinking({ client, channelId, threadTs, agent: thinkingLabel, run: async (update) => {
     if (currentPhase === "product-spec-approved-awaiting-design") {
       setConfirmedAgent(threadTs, "ux-design")
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+      return
+    }
+
+    if (currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress") {
+      setConfirmedAgent(threadTs, "architect")
+      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
     }
 
@@ -420,6 +440,77 @@ await update(`${prefix}Saving the final design spec...`)
     const cleanResponse = stripEscalationMarker(response)
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
+    return
+  }
+
+  appendMessage(threadTs, { role: "assistant", content: response })
+  await update(`${prefix}${response}`)
+}
+
+async function runArchitectAgent(params: {
+  channelName: string
+  channelId: string
+  threadTs: string
+  featureName: string
+  userMessage: string
+  userImages?: UserImage[]
+  client: any
+  update: (text: string) => Promise<void>
+  routingNote?: string
+  readOnly?: boolean
+}): Promise<void> {
+  const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly } = params
+
+  await update("_Architect is reading the spec chain..._")
+  const context = await loadArchitectAgentContext(featureName)
+  const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
+  const history = getHistory(threadTs)
+
+  await update("_Architect is thinking..._")
+  appendMessage(threadTs, { role: "user", content: userMessage })
+  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+
+  const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+  const prefix = routingNote ? `${routingNote}\n\n` : ""
+
+  if (readOnly) {
+    const cleanResponse = response
+      .replace(/DRAFT_ENGINEERING_SPEC_START[\s\S]*?DRAFT_ENGINEERING_SPEC_END/g, "")
+      .replace(/INTENT: CREATE_ENGINEERING_SPEC/g, "")
+      .trim()
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    await update(`${prefix}${cleanResponse}`)
+    return
+  }
+
+  if (hasDraftEngineeringSpec(response)) {
+    const draftContent = extractDraftEngineeringSpec(response)
+    await update("_Saving draft engineering spec to GitHub..._")
+    await saveDraftEngineeringSpec({ featureName, filePath, content: draftContent })
+    const cleanResponse = response.replace(/DRAFT_ENGINEERING_SPEC_START[\s\S]*?DRAFT_ENGINEERING_SPEC_END/g, "").trim()
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
+    return
+  }
+
+  if (isCreateEngineeringSpecIntent(response)) {
+    const specContent = extractEngineeringSpecContent(response)
+    const blockingQuestions = extractBlockingQuestions(specContent)
+    if (blockingQuestions.length > 0) {
+      appendMessage(threadTs, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
+      await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
+      return
+    }
+    await update(`${prefix}Saving the final engineering spec...`)
+    await saveApprovedEngineeringSpec({ featureName, filePath, content: specContent })
+    const approvalMessage =
+      `The *${featureName}* engineering spec is saved and approved. :white_check_mark:\n\n` +
+      `*What happens next:*\n` +
+      `The engineer agents will use this spec to implement the feature — data model, APIs, and UI components. ` +
+      `The spec is the source of truth from here. No engineering decision should contradict it.\n\n` +
+      `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
+    appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+    await update(`${prefix}${approvalMessage}`)
     return
   }
 

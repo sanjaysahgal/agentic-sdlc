@@ -46,7 +46,7 @@ vi.mock("../../runtime/workspace-config", () => ({
   }),
 }))
 
-import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories } from "../../runtime/github-client"
+import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec } from "../../runtime/github-client"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -248,7 +248,7 @@ describe("getInProgressFeatures", () => {
     ])
   })
 
-  it("returns design-approved-awaiting-engineering when design spec on main", async () => {
+  it("returns design-approved-awaiting-engineering when design spec on main but no engineering branch", async () => {
     mockPaginate.mockResolvedValue([{ name: "spec/onboarding-product" }])
     mockGetContent.mockResolvedValueOnce({
       data: { content: Buffer.from("# Product Spec").toString("base64") },
@@ -256,11 +256,47 @@ describe("getInProgressFeatures", () => {
     mockGetContent.mockResolvedValueOnce({
       data: { content: Buffer.from("# Design Spec").toString("base64") },
     })
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // no engineering spec on main
 
     const result = await getInProgressFeatures()
     expect(result).toEqual([
       { featureName: "onboarding", phase: "design-approved-awaiting-engineering" },
     ])
+  })
+
+  it("returns engineering-in-progress when design spec on main and engineering branch exists", async () => {
+    mockPaginate.mockResolvedValue([
+      { name: "spec/onboarding-product" },
+      { name: "spec/onboarding-engineering" },
+    ])
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from("# Product Spec").toString("base64") },
+    })
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from("# Design Spec").toString("base64") },
+    })
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // no engineering spec on main
+
+    const result = await getInProgressFeatures()
+    expect(result).toEqual([
+      { featureName: "onboarding", phase: "engineering-in-progress" },
+    ])
+  })
+
+  it("skips feature when engineering spec already on main (build phase)", async () => {
+    mockPaginate.mockResolvedValue([{ name: "spec/onboarding-product" }])
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from("# Product Spec").toString("base64") },
+    })
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from("# Design Spec").toString("base64") },
+    })
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from("# Engineering Spec").toString("base64") },
+    })
+
+    const result = await getInProgressFeatures()
+    expect(result).toEqual([])
   })
 
   it("filters out branches that do not match spec/*-product pattern", async () => {
@@ -275,6 +311,78 @@ describe("getInProgressFeatures", () => {
     const result = await getInProgressFeatures()
     expect(result).toHaveLength(1)
     expect(result[0].featureName).toBe("onboarding")
+  })
+})
+
+// ─── saveDraftEngineeringSpec ─────────────────────────────────────────────────
+
+describe("saveDraftEngineeringSpec", () => {
+  it("creates branch spec/{featureName}-engineering from main SHA", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await saveDraftEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      content: "# Engineering Spec",
+    })
+
+    expect(mockCreateRef).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: "refs/heads/spec/onboarding-engineering" })
+    )
+  })
+
+  it("does not throw when branch already exists", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
+    mockCreateRef.mockRejectedValue(new Error("Reference already exists"))
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await expect(
+      saveDraftEngineeringSpec({
+        featureName: "onboarding",
+        filePath: "specs/features/onboarding/onboarding.engineering.md",
+        content: "# Engineering Spec",
+      })
+    ).resolves.toBeUndefined()
+  })
+})
+
+// ─── saveApprovedEngineeringSpec ──────────────────────────────────────────────
+
+describe("saveApprovedEngineeringSpec", () => {
+  it("returns 'already-on-main' and updates in place when file exists on main", async () => {
+    mockGetContent.mockResolvedValue({ data: { sha: "main-file-sha" } })
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    const result = await saveApprovedEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      content: "# Final Engineering Spec",
+    })
+
+    expect(result).toBe("already-on-main")
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({ sha: "main-file-sha" })
+    )
+  })
+
+  it("returns 'saved' and delegates to saveDraftEngineeringSpec when file is not on main", async () => {
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // not on main
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValue(new Error("Not Found")) // file not on branch either
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    const result = await saveApprovedEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      content: "# Final Engineering Spec",
+    })
+
+    expect(result).toBe("saved")
   })
 })
 

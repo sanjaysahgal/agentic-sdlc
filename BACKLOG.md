@@ -23,39 +23,6 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ## Active (next up)
 
-### Step 2 — Architect agent (engineering spec)
-
-The architect is a principal engineer with deep expertise in system design, API contracts, data modeling, and scalability. Their job is to translate an approved design spec into a precise engineering spec that backend and frontend engineer agents can implement without guessing.
-
-**What the architect reads before responding:**
-- Approved product spec (from main) — understands the problem and acceptance criteria
-- Approved design spec (from main) — understands every screen, flow, and state that must be built
-- System architecture doc — understands the existing stack, patterns, and constraints
-
-**What the architect produces (`<feature>.engineering.md`):**
-- Data model changes: new tables, fields, relations, migrations
-- API contracts: endpoints, request/response shapes, auth requirements, error codes
-- Component breakdown: which frontend components are new vs. reused, what props they need
-- State management: where state lives, how it flows, what gets persisted
-- Integration points: third-party services, internal services, event triggers
-- Non-functional requirements: performance targets, caching strategy, rate limits
-- Open questions tagged `[type: product|design|engineering] [blocking: yes|no]`
-
-**Constraints (same as all agents):**
-- Never makes product or design decisions — escalates upstream
-- Conflict detection: flags any engineering decision that contradicts the product or design spec before saving
-- Gap detection: flags any assumption the engineer agents would have to make that isn't covered by the spec chain
-- Approval gate: engineering spec cannot advance until human explicitly approves it
-- Spec link on approval-ready: shares a direct GitHub link to the draft spec (same pattern as pm and design agents)
-
-**Substeps:**
-- **2a** — Architect agent persona: principal engineer mindset, reads full spec chain before first response, leads with a structural proposal (data model + API surface) not discovery questions
-- **2b** — Engineering spec format: define `<feature>.engineering.md` structure, section by section
-- **2c** — Cross-phase escalation extended: architect agent gets the same reactive escalation pattern built in Step 1 — when it surfaces a `[blocking: yes]` question owned by product or design, it offers to pull that agent into the thread with context
-- **2d** — Full wiring: phase routing (`design-approved-awaiting-engineering`), context loading (full spec chain), draft auto-save, conflict + gap detection, approval detection, thinking indicator ("Architect is thinking...")
-
----
-
 ### Step 3 — Orchestrator agent
 
 A dedicated agent that owns proactive phase coordination AND continuous spec integrity monitoring across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
@@ -311,7 +278,8 @@ Most valuable once several features have shipped and patterns in the vision show
 
 ## Completed
 
-- **Step 1 — Error logging + cross-phase escalation (design agent → PM)** — Structured JSON error logging in `withThinking` (timestamp, agent, channel, thread, errorType, stack). Design agent emits `OFFER_PM_ESCALATION_START/END` when blocked on a product decision; user confirms; PM agent is invoked in the same thread with the question and design context as a primer — no manual relay, no context loss. Extended to architect agent in Step 2c.
+- **Step 2 — Architect agent (engineering spec)** — Sr. Principal Engineer persona with hyperscale + AI/ML expertise. Full spec chain context loading (product + design + engineering draft + cross-feature engineering specs). Phase routing: `design-approved-awaiting-engineering` and `engineering-in-progress` → architect. Auto-save via `DRAFT_ENGINEERING_SPEC_START/END` → `saveDraftEngineeringSpec()`. Approval detection → `saveApprovedEngineeringSpec()`. Blocking questions gate. Dual-role: owns `SYSTEM_ARCHITECTURE.md`, drafts `[PROPOSED ADDITION]` blocks on every approved spec. 22 new tests across architect-agent + github-client test files.
+- **Step 1 — Error logging + cross-phase escalation (design agent → PM)** — Structured JSON error logging in `withThinking` (timestamp, agent, channel, thread, errorType, stack). Design agent emits `OFFER_PM_ESCALATION_START/END` when blocked on a product decision; user confirms; PM agent is invoked in the same thread with the question and design context as a primer — no manual relay, no context loss.
 - **Progressive status updates** — withThinking placeholder cycles through visible stages (reading spec, writing, auditing, saving) so the human knows what's happening
 - **UX Design agent (Steps 3a–3c)** — persona, design spec format, full wiring: phase routing, context loading, draft auto-save, conflict + gap detection, approval detection, thinking indicator, spec link on approval-ready, visualisation offer (Figma AI / Builder.io / Anima)
 - **Automated test suite (platform)** — 129 tests across 11 files. All platform tests — zero real API calls, all external dependencies mocked.
