@@ -23,24 +23,6 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ## Active (next up)
 
-### Step 1 (immediate) — Error logging + cross-phase escalation for design agent
-
-Two fixes needed before the next design session. Both are independent of the architect agent and address real gaps in the running system today.
-
-**Error logging:**
-Add structured error logging to `withThinking` so "Something went wrong" failures are diagnosable. Currently the error is swallowed after being shown to the user — no record of what actually failed. At minimum: `console.error` with timestamp, channel, thread, agent, and the raw error. This is a prerequisite for production deployment — you cannot operate a production system without knowing why it fails.
-
-**Cross-phase escalation — design agent → PM:**
-When the design agent surfaces a `[blocking: yes] [type: product]` question mid-conversation, it currently tells the human to "bring in the PM" — which means manually opening a new thread, relaying the question without context, and carrying the answer back. This step makes that handoff automatic:
-- Design agent detects a blocking product question
-- Offers to pull the PM agent into the current thread with the specific question and relevant spec context as a primer
-- PM agent opens with a concrete answer proposal, not discovery questions
-- No manual relay, no context loss
-
-This pattern is built once here for the design agent, then extended to the architect agent in Step 2.
-
----
-
 ### Step 2 — Architect agent (engineering spec)
 
 The architect is a principal engineer with deep expertise in system design, API contracts, data modeling, and scalability. Their job is to translate an approved design spec into a precise engineering spec that backend and frontend engineer agents can implement without guessing.
@@ -329,6 +311,7 @@ Most valuable once several features have shipped and patterns in the vision show
 
 ## Completed
 
+- **Step 1 — Error logging + cross-phase escalation (design agent → PM)** — Structured JSON error logging in `withThinking` (timestamp, agent, channel, thread, errorType, stack). Design agent emits `OFFER_PM_ESCALATION_START/END` when blocked on a product decision; user confirms; PM agent is invoked in the same thread with the question and design context as a primer — no manual relay, no context loss. Extended to architect agent in Step 2c.
 - **Progressive status updates** — withThinking placeholder cycles through visible stages (reading spec, writing, auditing, saving) so the human knows what's happening
 - **UX Design agent (Steps 3a–3c)** — persona, design spec format, full wiring: phase routing, context loading, draft auto-save, conflict + gap detection, approval detection, thinking indicator, spec link on approval-ready, visualisation offer (Figma AI / Builder.io / Anima)
 - **Automated test suite (platform)** — 129 tests across 11 files. All platform tests — zero real API calls, all external dependencies mocked.

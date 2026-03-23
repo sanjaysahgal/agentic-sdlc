@@ -96,4 +96,34 @@ describe("conversation-store", () => {
     // fs.readFileSync is mocked to throw — importing the module must not throw
     await expect(import("../../runtime/conversation-store")).resolves.toBeDefined()
   })
+
+  // ─── pending escalation ───────────────────────────────────────────────────
+
+  it("getPendingEscalation returns null when no escalation is set", async () => {
+    const { getPendingEscalation } = await import("../../runtime/conversation-store")
+    expect(getPendingEscalation("thread-1")).toBeNull()
+  })
+
+  it("setPendingEscalation stores escalation and getPendingEscalation retrieves it", async () => {
+    const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
+    const escalation = { targetAgent: "pm" as const, question: "Should social login be supported?", designContext: "## Screens\n..." }
+    setPendingEscalation("thread-1", escalation)
+    expect(getPendingEscalation("thread-1")).toEqual(escalation)
+  })
+
+  it("clearPendingEscalation removes the escalation", async () => {
+    const { getPendingEscalation, setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: "Q", designContext: "" })
+    clearPendingEscalation("thread-1")
+    expect(getPendingEscalation("thread-1")).toBeNull()
+  })
+
+  it("escalation is thread-isolated — clearing thread-1 does not affect thread-2", async () => {
+    const { getPendingEscalation, setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: "Q1", designContext: "" })
+    setPendingEscalation("thread-2", { targetAgent: "pm", question: "Q2", designContext: "" })
+    clearPendingEscalation("thread-1")
+    expect(getPendingEscalation("thread-1")).toBeNull()
+    expect(getPendingEscalation("thread-2")?.question).toBe("Q2")
+  })
 })

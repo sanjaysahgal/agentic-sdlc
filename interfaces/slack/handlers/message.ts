@@ -1,8 +1,8 @@
 import { loadAgentContext, loadDesignAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage } from "../../../runtime/claude-client"
-import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent } from "../../../runtime/conversation-store"
+import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent } from "../../../agents/design"
+import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker } from "../../../agents/design"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, getInProgressFeatures } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
@@ -14,6 +14,12 @@ const { paths: workspacePaths } = loadWorkspaceConfig()
 
 function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
+}
+
+// Detects a simple affirmative confirmation — used for escalation offers.
+function isAffirmative(message: string): boolean {
+  const lower = message.toLowerCase().trim()
+  return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in)/.test(lower)
 }
 
 // Returns the current phase of a feature by reading GitHub state.
@@ -104,6 +110,24 @@ export async function handleFeatureChannelMessage(params: {
 
   // Confirmed agent — check phase first, then run
   if (confirmedAgent === "ux-design") {
+    // If the design agent offered a PM escalation last turn and the user is confirming it,
+    // run the PM agent with the blocking question as its opening brief.
+    const pendingEscalation = getPendingEscalation(threadTs)
+    if (pendingEscalation && isAffirmative(userMessage)) {
+      clearPendingEscalation(threadTs)
+      const escalationBrief =
+        `The UX Designer is blocked on a product decision and needs your input:\n\n` +
+        `"${pendingEscalation.question}"\n\n` +
+        `Current design context:\n${pendingEscalation.designContext}\n\n` +
+        `Give a concrete answer or recommendation — this is blocking the design spec.`
+      await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
+        await runPmAgent({ channelName, channelId, threadTs, userMessage: escalationBrief, client, update })
+      }})
+      return
+    }
+    // User declined escalation or sent a new message — clear pending and continue normally
+    if (pendingEscalation) clearPendingEscalation(threadTs)
+
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
     }})
@@ -386,6 +410,16 @@ await update(`${prefix}Saving the final design spec...`)
       `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
     appendMessage(threadTs, { role: "assistant", content: approvalMessage })
     await update(`${prefix}${approvalMessage}`)
+    return
+  }
+
+  // Check for PM escalation offer — strip marker, store pending state, display clean response
+  if (hasEscalationOffer(response)) {
+    const question = extractEscalationQuestion(response)
+    setPendingEscalation(threadTs, { targetAgent: "pm", question, designContext: context.currentDraft ?? "" })
+    const cleanResponse = stripEscalationMarker(response)
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    await update(`${prefix}${cleanResponse}`)
     return
   }
 

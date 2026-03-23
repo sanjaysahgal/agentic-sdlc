@@ -5,6 +5,9 @@ import {
   hasDraftDesignSpec,
   extractDraftDesignSpec,
   extractDesignSpecContent,
+  hasEscalationOffer,
+  extractEscalationQuestion,
+  stripEscalationMarker,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -157,6 +160,79 @@ describe("extractDesignSpecContent", () => {
   it("falls back to stripping marker when no code block", () => {
     const response = "INTENT: CREATE_DESIGN_SPEC\n# Design Spec\nFigma: TBD"
     expect(extractDesignSpecContent(response)).toBe("# Design Spec\nFigma: TBD")
+  })
+})
+
+describe("cross-phase escalation helpers", () => {
+  const withOffer = (q: string) =>
+    `The design decision depends on a product call.\n\nThis is a product decision — want me to pull the PM in?\n\nOFFER_PM_ESCALATION_START\n${q}\nOFFER_PM_ESCALATION_END`
+
+  describe("hasEscalationOffer", () => {
+    it("returns true when both escalation markers are present", () => {
+      expect(hasEscalationOffer(withOffer("Should social login be supported?"))).toBe(true)
+    })
+
+    it("returns false when markers are absent", () => {
+      expect(hasEscalationOffer("This is a product decision — let's discuss.")).toBe(false)
+    })
+
+    it("returns false when only start marker is present", () => {
+      expect(hasEscalationOffer("OFFER_PM_ESCALATION_START\nsome question")).toBe(false)
+    })
+  })
+
+  describe("extractEscalationQuestion", () => {
+    it("extracts the question between markers", () => {
+      const response = withOffer("Should social login be supported?")
+      expect(extractEscalationQuestion(response)).toBe("Should social login be supported?")
+    })
+
+    it("returns empty string when markers not present", () => {
+      expect(extractEscalationQuestion("no markers here")).toBe("")
+    })
+
+    it("trims whitespace from extracted question", () => {
+      const response = "text\nOFFER_PM_ESCALATION_START\n  question  \nOFFER_PM_ESCALATION_END"
+      expect(extractEscalationQuestion(response)).toBe("question")
+    })
+  })
+
+  describe("stripEscalationMarker", () => {
+    it("removes the escalation marker block from the response", () => {
+      const response = withOffer("Should social login be supported?")
+      const stripped = stripEscalationMarker(response)
+      expect(stripped).not.toContain("OFFER_PM_ESCALATION_START")
+      expect(stripped).not.toContain("OFFER_PM_ESCALATION_END")
+      expect(stripped).not.toContain("Should social login be supported?")
+    })
+
+    it("preserves the user-visible offer text", () => {
+      const response = withOffer("Should social login be supported?")
+      const stripped = stripEscalationMarker(response)
+      expect(stripped).toContain("want me to pull the PM in")
+    })
+
+    it("returns unchanged string when no marker present", () => {
+      const response = "Just a normal response."
+      expect(stripEscalationMarker(response)).toBe(response)
+    })
+  })
+
+  describe("buildDesignSystemPrompt — escalation instruction", () => {
+    const originalEnv = process.env
+    beforeEach(() => { process.env = { ...originalEnv, PRODUCT_NAME: "T", GITHUB_OWNER: "o", GITHUB_REPO: "r" } })
+    afterEach(() => { process.env = originalEnv })
+
+    it("instructs the agent to emit OFFER_PM_ESCALATION marker for blocking product questions", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("OFFER_PM_ESCALATION_START")
+      expect(prompt).toContain("OFFER_PM_ESCALATION_END")
+    })
+
+    it("tells agent to offer escalation only for product decisions, not engineering or design calls", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("Only emit this marker when you are genuinely blocked on a product decision")
+    })
   })
 })
 

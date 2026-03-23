@@ -12,8 +12,15 @@ export type Message = {
   content: string
 }
 
+export type PendingEscalation = {
+  targetAgent: "pm"
+  question: string    // the specific blocking question to hand to the PM
+  designContext: string // current design draft — gives PM instant context
+}
+
 const store = new Map<string, Message[]>()
-const confirmedAgents = new Map<string, string>() // threadTs → confirmed agent type
+const confirmedAgents = new Map<string, string>()         // threadTs → confirmed agent type
+const pendingEscalations = new Map<string, PendingEscalation>() // threadTs → pending escalation
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
@@ -82,4 +89,18 @@ export function getConfirmedAgent(threadTs: string): string | null {
 export function setConfirmedAgent(threadTs: string, agent: string): void {
   confirmedAgents.set(threadTs, agent)
   persistConfirmedAgents()
+}
+
+// Pending escalation — set when an agent offers to pull another agent into the thread.
+// Cleared when the user confirms (escalation runs) or declines (normal routing resumes).
+export function getPendingEscalation(threadTs: string): PendingEscalation | null {
+  return pendingEscalations.get(threadTs) ?? null
+}
+
+export function setPendingEscalation(threadTs: string, escalation: PendingEscalation): void {
+  pendingEscalations.set(threadTs, escalation)
+}
+
+export function clearPendingEscalation(threadTs: string): void {
+  pendingEscalations.delete(threadTs)
 }
