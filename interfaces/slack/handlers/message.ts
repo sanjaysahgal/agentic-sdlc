@@ -363,39 +363,35 @@ async function runDesignAgent(params: {
       return
     }
 
-    // "Show me what we have" — return a structured summary, no Sonnet call needed.
-    // We show section headers (not raw content) — stays short, renders well in Slack,
-    // and is more scannable than dumping 20k of markdown.
+    // "Where are we" overview — return what's blocking + a brief status. No Sonnet call needed.
     const isStateQuery = await isSpecStateQuery(userMessage)
     if (isStateQuery) {
       const { paths } = loadWorkspaceConfig()
-      const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
       const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-      const [productSpec, designDraft] = await Promise.all([
-        readFile(productSpecPath),
-        readFile(designDraftPath, `spec/${featureName}-design`),
-      ])
-      const getSections = (content: string) =>
-        content.split("\n")
-          .filter(l => /^#{1,3} /.test(l))
-          .map(l => `• ${l.replace(/^#+\s+/, "")}`)
-          .join("\n")
-      const lines: string[] = [`*Current state — ${featureName}*\n`]
-      if (productSpec) {
-        lines.push(`*Product Spec* — approved ✓`)
-        const sections = getSections(productSpec)
-        if (sections) lines.push(sections)
-        lines.push("")
+      const designDraft = await readFile(designDraftPath, `spec/${featureName}-design`)
+
+      // Extract the Open Questions section — this is what blocks a spec freeze.
+      const extractSection = (content: string, heading: string): string => {
+        const re = new RegExp(`##+ ${heading}[\\s\\S]*?(?=\\n##+ |$)`, "i")
+        const match = content.match(re)
+        return match ? match[0].replace(/^##+ [^\n]+\n/, "").trim() : ""
       }
+
+      const lines: string[] = []
       if (designDraft) {
-        lines.push(`*Design Draft* — in progress`)
-        const sections = getSections(designDraft)
-        if (sections) lines.push(sections)
-        lines.push("\nAsk me to expand on any section, or continue working on the design.")
-      } else if (productSpec) {
-        lines.push("*Design Draft* — not started yet. What would you like to design first?")
+        const openQuestions = extractSection(designDraft, "Open Questions")
+        const screenCount = (designDraft.match(/^### Screen/gm) ?? []).length
+        const flowCount = (designDraft.match(/^### Flow:/gm) ?? []).length
+        lines.push(`*Design Draft — ${featureName}*`)
+        lines.push(`${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} user flow${flowCount !== 1 ? "s" : ""} defined. Product spec approved.`)
+        lines.push("")
+        if (openQuestions) {
+          lines.push(`*Needs your input to freeze the spec:*\n${openQuestions}`)
+        } else {
+          lines.push("No open questions — ready to approve.")
+        }
       } else {
-        lines.push("No specs found yet. The design phase hasn't started.")
+        lines.push(`*Design Draft — ${featureName}*: not started yet. What would you like to design first?`)
       }
       const msg = lines.join("\n")
       appendMessage(threadTs, { role: "assistant", content: msg })
@@ -525,45 +521,33 @@ async function runArchitectAgent(params: {
       return
     }
 
-    // "Show me what we have" — return a structured summary, no Sonnet call needed.
+    // "Where are we" overview — return what's blocking + a brief status. No Sonnet call needed.
     const isStateQuery = await isSpecStateQuery(userMessage)
     if (isStateQuery) {
       const { paths } = loadWorkspaceConfig()
-      const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
-      const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
       const engineeringDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
-      const [productSpec, designSpec, engineeringDraft] = await Promise.all([
-        readFile(productSpecPath),
-        readFile(designSpecPath),
-        readFile(engineeringDraftPath, `spec/${featureName}-engineering`),
-      ])
-      const getSections = (content: string) =>
-        content.split("\n")
-          .filter(l => /^#{1,3} /.test(l))
-          .map(l => `• ${l.replace(/^#+\s+/, "")}`)
-          .join("\n")
-      const lines: string[] = [`*Current state — ${featureName}*\n`]
-      if (productSpec) {
-        lines.push(`*Product Spec* — approved ✓`)
-        const sections = getSections(productSpec)
-        if (sections) lines.push(sections)
-        lines.push("")
+      const engineeringDraft = await readFile(engineeringDraftPath, `spec/${featureName}-engineering`)
+
+      const extractSection = (content: string, heading: string): string => {
+        const re = new RegExp(`##+ ${heading}[\\s\\S]*?(?=\\n##+ |$)`, "i")
+        const match = content.match(re)
+        return match ? match[0].replace(/^##+ [^\n]+\n/, "").trim() : ""
       }
-      if (designSpec) {
-        lines.push(`*Design Spec* — approved ✓`)
-        const sections = getSections(designSpec)
-        if (sections) lines.push(sections)
-        lines.push("")
-      }
+
+      const lines: string[] = []
       if (engineeringDraft) {
-        lines.push(`*Engineering Draft* — in progress`)
-        const sections = getSections(engineeringDraft)
-        if (sections) lines.push(sections)
-        lines.push("\nAsk me to expand on any section, or continue working on the engineering spec.")
-      } else if (designSpec) {
-        lines.push("*Engineering Draft* — not started yet. What would you like to design first?")
+        const openQuestions = extractSection(engineeringDraft, "Open Questions")
+        const apiCount = (engineeringDraft.match(/^### (GET|POST|PUT|DELETE|PATCH) /gm) ?? []).length
+        lines.push(`*Engineering Draft — ${featureName}*`)
+        if (apiCount) lines.push(`${apiCount} API endpoint${apiCount !== 1 ? "s" : ""} defined. Design spec approved.`)
+        lines.push("")
+        if (openQuestions) {
+          lines.push(`*Needs your input to freeze the spec:*\n${openQuestions}`)
+        } else {
+          lines.push("No open questions — ready to approve.")
+        }
       } else {
-        lines.push("No specs found yet. The engineering phase hasn't started.")
+        lines.push(`*Engineering Draft — ${featureName}*: not started yet. What would you like to design first?`)
       }
       const msg = lines.join("\n")
       appendMessage(threadTs, { role: "assistant", content: msg })

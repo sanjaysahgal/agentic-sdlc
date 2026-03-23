@@ -124,15 +124,17 @@ Respond with exactly one word: off-topic or on-topic`,
   return text === "off-topic"
 }
 
-// Detects "show me what we have" queries — current state, show me the spec, where are we.
-// These are answered by returning the draft directly without a full Sonnet call.
+// Detects high-level "where are we" overview requests — not specific section queries.
+// Returns true only for broad status checks: "current state", "where are we", "catch me up".
+// Returns false for anything asking about specific content: "open questions", "show me flows",
+// "what components did we decide", "what's in the nav section" — those need the full agent.
 export async function isSpecStateQuery(message: string): Promise<boolean> {
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 10,
-    system: `Is this message asking to see the current state of a spec, draft, or progress — without making any new decisions?
-Examples that ARE state queries: "current state", "show me the spec", "where are we", "what do we have so far", "catch me up", "what have we decided", "latest on the spec", "show me what we have", "what's been decided"
-Examples that are NOT state queries: "I want to add a feature", "should we include X", "what about Y", "let's change the flow", any actual design or engineering question
+    system: `Is this message asking for a high-level overview of where a spec stands — not for any specific section's content?
+TRUE (high-level overview only): "current state", "where are we", "what do we have so far", "catch me up", "status update", "show me what we have", "overview"
+FALSE (specific content or action): "open questions", "show me the flows", "what components did we decide", "what's in section X", "what have we decided about Y", "I want to add X", "what about Y", any question about a specific topic
 Respond with exactly one word: yes or no`,
     messages: [{ role: "user", content: message }],
   })

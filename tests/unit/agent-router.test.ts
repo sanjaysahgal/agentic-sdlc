@@ -189,16 +189,22 @@ describe("isSpecStateQuery", () => {
     expect(result).toBe(true)
   })
 
-  it("returns true for 'show me the spec' query", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
-    const result = await isSpecStateQuery("show me the spec")
-    expect(result).toBe(true)
-  })
-
   it("returns true for 'where are we' query", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
     const result = await isSpecStateQuery("where are we with this?")
     expect(result).toBe(true)
+  })
+
+  it("returns false for specific section query ('open questions?')", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    const result = await isSpecStateQuery("open questions?")
+    expect(result).toBe(false)
+  })
+
+  it("returns false for 'show me the flows' — specific content request", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    const result = await isSpecStateQuery("show me the user flows")
+    expect(result).toBe(false)
   })
 
   it("returns false for actual design question", async () => {
