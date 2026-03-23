@@ -233,8 +233,8 @@ async function runPmAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_Product Manager is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
+  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
@@ -336,8 +336,8 @@ async function runDesignAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_UX Designer is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
+  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""

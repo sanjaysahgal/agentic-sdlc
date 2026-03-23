@@ -26,9 +26,10 @@ export async function handleGeneralChannelMessage(params: {
     ])
 
     const systemPrompt = buildConciergeSystemPrompt(features, context)
-    const response = await runAgent({ systemPrompt, history, userMessage, userImages })
-
+    // Append user message before the Claude call — if the call fails, the message
+    // is still in history so the next attempt has full context.
     appendMessage(threadTs, { role: "user", content: userMessage })
+    const response = await runAgent({ systemPrompt, history, userMessage, userImages })
     appendMessage(threadTs, { role: "assistant", content: response })
 
     // Extract and log any agent feedback the concierge detected
