@@ -363,35 +363,55 @@ async function runDesignAgent(params: {
       return
     }
 
-    // "Where are we" overview — return what's blocking + a brief status. No Sonnet call needed.
+    // "Where are we" overview — fast path, no context load or Sonnet call needed.
     const isStateQuery = await isSpecStateQuery(userMessage)
     if (isStateQuery) {
-      const { paths } = loadWorkspaceConfig()
+      const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
+      const branchName = `spec/${featureName}-design`
       const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-      const designDraft = await readFile(designDraftPath, `spec/${featureName}-design`)
+      const designDraft = await readFile(designDraftPath, branchName)
 
-      // Extract the Open Questions section — this is what blocks a spec freeze.
       const extractSection = (content: string, heading: string): string => {
         const re = new RegExp(`##+ ${heading}[\\s\\S]*?(?=\\n##+ |$)`, "i")
         const match = content.match(re)
         return match ? match[0].replace(/^##+ [^\n]+\n/, "").trim() : ""
       }
+      // Strip metadata tags from a question line for clean display
+      const cleanQuestion = (line: string) =>
+        line.replace(/\[type:[^\]]+\]\s*/g, "").replace(/\[blocking:[^\]]+\]\s*/g, "").trim()
 
       const lines: string[] = []
       if (designDraft) {
-        const openQuestions = extractSection(designDraft, "Open Questions")
         const screenCount = (designDraft.match(/^### Screen/gm) ?? []).length
         const flowCount = (designDraft.match(/^### Flow:/gm) ?? []).length
-        lines.push(`*Design Draft — ${featureName}*`)
-        lines.push(`${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} user flow${flowCount !== 1 ? "s" : ""} defined. Product spec approved.`)
+        const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
+        const openQuestionsSection = extractSection(designDraft, "Open Questions")
+        const allQuestions = openQuestionsSection.split("\n").filter(l => /^\s*-/.test(l))
+        const blocking = allQuestions.filter(l => l.includes("[blocking: yes]")).map(cleanQuestion)
+        const nonBlocking = allQuestions.filter(l => l.includes("[blocking: no]")).map(cleanQuestion)
+
+        lines.push(`*${featureName} design* — ${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} flow${flowCount !== 1 ? "s" : ""}`)
+        lines.push(`Spec: ${specUrl}`)
         lines.push("")
-        if (openQuestions) {
-          lines.push(`*Needs your input to freeze the spec:*\n${openQuestions}`)
+
+        if (blocking.length > 0) {
+          lines.push(`:warning: *Blocking — must resolve before approval:*`)
+          blocking.forEach(q => lines.push(q))
+          lines.push("")
         } else {
-          lines.push("No open questions — ready to approve.")
+          lines.push(`:white_check_mark: Nothing blocking — you can review in Figma and approve when ready.`)
+          lines.push("")
         }
+
+        if (nonBlocking.length > 0) {
+          lines.push(`*Non-blocking questions* (can resolve after approval):`)
+          nonBlocking.forEach(q => lines.push(q))
+          lines.push("")
+        }
+
+        lines.push(`Reply *approved* when you're done and I'll move to the engineering phase.`)
       } else {
-        lines.push(`*Design Draft — ${featureName}*: not started yet. What would you like to design first?`)
+        lines.push(`No design draft yet for *${featureName}*. What would you like to design first?`)
       }
       const msg = lines.join("\n")
       appendMessage(threadTs, { role: "assistant", content: msg })
@@ -521,33 +541,52 @@ async function runArchitectAgent(params: {
       return
     }
 
-    // "Where are we" overview — return what's blocking + a brief status. No Sonnet call needed.
+    // "Where are we" overview — fast path, no context load or Sonnet call needed.
     const isStateQuery = await isSpecStateQuery(userMessage)
     if (isStateQuery) {
-      const { paths } = loadWorkspaceConfig()
+      const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
+      const branchName = `spec/${featureName}-engineering`
       const engineeringDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
-      const engineeringDraft = await readFile(engineeringDraftPath, `spec/${featureName}-engineering`)
+      const engineeringDraft = await readFile(engineeringDraftPath, branchName)
 
       const extractSection = (content: string, heading: string): string => {
         const re = new RegExp(`##+ ${heading}[\\s\\S]*?(?=\\n##+ |$)`, "i")
         const match = content.match(re)
         return match ? match[0].replace(/^##+ [^\n]+\n/, "").trim() : ""
       }
+      const cleanQuestion = (line: string) =>
+        line.replace(/\[type:[^\]]+\]\s*/g, "").replace(/\[blocking:[^\]]+\]\s*/g, "").trim()
 
       const lines: string[] = []
       if (engineeringDraft) {
-        const openQuestions = extractSection(engineeringDraft, "Open Questions")
-        const apiCount = (engineeringDraft.match(/^### (GET|POST|PUT|DELETE|PATCH) /gm) ?? []).length
-        lines.push(`*Engineering Draft — ${featureName}*`)
-        if (apiCount) lines.push(`${apiCount} API endpoint${apiCount !== 1 ? "s" : ""} defined. Design spec approved.`)
+        const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${engineeringDraftPath}`
+        const openQuestionsSection = extractSection(engineeringDraft, "Open Questions")
+        const allQuestions = openQuestionsSection.split("\n").filter(l => /^\s*-/.test(l))
+        const blocking = allQuestions.filter(l => l.includes("[blocking: yes]")).map(cleanQuestion)
+        const nonBlocking = allQuestions.filter(l => l.includes("[blocking: no]")).map(cleanQuestion)
+
+        lines.push(`*${featureName} engineering spec* — in progress`)
+        lines.push(`Spec: ${specUrl}`)
         lines.push("")
-        if (openQuestions) {
-          lines.push(`*Needs your input to freeze the spec:*\n${openQuestions}`)
+
+        if (blocking.length > 0) {
+          lines.push(`:warning: *Blocking — must resolve before approval:*`)
+          blocking.forEach(q => lines.push(q))
+          lines.push("")
         } else {
-          lines.push("No open questions — ready to approve.")
+          lines.push(`:white_check_mark: Nothing blocking — you can review and approve when ready.`)
+          lines.push("")
         }
+
+        if (nonBlocking.length > 0) {
+          lines.push(`*Non-blocking questions* (can resolve after approval):`)
+          nonBlocking.forEach(q => lines.push(q))
+          lines.push("")
+        }
+
+        lines.push(`Reply *approved* when you're done and I'll hand off to the engineering agents.`)
       } else {
-        lines.push(`*Engineering Draft — ${featureName}*: not started yet. What would you like to design first?`)
+        lines.push(`No engineering draft yet for *${featureName}*. What would you like to spec out first?`)
       }
       const msg = lines.join("\n")
       appendMessage(threadTs, { role: "assistant", content: msg })
