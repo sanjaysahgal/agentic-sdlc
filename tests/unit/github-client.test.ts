@@ -235,16 +235,34 @@ describe("getInProgressFeatures", () => {
     expect(result).toEqual([{ featureName: "onboarding", phase: "product-spec-in-progress" }])
   })
 
-  it("returns product-spec-approved-awaiting-design when product spec on main, design not", async () => {
+  it("returns product-spec-approved-awaiting-design when product spec on main, no design spec, no design branch", async () => {
     mockPaginate.mockResolvedValue([{ name: "spec/onboarding-product" }])
     mockGetContent.mockResolvedValueOnce({
       data: { content: Buffer.from("# Product Spec").toString("base64") },
     })
-    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // design not on main
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // engineering not on main
 
     const result = await getInProgressFeatures()
     expect(result).toEqual([
       { featureName: "onboarding", phase: "product-spec-approved-awaiting-design" },
+    ])
+  })
+
+  it("returns design-in-progress when product spec on main and design branch exists", async () => {
+    mockPaginate.mockResolvedValue([
+      { name: "spec/onboarding-product" },
+      { name: "spec/onboarding-design" },
+    ])
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from("# Product Spec").toString("base64") },
+    })
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // design not on main
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // engineering not on main
+
+    const result = await getInProgressFeatures()
+    expect(result).toEqual([
+      { featureName: "onboarding", phase: "design-in-progress" },
     ])
   })
 
@@ -256,7 +274,7 @@ describe("getInProgressFeatures", () => {
     mockGetContent.mockResolvedValueOnce({
       data: { content: Buffer.from("# Design Spec").toString("base64") },
     })
-    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // no engineering spec on main
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // engineering not on main
 
     const result = await getInProgressFeatures()
     expect(result).toEqual([

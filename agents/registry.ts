@@ -22,6 +22,11 @@ export const ACTIVE_AGENTS: AgentEntry[] = [
     phase: "Phase 2 — active in every #feature-* channel after the product spec is approved",
   },
   {
+    name: "Architect",
+    description: "Translates the approved design spec into a precise engineering plan: data model, API contracts, component breakdown, non-functional requirements.",
+    phase: "Phase 3 — active in every #feature-* channel after the design spec is approved",
+  },
+  {
     name: "Concierge",
     description: "The front door for the whole system — orients anyone arriving, explains the system, and points them to the right next step.",
     phase: "Always available in the main workspace channel",

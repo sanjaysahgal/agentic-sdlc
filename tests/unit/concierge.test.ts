@@ -92,12 +92,30 @@ describe("buildConciergeSystemPrompt", () => {
     expect(prompt).toContain("#feature-onboarding")
   })
 
+  it("describes design-in-progress correctly", () => {
+    const features: FeatureStatus[] = [
+      { featureName: "onboarding", phase: "design-in-progress" },
+    ]
+    const prompt = buildConciergeSystemPrompt(features, baseContext)
+    expect(prompt.toLowerCase()).toContain("design")
+    expect(prompt).toContain("#feature-onboarding")
+  })
+
   it("describes design-approved-awaiting-engineering correctly", () => {
     const features: FeatureStatus[] = [
       { featureName: "payments", phase: "design-approved-awaiting-engineering" },
     ]
     const prompt = buildConciergeSystemPrompt(features, baseContext)
     expect(prompt.toLowerCase()).toMatch(/design|engineer/)
+    expect(prompt).toContain("#feature-payments")
+  })
+
+  it("describes engineering-in-progress correctly", () => {
+    const features: FeatureStatus[] = [
+      { featureName: "payments", phase: "engineering-in-progress" },
+    ]
+    const prompt = buildConciergeSystemPrompt(features, baseContext)
+    expect(prompt.toLowerCase()).toMatch(/architect|engineer/)
     expect(prompt).toContain("#feature-payments")
   })
 

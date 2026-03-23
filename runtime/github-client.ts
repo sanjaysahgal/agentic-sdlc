@@ -112,7 +112,9 @@ export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
       const hasEngineeringBranch = branches.some((b) => b.name === `spec/${featureName}-engineering`)
       features.push({ featureName, phase: hasEngineeringBranch ? "engineering-in-progress" : "design-approved-awaiting-engineering" })
     } else if (productOnMain) {
-      features.push({ featureName, phase: "product-spec-approved-awaiting-design" })
+      // Check if design branch exists (design draft in progress)
+      const hasDesignBranch = branches.some((b) => b.name === `spec/${featureName}-design`)
+      features.push({ featureName, phase: hasDesignBranch ? "design-in-progress" : "product-spec-approved-awaiting-design" })
     } else {
       features.push({ featureName, phase: "product-spec-in-progress" })
     }
