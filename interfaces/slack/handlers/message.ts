@@ -363,7 +363,9 @@ async function runDesignAgent(params: {
       return
     }
 
-    // "Show me what we have" — return the current draft directly, no Sonnet call needed.
+    // "Show me what we have" — return a structured summary, no Sonnet call needed.
+    // We show section headers (not raw content) — stays short, renders well in Slack,
+    // and is more scannable than dumping 20k of markdown.
     const isStateQuery = await isSpecStateQuery(userMessage)
     if (isStateQuery) {
       const { paths } = loadWorkspaceConfig()
@@ -373,13 +375,29 @@ async function runDesignAgent(params: {
         readFile(productSpecPath),
         readFile(designDraftPath, `spec/${featureName}-design`),
       ])
-      const parts = [
-        productSpec ? `## Approved Product Spec\n${productSpec}` : "",
-        designDraft ? `## Current Design Draft\n${designDraft}` : "",
-      ].filter(Boolean)
-      const msg = parts.length > 0
-        ? `Here's the current state for *${featureName}*:\n\n${parts.join("\n\n---\n\n")}`
-        : `No specs found yet for *${featureName}*. The design phase hasn't started.`
+      const getSections = (content: string) =>
+        content.split("\n")
+          .filter(l => /^#{1,3} /.test(l))
+          .map(l => `• ${l.replace(/^#+\s+/, "")}`)
+          .join("\n")
+      const lines: string[] = [`*Current state — ${featureName}*\n`]
+      if (productSpec) {
+        lines.push(`*Product Spec* — approved ✓`)
+        const sections = getSections(productSpec)
+        if (sections) lines.push(sections)
+        lines.push("")
+      }
+      if (designDraft) {
+        lines.push(`*Design Draft* — in progress`)
+        const sections = getSections(designDraft)
+        if (sections) lines.push(sections)
+        lines.push("\nAsk me to expand on any section, or continue working on the design.")
+      } else if (productSpec) {
+        lines.push("*Design Draft* — not started yet. What would you like to design first?")
+      } else {
+        lines.push("No specs found yet. The design phase hasn't started.")
+      }
+      const msg = lines.join("\n")
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return
@@ -507,7 +525,7 @@ async function runArchitectAgent(params: {
       return
     }
 
-    // "Show me what we have" — return the current spec chain directly, no Sonnet call needed.
+    // "Show me what we have" — return a structured summary, no Sonnet call needed.
     const isStateQuery = await isSpecStateQuery(userMessage)
     if (isStateQuery) {
       const { paths } = loadWorkspaceConfig()
@@ -519,14 +537,35 @@ async function runArchitectAgent(params: {
         readFile(designSpecPath),
         readFile(engineeringDraftPath, `spec/${featureName}-engineering`),
       ])
-      const parts = [
-        productSpec ? `## Approved Product Spec\n${productSpec}` : "",
-        designSpec ? `## Approved Design Spec\n${designSpec}` : "",
-        engineeringDraft ? `## Current Engineering Draft\n${engineeringDraft}` : "",
-      ].filter(Boolean)
-      const msg = parts.length > 0
-        ? `Here's the current state for *${featureName}*:\n\n${parts.join("\n\n---\n\n")}`
-        : `No specs found yet for *${featureName}*. The engineering phase hasn't started.`
+      const getSections = (content: string) =>
+        content.split("\n")
+          .filter(l => /^#{1,3} /.test(l))
+          .map(l => `• ${l.replace(/^#+\s+/, "")}`)
+          .join("\n")
+      const lines: string[] = [`*Current state — ${featureName}*\n`]
+      if (productSpec) {
+        lines.push(`*Product Spec* — approved ✓`)
+        const sections = getSections(productSpec)
+        if (sections) lines.push(sections)
+        lines.push("")
+      }
+      if (designSpec) {
+        lines.push(`*Design Spec* — approved ✓`)
+        const sections = getSections(designSpec)
+        if (sections) lines.push(sections)
+        lines.push("")
+      }
+      if (engineeringDraft) {
+        lines.push(`*Engineering Draft* — in progress`)
+        const sections = getSections(engineeringDraft)
+        if (sections) lines.push(sections)
+        lines.push("\nAsk me to expand on any section, or continue working on the engineering spec.")
+      } else if (designSpec) {
+        lines.push("*Engineering Draft* — not started yet. What would you like to design first?")
+      } else {
+        lines.push("No specs found yet. The engineering phase hasn't started.")
+      }
+      const msg = lines.join("\n")
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return
