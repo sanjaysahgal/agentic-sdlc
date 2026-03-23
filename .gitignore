@@ -3,3 +3,5 @@ dist/
 .env
 *.log
 .confirmed-agents.json
+.bot.pid
+.conversation-history.json
