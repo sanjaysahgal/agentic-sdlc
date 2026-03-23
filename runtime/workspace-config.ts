@@ -9,9 +9,15 @@ export type WorkspaceConfig = {
   githubOwner: string        // GitHub org or user
   githubRepo: string         // GitHub repo name
   mainChannel: string        // Main Slack channel for the concierge (e.g. "all-health360")
+  roles: {
+    pmUser: string           // Slack user ID for the PM — used by Orchestrator alerts
+    designerUser: string     // Slack user ID for the designer
+    architectUser: string    // Slack user ID for the architect
+  }
   paths: {
     productVision: string          // Product vision doc — injected into every agent
     systemArchitecture: string     // Architecture constraints — injected into every agent
+    designSystem: string           // Design system doc — injected into design agent
     featureConventions: string     // Feature-level conventions — injected into pm agent
     featuresRoot: string           // Root dir for feature specs, e.g. "specs/features"
   }
@@ -34,9 +40,15 @@ export function loadWorkspaceConfig(): WorkspaceConfig {
     githubOwner,
     githubRepo,
     mainChannel: process.env.SLACK_MAIN_CHANNEL ?? "general",
+    roles: {
+      pmUser:         process.env.SLACK_PM_USER         ?? "",
+      designerUser:   process.env.SLACK_DESIGNER_USER   ?? "",
+      architectUser:  process.env.SLACK_ARCHITECT_USER  ?? "",
+    },
     paths: {
       productVision:       process.env.PATH_PRODUCT_VISION       ?? "specs/product/PRODUCT_VISION.md",
       systemArchitecture:  process.env.PATH_SYSTEM_ARCHITECTURE  ?? "specs/architecture/system-architecture.md",
+      designSystem:        process.env.PATH_DESIGN_SYSTEM        ?? "specs/design/DESIGN_SYSTEM.md",
       featureConventions:  process.env.PATH_FEATURE_CONVENTIONS  ?? "specs/features/CLAUDE.md",
       featuresRoot:        process.env.PATH_FEATURES_ROOT        ?? "specs/features",
     },

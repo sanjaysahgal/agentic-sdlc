@@ -4,13 +4,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // (which itself calls loadWorkspaceConfig + new Octokit at load time).
 // Use vi.hoisted() for mock functions so they're available when factories run.
 
-const { mockReadFile, mockCreate } = vi.hoisted(() => ({
+const { mockReadFile, mockListSubdirectories, mockCreate } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
+  mockListSubdirectories: vi.fn(),
   mockCreate: vi.fn(),
 }))
 
 vi.mock("../../runtime/github-client", () => ({
   readFile: mockReadFile,
+  listSubdirectories: mockListSubdirectories,
 }))
 
 vi.mock("@anthropic-ai/sdk", () => ({
@@ -21,21 +23,31 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 vi.mock("../../runtime/workspace-config", () => ({
   loadWorkspaceConfig: vi.fn().mockReturnValue({
+    roles: { pmUser: "", designerUser: "", architectUser: "" },
     paths: {
       productVision: "specs/product/PRODUCT_VISION.md",
       systemArchitecture: "specs/architecture/system-architecture.md",
+      designSystem: "specs/design/DESIGN_SYSTEM.md",
       featureConventions: "specs/features/CLAUDE.md",
       featuresRoot: "specs/features",
     },
   }),
 }))
 
-import { loadAgentContext, loadAgentContextForQuery } from "../../runtime/context-loader"
+import {
+  loadAgentContext,
+  loadAgentContextForQuery,
+  loadDesignAgentContext,
+  loadArchitectAgentContext,
+} from "../../runtime/context-loader"
 
 describe("context-loader", () => {
   beforeEach(() => {
     mockReadFile.mockReset()
+    mockListSubdirectories.mockReset()
     mockCreate.mockReset()
+    // Default: no other feature directories (no cross-feature specs to load)
+    mockListSubdirectories.mockResolvedValue([])
   })
 
   // ─── loadAgentContext ────────────────────────────────────────────────────
@@ -88,6 +100,131 @@ describe("context-loader", () => {
         "specs/features/onboarding/onboarding.product.md",
         "spec/onboarding-product"
       )
+    })
+
+    it("loads approved product specs from other features for cross-feature coherence", async () => {
+      mockListSubdirectories.mockResolvedValue(["dashboard", "onboarding"])
+      mockReadFile.mockImplementation((path: string, ref?: string) => {
+        if (path.includes("dashboard") && path.endsWith(".product.md") && !ref) return Promise.resolve("# Dashboard spec")
+        return Promise.resolve("")
+      })
+
+      // Loading context for "onboarding" — should load "dashboard" spec but not "onboarding"
+      const result = await loadAgentContext("onboarding")
+      expect(result.approvedFeatureSpecs).toContain("# Dashboard spec")
+      expect(result.approvedFeatureSpecs).not.toContain("onboarding")
+    })
+
+    it("returns empty approvedFeatureSpecs when no other features exist", async () => {
+      mockListSubdirectories.mockResolvedValue([])
+      mockReadFile.mockResolvedValue("")
+
+      const result = await loadAgentContext("onboarding")
+      expect(result.approvedFeatureSpecs).toBe("")
+    })
+  })
+
+  // ─── loadDesignAgentContext ──────────────────────────────────────────────
+
+  describe("loadDesignAgentContext", () => {
+    it("loads design system doc into designSystem field", async () => {
+      mockReadFile.mockImplementation((path: string) => {
+        if (path.includes("DESIGN_SYSTEM")) return Promise.resolve("# Design System")
+        return Promise.resolve("")
+      })
+
+      const result = await loadDesignAgentContext("onboarding")
+      expect(result.designSystem).toBe("# Design System")
+    })
+
+    it("sets designSystem to empty string when no DESIGN_SYSTEM.md exists", async () => {
+      mockReadFile.mockResolvedValue("")
+
+      const result = await loadDesignAgentContext("onboarding")
+      expect(result.designSystem).toBe("")
+    })
+
+    it("combines approved product spec and design draft into currentDraft", async () => {
+      mockReadFile.mockImplementation((path: string, ref?: string) => {
+        if (path.endsWith(".product.md") && !ref) return Promise.resolve("# Product Spec")
+        if (path.endsWith(".design.md") && ref === "spec/onboarding-design") return Promise.resolve("# Design Draft")
+        return Promise.resolve("")
+      })
+
+      const result = await loadDesignAgentContext("onboarding")
+      expect(result.currentDraft).toContain("## Approved Product Spec")
+      expect(result.currentDraft).toContain("# Product Spec")
+      expect(result.currentDraft).toContain("## Current Design Draft")
+      expect(result.currentDraft).toContain("# Design Draft")
+    })
+
+    it("reads design draft from spec branch", async () => {
+      mockReadFile.mockResolvedValue("")
+
+      await loadDesignAgentContext("onboarding")
+
+      expect(mockReadFile).toHaveBeenCalledWith(
+        "specs/features/onboarding/onboarding.design.md",
+        "spec/onboarding-design"
+      )
+    })
+
+    it("loads approved design specs from other features for cross-feature coherence", async () => {
+      mockListSubdirectories.mockResolvedValue(["dashboard", "onboarding"])
+      mockReadFile.mockImplementation((path: string, ref?: string) => {
+        if (path.includes("dashboard") && path.endsWith(".design.md") && !ref) return Promise.resolve("# Dashboard design")
+        return Promise.resolve("")
+      })
+
+      const result = await loadDesignAgentContext("onboarding")
+      expect(result.approvedFeatureSpecs).toContain("# Dashboard design")
+    })
+  })
+
+  // ─── loadArchitectAgentContext ───────────────────────────────────────────
+
+  describe("loadArchitectAgentContext", () => {
+    it("combines product spec, design spec, and engineering draft into currentDraft", async () => {
+      mockReadFile.mockImplementation((path: string, ref?: string) => {
+        if (path.endsWith(".product.md") && !ref) return Promise.resolve("# Product Spec")
+        if (path.endsWith(".design.md") && !ref) return Promise.resolve("# Design Spec")
+        if (path.endsWith(".engineering.md") && ref === "spec/onboarding-engineering") return Promise.resolve("# Engineering Draft")
+        return Promise.resolve("")
+      })
+
+      const result = await loadArchitectAgentContext("onboarding")
+      expect(result.currentDraft).toContain("## Approved Product Spec")
+      expect(result.currentDraft).toContain("## Approved Design Spec")
+      expect(result.currentDraft).toContain("## Current Engineering Draft")
+    })
+
+    it("reads engineering draft from spec branch", async () => {
+      mockReadFile.mockResolvedValue("")
+
+      await loadArchitectAgentContext("onboarding")
+
+      expect(mockReadFile).toHaveBeenCalledWith(
+        "specs/features/onboarding/onboarding.engineering.md",
+        "spec/onboarding-engineering"
+      )
+    })
+
+    it("loads approved engineering specs from other features for cross-feature coherence", async () => {
+      mockListSubdirectories.mockResolvedValue(["dashboard", "onboarding"])
+      mockReadFile.mockImplementation((path: string, ref?: string) => {
+        if (path.includes("dashboard") && path.endsWith(".engineering.md") && !ref) return Promise.resolve("# Dashboard engineering")
+        return Promise.resolve("")
+      })
+
+      const result = await loadArchitectAgentContext("onboarding")
+      expect(result.approvedFeatureSpecs).toContain("# Dashboard engineering")
+    })
+
+    it("sets featureConventions to empty string (architect doesn't use conventions doc)", async () => {
+      mockReadFile.mockResolvedValue("")
+
+      const result = await loadArchitectAgentContext("onboarding")
+      expect(result.featureConventions).toBe("")
     })
   })
 

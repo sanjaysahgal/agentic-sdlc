@@ -208,6 +208,19 @@ export async function saveApprovedDesignSpec(params: {
   return "saved"
 }
 
+// Lists the immediate subdirectory names under a path on main.
+// Returns empty array if the path doesn't exist or isn't a directory.
+export async function listSubdirectories(path: string): Promise<string[]> {
+  try {
+    const response = await octokit.repos.getContent({ owner, repo, path })
+    const data = response.data
+    if (!Array.isArray(data)) return []
+    return data.filter((entry) => entry.type === "dir").map((entry) => entry.name)
+  } catch {
+    return []
+  }
+}
+
 // Commit a new file and open a PR against main.
 // Returns the PR URL.
 export async function createSpecPR(params: {
