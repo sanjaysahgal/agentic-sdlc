@@ -46,7 +46,7 @@ export async function withThinking(params: {
   try {
     await run(update)
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : ""
+    const errMsg = err instanceof Error ? err.message : String(err)
     const isOverloaded = errMsg.includes("overloaded")
     const isImageError = errMsg.includes("Could not process image") || errMsg.includes("image.source")
     const msg = isOverloaded
@@ -54,7 +54,19 @@ export async function withThinking(params: {
       : isImageError
         ? "I couldn't process the attached image. Try sending it as a PNG screenshot instead of directly from the camera roll."
         : "Something went wrong. Please try again."
-    console.error("[withThinking] agent error:", err)
+
+    // Structured error log — every field needed to diagnose a production failure
+    console.error(JSON.stringify({
+      level: "error",
+      timestamp: new Date().toISOString(),
+      agent,
+      channel: channelId,
+      thread: threadTs,
+      errorType: err instanceof Error ? err.constructor.name : "UnknownError",
+      errorMessage: errMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+    }))
+
     await update(msg).catch(() => {})
     throw err
   } finally {

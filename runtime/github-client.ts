@@ -1,7 +1,9 @@
 import { Octokit } from "@octokit/rest"
 import { loadWorkspaceConfig } from "./workspace-config"
 
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
+// 15s timeout on all GitHub API calls — context loads run in parallel before every agent
+// response. An unbounded hang blocks the entire request and leaves the user at "thinking".
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN, request: { timeout: 15_000 } })
 const { githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
 
 // Read a file from the repo. Returns empty string if not found.

@@ -46,7 +46,7 @@ vi.mock("../../runtime/workspace-config", () => ({
   }),
 }))
 
-import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures } from "../../runtime/github-client"
+import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories } from "../../runtime/github-client"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -275,5 +275,57 @@ describe("getInProgressFeatures", () => {
     const result = await getInProgressFeatures()
     expect(result).toHaveLength(1)
     expect(result[0].featureName).toBe("onboarding")
+  })
+})
+
+// ─── listSubdirectories ───────────────────────────────────────────────────────
+
+describe("listSubdirectories", () => {
+  it("returns directory names from the path", async () => {
+    mockGetContent.mockResolvedValue({
+      data: [
+        { type: "dir", name: "onboarding" },
+        { type: "dir", name: "dashboard" },
+        { type: "file", name: "CLAUDE.md" },
+      ],
+    })
+
+    const result = await listSubdirectories("specs/features")
+    expect(result).toEqual(["onboarding", "dashboard"])
+  })
+
+  it("filters out files — returns only directories", async () => {
+    mockGetContent.mockResolvedValue({
+      data: [
+        { type: "file", name: "README.md" },
+        { type: "dir", name: "onboarding" },
+      ],
+    })
+
+    const result = await listSubdirectories("specs/features")
+    expect(result).toEqual(["onboarding"])
+  })
+
+  it("returns empty array when path does not exist", async () => {
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+
+    const result = await listSubdirectories("specs/features")
+    expect(result).toEqual([])
+  })
+
+  it("returns empty array when response is not an array (single file returned)", async () => {
+    mockGetContent.mockResolvedValue({
+      data: { type: "file", name: "CLAUDE.md", content: "" },
+    })
+
+    const result = await listSubdirectories("specs/features")
+    expect(result).toEqual([])
+  })
+
+  it("returns empty array on GitHub API timeout", async () => {
+    mockGetContent.mockRejectedValue(new Error("ETIMEDOUT"))
+
+    const result = await listSubdirectories("specs/features")
+    expect(result).toEqual([])
   })
 })
