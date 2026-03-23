@@ -4,8 +4,8 @@ import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPen
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, getInProgressFeatures } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, AgentType } from "../../../runtime/agent-router"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, getInProgressFeatures, readFile } from "../../../runtime/github-client"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft } from "../../../runtime/spec-auditor"
@@ -362,6 +362,28 @@ async function runDesignAgent(params: {
       await update(msg)
       return
     }
+
+    // "Show me what we have" — return the current draft directly, no Sonnet call needed.
+    const isStateQuery = await isSpecStateQuery(userMessage)
+    if (isStateQuery) {
+      const { paths } = loadWorkspaceConfig()
+      const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
+      const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+      const [productSpec, designDraft] = await Promise.all([
+        readFile(productSpecPath),
+        readFile(designDraftPath, `spec/${featureName}-design`),
+      ])
+      const parts = [
+        productSpec ? `## Approved Product Spec\n${productSpec}` : "",
+        designDraft ? `## Current Design Draft\n${designDraft}` : "",
+      ].filter(Boolean)
+      const msg = parts.length > 0
+        ? `Here's the current state for *${featureName}*:\n\n${parts.join("\n\n---\n\n")}`
+        : `No specs found yet for *${featureName}*. The design phase hasn't started.`
+      appendMessage(threadTs, { role: "assistant", content: msg })
+      await update(msg)
+      return
+    }
   }
 
   await update("_UX Designer is reading the spec and design context..._")
@@ -480,6 +502,31 @@ async function runArchitectAgent(params: {
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the Architect — I'm here when you're ready to work on data models, APIs, or engineering decisions for this feature.`
+      appendMessage(threadTs, { role: "assistant", content: msg })
+      await update(msg)
+      return
+    }
+
+    // "Show me what we have" — return the current spec chain directly, no Sonnet call needed.
+    const isStateQuery = await isSpecStateQuery(userMessage)
+    if (isStateQuery) {
+      const { paths } = loadWorkspaceConfig()
+      const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
+      const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+      const engineeringDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+      const [productSpec, designSpec, engineeringDraft] = await Promise.all([
+        readFile(productSpecPath),
+        readFile(designSpecPath),
+        readFile(engineeringDraftPath, `spec/${featureName}-engineering`),
+      ])
+      const parts = [
+        productSpec ? `## Approved Product Spec\n${productSpec}` : "",
+        designSpec ? `## Approved Design Spec\n${designSpec}` : "",
+        engineeringDraft ? `## Current Engineering Draft\n${engineeringDraft}` : "",
+      ].filter(Boolean)
+      const msg = parts.length > 0
+        ? `Here's the current state for *${featureName}*:\n\n${parts.join("\n\n---\n\n")}`
+        : `No specs found yet for *${featureName}*. The engineering phase hasn't started.`
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return

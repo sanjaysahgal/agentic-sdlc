@@ -25,7 +25,7 @@ export async function withThinking(params: {
 
   // Slack's text limit is 40,000 chars. Truncate long responses at a paragraph
   // boundary rather than letting chat.update fail with msg_too_long.
-  const SLACK_MAX_CHARS = 39_000
+  const SLACK_MAX_CHARS = 30_000  // Conservative: real limit is 40k but encoding overhead is unpredictable
   function truncateForSlack(text: string): string {
     if (text.length <= SLACK_MAX_CHARS) return text
     const cutoff = text.lastIndexOf("\n\n", SLACK_MAX_CHARS)

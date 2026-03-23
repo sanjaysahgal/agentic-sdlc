@@ -17,6 +17,7 @@ import {
   classifyMessageScope,
   classifyApprovedPhaseIntent,
   isOffTopicForAgent,
+  isSpecStateQuery,
 } from "../../runtime/agent-router"
 
 // ─── detectPhase — pure logic, no mocks needed ────────────────────────────
@@ -172,5 +173,49 @@ describe("isOffTopicForAgent", () => {
     await isOffTopicForAgent("data model for users", "engineering")
     const callArgs = mockCreate.mock.calls[0][0]
     expect(callArgs.system).toContain("Architect")
+  })
+})
+
+// ─── isSpecStateQuery ─────────────────────────────────────────────────────────
+
+describe("isSpecStateQuery", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("returns true for 'current state?' query", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    const result = await isSpecStateQuery("current state?")
+    expect(result).toBe(true)
+  })
+
+  it("returns true for 'show me the spec' query", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    const result = await isSpecStateQuery("show me the spec")
+    expect(result).toBe(true)
+  })
+
+  it("returns true for 'where are we' query", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    const result = await isSpecStateQuery("where are we with this?")
+    expect(result).toBe(true)
+  })
+
+  it("returns false for actual design question", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    const result = await isSpecStateQuery("should we add a loading spinner to the login screen?")
+    expect(result).toBe(false)
+  })
+
+  it("returns false for a proposal", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    const result = await isSpecStateQuery("what if we added a dark mode toggle?")
+    expect(result).toBe(false)
+  })
+
+  it("falls back to false on unexpected Claude response — don't block real work", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "maybe" }] })
+    const result = await isSpecStateQuery("something")
+    expect(result).toBe(false)
   })
 })

@@ -124,6 +124,23 @@ Respond with exactly one word: off-topic or on-topic`,
   return text === "off-topic"
 }
 
+// Detects "show me what we have" queries — current state, show me the spec, where are we.
+// These are answered by returning the draft directly without a full Sonnet call.
+export async function isSpecStateQuery(message: string): Promise<boolean> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 10,
+    system: `Is this message asking to see the current state of a spec, draft, or progress — without making any new decisions?
+Examples that ARE state queries: "current state", "show me the spec", "where are we", "what do we have so far", "catch me up", "what have we decided", "latest on the spec", "show me what we have", "what's been decided"
+Examples that are NOT state queries: "I want to add a feature", "should we include X", "what about Y", "let's change the flow", any actual design or engineering question
+Respond with exactly one word: yes or no`,
+    messages: [{ role: "user", content: message }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "no"
+  return text === "yes"
+}
+
 export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean
