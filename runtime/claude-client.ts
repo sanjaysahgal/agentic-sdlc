@@ -5,6 +5,11 @@ import { Message } from "./conversation-store"
 // several minutes. 90s was too short and caused spurious timeouts on complex responses.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000 })
 
+// In dev mode, use Haiku for all agent calls — 5x cheaper, safe for testing routing/formatting/structure.
+const AGENT_MODEL = process.env.SDLC_DEV_MODE === "true"
+  ? "claude-haiku-4-5-20251001"
+  : "claude-sonnet-4-6"
+
 // Cap history at 40 messages (20 exchanges) to prevent token explosion on long threads.
 // The system prompt + context already carries the full spec state — the agent
 // doesn't need the full conversation history to stay coherent.
@@ -46,9 +51,9 @@ export async function runAgent(params: {
   ]
 
   const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: AGENT_MODEL,
     max_tokens: 4096,
-    system: systemPrompt,
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     messages,
   })
 

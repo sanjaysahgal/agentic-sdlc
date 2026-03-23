@@ -23,6 +23,27 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ## Active (next up)
 
+### Step 2.5 — API cost optimization
+
+Two changes that compound as the agent roster grows. Build before Step 3 — every agent call made during Orchestrator development benefits immediately.
+
+**Dev-mode model override:**
+- Add `SDLC_DEV_MODE` to `.env.example` — when `true`, all agent calls in `claude-client.ts` use `claude-haiku-4-5-20251001` instead of Sonnet
+- Haiku is 5x cheaper on input and output — covers testing routing, formatting, and structure where Sonnet-quality reasoning is not needed
+- One env flag, one conditional in `claude-client.ts`
+
+**Structured prompt caching (static/dynamic split):**
+- The `cache_control: ephemeral` marker added to `claude-client.ts` caches the full system prompt — but the system prompt includes `featureName` and live spec content, so the cache busts on every new feature
+- Fix: restructure each agent's `build*SystemPrompt()` function to return two parts — a static block (persona, workflow, spec format, rules) and a dynamic block (featureName, specUrl, live context)
+- Pass both to `runAgent()` as separate params; apply `cache_control` only to the static block
+- Static block is ~90% of each prompt — this gives cross-feature cache hits and reduces input cost by ~90% on cache hits
+- `.env.example` gains `SDLC_DEV_MODE` with comment
+
+**Why before Step 3:**
+Every agent call made during Orchestrator development burns Sonnet credits. Dev-mode override eliminates most of that cost. Structured caching then compounds in production as feature volume grows.
+
+---
+
 ### Step 3 — Orchestrator agent
 
 A dedicated agent that owns proactive phase coordination AND continuous spec integrity monitoring across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
