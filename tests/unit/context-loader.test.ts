@@ -122,6 +122,24 @@ describe("context-loader", () => {
       const result = await loadAgentContext("onboarding")
       expect(result.approvedFeatureSpecs).toBe("")
     })
+
+    it("returns empty approvedFeatureSpecs and does not hang when listSubdirectories never resolves", async () => {
+      // Simulate a GitHub API hang — listSubdirectories never resolves
+      mockListSubdirectories.mockReturnValue(new Promise(() => {}))
+      mockReadFile.mockResolvedValue("")
+
+      // Should resolve within the 10s timeout (we use vi fake timers to avoid actually waiting)
+      const { vi: viLocal } = await import("vitest")
+      viLocal.useFakeTimers()
+
+      const resultPromise = loadAgentContext("onboarding")
+      viLocal.advanceTimersByTime(10_001)
+      const result = await resultPromise
+
+      expect(result.approvedFeatureSpecs).toBe("")
+
+      viLocal.useRealTimers()
+    })
   })
 
   // ─── loadDesignAgentContext ──────────────────────────────────────────────
