@@ -253,6 +253,68 @@ When you ask a question, make it unambiguous enough that a short reply ("yes", "
 You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, headers with ---. Never use ASCII tables (pipes and dashes). Never output a wall of plain text when structure would make it clearer. When summarising a spec state, use sections with bold headers and bullet points — not a markdown table with | characters.`
 }
 
+// Builds the "current state?" fast-path response for a design draft.
+// Mirrors the voice from the system prompt's approval-ready message —
+// spec link, blocking/non-blocking split, visualisation options, CTA.
+// Extracted here so it's testable independently of the Slack handler.
+export function buildDesignStateResponse(params: {
+  featureName: string
+  draftContent: string
+  specUrl: string
+}): string {
+  const { featureName, draftContent, specUrl } = params
+
+  if (!draftContent) {
+    return `No design draft yet for *${featureName}*. What would you like to design first?`
+  }
+
+  const extractSection = (content: string, heading: string): string => {
+    const re = new RegExp(`##+ ${heading}[\\s\\S]*?(?=\\n##+ |$)`, "i")
+    const match = content.match(re)
+    return match ? match[0].replace(/^##+ [^\n]+\n/, "").trim() : ""
+  }
+  const cleanQuestion = (line: string) =>
+    line.replace(/\[type:[^\]]+\]\s*/g, "").replace(/\[blocking:[^\]]+\]\s*/g, "").trim()
+
+  const screenCount = (draftContent.match(/^### Screen/gm) ?? []).length
+  const flowCount = (draftContent.match(/^### Flow:/gm) ?? []).length
+  const openQuestionsSection = extractSection(draftContent, "Open Questions")
+  const allQuestions = openQuestionsSection.split("\n").filter(l => /^\s*-/.test(l))
+  const blocking = allQuestions.filter(l => l.includes("[blocking: yes]")).map(cleanQuestion)
+  const nonBlocking = allQuestions.filter(l => l.includes("[blocking: no]")).map(cleanQuestion)
+
+  const lines: string[] = []
+  lines.push(`*${featureName} design* — ${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} flow${flowCount !== 1 ? "s" : ""}`)
+  lines.push(`Spec: ${specUrl}`)
+  lines.push("")
+
+  if (blocking.length > 0) {
+    lines.push(`:warning: *Blocking — must resolve before approval:*`)
+    blocking.forEach(q => lines.push(q))
+    lines.push("")
+    if (nonBlocking.length > 0) {
+      lines.push(`*Non-blocking questions* (can resolve after approval):`)
+      nonBlocking.forEach(q => lines.push(q))
+      lines.push("")
+    }
+    lines.push(`Resolve the blocking questions above and reply *approved* to move to engineering.`)
+  } else {
+    lines.push(`No blocking questions — ready to approve whenever you are. If you'd like to see this visually before approving:`)
+    lines.push("")
+    lines.push(`• *Figma AI* — paste the spec into Figma's Make Designs feature and it'll generate a rough frame layout in seconds`)
+    lines.push(`• *Builder.io or Anima* — paste it there for higher-fidelity Figma frames with more structure`)
+    lines.push("")
+    if (nonBlocking.length > 0) {
+      lines.push(`*Non-blocking questions* (don't need answers before approval):`)
+      nonBlocking.forEach(q => lines.push(q))
+      lines.push("")
+    }
+    lines.push(`Either way, just say *approved* and we'll move to engineering, or share what you see and we can tweak first.`)
+  }
+
+  return lines.join("\n")
+}
+
 // Detects whether the design agent is offering to escalate to the PM.
 export function hasEscalationOffer(response: string): boolean {
   return response.includes("OFFER_PM_ESCALATION_START") && response.includes("OFFER_PM_ESCALATION_END")

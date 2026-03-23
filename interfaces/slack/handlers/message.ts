@@ -2,7 +2,7 @@ import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } f
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker } from "../../../agents/design"
+import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
@@ -369,51 +369,9 @@ async function runDesignAgent(params: {
       const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
       const branchName = `spec/${featureName}-design`
       const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-      const designDraft = await readFile(designDraftPath, branchName)
-
-      const extractSection = (content: string, heading: string): string => {
-        const re = new RegExp(`##+ ${heading}[\\s\\S]*?(?=\\n##+ |$)`, "i")
-        const match = content.match(re)
-        return match ? match[0].replace(/^##+ [^\n]+\n/, "").trim() : ""
-      }
-      // Strip metadata tags from a question line for clean display
-      const cleanQuestion = (line: string) =>
-        line.replace(/\[type:[^\]]+\]\s*/g, "").replace(/\[blocking:[^\]]+\]\s*/g, "").trim()
-
-      const lines: string[] = []
-      if (designDraft) {
-        const screenCount = (designDraft.match(/^### Screen/gm) ?? []).length
-        const flowCount = (designDraft.match(/^### Flow:/gm) ?? []).length
-        const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
-        const openQuestionsSection = extractSection(designDraft, "Open Questions")
-        const allQuestions = openQuestionsSection.split("\n").filter(l => /^\s*-/.test(l))
-        const blocking = allQuestions.filter(l => l.includes("[blocking: yes]")).map(cleanQuestion)
-        const nonBlocking = allQuestions.filter(l => l.includes("[blocking: no]")).map(cleanQuestion)
-
-        lines.push(`*${featureName} design* — ${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} flow${flowCount !== 1 ? "s" : ""}`)
-        lines.push(`Spec: ${specUrl}`)
-        lines.push("")
-
-        if (blocking.length > 0) {
-          lines.push(`:warning: *Blocking — must resolve before approval:*`)
-          blocking.forEach(q => lines.push(q))
-          lines.push("")
-        } else {
-          lines.push(`:white_check_mark: Nothing blocking — you can review in Figma and approve when ready.`)
-          lines.push("")
-        }
-
-        if (nonBlocking.length > 0) {
-          lines.push(`*Non-blocking questions* (can resolve after approval):`)
-          nonBlocking.forEach(q => lines.push(q))
-          lines.push("")
-        }
-
-        lines.push(`Reply *approved* when you're done and I'll move to the engineering phase.`)
-      } else {
-        lines.push(`No design draft yet for *${featureName}*. What would you like to design first?`)
-      }
-      const msg = lines.join("\n")
+      const draftContent = await readFile(designDraftPath, branchName)
+      const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return

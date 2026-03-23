@@ -8,6 +8,7 @@ import {
   hasEscalationOffer,
   extractEscalationQuestion,
   stripEscalationMarker,
+  buildDesignStateResponse,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -268,5 +269,103 @@ describe("approval-ready visualisation offer", () => {
   it("prompt tells agent the offer is one-time and not a prompt for discussion", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("one-time offer")
+  })
+})
+
+// ─── buildDesignStateResponse ─────────────────────────────────────────────────
+// These tests verify what the user actually sees in Slack for "current state?"
+// queries — voice, structure, tools, and CTA. This is the regression test for
+// "we lost Builder.io and the approval messaging".
+
+const SPEC_URL = "https://github.com/o/r/blob/spec/onboarding-design/specs/features/onboarding/onboarding.design.md"
+
+const draftWithNonBlockingOnly = `# Onboarding — Design Spec
+
+### Screen 1: Landing
+Content here.
+
+### Screen 2: Auth
+Content here.
+
+### Flow: US-1 — Sign up
+Steps here.
+
+### Flow: US-2 — Sign in
+Steps here.
+
+## Open Questions
+- [type: engineering] [blocking: no] How does iOS Safari handle beforeunload?
+- [type: design] [blocking: no] Wordmark size to confirm in Figma.
+`
+
+const draftWithBlocking = `# Onboarding — Design Spec
+
+### Screen 1: Landing
+
+## Open Questions
+- [type: product] [blocking: yes] Which auth provider are we using?
+- [type: engineering] [blocking: no] Session TTL trigger mechanism.
+`
+
+const draftNoQuestions = `# Onboarding — Design Spec
+
+### Screen 1: Landing
+
+## Open Questions
+None.
+`
+
+describe("buildDesignStateResponse", () => {
+  it("includes the spec URL", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain(SPEC_URL)
+  })
+
+  it("shows screen and flow counts", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain("2 screens")
+    expect(result).toContain("2 flows")
+  })
+
+  it("mentions Figma AI when nothing is blocking", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain("Figma AI")
+  })
+
+  it("mentions Builder.io when nothing is blocking", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain("Builder.io")
+  })
+
+  it("CTA says 'approved' and mentions engineering", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain("approved")
+    expect(result).toContain("engineering")
+  })
+
+  it("lists non-blocking questions without type/blocking metadata tags", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain("iOS Safari")
+    expect(result).not.toContain("[type:")
+    expect(result).not.toContain("[blocking:")
+  })
+
+  it("shows blocking warning and skips Figma/Builder.io when blocking questions exist", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithBlocking, specUrl: SPEC_URL })
+    expect(result).toContain("Which auth provider")
+    expect(result).not.toContain("Figma AI")
+    expect(result).not.toContain("Builder.io")
+  })
+
+  it("handles no open questions — says ready to approve", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoQuestions, specUrl: SPEC_URL })
+    expect(result).toContain("approved")
+    expect(result).toContain("Figma AI")
+  })
+
+  it("handles no draft — prompts to start", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: "", specUrl: SPEC_URL })
+    expect(result).toContain("No design draft yet")
+    expect(result).not.toContain(SPEC_URL)
   })
 })
