@@ -169,22 +169,49 @@ Deploy the SDLC engine to always-on infrastructure. Observability is bundled her
 
 Three agents that work from an approved engineering spec to produce and ship code. This is where "autonomous" actually happens.
 
+**Runtime model — this is not the same as spec-shaping agents (critical architectural note):**
+
+Spec-shaping agents (PM, design, architect) use a simple request/response pattern: one Claude API call per message, response is parsed text, handler saves the result. Engineer and QA agents require a fundamentally different runtime — an agentic tool-use loop:
+
+```
+system prompt + spec chain
+  → Claude emits tool_use
+    → tool executes (read file, run test, search docs, open PR)
+      → tool result fed back to Claude
+        → Claude emits more tool_use or final response
+          → loop until done
+```
+
+The Claude Agent SDK handles this loop natively and is the right runtime for Steps 6–7. Do not try to build the `stop_reason: "tool_use"` → resubmit cycle by hand.
+
+**MCP tools required (engineer and QA agents):**
+- **GitHub MCP** — read spec chain, read existing code, commit files, open PRs, post PR review comments
+- **Filesystem / bash** — write code, run tests, run type-checker, run linter, execute migrations in a sandbox
+- **Web fetch / search** — look up current API documentation, library changelogs, framework migration guides; engineer agents need recency that the model's training cutoff cannot guarantee
+- **Browser** (optional, evaluate at build time) — inspect a deployed preview URL, verify a rendered component against design spec screenshots
+
+Spec-shaping agents do not use external tools. Engineer and QA agents require them — writing code against a library without being able to look up its current API is not autonomous, it is guessing.
+
 **pgm agent (Program Manager):**
 - Reads the approved engineering spec and decomposes it into discrete, dependency-ordered work items
 - Each work item: title, acceptance criteria, which agent handles it (backend/frontend), estimated complexity, dependencies
 - Posts work items to the feature channel for human review before any code is written
 - Work items saved as `<feature>.workitems.md` in the target repo for traceability
 - No code is written until work items are human-approved
+- pgm agent uses the simple request/response pattern (same as spec-shaping agents) — it reads and reasons, it does not execute
 
 **Backend agent:**
 - Reads the full spec chain (product → design → engineering) before writing a line of code
+- Uses web fetch/search to look up current documentation for any library or API referenced in the engineering spec
 - Implements: migrations, models, API endpoints, business logic, tests
+- Runs the test suite and type-checker after every work item — does not open a PR until both pass
 - Conflict detection: flags any implementation decision that contradicts the spec chain before committing
-- Opens a PR per work item; PR description links back to the spec section it implements
+- Opens a PR per work item via GitHub MCP; PR description links back to the spec section it implements
 - Never makes product, design, or architecture decisions — escalates upstream
 
 **Frontend agent:**
 - Reads the full spec chain, with particular attention to the design spec (screens, states, interactions, brand tokens)
+- Uses web fetch/search to look up current framework docs (component APIs, CSS-in-JS patterns, etc.)
 - Implements: components, pages, state management, API integration
 - References design spec states explicitly in code (empty state, error state, loading state)
 - Same PR-per-work-item pattern as backend agent
@@ -192,12 +219,17 @@ Three agents that work from an approved engineering spec to produce and ship cod
 **Shared constraints:**
 - All agents read the full spec chain — no partial context
 - PRs are opened against the customer's app repo (`agentic-health360`), not the platform repo
+- External tool use is scoped to technical lookups — agents do not browse arbitrarily, they search for specific things they need to complete the work item
 
 ---
 
 ### Step 7 — QA agent
 
 Generates feature-specific test plans from acceptance criteria and validates shipped code against them. Blocks merges when criteria are unmet.
+
+**Runtime model:** Same agentic tool-use loop as engineer agents. The QA agent reads code (GitHub MCP), runs the test suite (bash), and cross-references results against the spec chain. It does not just read — it executes.
+
+**MCP tools required:** GitHub MCP (read PRs and code), bash (run test suite, accessibility audit tools), web fetch (look up current testing standards or tool documentation if needed).
 
 **What the QA agent reads:**
 - Full spec chain (product → design → engineering) — understands what was promised
