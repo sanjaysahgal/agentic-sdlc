@@ -6,6 +6,11 @@ import { loadWorkspaceConfig } from "./workspace-config"
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN, request: { timeout: 15_000 } })
 const { githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
 
+// Separate client for platform-level writes (eval feedback, reaction logs).
+// These belong in the agentic-sdlc repo, not the customer's repo.
+const platformOwner = process.env.PLATFORM_GITHUB_OWNER ?? owner
+const platformRepo  = process.env.PLATFORM_GITHUB_REPO  ?? repo
+
 // Read a file from the repo. Returns empty string if not found.
 export async function readFile(path: string, ref?: string): Promise<string> {
   try {
@@ -338,22 +343,19 @@ export async function saveUserFeedback(params: {
   const feedbackPath = "specs/feedback/reactions.jsonl"
   try {
     // Read existing file (returns "" if not found — readFile swallows 404s)
-    const existing = await readFile(feedbackPath)
-
-    let fileSha: string | undefined
-    try {
-      const res = await octokit.repos.getContent({ owner, repo, path: feedbackPath })
-      fileSha = (res.data as { sha: string }).sha
-    } catch {
-      // File doesn't exist yet — first entry
-    }
+    // Read existing content from the platform repo
+    const existingRes = await octokit.repos.getContent({ owner: platformOwner, repo: platformRepo, path: feedbackPath }).catch(() => null)
+    const existing = existingRes
+      ? Buffer.from((existingRes.data as { content: string }).content, "base64").toString("utf-8")
+      : ""
+    const fileSha = existingRes ? (existingRes.data as { sha: string }).sha : undefined
 
     const newLine = JSON.stringify(params)
     const newContent = existing.trim() ? `${existing.trim()}\n${newLine}` : newLine
 
     await octokit.repos.createOrUpdateFileContents({
-      owner,
-      repo,
+      owner: platformOwner,
+      repo:  platformRepo,
       path: feedbackPath,
       message: "chore: append user reaction feedback",
       content: Buffer.from(newContent).toString("base64"),
