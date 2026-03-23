@@ -322,3 +322,44 @@ export async function createSpecPR(params: {
 
   return pr.data.html_url
 }
+
+// Appends a user reaction (👍/👎) to a JSONL feedback log in the repo.
+// Each line is a self-contained JSON record — easy to query, never overwrites history.
+// Non-fatal: reaction tracking must never break the conversation.
+export async function saveUserFeedback(params: {
+  timestamp: string
+  channel: string
+  messageTs: string
+  rating: "positive" | "negative"
+  agentResponse: string
+  userMessage: string
+  reactingUser: string
+}): Promise<void> {
+  const feedbackPath = "specs/feedback/reactions.jsonl"
+  try {
+    // Read existing file (returns "" if not found — readFile swallows 404s)
+    const existing = await readFile(feedbackPath)
+
+    let fileSha: string | undefined
+    try {
+      const res = await octokit.repos.getContent({ owner, repo, path: feedbackPath })
+      fileSha = (res.data as { sha: string }).sha
+    } catch {
+      // File doesn't exist yet — first entry
+    }
+
+    const newLine = JSON.stringify(params)
+    const newContent = existing.trim() ? `${existing.trim()}\n${newLine}` : newLine
+
+    await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: feedbackPath,
+      message: "chore: append user reaction feedback",
+      content: Buffer.from(newContent).toString("base64"),
+      ...(fileSha ? { sha: fileSha } : {}),
+    })
+  } catch {
+    // Non-fatal — never let feedback tracking interrupt a conversation
+  }
+}

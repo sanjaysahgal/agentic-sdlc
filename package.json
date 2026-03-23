@@ -12,7 +12,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval": "tsx scripts/run-evals.ts",
+    "eval:pm": "tsx scripts/run-evals.ts -- --agent pm",
+    "eval:design": "tsx scripts/run-evals.ts -- --agent design",
+    "eval:architect": "tsx scripts/run-evals.ts -- --agent architect",
+    "eval:concierge": "tsx scripts/run-evals.ts -- --agent concierge"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

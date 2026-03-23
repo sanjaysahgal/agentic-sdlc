@@ -2,6 +2,7 @@ import "dotenv/config"
 import { App } from "@slack/bolt"
 import { handleFeatureChannelMessage, getChannelState } from "./handlers/message"
 import { handleGeneralChannelMessage } from "./handlers/general"
+import { registerReactionHandlers } from "./handlers/reactions"
 import { UserImage } from "../../runtime/claude-client"
 
 const app = new App({
@@ -131,5 +132,7 @@ app.message(async ({ message, client }) => {
     })
   }
 })
+
+registerReactionHandlers(app)
 
 export default app
