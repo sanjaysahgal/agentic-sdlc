@@ -4,7 +4,7 @@ import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPen
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, getInProgressFeatures, readFile } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, buildPreviewUrl, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"

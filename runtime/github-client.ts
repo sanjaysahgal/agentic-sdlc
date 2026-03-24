@@ -288,6 +288,36 @@ export async function saveApprovedEngineeringSpec(params: {
   return "saved"
 }
 
+// Save a draft HTML preview to the design branch.
+// Saved alongside the design spec — deleted on spec approval (it's a draft artifact).
+export async function saveDraftHtmlPreview(params: {
+  featureName: string
+  filePath: string
+  content: string
+}): Promise<void> {
+  const { featureName, filePath, content } = params
+  await saveDraftFile({
+    branch: `spec/${featureName}-design`,
+    filePath,
+    content,
+    commitMessage: `[PREVIEW] ${featureName} · design preview`,
+  })
+}
+
+// Builds the htmlpreview.github.io URL for a design preview file on a branch.
+// Works for public repos. For private repos, user can view the raw file via GitHub UI.
+export function buildPreviewUrl(params: {
+  githubOwner: string
+  githubRepo: string
+  featureName: string
+  featuresRoot: string
+}): string {
+  const { githubOwner, githubRepo, featureName, featuresRoot } = params
+  const branch = `spec/${featureName}-design`
+  const filePath = `${featuresRoot}/${featureName}/${featureName}.preview.html`
+  return `https://htmlpreview.github.io/?https://github.com/${githubOwner}/${githubRepo}/blob/${branch}/${filePath}`
+}
+
 // Lists the immediate subdirectory names under a path on main.
 // Returns empty array if the path doesn't exist or isn't a directory.
 export async function listSubdirectories(path: string): Promise<string[]> {
