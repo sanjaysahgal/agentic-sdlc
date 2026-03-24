@@ -42,13 +42,30 @@ export async function runAgent(params: {
         ]
       : userMessage
 
-  const messages: Anthropic.MessageParam[] = [
+  const raw: Anthropic.MessageParam[] = [
     ...history.slice(-HISTORY_LIMIT).map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     })),
     { role: "user", content: userContent },
   ]
+
+  // Sanitize: Anthropic requires messages to start with "user" and strictly alternate roles.
+  // Corrupted history (e.g. leading assistant messages from a fast-path bug, consecutive
+  // same-role entries from failed retries) would cause a 400 and show "Something went wrong".
+  // Strip leading assistant messages, then collapse consecutive same-role entries (keep last).
+  const messages: Anthropic.MessageParam[] = []
+  for (const msg of raw) {
+    if (messages.length === 0) {
+      if (msg.role === "user") messages.push(msg)
+      // skip any leading assistant messages
+    } else if (msg.role !== messages[messages.length - 1].role) {
+      messages.push(msg)
+    } else {
+      // consecutive same role — replace with the more recent one
+      messages[messages.length - 1] = msg
+    }
+  }
 
   const response = await client.messages.create({
     model: AGENT_MODEL,

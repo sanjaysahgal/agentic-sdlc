@@ -102,6 +102,29 @@ export const designScenarios: EvalScenario[] = [
     ],
   },
   {
+    name: "Design agent does not prematurely approve spec when user locks a single decision",
+    agentLabel: "Design",
+    systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
+    userMessage: "lets lock option A",
+    history: [
+      ...midDraftHistory,
+      {
+        role: "user" as const,
+        content: "What should the prompt bar placeholder copy say?",
+      },
+      {
+        role: "assistant" as const,
+        content: `For the prompt bar placeholder, I'd go with:\n\n*Option A:* "Ask about your health"\n*Option B:* "Ask me anything about your health"\n\nMy call: Option A — short, specific, conversational. Shall I lock this in?`,
+      },
+    ],
+    criteria: [
+      "The response confirms the specific copy decision (Option A) without approving the whole spec",
+      "The response does NOT output INTENT: CREATE_DESIGN_SPEC",
+      "The response does NOT say the spec is saved, approved, or moving to engineering",
+      "The response continues the design conversation — asking about the next open decision or noting what remains",
+    ],
+  },
+  {
     name: "Design agent does not ask permission-asking questions",
     agentLabel: "Design",
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),

@@ -1,6 +1,6 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage } from "../../../runtime/claude-client"
-import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation } from "../../../runtime/conversation-store"
+import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
@@ -17,10 +17,10 @@ function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
 }
 
-// Detects a simple affirmative confirmation — used for escalation offers.
+// Detects a simple affirmative confirmation — used for escalation offers and spec approval.
 function isAffirmative(message: string): boolean {
   const lower = message.toLowerCase().trim()
-  return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in)/.test(lower)
+  return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in|confirmed|confirm|approved|approve|lock it in|let's go|lets go)/.test(lower)
 }
 
 // Returns the current phase of a feature by reading GitHub state.
@@ -224,6 +224,29 @@ async function runPmAgent(params: {
   const { channelName, channelId, threadTs, userMessage, userImages, client, update, routingNote, readOnly, approvedSpecContext } = params
   const featureName = getFeatureName(channelName)
 
+  // Pending spec approval — check before anything else
+  const pendingApproval = getPendingApproval(threadTs)
+  if (pendingApproval && pendingApproval.specType === "product") {
+    if (isAffirmative(userMessage)) {
+      clearPendingApproval(threadTs)
+      await update("_Saving the final product spec..._")
+      await saveApprovedSpec({ featureName, filePath: pendingApproval.filePath, content: pendingApproval.specContent })
+      const approvalMessage =
+        `The *${featureName}* product spec is saved and approved. :white_check_mark:\n\n` +
+        `*What happens next:*\n` +
+        `A UX designer produces the screens and user flows before any engineering begins. ` +
+        `If you're wearing the designer hat on this one, just say so right here and the design phase will begin.\n\n` +
+        `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
+      appendMessage(threadTs, { role: "user", content: userMessage })
+      appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+      await update(approvalMessage)
+      return
+    } else {
+      clearPendingApproval(threadTs)
+      // Not confirming — fall through to normal agent flow
+    }
+  }
+
   await update("_Product Manager is reading the spec..._")
   const context = await loadAgentContext(featureName)
 
@@ -253,8 +276,8 @@ async function runPmAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_Product Manager is thinking..._")
-  appendMessage(threadTs, { role: "user", content: userMessage })
   const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+  appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
@@ -318,17 +341,11 @@ async function runPmAgent(params: {
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
-    await update(`${prefix}Saving the final spec...`)
-    await saveApprovedSpec({ featureName, filePath, content: specContent })
-    const approvalMessage =
-      `The *${featureName}* product spec is saved and approved. :white_check_mark:\n\n` +
-      `*What happens next:*\n` +
-      `A UX designer produces the screens and user flows before any engineering begins. ` +
-      `If you're wearing the designer hat on this one, just say so right here in this channel and the design phase will begin.\n\n` +
-      `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask — the system will give you a live status update.\n\n` +
-      `The Product Manager's job on this feature is done. The spec is the source of truth from here.`
-    appendMessage(threadTs, { role: "assistant", content: approvalMessage })
-    await update(`${prefix}${approvalMessage}`)
+    // Cache spec, ask for confirmation — don't save until user explicitly confirms
+    setPendingApproval(threadTs, { specType: "product", specContent, filePath, featureName })
+    const confirmMsg = `Looks like you're approving the product spec. Just to be certain before I save it — reply *confirmed* to lock it in and move to design, or let me know if there's anything left to review.`
+    appendMessage(threadTs, { role: "assistant", content: confirmMsg })
+    await update(`${prefix}${confirmMsg}`)
     return
   }
 
@@ -350,6 +367,29 @@ async function runDesignAgent(params: {
 }): Promise<void> {
   const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly } = params
 
+  // Pending spec approval — check before fast paths
+  const pendingDesignApproval = getPendingApproval(threadTs)
+  if (pendingDesignApproval && pendingDesignApproval.specType === "design") {
+    if (isAffirmative(userMessage)) {
+      clearPendingApproval(threadTs)
+      await update("_Saving the final design spec..._")
+      await saveApprovedDesignSpec({ featureName, filePath: pendingDesignApproval.filePath, content: pendingDesignApproval.specContent })
+      const approvalMessage =
+        `The *${featureName}* design spec is saved and approved. :white_check_mark:\n\n` +
+        `*What happens next:*\n` +
+        `A software architect produces the engineering plan before any code is written. ` +
+        `If you're wearing the architect hat on this one, just say so right here and the engineering phase will begin.\n\n` +
+        `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
+      appendMessage(threadTs, { role: "user", content: userMessage })
+      appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+      await update(approvalMessage)
+      return
+    } else {
+      clearPendingApproval(threadTs)
+      // Not confirming — fall through to normal agent flow
+    }
+  }
+
   // Short-circuit status/general queries before loading expensive design context.
   // A "give me the latest spec" question in a design thread doesn't need the full
   // design agent — it needs the concierge. Check fast with Haiku before loading anything.
@@ -358,6 +398,7 @@ async function runDesignAgent(params: {
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the UX Designer — I'm here when you're ready to work on screens, flows, or design decisions for this feature.`
+      appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return
@@ -372,6 +413,7 @@ async function runDesignAgent(params: {
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
       const msg = buildDesignStateResponse({ featureName, draftContent, specUrl })
+      appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return
@@ -384,8 +426,8 @@ async function runDesignAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_UX Designer is thinking..._")
-  appendMessage(threadTs, { role: "user", content: userMessage })
   const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+  appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
@@ -448,16 +490,11 @@ async function runDesignAgent(params: {
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
-await update(`${prefix}Saving the final design spec...`)
-    await saveApprovedDesignSpec({ featureName, filePath, content: specContent })
-    const approvalMessage =
-      `The *${featureName}* design spec is saved and approved. :white_check_mark:\n\n` +
-      `*What happens next:*\n` +
-      `A software architect produces the engineering plan before any code is written. ` +
-      `If you're wearing the architect hat on this one, just say so right here and the engineering phase will begin.\n\n` +
-      `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
-    appendMessage(threadTs, { role: "assistant", content: approvalMessage })
-    await update(`${prefix}${approvalMessage}`)
+    // Cache spec, ask for confirmation — don't save until user explicitly confirms
+    setPendingApproval(threadTs, { specType: "design", specContent, filePath, featureName })
+    const confirmMsg = `Looks like you're approving the design spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to engineering, or let me know if there's anything left to review.`
+    appendMessage(threadTs, { role: "assistant", content: confirmMsg })
+    await update(`${prefix}${confirmMsg}`)
     return
   }
 
@@ -489,11 +526,34 @@ async function runArchitectAgent(params: {
 }): Promise<void> {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly } = params
 
+  // Pending spec approval — check before fast paths
+  const pendingEngineeringApproval = getPendingApproval(threadTs)
+  if (pendingEngineeringApproval && pendingEngineeringApproval.specType === "engineering") {
+    if (isAffirmative(userMessage)) {
+      clearPendingApproval(threadTs)
+      await update("_Saving the final engineering spec..._")
+      await saveApprovedEngineeringSpec({ featureName, filePath: pendingEngineeringApproval.filePath, content: pendingEngineeringApproval.specContent })
+      const approvalMessage =
+        `The *${featureName}* engineering spec is saved and approved. :white_check_mark:\n\n` +
+        `*What happens next:*\n` +
+        `The engineer agents will use this spec to implement the feature — data model, APIs, and UI components.\n\n` +
+        `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
+      appendMessage(threadTs, { role: "user", content: userMessage })
+      appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+      await update(approvalMessage)
+      return
+    } else {
+      clearPendingApproval(threadTs)
+      // Not confirming — fall through to normal agent flow
+    }
+  }
+
   if (!readOnly) {
     const offTopic = await isOffTopicForAgent(userMessage, "engineering")
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the Architect — I'm here when you're ready to work on data models, APIs, or engineering decisions for this feature.`
+      appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return
@@ -547,6 +607,7 @@ async function runArchitectAgent(params: {
         lines.push(`No engineering draft yet for *${featureName}*. What would you like to spec out first?`)
       }
       const msg = lines.join("\n")
+      appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
       return
@@ -559,8 +620,8 @@ async function runArchitectAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_Architect is thinking..._")
-  appendMessage(threadTs, { role: "user", content: userMessage })
   const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+  appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
@@ -593,16 +654,11 @@ async function runArchitectAgent(params: {
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
-    await update(`${prefix}Saving the final engineering spec...`)
-    await saveApprovedEngineeringSpec({ featureName, filePath, content: specContent })
-    const approvalMessage =
-      `The *${featureName}* engineering spec is saved and approved. :white_check_mark:\n\n` +
-      `*What happens next:*\n` +
-      `The engineer agents will use this spec to implement the feature — data model, APIs, and UI components. ` +
-      `The spec is the source of truth from here. No engineering decision should contradict it.\n\n` +
-      `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
-    appendMessage(threadTs, { role: "assistant", content: approvalMessage })
-    await update(`${prefix}${approvalMessage}`)
+    // Cache spec, ask for confirmation — don't save until user explicitly confirms
+    setPendingApproval(threadTs, { specType: "engineering", specContent, filePath, featureName })
+    const confirmMsg = `Looks like you're approving the engineering spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to the engineering agents, or let me know if there's anything left to review.`
+    appendMessage(threadTs, { role: "assistant", content: confirmMsg })
+    await update(`${prefix}${confirmMsg}`)
     return
   }
 

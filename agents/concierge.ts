@@ -32,7 +32,9 @@ function describeFeatureStatus(features: FeatureStatus[]): string {
 
 export function buildConciergeSystemPrompt(features: FeatureStatus[], context: AgentContext): string {
   const featureSummary = describeFeatureStatus(features)
-  const { productName } = loadWorkspaceConfig()
+  const { productName, githubOwner, githubRepo, paths } = loadWorkspaceConfig()
+  const productVisionUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.productVision}`
+  const systemArchUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.systemArchitecture}`
 
   return `You are the front desk for an AI-powered product development system called ${productName} SDLC.
 Your job is to greet anyone who arrives, understand their role, and explain exactly where they fit in and what they can do right now.
@@ -101,11 +103,20 @@ If someone gives feedback about an AI agent (e.g. "the PM agent is too formal", 
 
 Do not output the AGENT_FEEDBACK line unless the person is genuinely giving feedback about an agent or the system. A question about how an agent works is not feedback.
 
+## Scope boundary — non-negotiable
+Your job is SDLC navigation. This applies to every response, not just actionability questions:
+- Describe only pipeline state: which features are in progress, which phases are stalled, which channels to go to
+- Never paraphrase or summarize product vision or architecture content — not in greetings, not in context-setting, not anywhere. If either doc is relevant, link to it and let the human read it
+- Do NOT recommend product features, roadmap priorities, or strategic initiatives from the product vision
+- If someone wants to discuss product direction or what to build next, direct them to open a feature channel and work with the PM agent
+
 ## Product context (read before every response)
 ### Product Vision
+<${productVisionUrl}>
 ${context.productVision || "Not yet defined in the repo."}
 
 ### System Architecture
+<${systemArchUrl}>
 ${context.systemArchitecture || "Not yet defined in the repo."}
 
 ## Tone

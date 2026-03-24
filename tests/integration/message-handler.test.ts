@@ -114,16 +114,24 @@ describe("blocking gate — PM agent", () => {
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
   })
 
-  it("saves approved spec when no blocking questions remain", async () => {
+  it("saves approved spec after two-step confirmation — approval intent shows confirm prompt, 'confirmed' saves", async () => {
     mockAgentResponse(
       `INTENT: CREATE_SPEC\n## Problem\nHelp users.\n\n## Open Questions\n- [type: engineering] [blocking: no] Which auth provider?`
     )
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
+    // Step 1: agent fires approval intent → shows confirmation prompt, does NOT save
     await withConfirmedAgent("pm", async () => {
       await handleFeatureChannelMessage(makeParams())
     })
+    expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
+    const confirmPrompt = getHistory("thread-123").filter(m => m.role === "assistant").at(-1)
+    expect(confirmPrompt?.content).toContain("Looks like you're approving")
 
+    // Step 2: user confirms → spec is saved
+    await withConfirmedAgent("pm", async () => {
+      await handleFeatureChannelMessage(makeParams({ userMessage: "confirmed" }))
+    })
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
   })
 
@@ -163,16 +171,24 @@ describe("blocking gate — design agent", () => {
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
   })
 
-  it("saves approved design spec when no blocking questions remain", async () => {
+  it("saves approved design spec after two-step confirmation — approval intent shows confirm prompt, 'confirmed' saves", async () => {
     mockAgentResponse(
       `INTENT: CREATE_DESIGN_SPEC\n## Screens\n\n## Open Questions\n- [type: engineering] [blocking: no] Glow: CSS vs canvas?`
     )
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
+    // Step 1: agent fires approval intent → shows confirmation prompt, does NOT save
     await withConfirmedAgent("ux-design", async () => {
       await handleFeatureChannelMessage(makeParams())
     })
+    expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
+    const confirmPrompt = getHistory("thread-123").filter(m => m.role === "assistant").at(-1)
+    expect(confirmPrompt?.content).toContain("Looks like you're approving")
 
+    // Step 2: user confirms → spec is saved
+    await withConfirmedAgent("ux-design", async () => {
+      await handleFeatureChannelMessage(makeParams({ userMessage: "confirmed" }))
+    })
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
   })
 })
@@ -232,3 +248,5 @@ describe("gap detection", () => {
     expect(allAssistantContent).toContain("deliberate extension")
   })
 })
+
+// History integrity tests live in tests/regression/history-integrity.test.ts

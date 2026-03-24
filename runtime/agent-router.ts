@@ -114,8 +114,9 @@ export async function isOffTopicForAgent(message: string, agentDomain: "design" 
     system: `You are deciding whether to redirect a message away from a ${agentDomain === "design" ? "UX Design" : "Architect"} agent.
 Only redirect (off-topic) if the message is asking about OTHER features, the overall platform status, or something completely outside this feature.
 Do NOT redirect if the message is about this feature's ${agentDomain === "design" ? "design spec, screens, flows, decisions, or current design state" : "engineering spec, data model, APIs, or current engineering state"} — even if it's a read request like "show me the spec" or "what have we decided".
+Do NOT redirect short replies, error reports, or continuations — these are always follow-ups to the current conversation: "i got a 404", "that didn't work", "it's not loading", "yes", "no", "ok", "hmm", "wait", "what happened to that", any single sentence that reads as a response to a previous message.
 Off-topic (redirect): "what features are in progress", "give me all in-progress specs", "what's the overall status", "what's been approved across the platform"
-On-topic (keep): "show me the design spec", "latest on the design", "where are we in the design", "what have we decided", "what's in the spec", "summarize the design so far", any design or engineering question
+On-topic (keep): "show me the design spec", "latest on the design", "where are we in the design", "what have we decided", "what's in the spec", "summarize the design so far", any design or engineering question, any short follow-up or error report
 Respond with exactly one word: off-topic or on-topic`,
     messages: [{ role: "user", content: message }],
   })
@@ -133,8 +134,9 @@ export async function isSpecStateQuery(message: string): Promise<boolean> {
     model: "claude-haiku-4-5-20251001",
     max_tokens: 10,
     system: `Is this message asking for a high-level overview of where a spec stands — not for any specific section's content?
-TRUE (high-level overview only): "current state", "where are we", "what do we have so far", "catch me up", "status update", "show me what we have", "overview"
-FALSE (specific content or action): "open questions", "show me the flows", "what components did we decide", "what's in section X", "what have we decided about Y", "I want to add X", "what about Y", any question about a specific topic
+TRUE (high-level overview only, must be a question or request): "current state", "where are we", "what do we have so far", "catch me up", "status update", "show me what we have", "overview"
+FALSE — affirmations/confirmations (these are responses to a question, not state queries): "yes please", "yes and I assume...", "ok let's do that", "yes base it on...", "sure go ahead", "yes lock option A", "let's lock option A", any message starting with yes/sure/ok/great/perfect/go ahead
+FALSE — specific content or actions: "open questions", "show me the flows", "what components did we decide", "what's in section X", "what have we decided about Y", "I want to add X", "what about Y", any question about a specific topic
 Respond with exactly one word: yes or no`,
     messages: [{ role: "user", content: message }],
   })

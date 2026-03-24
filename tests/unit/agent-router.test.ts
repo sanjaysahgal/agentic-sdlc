@@ -219,6 +219,18 @@ describe("isSpecStateQuery", () => {
     expect(result).toBe(false)
   })
 
+  it("returns false for 'yes please and I assume...' — affirmation containing 'spec' is not a state query", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    const result = await isSpecStateQuery("yes please and I assume you will base it exactly on how our spec is written today?")
+    expect(result).toBe(false)
+  })
+
+  it("returns false for 'lets lock option A' — decision confirmation is not a state query", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    const result = await isSpecStateQuery("lets lock option A")
+    expect(result).toBe(false)
+  })
+
   it("falls back to false on unexpected Claude response — don't block real work", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "maybe" }] })
     const result = await isSpecStateQuery("something")

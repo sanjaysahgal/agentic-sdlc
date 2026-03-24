@@ -18,9 +18,20 @@ export type PendingEscalation = {
   designContext: string // current design draft — gives PM instant context
 }
 
+// Pending spec approval — set when the agent detects approval intent.
+// The spec content is cached here so we can save it on explicit user confirmation.
+// Cleared when the user confirms (spec saved) or sends any non-affirmative message.
+export type PendingApproval = {
+  specType: "product" | "design" | "engineering"
+  specContent: string
+  filePath: string
+  featureName: string
+}
+
 const store = new Map<string, Message[]>()
 const confirmedAgents = new Map<string, string>()         // threadTs → confirmed agent type
 const pendingEscalations = new Map<string, PendingEscalation>() // threadTs → pending escalation
+const pendingApprovals = new Map<string, PendingApproval>()     // threadTs → pending spec approval
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
@@ -77,6 +88,8 @@ export function appendMessage(threadTs: string, message: Message): void {
 export function clearHistory(threadTs: string): void {
   store.delete(threadTs)
   confirmedAgents.delete(threadTs)
+  pendingEscalations.delete(threadTs)
+  pendingApprovals.delete(threadTs)
   persistConfirmedAgents()
   persistConversationHistory()
 }
@@ -103,4 +116,16 @@ export function setPendingEscalation(threadTs: string, escalation: PendingEscala
 
 export function clearPendingEscalation(threadTs: string): void {
   pendingEscalations.delete(threadTs)
+}
+
+export function getPendingApproval(threadTs: string): PendingApproval | null {
+  return pendingApprovals.get(threadTs) ?? null
+}
+
+export function setPendingApproval(threadTs: string, approval: PendingApproval): void {
+  pendingApprovals.set(threadTs, approval)
+}
+
+export function clearPendingApproval(threadTs: string): void {
+  pendingApprovals.delete(threadTs)
 }

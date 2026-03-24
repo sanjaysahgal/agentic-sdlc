@@ -67,7 +67,10 @@ export async function withThinking(params: {
       stack: err instanceof Error ? err.stack : undefined,
     }))
 
-    await update(msg).catch(() => {})
+    // If update() fails (stale message TS, rate limit), post a new message as fallback
+    await update(msg).catch(() => {
+      client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: msg }).catch(() => {})
+    })
     throw err
   } finally {
     decrementActiveRequests()
