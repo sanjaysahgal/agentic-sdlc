@@ -568,6 +568,61 @@
     line-height: 1.7;
   }
 
+  /* ─── WAITLIST ───────────────────────────────────────── */
+  .waitlist-wrap {
+    max-width: 980px;
+    margin: 0 auto 0;
+    padding: 0 2rem 4.5rem;
+  }
+  .waitlist-inner {
+    background: linear-gradient(135deg, rgba(124,111,205,0.08) 0%, rgba(79,175,168,0.06) 100%);
+    border: 1px solid rgba(124,111,205,0.2);
+    border-radius: var(--radius-2xl);
+    padding: 3rem 2.5rem;
+    text-align: center;
+  }
+  .waitlist-inner .section-label { margin-bottom: 0.75rem; }
+  .waitlist-inner h2 {
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    margin-bottom: 0.75rem;
+  }
+  .waitlist-inner > p {
+    font-size: 0.95rem;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 480px;
+    margin: 0 auto 2rem;
+  }
+  .waitlist-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .waitlist-input {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    font-family: var(--font);
+    width: 280px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .waitlist-input::placeholder { color: var(--subtle); }
+  .waitlist-input:focus { border-color: rgba(124,111,205,0.4); }
+  .waitlist-note {
+    font-size: 0.75rem;
+    color: var(--subtle);
+    margin-top: 1rem;
+  }
+
   /* ─── FOOTER ────────────────────────────────────────── */
   footer {
     border-top: 1px solid var(--border);
@@ -770,6 +825,20 @@
     </div>
   </div>
 </section>
+
+<!-- WAITLIST -->
+<div class="waitlist-wrap" id="waitlist">
+  <div class="waitlist-inner">
+    <div class="section-label">Early Access</div>
+    <h2>License Archon Dev for your team</h2>
+    <p>We're opening Archon Dev to a small number of engineering teams. Connect your repo and Slack workspace — your team ships the same way we do. No code changes required to onboard.</p>
+    <div class="waitlist-form">
+      <input class="waitlist-input" type="email" placeholder="you@company.com" />
+      <a href="mailto:hello@getarchon.dev?subject=Archon Dev Early Access" class="btn-primary">Request access</a>
+    </div>
+    <p class="waitlist-note">No commitments. We'll reach out to schedule a conversation.</p>
+  </div>
+</div>
 
 <!-- PATENT BANNER -->
 <div class="patent-banner">
