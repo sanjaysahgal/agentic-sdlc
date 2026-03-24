@@ -282,7 +282,7 @@ async function runPmAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_Product Manager is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessagePm, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -466,12 +466,18 @@ async function runDesignAgent(params: {
   }
 
   await update("_UX Designer is reading the spec and design context..._")
-  const context = await loadDesignAgentContext(featureName)
+  const [context, lockedDecisionsDesign] = await Promise.all([
+    loadDesignAgentContext(featureName),
+    extractLockedDecisions(getHistory(threadTs)),
+  ])
+  const enrichedUserMessageDesign = lockedDecisionsDesign
+    ? `[Decisions locked in this conversation:\n${lockedDecisionsDesign}]\n\n${userMessage}`
+    : userMessage
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
   const history = getHistory(threadTs)
 
   await update("_UX Designer is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessageDesign, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
@@ -699,12 +705,18 @@ async function runArchitectAgent(params: {
   }
 
   await update("_Architect is reading the spec chain..._")
-  const context = await loadArchitectAgentContext(featureName)
+  const [context, lockedDecisionsArch] = await Promise.all([
+    loadArchitectAgentContext(featureName),
+    extractLockedDecisions(getHistory(threadTs)),
+  ])
+  const enrichedUserMessageArch = lockedDecisionsArch
+    ? `[Decisions locked in this conversation:\n${lockedDecisionsArch}]\n\n${userMessage}`
+    : userMessage
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
   const history = getHistory(threadTs)
 
   await update("_Architect is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage, userImages })
+  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessageArch, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
