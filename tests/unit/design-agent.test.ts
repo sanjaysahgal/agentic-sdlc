@@ -267,8 +267,7 @@ describe("approval-ready message in system prompt", () => {
 
 // ─── buildDesignStateResponse ─────────────────────────────────────────────────
 // These tests verify what the user actually sees in Slack for "current state?"
-// queries — voice, structure, tools, and CTA. This is the regression test for
-// "we lost Builder.io and the approval messaging".
+// queries — voice, structure, preview link, and CTA.
 
 const SPEC_URL = "https://github.com/o/r/blob/spec/onboarding-design/specs/features/onboarding/onboarding.design.md"
 
@@ -320,14 +319,14 @@ describe("buildDesignStateResponse", () => {
     expect(result).toContain("2 flows")
   })
 
-  it("mentions Figma AI when nothing is blocking", () => {
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
-    expect(result).toContain("Figma AI")
+  it("includes preview link when previewUrl is provided and nothing is blocking", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, previewUrl: "https://htmlpreview.github.io/?https://example.com/preview.html" })
+    expect(result).toContain("htmlpreview.github.io")
   })
 
-  it("mentions Builder.io when nothing is blocking", () => {
+  it("omits preview link when previewUrl is not provided", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
-    expect(result).toContain("Builder.io")
+    expect(result).not.toContain("htmlpreview.github.io")
   })
 
   it("CTA says 'approved' and mentions engineering", () => {
@@ -343,17 +342,14 @@ describe("buildDesignStateResponse", () => {
     expect(result).not.toContain("[blocking:")
   })
 
-  it("shows blocking warning and skips Figma/Builder.io when blocking questions exist", () => {
+  it("shows blocking warning when blocking questions exist", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithBlocking, specUrl: SPEC_URL })
     expect(result).toContain("Which auth provider")
-    expect(result).not.toContain("Figma AI")
-    expect(result).not.toContain("Builder.io")
   })
 
   it("handles no open questions — says ready to approve", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoQuestions, specUrl: SPEC_URL })
     expect(result).toContain("approved")
-    expect(result).toContain("Figma AI")
   })
 
   it("handles no draft — prompts to start", () => {
