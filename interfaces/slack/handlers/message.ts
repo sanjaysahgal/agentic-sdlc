@@ -427,20 +427,30 @@ async function runDesignAgent(params: {
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
       // Generate (or regenerate) the HTML preview if a draft exists — non-fatal
-      let previewUrl: string | null = null
+      let previewUploaded = false
       if (draftContent) {
         try {
           await update("_Generating HTML preview..._")
           const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
           const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
           await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-          previewUrl = buildPreviewUrl({ githubOwner, githubRepo, featureName, featuresRoot: paths.featuresRoot })
+          await client.files.uploadV2({
+            channel_id: channelId,
+            thread_ts: threadTs,
+            content: htmlContent,
+            filename: `${featureName}.preview.html`,
+            title: `${featureName} — Design Preview`,
+          })
+          previewUploaded = true
         } catch {
           // Non-fatal
         }
       }
 
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewUrl })
+      const previewNote = previewUploaded
+        ? `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+        : null
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote })
       appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
