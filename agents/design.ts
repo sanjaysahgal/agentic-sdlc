@@ -283,8 +283,9 @@ export function buildDesignStateResponse(params: {
   featureName: string
   draftContent: string
   specUrl: string
+  previewUrl?: string | null
 }): string {
-  const { featureName, draftContent, specUrl } = params
+  const { featureName, draftContent, specUrl, previewUrl } = params
 
   if (!draftContent) {
     return `No design draft yet for *${featureName}*. What would you like to design first?`
