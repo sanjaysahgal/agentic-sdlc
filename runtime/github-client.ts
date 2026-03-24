@@ -107,27 +107,40 @@ export async function getInProgressFeatures(): Promise<FeatureStatus[]> {
 
   // List all branches matching spec/*
   const branches = await octokit.paginate(octokit.repos.listBranches, { owner, repo, per_page: 100 })
-  const specBranches = branches.filter((b) => b.name.startsWith("spec/") && b.name.endsWith("-product"))
 
-  for (const branch of specBranches) {
-    const featureName = branch.name.replace("spec/", "").replace("-product", "")
-    const { paths } = loadWorkspaceConfig()
+  // Extract unique feature names from ALL spec branches (not just -product).
+  // A product branch is deleted after approval — scanning only -product branches
+  // causes features in design or engineering phase to silently disappear.
+  const featureNames = new Set<string>()
+  for (const branch of branches) {
+    if (!branch.name.startsWith("spec/")) continue
+    const withoutPrefix = branch.name.replace("spec/", "")
+    const featureName = withoutPrefix
+      .replace(/-product$/, "")
+      .replace(/-design$/, "")
+      .replace(/-engineering$/, "")
+    featureNames.add(featureName)
+  }
+
+  const { paths } = loadWorkspaceConfig()
+
+  for (const featureName of featureNames) {
     const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
     const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-
     const engineeringSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
-    const productOnMain = await readFile(productSpecPath) // empty string = not on main
-    const designOnMain = await readFile(designSpecPath)
-    const engineeringOnMain = await readFile(engineeringSpecPath)
+
+    const [productOnMain, designOnMain, engineeringOnMain] = await Promise.all([
+      readFile(productSpecPath),
+      readFile(designSpecPath),
+      readFile(engineeringSpecPath),
+    ])
 
     if (engineeringOnMain) {
       // Engineering spec approved — build phase (not tracked here)
     } else if (designOnMain) {
-      // Check if engineering branch exists (draft in progress)
       const hasEngineeringBranch = branches.some((b) => b.name === `spec/${featureName}-engineering`)
       features.push({ featureName, phase: hasEngineeringBranch ? "engineering-in-progress" : "design-approved-awaiting-engineering" })
     } else if (productOnMain) {
-      // Check if design branch exists (design draft in progress)
       const hasDesignBranch = branches.some((b) => b.name === `spec/${featureName}-design`)
       features.push({ featureName, phase: hasDesignBranch ? "design-in-progress" : "product-spec-approved-awaiting-design" })
     } else {
