@@ -51,11 +51,14 @@ export async function withThinking(params: {
     const errMsg = err instanceof Error ? err.message : String(err)
     const isOverloaded = errMsg.includes("overloaded")
     const isImageError = errMsg.includes("Could not process image") || errMsg.includes("image.source")
+    const isContextLimit = errMsg.includes("too long") || errMsg.includes("context_length") || errMsg.includes("context length") || errMsg.includes("token") && errMsg.includes("maximum")
     const msg = isOverloaded
       ? "The AI is overloaded right now. Please try again in a moment."
       : isImageError
         ? "I couldn't process the attached image. Try sending it as a PNG screenshot instead of directly from the camera roll."
-        : "Something went wrong. Please try again."
+        : isContextLimit
+          ? ":warning: *This thread has hit the AI's context limit and can't continue.* Your spec is saved on GitHub — nothing is lost. Start a fresh top-level message (not a reply here) to pick up where you left off."
+          : "Something went wrong. Please try again. If this keeps happening, start a fresh top-level message — the thread may have accumulated too much history."
 
     // Structured error log — every field needed to diagnose a production failure
     console.error(JSON.stringify({
