@@ -44,6 +44,63 @@ Every agent call made during Orchestrator development burns Sonnet credits. Dev-
 
 ---
 
+### Step 2.6 — Spec revision workflow
+
+Support returning to an existing feature at any point in its lifecycle to revise any layer of the spec chain.
+
+**The problem today:** Once all spec branches are deleted and specs are on `main`, `getInProgressFeatures()` loses track of the feature entirely. `getFeaturePhase()` falls back to `"product-spec-in-progress"` — misidentifying a live feature as a new one. The agent starts from scratch with no context.
+
+**What this adds:**
+
+**Phase detection fix:**
+- `getFeaturePhase()` checks for existing specs on `main` before falling back — if `.product.md`, `.design.md`, or `.engineering.md` exist, the feature is in `"feature-established"` state, not "new"
+
+**Intent-based layer routing:**
+- New Haiku classifier: given "I want to change X", which layer is affected? `product` / `design` / `engineering`
+- User says "I want to change the onboarding flow" → PM, with existing product spec loaded as context (editor mode, not blank)
+- User says "update the welcome screen" → design agent, existing design spec loaded
+- User says "add a new API endpoint" → architect, existing engineering spec loaded
+- No forced top-down cascade — user jumps directly to the right layer
+
+**Editor mode:**
+- Each agent is given the existing spec as its starting context with an explicit instruction: "This spec exists and is approved. The user wants to revise it. Work from what exists, not from blank."
+- Same draft → two-step approval flow as new specs
+- On approval, `saveApproved*` already handles "already on main" — updates in place
+
+**Downstream notification (not enforcement):**
+- After an upstream spec is updated (e.g. product spec changes), system posts: *"Product spec updated. The design spec may need a revision pass — it still reflects the previous version."*
+- Human decides whether to cascade. System does not auto-invalidate.
+
+**Note:** "Feature live" vs "feature built but not deployed" is indistinguishable at the spec level — the system tracks spec state only, not deployment state. Revision workflow applies equally to both.
+
+---
+
+### Step 2.7 — Bug workflow
+
+A dedicated workflow for bugs that is completely separate from the spec chain. Bugs are deviation from intent — the spec is correct, the code is wrong. No spec update needed (unless the bug reveals the spec was ambiguous, which is rare and handled manually).
+
+**What this adds:**
+
+**Bug intake (Slack):**
+- In any feature channel or a dedicated `#bugs` channel: "we have a bug where X happens when Y"
+- Concierge (or dedicated bug-intake handler) creates a GitHub Issue tagged `bug` with: description, reported-by, feature name, severity (derived from message or asked)
+- Confirmation posted in Slack with a link to the issue
+
+**Triage:**
+- Bugs go into a triage backlog — visible in GitHub Issues with `bug` + `triage` labels
+- Human or future eng-mgr agent sets priority and assigns
+
+**Resolution tracking:**
+- Issue linked to a PR that fixes it
+- On PR merge, issue closed automatically (GitHub standard behavior)
+- Slack notification: "Bug #123 fixed and merged"
+
+**Out of scope for this step:** Automated severity detection from monitoring/alerts, bug SLA tracking, regression test auto-generation. These are follow-on once the basic intake loop is working.
+
+**Prerequisite for practical use:** Engineer agents (Step 6) — bugs only appear when code is running.
+
+---
+
 ### Step 3 — Orchestrator agent
 
 A dedicated agent that owns proactive phase coordination AND continuous spec integrity monitoring across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.

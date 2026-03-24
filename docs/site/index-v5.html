@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archon Labs — AI-Native Software Development</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --violet: #7C6FCD;
+    --teal:   #4FAFA8;
+    --bg:     #0A0A0F;
+    --surface: #13131A;
+    --border:  rgba(255,255,255,0.07);
+    --text:    #F8F8F7;
+    --muted:   rgba(248,248,247,0.45);
+    --subtle:  rgba(248,248,247,0.18);
+    --font: 'Inter', system-ui, sans-serif;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 24px;
+    --radius-full: 9999px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* ─── GLOW LAYER ─────────────────────────────────────── */
+  .glow-layer {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .glow-violet,
+  .glow-teal {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    will-change: transform, opacity;
+  }
+
+  /* violet bloom */
+  .glow-violet {
+    width: 900px;
+    height: 750px;
+    top: -160px;
+    left: 50%;
+    transform: translateX(-65%);
+    background: radial-gradient(ellipse at center,
+      rgba(124, 111, 205, 0.42) 0%,
+      rgba(124, 111, 205, 0.14) 40%,
+      transparent 68%
+    );
+    animation: heartbeat-violet 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* teal bloom */
+  .glow-teal {
+    width: 720px;
+    height: 620px;
+    top: -80px;
+    left: 50%;
+    transform: translateX(-18%);
+    background: radial-gradient(ellipse at center,
+      rgba(79, 175, 168, 0.34) 0%,
+      rgba(79, 175, 168, 0.11) 40%,
+      transparent 68%
+    );
+    animation: heartbeat-teal 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation-delay: -1.8s; /* offset — teal beats while violet is recovering */
+  }
+
+  /* lub-dub: quick surge → partial drop → smaller surge → slow decay */
+  @keyframes heartbeat-violet {
+    0%   { opacity: 0.55; transform: translateX(-65%) scale(0.97); }
+    12%  { opacity: 1;    transform: translateX(-65%) scale(1.20); } /* lub */
+    24%  { opacity: 0.70; transform: translateX(-65%) scale(1.05); } /* between beats */
+    36%  { opacity: 0.90; transform: translateX(-65%) scale(1.13); } /* dub */
+    60%  { opacity: 0.58; transform: translateX(-65%) scale(0.98); } /* decay */
+    100% { opacity: 0.55; transform: translateX(-65%) scale(0.97); } /* rest */
+  }
+
+  @keyframes heartbeat-teal {
+    0%   { opacity: 0.50; transform: translateX(-18%) scale(0.97); }
+    12%  { opacity: 0.95; transform: translateX(-18%) scale(1.18); } /* lub */
+    24%  { opacity: 0.65; transform: translateX(-18%) scale(1.04); } /* between beats */
+    36%  { opacity: 0.85; transform: translateX(-18%) scale(1.11); } /* dub */
+    60%  { opacity: 0.53; transform: translateX(-18%) scale(0.98); } /* decay */
+    100% { opacity: 0.50; transform: translateX(-18%) scale(0.97); } /* rest */
+  }
+
+  /* all content sits above glow */
+  nav, .hero-wrap, .divider, .section, .patent-banner, footer {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ─── NAV ───────────────────────────────────────────── */
+  nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 2.5rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: rgba(10, 10, 15, 0.7);
+    backdrop-filter: blur(16px);
+    z-index: 100;
+  }
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav-logo .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+  }
+  .nav-badge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: rgba(79, 175, 168, 0.08);
+    border: 1px solid rgba(79, 175, 168, 0.18);
+    padding: 0.2rem 0.65rem;
+    border-radius: var(--radius-full);
+  }
+
+  /* ─── HERO ──────────────────────────────────────────── */
+  .hero {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 7rem 2rem 5rem;
+    text-align: center;
+  }
+  .hero-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: rgba(79, 175, 168, 0.07);
+    border: 1px solid rgba(79, 175, 168, 0.16);
+    padding: 0.28rem 0.75rem;
+    border-radius: var(--radius-full);
+    margin-bottom: 2rem;
+  }
+  .hero-label .pulse {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--teal);
+    animation: dot-pulse 2s infinite;
+  }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .hero h1 {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.06;
+    margin-bottom: 1.5rem;
+    color: var(--text);
+  }
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--violet) 20%, var(--teal) 80%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    color: var(--muted);
+    max-width: 500px;
+    margin: 0 auto 2.75rem;
+  }
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.7rem 1.5rem;
+    border-radius: var(--radius-lg);
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.7rem 1.5rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    text-decoration: none;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-secondary:hover { border-color: rgba(79,175,168,0.3); color: var(--text); }
+
+  /* ─── DIVIDER ───────────────────────────────────────── */
+  .divider {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ─── SECTIONS ──────────────────────────────────────── */
+  .section {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 4.5rem 2rem;
+  }
+  .section-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 0.6rem;
+  }
+  .section h2 {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    margin-bottom: 0.6rem;
+  }
+  .section > p {
+    font-size: 0.95rem;
+    color: var(--muted);
+    line-height: 1.75;
+    max-width: 500px;
+    margin-bottom: 2.5rem;
+  }
+
+  /* ─── PLATFORM CARD ─────────────────────────────────── */
+  .platform-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .platform-card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .platform-icon {
+    width: 42px; height: 42px;
+    border-radius: var(--radius-lg);
+    background: rgba(124,111,205,0.1);
+    border: 1px solid rgba(124,111,205,0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .platform-card-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    margin-bottom: 0.1rem;
+  }
+  .platform-card-header p {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .platform-features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+    gap: 0.55rem;
+  }
+  .feature-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.45rem 0.7rem;
+  }
+  .feature-pill .check {
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 0.65rem;
+    flex-shrink: 0;
+  }
+
+  /* ─── APPS ──────────────────────────────────────────── */
+  .apps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .app-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    padding: 1.75rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .app-card:hover { border-color: rgba(79,175,168,0.22); }
+  .app-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, var(--violet), var(--teal));
+  }
+  .app-card-tag {
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 0.875rem;
+  }
+  .app-card h3 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+  }
+  .app-card p {
+    font-size: 0.875rem;
+    color: var(--muted);
+    line-height: 1.65;
+    margin-bottom: 1.25rem;
+  }
+  .app-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .app-status {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--subtle);
+  }
+  .dot-live {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--teal);
+    animation: dot-pulse 2s infinite;
+  }
+  .dot-soon {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+  .built-on {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.18);
+    font-weight: 500;
+  }
+  .built-on span {
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ─── PATENT BANNER ─────────────────────────────────── */
+  .patent-banner {
+    max-width: 980px;
+    margin: 0 auto 4.5rem;
+    padding: 0 2rem;
+  }
+  .patent-inner {
+    background: var(--surface);
+    border: 1px solid rgba(124,111,205,0.16);
+    border-radius: var(--radius-2xl);
+    padding: 1.5rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .patent-inner h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+  }
+  .patent-inner p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.55;
+    max-width: 500px;
+  }
+  .patent-tag {
+    flex-shrink: 0;
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--violet);
+    background: rgba(124,111,205,0.08);
+    border: 1px solid rgba(124,111,205,0.18);
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+  }
+
+  /* ─── FOOTER ────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 1.75rem 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .footer-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--subtle);
+  }
+  .footer-logo .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+  }
+  footer p { font-size: 0.75rem; color: rgba(255,255,255,0.15); }
+</style>
+</head>
+<body>
+
+<!-- GLOW -->
+<div class="glow-layer">
+  <div class="glow-violet"></div>
+  <div class="glow-teal"></div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo">
+    <span class="dot"></span>
+    Archon Labs
+  </a>
+  <span class="nav-badge">Patent Pending</span>
+</nav>
+
+<!-- HERO -->
+<div class="hero-wrap">
+  <section class="hero">
+    <div class="hero-label">
+      <span class="pulse"></span>
+      AI-Native Software Development
+    </div>
+    <h1>Every product we build<br>is <span>100% AI-native</span></h1>
+    <p>Archon Labs builds AI-native products from day one — fully designed, engineered, and shipped through Archon Dev, our proprietary AI-powered SDLC platform.</p>
+    <div class="hero-actions">
+      <a href="mailto:hello@getarchon.dev" class="btn-primary">Get in touch</a>
+      <a href="#platform" class="btn-secondary">See the platform →</a>
+    </div>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<!-- PLATFORM -->
+<section class="section" id="platform">
+  <div class="section-label">The Platform</div>
+  <h2>Archon Dev</h2>
+  <p>An AI orchestration platform that takes a feature from idea to shipped code — spec, design, engineering, build, QA, and deploy — without manual handoffs.</p>
+
+  <div class="platform-card">
+    <div class="platform-card-header">
+      <div class="platform-icon">⚡</div>
+      <div>
+        <h3>Spec to production, autonomously</h3>
+        <p>AI agents handle every phase. Humans approve. Nothing ships without a gate.</p>
+      </div>
+    </div>
+    <div class="platform-features">
+      <div class="feature-pill"><span class="check">✦</span> Version control as state machine</div>
+      <div class="feature-pill"><span class="check">✦</span> Stateless agents, fresh context every call</div>
+      <div class="feature-pill"><span class="check">✦</span> Synchronous conflict detection</div>
+      <div class="feature-pill"><span class="check">✦</span> Full spec chain enforcement</div>
+      <div class="feature-pill"><span class="check">✦</span> Cross-phase agent escalation</div>
+      <div class="feature-pill"><span class="check">✦</span> Proactive phase orchestration</div>
+      <div class="feature-pill"><span class="check">✦</span> Zero-code multi-tenant onboarding</div>
+      <div class="feature-pill"><span class="check">✦</span> Decoupled CI/CD platform</div>
+      <div class="feature-pill"><span class="check">✦</span> Real-time SDLC dashboard</div>
+    </div>
+  </div>
+</section>
+
+<!-- APPS -->
+<section class="section" id="apps">
+  <div class="section-label">Built on Archon Dev</div>
+  <h2>Our products</h2>
+  <p>Every Archon Labs product is AI-native from day one — designed, built, and shipped entirely through Archon Dev.</p>
+
+  <div class="apps-grid">
+    <div class="app-card">
+      <div class="app-card-tag">Health &amp; Wellness</div>
+      <h3>Health360</h3>
+      <p>Your AI health companion. Connects wearables, tracks vitals, and gives you personalised insights — built for 100M+ users from day one.</p>
+      <div class="app-card-footer">
+        <div class="app-status">
+          <span class="dot-live"></span>
+          In development
+        </div>
+        <div class="built-on">Built on <span>Archon Dev</span></div>
+      </div>
+    </div>
+
+    <div class="app-card" style="opacity:0.42;">
+      <div class="app-card-tag">Coming soon</div>
+      <h3>More products</h3>
+      <p>Every product Archon Labs ships will be 100% AI-native, built entirely through Archon Dev.</p>
+      <div class="app-card-footer">
+        <div class="app-status">
+          <span class="dot-soon"></span>
+          Announced later
+        </div>
+        <div class="built-on">Built on <span>Archon Dev</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PATENT BANNER -->
+<div class="patent-banner">
+  <div class="patent-inner">
+    <div>
+      <h4>Archon Dev — Patent Pending</h4>
+      <p>System and Method for Orchestrating Stateless AI Agents Across Software Development Lifecycle Phases Using Version Control as Authoritative State. USPTO provisional application filed March 2026.</p>
+    </div>
+    <div class="patent-tag">Patent Pending</div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">
+    <span class="dot"></span>
+    Archon Labs
+  </div>
+  <p>© 2026 Archon Labs. All rights reserved. Patent Pending.</p>
+</footer>
+
+</body>
+</html>

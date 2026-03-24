@@ -104,6 +104,36 @@ This file tracks decisions that are correct for a small team today but need to c
 
 ---
 
+## Spec revision not yet handled — live features misidentified as new
+
+**Now:** Once a feature's spec branches are deleted and all specs are on `main`, `getInProgressFeatures()` loses track of it. `getFeaturePhase()` falls back to `"product-spec-in-progress"`. A user returning to a live feature to revise anything gets routed as if starting a new feature — no existing spec context, no editor mode.
+
+**Why it works now:** health360 has one feature (onboarding) still in the spec chain. No feature has cleared all three spec layers yet, so this gap hasn't been hit in production.
+
+**At scale:** Every feature that ships will eventually be revised. The system must detect `"feature-established"` state (specs on main, no active branches), route intent to the right layer (product/design/engineering), and load the existing spec as editor context. See Step 2.6.
+
+---
+
+## Spec cascade not enforced
+
+**Now:** When a product spec is updated, the existing design and engineering specs are not flagged as potentially stale. The system posts a note ("design spec may need a revision pass") but does not enforce or track whether the downstream spec was actually reviewed.
+
+**Why it works now:** Solo team. One person wears all hats and knows which downstream specs need updating.
+
+**At scale:** A proper impact analysis is needed — when an upstream spec changes, automatically identify which downstream specs reference the changed section, flag them as "stale pending review", and block the next phase transition until a human confirms the downstream spec is still valid.
+
+---
+
+## No bug workflow
+
+**Now:** Bugs discovered in production have no intake path through the system. They are tracked manually (GitHub Issues, Slack messages, memory) with no structured triage, assignment, or resolution loop.
+
+**Why it works now:** No code is in production yet. health360 hasn't shipped.
+
+**At scale:** Once engineer agents are shipping code (Step 6), bugs will appear. Without a structured workflow they pile up untracked. See Step 2.7.
+
+---
+
 ## No audit trail
 
 **Now:** There is no log of which agent ran, what it read, what decision was made, and when.
