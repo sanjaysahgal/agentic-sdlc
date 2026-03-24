@@ -11,7 +11,7 @@
 
 | When | Item | Vendor | Est. Cost | Notes |
 |---|---|---|---|---|
-| ASAP | Provisional patent filing | USPTO | ~$80–$160 | Micro entity ($80) or small entity ($160). Complete ID.me first. |
+| Pending (customer # activating) | Provisional patent filing | USPTO | ~$160 | Small entity. Customer # 228068 created, awaiting activation. |
 | ~Mar 2027 | Trademark: Statement of Use (specimen) | USPTO | $100/class | Due within 6 months of Notice of Allowance (~12 months after filing) |
 | Within 12 months of provisional | Non-provisional patent | USPTO | ~$800–$1,600 | Optional but required to get full patent grant |
 | Ongoing | Vercel hosting | Vercel | $0–$20/mo | Free tier likely sufficient initially |

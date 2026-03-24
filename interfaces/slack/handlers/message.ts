@@ -427,29 +427,31 @@ async function runDesignAgent(params: {
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
       // Generate (or regenerate) the HTML preview if a draft exists — non-fatal
-      let previewUploaded = false
+      let previewNote: string | null = null
       if (draftContent) {
         try {
           await update("_Generating HTML preview..._")
           const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
           const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
           await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-          await client.files.uploadV2({
-            channel_id: channelId,
-            thread_ts: threadTs,
-            content: htmlContent,
-            filename: `${featureName}.preview.html`,
-            title: `${featureName} — Design Preview`,
-          })
-          previewUploaded = true
-        } catch {
-          // Non-fatal
+          const blobUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${htmlFilePath}`
+          try {
+            await client.files.uploadV2({
+              channel_id: channelId,
+              thread_ts: threadTs,
+              content: htmlContent,
+              filename: `${featureName}.preview.html`,
+              title: `${featureName} — Design Preview`,
+            })
+            previewNote = `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+          } catch (uploadErr: any) {
+            console.error(`[preview] Slack file upload failed (add files:write scope to fix): ${uploadErr?.message}`)
+            previewNote = `\n\n_Preview saved to GitHub:_ ${blobUrl}\n_Click Raw → save → open in browser. Use device toolbar (Cmd+Shift+M in Chrome) for mobile layout._`
+          }
+        } catch (err: any) {
+          console.error(`[preview] HTML generation failed: ${err?.message}`)
         }
       }
-
-      const previewNote = previewUploaded
-        ? `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-        : null
       const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote })
       appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
@@ -520,20 +522,26 @@ async function runDesignAgent(params: {
     let previewNote = ""
     try {
       await update("_Generating HTML preview..._")
-      const { paths } = loadWorkspaceConfig()
+      const { paths, githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
       const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
       const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-      await client.files.uploadV2({
-        channel_id: channelId,
-        thread_ts: threadTs,
-        content: htmlContent,
-        filename: `${featureName}.preview.html`,
-        title: `${featureName} — Design Preview`,
-      })
-      previewNote = `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-    } catch {
-      // Non-fatal — draft is saved, preview is a nice-to-have
+      const blobUrl = `https://github.com/${owner}/${repo}/blob/spec/${featureName}-design/${htmlFilePath}`
+      try {
+        await client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: htmlContent,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview`,
+        })
+        previewNote = `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+      } catch (uploadErr: any) {
+        console.error(`[preview] Slack file upload failed (add files:write scope to fix): ${uploadErr?.message}`)
+        previewNote = `\n\n_Preview saved to GitHub:_ ${blobUrl}\n_Click Raw → save → open in browser. Use device toolbar (Cmd+Shift+M in Chrome) for mobile layout._`
+      }
+    } catch (err: any) {
+      console.error(`[preview] HTML generation failed: ${err?.message}`)
     }
 
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
