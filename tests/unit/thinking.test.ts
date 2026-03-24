@@ -38,7 +38,7 @@ describe("withThinking", () => {
       run: async (update) => { await update("Response text") },
     })
     expect(client.chat.postMessage).toHaveBeenCalledWith(expect.objectContaining({ text: "_PM is thinking..._" }))
-    expect(client.chat.update).toHaveBeenCalledWith(expect.objectContaining({ text: "Response text" }))
+    expect(client.chat.update).toHaveBeenCalledWith(expect.objectContaining({ text: "*PM*\n\nResponse text" }))
   })
 
   it("on error: logs structured JSON with all required fields", async () => {
