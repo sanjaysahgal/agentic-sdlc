@@ -383,7 +383,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(text).not.toContain("OFFER_PM_ESCALATION_START")
   })
 
-  it("Turn 2: user says yes → PM agent answers the blocking product question", async () => {
+  it("Turn 2: user says yes → PM is @mentioned in thread, design paused", async () => {
     setConfirmedAgent(THREAD, "ux-design")
     appendMessage(THREAD, { role: "user", content: "should we support social login?" })
     appendMessage(THREAD, { role: "assistant", content: "This is a product decision — want me to pull the PM in?" })
@@ -396,18 +396,19 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
       designContext: "Onboarding design in progress.",
     })
 
-    // PM agent call: extractLockedDecisions (history < 6 → returns ""), classifyMessageScope, runAgent
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Yes, support Google OAuth only." }] }) // PM runAgent
-
+    // No Anthropic calls — escalation posts a Slack message directly, no AI invoked
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // PM agent handled it
-    expect(thinkingPlaceholder(params.client)).toBe("_Product Manager is thinking..._")
-    const text = lastUpdateText(params.client)
-    expect(text).toContain("Google OAuth")
+    // PM was notified via postMessage, not via AI agent
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const escalationPost = postCalls.find((c: any) => c[0]?.text?.includes("blocking product question"))
+    expect(escalationPost).toBeDefined()
+    expect(escalationPost[0].text).toContain("Should social login be supported?")
+    expect(escalationPost[0].text).toContain("Reply here to unblock design")
+
+    // No AI thinking placeholder — PM agent was NOT invoked
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
   })
 })
 
