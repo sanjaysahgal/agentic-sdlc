@@ -460,6 +460,169 @@
     white-space: nowrap;
   }
 
+  /* ─── HOW IT WORKS ──────────────────────────────────── */
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 3rem;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(124,111,205,0.1);
+    border: 1px solid rgba(124,111,205,0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--violet);
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+  .flow-step-content h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.2rem;
+    letter-spacing: -0.01em;
+  }
+  .flow-step-content p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .flow-step-content code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    color: var(--teal);
+    background: rgba(79,175,168,0.07);
+    border: 1px solid rgba(79,175,168,0.12);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+  }
+  .how-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 2.5rem;
+  }
+  .how-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 1.5rem;
+  }
+  .how-card-label {
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.65rem;
+  }
+  .how-card-label.ok       { color: var(--teal); }
+  .how-card-label.conflict { color: #e06c75; }
+  .how-card-label.gap      { color: #e5c07b; }
+  .how-card h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.35rem;
+    letter-spacing: -0.01em;
+  }
+  .how-card p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .github-callout {
+    background: var(--surface);
+    border: 1px solid rgba(79,175,168,0.16);
+    border-radius: var(--radius-xl);
+    padding: 1.75rem 2rem;
+    margin-top: 2.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+  .github-callout-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 0.1rem; }
+  .github-callout h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+    letter-spacing: -0.015em;
+  }
+  .github-callout p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  /* ─── WAITLIST ───────────────────────────────────────── */
+  .waitlist-wrap {
+    max-width: 980px;
+    margin: 0 auto 0;
+    padding: 0 2rem 4.5rem;
+  }
+  .waitlist-inner {
+    background: linear-gradient(135deg, rgba(124,111,205,0.08) 0%, rgba(79,175,168,0.06) 100%);
+    border: 1px solid rgba(124,111,205,0.2);
+    border-radius: var(--radius-2xl);
+    padding: 3rem 2.5rem;
+    text-align: center;
+  }
+  .waitlist-inner .section-label { margin-bottom: 0.75rem; }
+  .waitlist-inner h2 {
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    margin-bottom: 0.75rem;
+  }
+  .waitlist-inner > p {
+    font-size: 0.95rem;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 480px;
+    margin: 0 auto 2rem;
+  }
+  .waitlist-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .waitlist-input {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    font-family: var(--font);
+    width: 280px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .waitlist-input::placeholder { color: var(--subtle); }
+  .waitlist-input:focus { border-color: rgba(124,111,205,0.4); }
+  .waitlist-note {
+    font-size: 0.75rem;
+    color: var(--subtle);
+    margin-top: 1rem;
+  }
+
   /* ─── FOOTER ────────────────────────────────────────── */
   footer {
     border-top: 1px solid var(--border);
@@ -512,9 +675,9 @@
       AI-Native Software Development
     </div>
     <h1>Every product we build<br>is <span>100% AI-native</span></h1>
-    <p>Archon Labs builds AI-native products from day one — fully designed, engineered, and shipped through Archon Dev, our proprietary AI-powered SDLC platform.</p>
+    <p>Archon Labs builds AI-native products through Archon Dev — our AI-powered SDLC platform. Archon Dev is available to license. Any engineering team can plug in their repo and ship the same way.</p>
     <div class="hero-actions">
-      <a href="mailto:hello@getarchon.dev" class="btn-primary">Get in touch</a>
+      <a href="#waitlist" class="btn-primary">Request early access</a>
       <a href="#platform" class="btn-secondary">See the platform →</a>
     </div>
   </section>
@@ -526,7 +689,7 @@
 <section class="section" id="platform">
   <div class="section-label">The Platform</div>
   <h2>Archon Dev</h2>
-  <p>An AI orchestration platform that takes a feature from idea to shipped code — spec, design, engineering, build, QA, and deploy — without manual handoffs.</p>
+  <p>An AI orchestration platform that takes a feature from idea to shipped code — spec, design, engineering, build, QA, and deploy — without manual handoffs. Available to license. Connect your GitHub repo and Slack workspace and your team gets the same AI-powered SDLC we use to build our own products.</p>
 
   <div class="platform-card">
     <div class="platform-card-header">
@@ -546,6 +709,84 @@
       <div class="feature-pill"><span class="check">✦</span> Zero-code multi-tenant onboarding</div>
       <div class="feature-pill"><span class="check">✦</span> Decoupled CI/CD platform</div>
       <div class="feature-pill"><span class="check">✦</span> Real-time SDLC dashboard</div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how">
+  <div class="section-label">Under the hood</div>
+  <h2>How Archon Dev works</h2>
+  <p>Every request follows the same loop. Stateless agents, fresh context on every call, version control as the only source of truth.</p>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-step-content">
+        <h4>Message in</h4>
+        <p>User sends a message via Slack. The platform receives it over WebSocket — no polling, no delay.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-step-content">
+        <h4>Classify intent</h4>
+        <p>A lightweight model (<code>Haiku</code>) reads the message and routes to the right agent — PM, Design, Architect, QA. No hardcoded keyword matching.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-step-content">
+        <h4>Read state from GitHub</h4>
+        <p>The agent reads the current spec, product vision, and architecture directly from the repo. No cached copies. Every call gets the authoritative version.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-step-content">
+        <h4>Filter to what's relevant</h4>
+        <p><code>Haiku</code> trims the context to only what matters for this specific request. The reasoning model stays focused — no noise, no token waste.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-step-content">
+        <h4>Draft + audit</h4>
+        <p>The specialist agent (<code>Sonnet</code>) generates the response. A separate audit pass checks for conflicts with existing decisions and flags open questions before anything is saved.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-step-content">
+        <h4>Write to GitHub, respond to user</h4>
+        <p>Approved drafts commit to the feature branch. The user gets the response in Slack. The repo is the record — not a database, not a cache.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="github-callout">
+    <div class="github-callout-icon">⬡</div>
+    <div>
+      <h4>GitHub is the only memory</h4>
+      <p>There is no separate state database. Phase state is derived entirely from branch names and file presence in the repo. Any agent, re-run on the same GitHub state, produces the same result — deterministic by design.</p>
+    </div>
+  </div>
+
+  <div class="how-cards">
+    <div class="how-card">
+      <div class="how-card-label ok">✓ &nbsp;OK</div>
+      <h4>Draft saved</h4>
+      <p>No conflicts found. No open questions. Draft committed to the feature branch and ready for human review.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-card-label conflict">✕ &nbsp;Conflict</div>
+      <h4>Save blocked</h4>
+      <p>Draft contradicts an approved upstream decision. Agent surfaces the conflict. Human must resolve it at the source — then the agent re-reads to verify before proceeding.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-card-label gap">◌ &nbsp;Gap</div>
+      <h4>Saved + flagged</h4>
+      <p>Draft saved but an open question was found. The unresolved decision is surfaced explicitly — it must be answered before the phase can be approved and advance.</p>
     </div>
   </div>
 </section>
@@ -584,6 +825,20 @@
     </div>
   </div>
 </section>
+
+<!-- WAITLIST -->
+<div class="waitlist-wrap" id="waitlist">
+  <div class="waitlist-inner">
+    <div class="section-label">Early Access</div>
+    <h2>License Archon Dev for your team</h2>
+    <p>We're opening Archon Dev to a small number of engineering teams. Connect your repo and Slack workspace — your team ships the same way we do. No code changes required to onboard.</p>
+    <div class="waitlist-form">
+      <input class="waitlist-input" type="email" placeholder="you@company.com" />
+      <a href="mailto:hello@getarchon.dev?subject=Archon Dev Early Access" class="btn-primary">Request access</a>
+    </div>
+    <p class="waitlist-note">No commitments. We'll reach out to schedule a conversation.</p>
+  </div>
+</div>
 
 <!-- PATENT BANNER -->
 <div class="patent-banner">
