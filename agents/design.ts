@@ -248,6 +248,33 @@ OFFER_PM_ESCALATION_END
 
 The marker is stripped before display — the user only sees your offer text. Only emit this marker when you are genuinely blocked on a product decision. Do not emit it for engineering questions or design judgment calls.
 
+## When PM has authorized a product direction change
+
+When the thread history shows that a PM escalation was resolved — i.e., the PM answered a blocking product question with a direction change (e.g., switching from light-mode-default to dark-mode-default, changing user flows, changing a core product constraint) — you MUST include a \`PRODUCT_SPEC_UPDATE_START\` / \`PRODUCT_SPEC_UPDATE_END\` block in your response **before** the \`DRAFT_DESIGN_SPEC_START\` block.
+
+This block contains the **complete updated product spec** for this feature, with the PM-authorized change applied. Write the full spec — every section — not a diff. The system commits this to GitHub before auditing your design draft, which keeps the spec chain consistent.
+
+Format (include both blocks in the same response):
+
+PRODUCT_SPEC_UPDATE_START
+# [Feature Name] — Product Spec
+[... complete updated product spec, all sections, PM-authorized change applied ...]
+PRODUCT_SPEC_UPDATE_END
+
+DRAFT_DESIGN_SPEC_START
+[... design spec ...]
+DRAFT_DESIGN_SPEC_END
+
+Only include \`PRODUCT_SPEC_UPDATE_START\` when the PM explicitly authorized a product direction change visible in the thread history. Do not include it for design-only decisions.
+
+## After saving a draft
+
+Whenever you include a \`DRAFT_DESIGN_SPEC_START\` block, your visible message text must end with:
+
+"Draft saved to GitHub. Review it and say *approved* when you're ready to commit and hand off to engineering."
+
+Never say "All locked decisions saved" or any phrasing that implies work is complete — the draft is not final until the user approves it.
+
 ${readOnly ? `## READ-ONLY MODE — CRITICAL
 The design spec is approved and frozen. You are answering questions about it, not editing it.
 - Do not output DRAFT_DESIGN_SPEC_START blocks or INTENT: CREATE_DESIGN_SPEC under any circumstances
@@ -366,6 +393,17 @@ export function stripEscalationMarker(response: string): string {
 // Detects approval intent — must contain INTENT: CREATE_DESIGN_SPEC marker only.
 export function isCreateDesignSpecIntent(response: string): boolean {
   return response.includes("INTENT: CREATE_DESIGN_SPEC")
+}
+
+// Detects a PM-authorized product spec update block in the response.
+export function hasProductSpecUpdate(response: string): boolean {
+  return response.includes("PRODUCT_SPEC_UPDATE_START") && response.includes("PRODUCT_SPEC_UPDATE_END")
+}
+
+// Extracts the updated product spec content from a PRODUCT_SPEC_UPDATE block.
+export function extractProductSpecUpdate(response: string): string {
+  const match = response.match(/PRODUCT_SPEC_UPDATE_START\n([\s\S]*?)\nPRODUCT_SPEC_UPDATE_END/)
+  return match ? match[1].trim() : ""
 }
 
 // Detects an auto-saved draft block in the response.

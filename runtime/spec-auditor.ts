@@ -19,19 +19,20 @@ export async function auditSpecDraft(params: {
   productVision: string
   systemArchitecture: string
   featureName: string
+  productSpec?: string   // Feature-level approved product spec — checked in addition to platform vision
 }): Promise<AuditResult> {
-  const { draft, productVision, systemArchitecture, featureName } = params
+  const { draft, productVision, systemArchitecture, featureName, productSpec } = params
 
-  if (!productVision && !systemArchitecture) return { status: "ok" }
+  if (!productVision && !systemArchitecture && !productSpec) return { status: "ok" }
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 300,
-    system: `You are a spec auditor. Your job is to check a feature spec draft against a product vision and system architecture document.
+    system: `You are a spec auditor. Your job is to check a feature spec draft against a product vision, system architecture, and approved product spec.
 
 You are looking for two things:
-1. CONFLICT — the draft explicitly contradicts something in the product vision or architecture (e.g. proposes password auth when vision says SSO only, or suggests a REST API when architecture mandates tRPC)
-2. GAP — the draft implies or assumes something that the vision or architecture does not address (e.g. assumes a native mobile app exists when the vision only describes web, or assumes a specific data model that the architecture hasn't defined)
+1. CONFLICT — the draft explicitly contradicts something in the product vision, architecture, or approved product spec (e.g. proposes password auth when vision says SSO only, or proposes dark-mode-only when the product spec says light-mode-default)
+2. GAP — the draft implies or assumes something that none of the source documents address (e.g. assumes a native mobile app exists when the vision only describes web)
 
 IMPORTANT: If the draft already documents the gap as an open question in its "Open Questions" section (tagged [type: engineering] or [type: product]), respond with OK — the gap has been acknowledged by the team and does not need to be re-flagged.
 
@@ -54,6 +55,7 @@ ${productVision || "Not defined."}
 
 ## System Architecture
 ${systemArchitecture || "Not defined."}
+${productSpec ? `\n## Approved Product Spec\n${productSpec}` : ""}
 
 ## Draft Spec
 ${draft}`,

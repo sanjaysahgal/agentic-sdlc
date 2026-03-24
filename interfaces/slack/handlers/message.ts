@@ -2,7 +2,7 @@ import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } f
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse } from "../../../agents/design"
+import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
@@ -495,11 +495,28 @@ async function runDesignAgent(params: {
   const prefix = routingNote ? `${routingNote}\n\n` : ""
 
   if (readOnly) {
-    const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/INTENT: CREATE_DESIGN_SPEC/g, "").trim()
+    const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/INTENT: CREATE_DESIGN_SPEC/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
     return
   }
+
+  // If the PM authorized a product direction change, commit the updated product spec
+  // to GitHub BEFORE auditing the design draft — so the spec chain stays consistent.
+  let updatedProductSpecContent: string | undefined
+  if (hasProductSpecUpdate(response)) {
+    updatedProductSpecContent = extractProductSpecUpdate(response)
+    if (updatedProductSpecContent) {
+      await update("_Applying PM-authorized product spec update..._")
+      const productSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
+      await saveApprovedSpec({ featureName, filePath: productSpecPath, content: updatedProductSpecContent })
+    }
+  }
+
+  // Extract the approved product spec from context for use in the audit.
+  // The product spec is embedded in currentDraft as "## Approved Product Spec\n..."
+  const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
+  const auditProductSpec = updatedProductSpecContent ?? (productSpecMatch ? productSpecMatch[1].trim() : "")
 
   if (hasDraftDesignSpec(response)) {
     const draftContent = extractDraftDesignSpec(response)
@@ -508,11 +525,12 @@ async function runDesignAgent(params: {
       draft: draftContent,
       productVision: context.productVision,
       systemArchitecture: context.systemArchitecture,
+      productSpec: auditProductSpec,
       featureName,
     })
 
     if (audit.status === "conflict") {
-      const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").trim()
+      const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
       const conflictQuestion = `Resolve this before we continue. Do you want to adjust the design, or update the product vision/architecture?`
       appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
       await update(
@@ -524,7 +542,7 @@ async function runDesignAgent(params: {
     }
 
     if (audit.status === "gap") {
-      const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").trim()
+      const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
       const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension (note it in the spec and move on)?`
       appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
       await update(
@@ -538,7 +556,7 @@ async function runDesignAgent(params: {
 
     await update("_Saving draft to GitHub..._")
     await saveDraftDesignSpec({ featureName, filePath, content: draftContent })
-    const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").trim()
+    const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
 
     // Generate HTML preview alongside every draft save — non-fatal
     let previewNote = ""
@@ -609,8 +627,9 @@ async function runDesignAgent(params: {
     return
   }
 
-  appendMessage(threadTs, { role: "assistant", content: response })
-  await update(`${prefix}${response}`)
+  const finalResponse = response.replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
+  appendMessage(threadTs, { role: "assistant", content: finalResponse })
+  await update(`${prefix}${finalResponse}`)
 }
 
 async function runArchitectAgent(params: {

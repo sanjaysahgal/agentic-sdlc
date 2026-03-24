@@ -80,6 +80,33 @@ A dedicated workflow for bugs that is completely separate from the spec chain. B
 
 ---
 
+### Step 2.8 — PM Review Queue + per-feature role routing
+
+**The problem today:** `roles.pmUser` (and `designerUser`, `architectUser`) are single Slack user IDs set globally in `.env`. This doesn't scale.
+
+At 10+ people and 100+ simultaneous features:
+- One PM gets @mentioned in every feature thread that hits a blocking product question — notification bomb with no triage, no SLA, no delegation
+- There's no way to assign a specific PM to a specific feature domain
+- The PM has no consolidated view of what's blocked across all features — they only see individual thread mentions
+
+**What this adds:**
+
+**PM Review Queue channel (`#pm-review`):**
+- All blocking product questions from all feature threads are posted here instead of (or in addition to) the originating thread
+- Each post includes: feature name, the blocking question, a link back to the feature thread
+- PM replies in `#pm-review` with the decision; system routes the answer back to the blocked feature thread and resumes the design agent automatically
+- Multiple PMs can watch the same channel — whoever picks up the question owns it
+
+**Per-domain role assignment (WorkspaceConfig):**
+- `roles` gains a `domains` map: `{ growth: { pmUser: "U123", designerUser: "U456" }, platform: { pmUser: "U789" } }`
+- Feature names are matched to domains by prefix convention (e.g. `onboarding` → `growth`)
+- Fallback to global `roles.pmUser` if no domain match
+- Zero-config for solo teams: setting global roles still works, domain routing is opt-in
+
+**Prerequisite for Step 3 (Orchestrator):** The Orchestrator will use this same routing table to know who to alert for each feature.
+
+---
+
 ### Step 3 — Orchestrator agent
 
 A dedicated agent that owns proactive phase coordination AND continuous spec integrity monitoring across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
