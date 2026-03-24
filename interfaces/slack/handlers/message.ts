@@ -133,6 +133,16 @@ export async function handleFeatureChannelMessage(params: {
     // User declined escalation or sent a new message — clear pending and continue normally
     if (pendingEscalation) clearPendingEscalation(threadTs)
 
+    // If the design spec is now approved, route to the architect.
+    const currentPhaseForDesign = await getFeaturePhase(getFeatureName(channelName))
+    if (currentPhaseForDesign === "design-approved-awaiting-engineering" || currentPhaseForDesign === "engineering-in-progress") {
+      setConfirmedAgent(threadTs, "architect")
+      await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
+        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+      }})
+      return
+    }
+
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
     }})
@@ -174,11 +184,11 @@ export async function handleFeatureChannelMessage(params: {
   // New thread — check phase first, then classify and run
   const currentPhase = await getFeaturePhase(getFeatureName(channelName))
   const thinkingLabel =
-    currentPhase === "product-spec-approved-awaiting-design" ? "UX Designer" :
+    currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress" ? "UX Designer" :
     currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress" ? "Architect" :
     undefined
   await withThinking({ client, channelId, threadTs, agent: thinkingLabel, run: async (update) => {
-    if (currentPhase === "product-spec-approved-awaiting-design") {
+    if (currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress") {
       setConfirmedAgent(threadTs, "ux-design")
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
