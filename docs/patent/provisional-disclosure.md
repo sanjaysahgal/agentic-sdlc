@@ -48,7 +48,7 @@ The existing approaches suffer from the following specific limitations:
 
 8. **Opaque workflow state** — No existing tool provides a unified real-time view of SDLC progress across features, teams, and workspaces derived directly from version control. Stakeholders must query multiple systems (version control, issue tracker, CI/CD dashboard, communication platform) to construct a coherent picture of project state.
 
-What is needed is a unified platform — herein referred to as **Archon** — that addresses all of these limitations through a coherent, config-driven, multi-tenant architecture with a decoupled, interface-agnostic human interaction layer.
+What is needed is a unified platform — herein referred to as **Archon Dev** — that addresses all of these limitations through a coherent, config-driven, multi-tenant architecture with a decoupled, interface-agnostic human interaction layer.
 
 ---
 
@@ -66,6 +66,9 @@ The present invention provides a system and method for orchestrating stateless A
 - Structured tagging of open questions within specifications enables machine-readable routing and automated phase gating
 - The human interaction layer is decoupled from agent orchestration logic, enabling any messaging platform or web interface to serve as the interface without modification to core platform logic
 - A monitoring dashboard derives real-time SDLC state directly from version control, requiring no separate data store
+- A linear specification chain enforces that every downstream agent reads the full set of upstream approved artifacts before producing output, with conflict detection enforcing chain integrity end-to-end
+- A cross-phase escalation protocol enables downstream agents to invoke upstream agents directly within the current conversation thread when a blocking question owned by an upstream phase is detected
+- A proactive orchestration agent monitors version control state, detects phase transitions, gates handoffs on resolution of blocking questions, and owns the canonical routing table as a single source of truth
 
 ---
 
@@ -75,7 +78,7 @@ The present invention provides a system and method for orchestrating stateless A
 
 In a preferred embodiment, the lifecycle phase of any feature is inferred entirely from the state of a version control repository, without reference to a separate database or workflow engine.
 
-Archon detects phase by evaluating:
+Archon Dev detects phase by evaluating:
 - Whether a feature branch (e.g., `spec/<feature>-product`) exists in the repository
 - Whether the corresponding specification file exists on that branch but not on the main branch (indicating in-progress)
 - Whether the specification file has been merged to the main branch (indicating approval)
@@ -125,7 +128,7 @@ This architecture eliminates state synchronization bugs, reduces infrastructure 
 
 In a preferred embodiment, every specification artifact is validated synchronously against upstream authoritative documents (e.g., product vision, system architecture) before being saved to the version control repository.
 
-Archon classifies issues into two categories:
+Archon Dev classifies issues into two categories:
 - **CONFLICT**: The specification contradicts a statement in an upstream document. This blocks the save operation entirely.
 - **GAP**: The specification assumes something not addressed in upstream documents. This allows the save but surfaces a structured flag.
 
@@ -153,7 +156,7 @@ This embodiment reduces operational complexity by eliminating the need to provis
 
 ### Embodiment 5: Config-Driven Multi-Tenant Architecture via Workspace Configuration
 
-In a preferred embodiment, all product-specific coordinates are externalized to a workspace configuration object (herein `WorkspaceConfig`) loaded from environment variables at Archon startup. This includes:
+In a preferred embodiment, all product-specific coordinates are externalized to a workspace configuration object (herein `WorkspaceConfig`) loaded from environment variables at Archon Dev startup. This includes:
 
 - Product name and description
 - Version control repository owner and name
@@ -161,9 +164,9 @@ In a preferred embodiment, all product-specific coordinates are externalized to 
 - Specification file paths and directory structures
 - Agent routing rules
 
-No product-specific string literals appear in the Archon codebase. All agents, routing logic, and context loaders reference `WorkspaceConfig` for any product-specific value.
+No product-specific string literals appear in the Archon Dev codebase. All agents, routing logic, and context loaders reference `WorkspaceConfig` for any product-specific value.
 
-A new team or product onboards to Archon by providing a new environment configuration file. No changes to the Archon codebase are required. This achieves true multi-tenancy at the code level, not merely at the database level.
+A new team or product onboards to Archon Dev by providing a new environment configuration file. No changes to the Archon Dev codebase are required. This achieves true multi-tenancy at the code level, not merely at the database level.
 
 A continuous integration check enforces this constraint: any pull request that modifies agent or runtime code without modifying documentation triggers a build failure, preventing regression into hardcoded specificity.
 
@@ -199,23 +202,23 @@ This embodiment transforms open questions from free-form prose into machine-acti
 
 ### Embodiment 8: Decoupled Interface-Agnostic Human Interaction Layer
 
-In a preferred embodiment, the Archon platform separates the human interaction layer entirely from agent orchestration logic. The interface layer — whether a messaging platform (e.g., Slack, Microsoft Teams, Discord) or a web application — is responsible only for:
+In a preferred embodiment, the Archon Dev platform separates the human interaction layer entirely from agent orchestration logic. The interface layer — whether a messaging platform (e.g., Slack, Microsoft Teams, Discord) or a web application — is responsible only for:
 
 - Receiving human input and forwarding it to the agent routing layer
 - Rendering agent responses to the human
 - Maintaining no business logic, agent state, or SDLC knowledge
 
-All routing decisions, agent invocations, conflict detection, and phase management occur in Archon's orchestration layer, which is interface-agnostic. Substituting one interface for another (e.g., replacing a Slack integration with a web chat UI) requires no changes to the agent, routing, or state management components.
+All routing decisions, agent invocations, conflict detection, and phase management occur in Archon Dev's orchestration layer, which is interface-agnostic. Substituting one interface for another (e.g., replacing a Slack integration with a web chat UI) requires no changes to the agent, routing, or state management components.
 
-This decoupling is enforced architecturally: the interface layer communicates with Archon via a defined event protocol (incoming message event → Archon → outgoing response), and Archon has no dependency on any specific interface implementation.
+This decoupling is enforced architecturally: the interface layer communicates with Archon Dev via a defined event protocol (incoming message event → Archon → outgoing response), and Archon Dev has no dependency on any specific interface implementation.
 
-This embodiment future-proofs Archon against interface platform changes, enables simultaneous support for multiple interfaces, and reduces the blast radius of interface-layer failures to the interface only.
+This embodiment future-proofs Archon Dev against interface platform changes, enables simultaneous support for multiple interfaces, and reduces the blast radius of interface-layer failures to the interface only.
 
 ---
 
 ### Embodiment 9: Version-Control-Derived Monitoring Dashboard
 
-In a preferred embodiment, the Archon platform exposes a real-time monitoring dashboard that derives all displayed state directly from the version control repository, requiring no separate data store, event stream, or database.
+In a preferred embodiment, the Archon Dev platform exposes a real-time monitoring dashboard that derives all displayed state directly from the version control repository, requiring no separate data store, event stream, or database.
 
 The dashboard provides:
 
@@ -227,7 +230,60 @@ The dashboard provides:
 
 Because all state is derived from version control, the dashboard requires no synchronization, cache invalidation, or write path. It is a read-only projection of Git state. Any historical view is reconstructable by querying Git history at a prior point in time.
 
-This embodiment completes the Archon platform's commercial surface: the dashboard is the primary interface for engineering managers, product leads, and platform operators who need visibility without direct participation in agent conversations.
+This embodiment completes the Archon Dev platform's commercial surface: the dashboard is the primary interface for engineering managers, product leads, and platform operators who need visibility without direct participation in agent conversations.
+
+---
+
+### Embodiment 10: Authoritative Specification Chain with Full Upstream Context Injection
+
+In a preferred embodiment, Archon Dev enforces a linear specification chain across all SDLC phases, wherein each downstream agent is required to read the complete set of all upstream approved specifications before producing any output.
+
+The chain is structured as follows:
+
+- **Phase 1 (Product Spec):** Agent reads product vision and system architecture documents. Produces `<feature>.product.md`.
+- **Phase 2 (Design Spec):** Agent reads the approved `<feature>.product.md` plus product vision and architecture. Produces `<feature>.design.md`.
+- **Phase 3 (Engineering Spec):** Agent reads both `<feature>.product.md` and `<feature>.design.md` plus system architecture. Produces `<feature>.engineering.md`.
+- **Phase 4 (Build):** Engineer agents read the complete chain — product, design, and engineering specs — before writing any code. No partial context is permitted.
+
+Each document in the chain is loaded fresh from the version control repository at invocation time. No agent may begin output before the full upstream chain has been loaded.
+
+Chain integrity is enforced through conflict detection (per Embodiment 3): a downstream artifact that contradicts any upstream document in the chain is blocked from being saved. This means the chain is not merely read sequentially — it is enforced structurally. An engineering spec cannot contradict the design spec; code cannot contradict the engineering spec.
+
+This embodiment ensures that every downstream artifact is a faithful, verifiable derivation of all upstream decisions. The complete history of a feature — from product intent to shipped code — is traceable through the spec chain stored in the version control repository.
+
+---
+
+### Embodiment 11: Cross-Phase Escalation Protocol
+
+In a preferred embodiment, Archon Dev implements a cross-phase escalation protocol that enables downstream agents to proactively pull upstream agents into a conversation when a blocking question is detected that is owned by an upstream phase.
+
+The protocol operates as follows:
+
+1. A downstream agent (e.g., the design agent) detects a `[blocking: yes] [type: product]` open question during specification shaping.
+2. Rather than requiring the human to manually relay the question to a different agent in a different conversation, the downstream agent offers to invoke the upstream agent (e.g., the pm agent) directly in the current thread.
+3. The upstream agent is invoked with: (a) the blocking question, (b) the relevant excerpt from the current draft spec as context, and (c) the conversation history of the current thread up to that point.
+4. The upstream agent opens with a concrete answer proposal — not discovery questions — because it receives full context at invocation.
+5. Upon resolution, the downstream agent resumes spec shaping with the answer incorporated.
+
+This protocol eliminates manual context relay between agents and prevents information loss at phase boundaries. It is implemented reactively (triggered by blocking question detection mid-conversation) and is extensible across all agent pairs in the spec chain.
+
+A complementary proactive layer (per Embodiment 12) scans for unresolved blocking questions at phase handoff time and prevents phase advancement until they are resolved.
+
+---
+
+### Embodiment 12: Proactive Phase Orchestration with Handoff Gating
+
+In a preferred embodiment, Archon Dev includes a dedicated orchestration agent that monitors version control state across all active features and proactively manages phase transitions without requiring explicit human commands.
+
+The orchestration agent performs the following functions:
+
+- **Phase readiness detection:** Periodically evaluates version control state (per Embodiment 1) across all active features to detect when a phase has been completed and the next phase is ready to begin.
+- **Proactive notification:** When a phase transition is ready, notifies the appropriate human stakeholder in the appropriate communication channel — without waiting for the human to ask.
+- **Handoff gate:** Before completing a phase transition, scans the outgoing specification artifact for any unresolved `[blocking: yes]` open questions. If any are found, blocks the transition and surfaces the blocking questions to the responsible human.
+- **Stall detection:** Detects when a feature has been in a given phase beyond a configurable threshold without activity, and surfaces a stall notification to the relevant human.
+- **Canonical routing:** Owns the authoritative mapping of lifecycle phases to agents — the single source of truth for which agent handles which phase. All routing decisions are delegated to the orchestration agent rather than being distributed across message handlers.
+
+The orchestration agent reads state exclusively from the version control repository. It writes no state of its own — all conclusions are derived from Git branch and file state at the time of evaluation, making all orchestration decisions auditable through Git history.
 
 ---
 
@@ -273,11 +329,17 @@ The following claims define the scope of the invention. As a provisional applica
 
 15. A non-transitory computer-readable medium storing instructions that, when executed, implement a multi-tenant AI agent orchestration platform wherein all tenant-specific coordinates are loaded from an environment configuration object at startup, no tenant-specific literals appear in platform source code, and a continuous integration mechanism enforces this constraint on every code change.
 
+16. The system of claim 1, wherein each AI agent in a sequence of lifecycle phases is required to load the complete set of all upstream approved specification artifacts from the version control repository before producing any output, and wherein conflict detection enforces that no downstream artifact contradicts any upstream artifact in the chain, such that the complete derivation history of a feature from product intent to implementation is traceable through version-controlled artifacts.
+
+17. A computer-implemented method for cross-phase escalation in a multi-agent software development system, comprising: detecting, by a downstream AI agent, a blocking open question tagged with a type identifier indicating ownership by an upstream lifecycle phase; constructing an invocation payload for the upstream agent comprising the blocking question, relevant excerpts from the current draft specification, and the current conversation history; invoking the upstream agent within the current conversation thread; receiving a concrete answer proposal from the upstream agent; and resuming downstream specification shaping with the answer incorporated, without requiring human relay of the question between agents or conversation contexts.
+
+18. A computer-implemented system for proactive phase orchestration in a multi-agent software development platform, comprising: a monitoring module that periodically evaluates version control repository state to detect phase completion and readiness for phase transition across all active features; a notification module that proactively surfaces phase transition readiness to the appropriate human stakeholder without requiring an explicit human query; a handoff gate that scans outgoing specification artifacts for unresolved blocking-tagged open questions and prevents phase transition until all blocking questions are resolved; a stall detector that identifies features with no activity beyond a configurable threshold and surfaces stall notifications to the responsible human; and a canonical routing table that serves as the sole authoritative mapping of lifecycle phases to agent handlers, eliminating distributed routing logic.
+
 ---
 
 ## Abstract
 
-Archon is a system and method for orchestrating stateless artificial intelligence agents across software development lifecycle phases, wherein a version control repository serves as the sole authoritative state store. Lifecycle phases are inferred from version control state (branch existence, file merge status) without a separate database. AI agents are stateless functions receiving fresh context on each invocation, enabling deterministic replay. Specification artifacts are validated synchronously against upstream documents with re-read verification enforcing human compliance. A single agent switches behavioral modes based on detected phase via system prompt injection. All product-specific configuration is externalized to a workspace configuration object, enabling zero-code-change multi-tenant onboarding. CI/CD pipeline logic is centralized in a platform repository and consumed by application repositories via configuration only. Open questions within specifications are tagged with machine-readable type and blocking metadata, enabling automated phase gating. The human interaction layer is decoupled from orchestration logic, enabling interface substitution without platform changes. A monitoring dashboard derives real-time SDLC state directly from version control, requiring no separate data store.
+Archon Dev is a system and method for orchestrating stateless artificial intelligence agents across software development lifecycle phases, wherein a version control repository serves as the sole authoritative state store. Lifecycle phases are inferred from version control state (branch existence, file merge status) without a separate database. AI agents are stateless functions receiving fresh context on each invocation, enabling deterministic replay. Specification artifacts are validated synchronously against upstream documents with re-read verification enforcing human compliance. A single agent switches behavioral modes based on detected phase via system prompt injection. All product-specific configuration is externalized to a workspace configuration object, enabling zero-code-change multi-tenant onboarding. CI/CD pipeline logic is centralized in a platform repository and consumed by application repositories via configuration only. Open questions within specifications are tagged with machine-readable type and blocking metadata, enabling automated phase gating. The human interaction layer is decoupled from orchestration logic, enabling interface substitution without platform changes. A monitoring dashboard derives real-time SDLC state directly from version control, requiring no separate data store. A linear specification chain requires every downstream agent to load all upstream approved artifacts before producing output, with conflict detection enforcing chain integrity from product intent to shipped code. A cross-phase escalation protocol enables downstream agents to invoke upstream agents directly in the current conversation thread when a blocking question owned by an upstream phase is detected, eliminating manual context relay. A proactive orchestration agent monitors version control state, gates phase handoffs on resolution of blocking questions, detects stalls, and owns the canonical routing table as the sole authoritative source of phase-to-agent mappings.
 
 ---
 
@@ -286,7 +348,7 @@ Archon is a system and method for orchestrating stateless artificial intelligenc
 The following should be addressed when converting to a non-provisional application:
 
 - Conduct formal prior art search, particularly against: LangChain, AutoGen, CrewAI, GitHub Copilot Workspace, Linear, Jira Automation, and Anthropic's own published work
-- Add formal drawings illustrating: (1) phase state machine, (2) agent invocation flow, (3) conflict detection sequence, (4) WorkspaceConfig dependency graph, (5) CI/CD platform/app decoupling, (6) interface-agnostic interaction layer architecture, (7) dashboard data flow from version control
+- Add formal drawings illustrating: (1) phase state machine, (2) agent invocation flow, (3) conflict detection sequence, (4) WorkspaceConfig dependency graph, (5) CI/CD platform/app decoupling, (6) interface-agnostic interaction layer architecture, (7) dashboard data flow from version control, (8) specification chain with upstream context injection, (9) cross-phase escalation protocol sequence, (10) orchestration agent monitoring loop
 - Refine claims to ensure each is independently defensible
 - Consider filing continuation claims on the relevance-filtering-via-secondary-model pattern (using a smaller LLM to filter context before passing to a primary LLM) as a separate application
 - Estimated cost for non-provisional with patent attorney: $8,000–$15,000

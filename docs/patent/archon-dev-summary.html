@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archon Dev — Patent Summary</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 11.5pt;
+    line-height: 1.55;
+    color: #000;
+    background: #fff;
+    max-width: 8.5in;
+    margin: 0 auto;
+    padding: 0.85in 1in;
+  }
+  .cover {
+    text-align: center;
+    padding-top: 0.5in;
+    margin-bottom: 0.6in;
+    border-bottom: 2px solid #000;
+    padding-bottom: 0.4in;
+  }
+  .cover h1 {
+    font-size: 20pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.15em;
+  }
+  .cover .subtitle {
+    font-size: 11pt;
+    font-style: italic;
+    margin-bottom: 1em;
+    color: #333;
+  }
+  .cover .meta {
+    font-size: 10.5pt;
+    line-height: 1.8;
+  }
+  .cover .status {
+    display: inline-block;
+    margin-top: 0.75em;
+    padding: 0.2em 0.8em;
+    border: 1.5px solid #000;
+    font-size: 10pt;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: bold;
+  }
+  h2 {
+    font-size: 12.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #000;
+    padding-bottom: 0.15em;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+  }
+  h3 {
+    font-size: 11.5pt;
+    font-weight: bold;
+    margin-top: 0.8em;
+    margin-bottom: 0.2em;
+  }
+  p { margin-bottom: 0.5em; text-align: justify; }
+  ul, ol { margin-left: 1.4em; margin-bottom: 0.5em; }
+  li { margin-bottom: 0.2em; }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6in;
+    margin-top: 0.3em;
+  }
+  .problem-box {
+    background: #f7f7f7;
+    border-left: 3px solid #000;
+    padding: 0.4em 0.6em;
+    margin-bottom: 0.4em;
+    font-size: 10.5pt;
+  }
+  .problem-box strong { display: block; margin-bottom: 0.1em; }
+  .embodiment {
+    margin-bottom: 0.6em;
+    padding-left: 0.8em;
+    border-left: 2px solid #ccc;
+  }
+  .embodiment .num {
+    font-weight: bold;
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #333;
+  }
+  .claim-block {
+    background: #f7f7f7;
+    border: 1px solid #ccc;
+    padding: 0.4em 0.6em;
+    margin-bottom: 0.35em;
+    font-size: 10.5pt;
+  }
+  .claim-block strong { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.03em; }
+  .footer {
+    margin-top: 1.2em;
+    padding-top: 0.4em;
+    border-top: 1px solid #ccc;
+    font-size: 9.5pt;
+    color: #555;
+    text-align: center;
+  }
+  code { font-family: "Courier New", monospace; font-size: 9.5pt; }
+  @page {
+    margin: 0.85in 1in;
+    @bottom-center {
+      content: counter(page);
+      font-family: "Times New Roman", Times, serif;
+      font-size: 10pt;
+    }
+  }
+  @media print {
+    h2 { page-break-after: avoid; }
+    h3 { page-break-after: avoid; }
+    .embodiment { page-break-inside: avoid; }
+    .claim-block { page-break-inside: avoid; }
+    .two-col { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: Cover + Problem + Solution -->
+
+<div class="cover">
+  <h1>Archon Dev</h1>
+  <p class="subtitle">System and Method for Orchestrating Stateless AI Agents Across Software Development Lifecycle Phases Using Version Control as Authoritative State</p>
+  <div class="meta">
+    <div><strong>Inventor:</strong> Sanjay Sahgal, United States of America</div>
+    <div><strong>Date of Disclosure:</strong> March 21, 2026</div>
+    <div><strong>Filing Type:</strong> Provisional Patent Application (USPTO)</div>
+  </div>
+  <div class="status">Patent Pending</div>
+</div>
+
+<h2>The Problem</h2>
+
+<p>Software development lifecycles require significant human coordination across phases: product specification, design, engineering, implementation, and deployment. No existing tool orchestrates AI agents coherently across all phases. The market is fragmented:</p>
+
+<div class="two-col">
+  <div>
+    <div class="problem-box"><strong>GitHub Copilot Workspace</strong>Single-repo code generation. No phase awareness, no spec validation, no multi-team support.</div>
+    <div class="problem-box"><strong>LangChain / AutoGen</strong>Infrastructure primitives only. Stateful processes, no SDLC understanding, no multi-tenant model.</div>
+  </div>
+  <div>
+    <div class="problem-box"><strong>Linear / Jira</strong>Proprietary databases outside version control. No AI orchestration. Manual per-team setup.</div>
+    <div class="problem-box"><strong>All existing tools</strong>No system combines version-controlled state, stateless agents, synchronous conflict detection, and zero-code multi-tenancy.</div>
+  </div>
+</div>
+
+<h2>The Invention</h2>
+
+<p>Archon Dev is a config-driven, multi-tenant platform that orchestrates stateless AI agents across every phase of the software development lifecycle. Version control is the sole state store — no separate database. A team onboards by providing a single configuration file. No code changes required.</p>
+
+<p>The platform operates across three layers: a human interface (Slack, web, or any messaging system), a stateless agent runtime (AI agents as pure functions), and a state layer (GitHub as the authoritative record of all phases, specs, and transitions). These layers are explicitly decoupled — swapping the interface requires no changes to agent or routing logic.</p>
+
+<p>The key insight: <strong>Git is already a state machine.</strong> Branch existence, file presence, and merge status are sufficient to encode the entire lifecycle of a software feature — no workflow engine or database needed. Every phase transition is a standard Git operation, visible and auditable by any developer using standard tooling.</p>
+
+
+<!-- PAGE 2: The 12 Embodiments -->
+
+<h2>What Is Claimed — 12 Embodiments</h2>
+
+<div class="embodiment">
+  <div class="num">1 — Version Control as SDLC State Machine</div>
+  <p>Lifecycle phase is inferred entirely from Git state (branch existence, file merge status) — no external database. Phase transitions are standard Git operations: branch creation, pull request merge.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">2 — Stateless AI Agent Architecture with Fresh Context Injection</div>
+  <p>Every agent is a stateless function. Each invocation receives a programmatically-built system prompt, an externally-persisted conversation history, and context filtered from live repository documents by a secondary language model (relevance filter). No agent state persists between calls — given identical inputs, an agent produces identical outputs.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">3 — Synchronous Conflict Detection with Re-Read Verification</div>
+  <p>Every specification draft is validated against upstream documents before saving. Conflicts block the save. When the human claims to have resolved a conflict, the agent re-reads the upstream document from the repository to verify the update was actually committed — it does not take the human's word for it.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">4 — Phase-Aware Agent Behavior Switching</div>
+  <p>A single agent serves both draft mode (collaborative spec shaping) and approved mode (frozen baseline, re-approval required for changes) by switching system prompt content based on detected phase. No separate agent instances are deployed per mode.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">5 — Config-Driven Multi-Tenant Architecture</div>
+  <p>All product-specific coordinates (product name, repo, channel names, spec paths, routing rules) live in a <code>WorkspaceConfig</code> object loaded from environment variables. No product-specific literals appear anywhere in platform source code. A new team onboards by providing a new <code>.env</code> file — no code changes. CI enforcement prevents regression.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">6 — Decoupled CI/CD Platform with Configuration-Only Onboarding</div>
+  <p>All pipeline logic (build, test, deploy, post-deploy validation) lives in a central platform repository. Application repositories call it via a single workflow file. No pipeline logic is duplicated. Improvements to the platform are automatically inherited by all onboarded applications.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">7 — Structured Open Question Tagging for Automated Phase Gating</div>
+  <p>Open questions in specs are tagged <code>[type: product|design|engineering] [blocking: yes|no]</code>. The type enables automated routing to the right reviewer. The blocking flag gates phase advancement — a spec with unresolved blocking questions cannot be approved.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">8 — Decoupled Interface-Agnostic Human Interaction Layer</div>
+  <p>The interface layer (Slack, web app, Teams, etc.) is responsible only for receiving input and rendering output — no business logic, no SDLC knowledge. Swapping one interface for another requires zero changes to agent, routing, or state management components.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">9 — Version-Control-Derived Monitoring Dashboard</div>
+  <p>A real-time dashboard derives all state directly from the version control repository — no separate data store, no synchronization. Provides portfolio view, blocking issues, conflict log, agent activity feed, and cross-workspace SDLC health. Any historical view is reconstructable from Git history.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">10 — Authoritative Specification Chain with Full Upstream Context</div>
+  <p>Every downstream agent must load the complete set of upstream approved specs before producing output. Design agents read the product spec. Architect agents read both. Engineer agents read all three. Conflict detection enforces chain integrity end-to-end — no downstream artifact can contradict any upstream artifact.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">11 — Cross-Phase Escalation Protocol</div>
+  <p>When a downstream agent detects a blocking question owned by an upstream phase, it invokes the upstream agent directly in the current conversation thread — with the question, relevant spec context, and full conversation history as a primer. The upstream agent responds with a concrete proposal. No manual relay, no context loss.</p>
+</div>
+
+<div class="embodiment">
+  <div class="num">12 — Proactive Phase Orchestration with Handoff Gating</div>
+  <p>A dedicated orchestration agent monitors Git state across all active features, proactively notifies stakeholders when phases are ready to advance, blocks handoffs when blocking questions remain unresolved, detects stalls, and owns the canonical routing table as the sole source of truth for phase-to-agent mappings.</p>
+</div>
+
+
+<!-- PAGE 3: Claims Summary -->
+
+<h2>Claims Summary — 18 Claims Across 4 Categories</h2>
+
+<h3>Independent System Claims</h3>
+
+<div class="claim-block">
+  <strong>Claim 1</strong> — A system wherein a version control repository is the sole state store for SDLC phase information; stateless AI agents receive fresh context on each invocation; phase detection infers lifecycle phase from version control state without a separate database.
+</div>
+
+<div class="claim-block">
+  <strong>Claim 2</strong> — A system for enforcing consistency between specification artifacts and upstream documents: synchronous conflict detection, a blocking gate on contradiction, and re-read verification before permitting a blocked operation to proceed.
+</div>
+
+<div class="claim-block">
+  <strong>Claim 3</strong> — A multi-tenant AI agent deployment system: all tenant-specific coordinates in a workspace configuration object; no tenant-specific literals in source code; CI enforcement mechanism.
+</div>
+
+<div class="claim-block">
+  <strong>Claim 18</strong> — A proactive phase orchestration system: monitors version control state across all features; proactive stakeholder notification; handoff gating on unresolved blocking questions; stall detection; canonical routing table as sole source of truth.
+</div>
+
+<h3>Dependent System Claims (Claims 4–10, 16)</h3>
+
+<div class="two-col">
+  <div>
+    <div class="claim-block"><strong>Claim 4</strong> — Phase transitions triggered by standard version control operations only.</div>
+    <div class="claim-block"><strong>Claim 5</strong> — Agent invocation payload: programmatic system prompt + externally-persisted conversation history + relevance-filtered context.</div>
+    <div class="claim-block"><strong>Claim 6</strong> — Single agent switches modes via system prompt injection; no separate agent instance per phase.</div>
+    <div class="claim-block"><strong>Claim 7</strong> — CI/CD logic centralized in platform repo; no duplication in application repos.</div>
+  </div>
+  <div>
+    <div class="claim-block"><strong>Claim 8</strong> — Machine-readable open question tags; phase gate enforces resolution of all blocking questions.</div>
+    <div class="claim-block"><strong>Claim 9</strong> — Decoupled interface layer; interface substitution requires no platform changes.</div>
+    <div class="claim-block"><strong>Claim 10</strong> — Monitoring dashboard derived entirely from version control; no separate data store.</div>
+    <div class="claim-block"><strong>Claim 16</strong> — Full upstream spec chain required before any downstream output; conflict detection enforces chain integrity.</div>
+  </div>
+</div>
+
+<h3>Independent Method Claims (Claims 11–13, 17)</h3>
+
+<div class="claim-block">
+  <strong>Claim 11</strong> — Method: infer phase from version control state; construct stateless agent payload; invoke; return response without persisting agent state.
+</div>
+<div class="claim-block">
+  <strong>Claim 12</strong> — Method: load spec artifact; compare against upstream documents; block on contradiction; re-read to verify claimed update; permit only after verification.
+</div>
+<div class="claim-block">
+  <strong>Claim 13</strong> — Method: externalize all tenant config; enforce no tenant literals in source; onboard new tenant with zero code changes.
+</div>
+<div class="claim-block">
+  <strong>Claim 17</strong> — Method: detect blocking question owned by upstream phase; invoke upstream agent in current thread with full context; receive concrete proposal; resume without human relay.
+</div>
+
+<h3>Computer-Readable Medium Claims (Claims 14–15)</h3>
+
+<div class="claim-block">
+  <strong>Claim 14</strong> — Non-transitory medium: infer phase from version control; construct stateless payloads; detect conflicts synchronously before committing.
+</div>
+<div class="claim-block">
+  <strong>Claim 15</strong> — Non-transitory medium: multi-tenant platform; all tenant coordinates from environment config; no tenant literals in source; CI enforcement.
+</div>
+
+
+<!-- PAGE 4: Commercial Picture + Next Steps -->
+
+<h2>Commercial Picture</h2>
+
+<div class="two-col">
+  <div>
+    <h3>What Archon Dev Replaces</h3>
+    <ul>
+      <li>Product spec tools (Notion, Confluence)</li>
+      <li>Design handoff tools (Zeplin, Abstract)</li>
+      <li>Project management (Linear, Jira)</li>
+      <li>CI/CD configuration (per-app GitHub Actions)</li>
+      <li>SDLC workflow engines (bespoke tooling)</li>
+    </ul>
+
+    <h3 style="margin-top:0.8em;">Revenue Model</h3>
+    <ul>
+      <li>SaaS license per workspace</li>
+      <li>Dashboard as the enterprise upsell</li>
+      <li>Multi-workspace tier for agencies and platform teams</li>
+      <li>White-label licensing for larger organizations</li>
+    </ul>
+  </div>
+  <div>
+    <h3>What Makes It Defensible</h3>
+    <ul>
+      <li>12 embodiments spanning the full SDLC — not a point solution</li>
+      <li>Zero-hardcoding discipline enforced by CI — architectural moat</li>
+      <li>Spec chain integrity is a novel concept with no prior art combining all elements</li>
+      <li>Cross-phase escalation and proactive orchestration are non-obvious mechanisms</li>
+      <li>Re-read verification (not trusting human assertions) is a distinct, claimable behavior</li>
+    </ul>
+
+    <h3 style="margin-top:0.8em;">IP Portfolio Path</h3>
+    <ul>
+      <li>This provisional establishes priority date</li>
+      <li>Non-provisional within 12 months (~$8–15k with attorney)</li>
+      <li>Potential continuation: relevance-filtering-via-secondary-model as standalone patent</li>
+      <li>Trademark: ARCHON DEV, Class 42 — file separately</li>
+    </ul>
+  </div>
+</div>
+
+<h2>What Has Been Built</h2>
+
+<p>Archon Dev is not a concept — it is a running system. The following embodiments are implemented and operational as of the filing date:</p>
+
+<ul>
+  <li><strong>Embodiments 1, 2, 3, 4, 5:</strong> Version control phase detection, stateless agent architecture, conflict/gap detection with re-read verification, phase-aware behavior switching, and WorkspaceConfig multi-tenancy are all live in production.</li>
+  <li><strong>Embodiment 6:</strong> Decoupled CI/CD platform is operational, with Health360 as the first customer application onboarded via configuration only.</li>
+  <li><strong>Embodiment 7:</strong> Structured open question tagging with blocking gates is enforced in the pm agent and UX Design agent.</li>
+  <li><strong>Embodiments 8, 9, 10, 11, 12:</strong> Interface decoupling is architected; dashboard, spec chain, cross-phase escalation, and proactive orchestration are defined and scheduled in the active development roadmap.</li>
+</ul>
+
+<p>The platform currently serves Health360 as customer zero — a real consumer health application being built end-to-end through Archon Dev. The full autonomous pipeline (spec → design → engineering → code → QA → production) is the active development target.</p>
+
+<h2>Notes</h2>
+
+<ul>
+  <li>This document is a summary for internal use only. It is not the filed provisional application.</li>
+  <li>The full provisional application (18 claims, 12 embodiments, complete Background and Detailed Description) is filed separately with the USPTO.</li>
+  <li>Priority date is established by the USPTO provisional filing, not by this document.</li>
+  <li>Convert to non-provisional within 12 months of provisional filing date to preserve priority.</li>
+</ul>
+
+<div class="footer">
+  Archon Dev &mdash; Confidential &mdash; Patent Pending &mdash; &copy; 2026 Sanjay Sahgal
+</div>
+
+</body>
+</html>
