@@ -4,7 +4,7 @@ import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPen
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, buildPreviewUrl, getInProgressFeatures, readFile } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
@@ -520,12 +520,18 @@ async function runDesignAgent(params: {
     let previewNote = ""
     try {
       await update("_Generating HTML preview..._")
-      const { githubOwner, githubRepo, paths } = loadWorkspaceConfig()
+      const { paths } = loadWorkspaceConfig()
       const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
       const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-      const previewUrl = buildPreviewUrl({ githubOwner, githubRepo, featureName, featuresRoot: paths.featuresRoot })
-      previewNote = `\n\n_Preview:_ ${previewUrl}\n_Open on desktop or mobile — use your browser's device toolbar to switch between layouts._`
+      await client.files.uploadV2({
+        channel_id: channelId,
+        thread_ts: threadTs,
+        content: htmlContent,
+        filename: `${featureName}.preview.html`,
+        title: `${featureName} — Design Preview`,
+      })
+      previewNote = `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
     } catch {
       // Non-fatal — draft is saved, preview is a nice-to-have
     }

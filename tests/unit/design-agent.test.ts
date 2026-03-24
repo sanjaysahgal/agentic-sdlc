@@ -319,14 +319,15 @@ describe("buildDesignStateResponse", () => {
     expect(result).toContain("2 flows")
   })
 
-  it("includes preview link when previewUrl is provided and nothing is blocking", () => {
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, previewUrl: "https://htmlpreview.github.io/?https://example.com/preview.html" })
-    expect(result).toContain("htmlpreview.github.io")
+  it("includes preview note when provided and nothing is blocking", () => {
+    const note = "_HTML preview attached above — download and open in any browser._"
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, previewNote: note })
+    expect(result).toContain("HTML preview attached")
   })
 
-  it("omits preview link when previewUrl is not provided", () => {
+  it("omits preview note when not provided", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
-    expect(result).not.toContain("htmlpreview.github.io")
+    expect(result).not.toContain("HTML preview")
   })
 
   it("CTA says 'approved' and mentions engineering", () => {

@@ -281,9 +281,9 @@ export function buildDesignStateResponse(params: {
   featureName: string
   draftContent: string
   specUrl: string
-  previewUrl?: string | null
+  previewNote?: string | null
 }): string {
-  const { featureName, draftContent, specUrl, previewUrl } = params
+  const { featureName, draftContent, specUrl, previewNote } = params
 
   if (!draftContent) {
     return `No design draft yet for *${featureName}*. What would you like to design first?`
@@ -321,10 +321,8 @@ export function buildDesignStateResponse(params: {
     lines.push(`Resolve the blocking questions above and reply *approved* to move to engineering.`)
   } else {
     lines.push(`No blocking questions — ready to approve whenever you are.`)
-    lines.push("")
-    if (previewUrl) {
-      lines.push(`_Preview:_ ${previewUrl}`)
-      lines.push(`_Open on desktop or mobile — use your browser's device toolbar to switch between layouts._`)
+    if (previewNote) {
+      lines.push(previewNote)
     }
     lines.push("")
     if (nonBlocking.length > 0) {
