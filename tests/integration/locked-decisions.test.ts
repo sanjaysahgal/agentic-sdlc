@@ -4,6 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // Verifies: (1) locked decisions are injected into the Sonnet call when present,
 // (2) if extractLockedDecisions throws, the runner does NOT crash — it falls back
 //     to the unmodified user message and the agent still responds.
+//
+// Actual Anthropic call order per runner:
+//   PM:       extractLockedDecisions → classifyMessageScope → runAgent
+//   Design:   isOffTopicForAgent → isSpecStateQuery → extractLockedDecisions → runAgent
+//   Architect: isOffTopicForAgent → isSpecStateQuery → extractLockedDecisions → runAgent
 
 const mockOctokitGetContent = vi.hoisted(() => vi.fn())
 const mockOctokitGetRef = vi.hoisted(() => vi.fn())
@@ -72,6 +77,13 @@ function seedHistory(count = 7) {
   }
 }
 
+// The last user message in the Sonnet call is the enriched current message.
+// History messages come first; the current userMessage is appended last.
+function getLastUserContent(call: any): string {
+  const msgs = call[0].messages as Array<{ role: string; content: string }>
+  return msgs.filter(m => m.role === "user").at(-1)?.content ?? ""
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   process.env = {
@@ -95,28 +107,27 @@ afterEach(() => {
   clearHistory(THREAD)
 })
 
-// ─── PM agent ────────────────────────────────────────────────────────────────
+// ─── PM agent ─────────────────────────────────────────────────────────────────
+// Call order: [0] extractLockedDecisions, [1] classifyMessageScope, [2] runAgent
 
 describe("locked decisions — PM agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
     seedHistory()
     setConfirmedAgent(THREAD, "pm")
 
-    // Call sequence: classifyMessageScope, extractLockedDecisions, runAgent (Sonnet)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // classifyMessageScope
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary color\n• Mobile-first layout" }] })  // extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })  // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary color\n• Mobile-first layout" }] }) // [0] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })                           // [1] classifyMessageScope
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })                       // [2] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("let's keep going", client))
 
-    // Third call is Sonnet (runAgent) — its user content must contain the locked decisions prefix
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
-    const sonnetCall = mockAnthropicCreate.mock.calls[2][0]
-    const userContent = sonnetCall.messages.find((m: any) => m.role === "user")?.content
-    expect(userContent).toContain("Decisions locked in this conversation")
-    expect(userContent).toContain("Dark primary color")
+    // Sonnet call is index 2 — last user message is the enriched current message
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[2])
+    expect(lastUserContent).toContain("Decisions locked in this conversation")
+    expect(lastUserContent).toContain("Dark primary color")
+    expect(lastUserContent).toContain("let's keep going")
   })
 
   it("runner does NOT crash when extractLockedDecisions throws — agent still responds", async () => {
@@ -124,15 +135,15 @@ describe("locked decisions — PM agent", () => {
     setConfirmedAgent(THREAD, "pm")
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // classifyMessageScope
-      .mockRejectedValueOnce(new Error("Haiku API failure"))                              // extractLockedDecisions throws
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })  // runAgent
+      .mockRejectedValueOnce(new Error("Haiku API failure"))                                                       // [0] extractLockedDecisions → caught by .catch(() => "")
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })                           // [1] classifyMessageScope
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })                       // [2] runAgent
 
     const client = makeClient()
-    // Must NOT throw
+    // Must NOT throw — .catch(() => "") absorbs the failure
     await expect(handleFeatureChannelMessage(makeParams("let's keep going", client))).resolves.toBeUndefined()
 
-    // Agent still responded — update was called with actual content
+    // Agent still responded with real content, not an error message
     const updateCalls = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const lastText = updateCalls.at(-1)?.[0]?.text ?? ""
     expect(lastText).toContain("Here is my response")
@@ -141,27 +152,27 @@ describe("locked decisions — PM agent", () => {
 })
 
 // ─── Design agent ─────────────────────────────────────────────────────────────
+// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions, [3] runAgent
 
 describe("locked decisions — design agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
     seedHistory()
     setConfirmedAgent(THREAD, "ux-design")
 
-    // Call sequence: isOffTopicForAgent, isSpecStateQuery, extractLockedDecisions, runAgent
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })  // extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [2] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [3] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("rebuild the spec", client))
 
-    const sonnetCall = mockAnthropicCreate.mock.calls[3][0]
-    const userContent = sonnetCall.messages.find((m: any) => m.role === "user")?.content
-    expect(userContent).toContain("Decisions locked in this conversation")
-    expect(userContent).toContain("Dark primary")
-    expect(userContent).toContain("Archon Labs aesthetic")
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[3])
+    expect(lastUserContent).toContain("Decisions locked in this conversation")
+    expect(lastUserContent).toContain("Dark primary")
+    expect(lastUserContent).toContain("Archon Labs aesthetic")
+    expect(lastUserContent).toContain("rebuild the spec")
   })
 
   it("runner does NOT crash when extractLockedDecisions throws — design agent still responds", async () => {
@@ -169,10 +180,10 @@ describe("locked decisions — design agent", () => {
     setConfirmedAgent(THREAD, "ux-design")
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // extractLockedDecisions throws
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [2] extractLockedDecisions → caught
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [3] runAgent
 
     const client = makeClient()
     await expect(handleFeatureChannelMessage(makeParams("rebuild the spec", client))).resolves.toBeUndefined()
@@ -185,6 +196,7 @@ describe("locked decisions — design agent", () => {
 })
 
 // ─── Architect agent ──────────────────────────────────────────────────────────
+// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions, [3] runAgent
 
 describe("locked decisions — architect agent", () => {
   it("runner does NOT crash when extractLockedDecisions throws — architect still responds", async () => {
@@ -192,10 +204,10 @@ describe("locked decisions — architect agent", () => {
     setConfirmedAgent(THREAD, "architect")
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // extractLockedDecisions throws
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Arch response." }] })  // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [2] extractLockedDecisions → caught
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Arch response." }] })  // [3] runAgent
 
     const client = makeClient()
     await expect(handleFeatureChannelMessage(makeParams("plan the API", client))).resolves.toBeUndefined()
