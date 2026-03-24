@@ -22,6 +22,16 @@ export async function readFile(path: string, ref?: string): Promise<string> {
   }
 }
 
+// Internal: deletes a spec branch after its spec has been approved to main.
+// Non-fatal — branch deletion is cleanup, not critical path.
+async function deleteSpecBranch(branch: string): Promise<void> {
+  try {
+    await octokit.git.deleteRef({ owner, repo, ref: `heads/${branch}` })
+  } catch {
+    // Branch may already be deleted or may not exist — ignore
+  }
+}
+
 // Internal: saves a file to a branch, creating the branch from main if needed.
 async function saveDraftFile(params: {
   branch: string
@@ -155,11 +165,13 @@ export async function saveApprovedSpec(params: {
       content: Buffer.from(content).toString("base64"),
       sha: mainFileSha,
     })
+    await deleteSpecBranch(branch)
     return "already-on-main"
   }
 
-  // Save to branch (same as draft flow) — human merges to make it official
+  // Save to branch then commit directly to main
   await saveDraftSpec({ featureName, filePath, content })
+  await deleteSpecBranch(branch)
   return "saved"
 }
 
@@ -209,6 +221,8 @@ export async function saveApprovedDesignSpec(params: {
     // Not on main yet
   }
 
+  const branch = `spec/${featureName}-design`
+
   if (mainFileSha) {
     await octokit.repos.createOrUpdateFileContents({
       owner, repo, path: filePath,
@@ -216,10 +230,12 @@ export async function saveApprovedDesignSpec(params: {
       content: Buffer.from(content).toString("base64"),
       sha: mainFileSha,
     })
+    await deleteSpecBranch(branch)
     return "already-on-main"
   }
 
   await saveDraftDesignSpec({ featureName, filePath, content })
+  await deleteSpecBranch(branch)
   return "saved"
 }
 
@@ -254,6 +270,8 @@ export async function saveApprovedEngineeringSpec(params: {
     // Not on main yet
   }
 
+  const branch = `spec/${featureName}-engineering`
+
   if (mainFileSha) {
     await octokit.repos.createOrUpdateFileContents({
       owner, repo, path: filePath,
@@ -261,10 +279,12 @@ export async function saveApprovedEngineeringSpec(params: {
       content: Buffer.from(content).toString("base64"),
       sha: mainFileSha,
     })
+    await deleteSpecBranch(branch)
     return "already-on-main"
   }
 
   await saveDraftEngineeringSpec({ featureName, filePath, content })
+  await deleteSpecBranch(branch)
   return "saved"
 }
 
