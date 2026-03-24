@@ -236,4 +236,18 @@ describe("isSpecStateQuery", () => {
     const result = await isSpecStateQuery("something")
     expect(result).toBe(false)
   })
+
+  it("returns true for 'are you there' check-in — routes to state fast-path not full agent", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    const result = await isSpecStateQuery("are you there")
+    expect(result).toBe(true)
+  })
+
+  it("prompt includes check-in patterns in TRUE examples", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    await isSpecStateQuery("are you there")
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ system: expect.stringContaining("are you there") })
+    )
+  })
 })

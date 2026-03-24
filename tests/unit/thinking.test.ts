@@ -74,6 +74,21 @@ describe("withThinking", () => {
     )
   })
 
+  it("on context-limit error: shows actionable thread-restart message not generic", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("prompt is too long: 150000 tokens > 100000 maximum") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("context limit") })
+    )
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+  })
+
   it("on overloaded error: shows overloaded message not generic", async () => {
     const client = makeClient()
     await expect(withThinking({

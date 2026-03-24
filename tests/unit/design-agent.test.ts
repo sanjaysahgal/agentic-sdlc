@@ -9,6 +9,8 @@ import {
   extractEscalationQuestion,
   stripEscalationMarker,
   buildDesignStateResponse,
+  hasProductSpecUpdate,
+  extractProductSpecUpdate,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -114,6 +116,41 @@ describe("isCreateDesignSpecIntent", () => {
 
   it("returns false for product spec marker", () => {
     expect(isCreateDesignSpecIntent("INTENT: CREATE_SPEC")).toBe(false)
+  })
+})
+
+describe("hasProductSpecUpdate", () => {
+  it("returns true when both markers are present", () => {
+    const response = "PM authorized a change.\nPRODUCT_SPEC_UPDATE_START\n# Spec\ncontent\nPRODUCT_SPEC_UPDATE_END"
+    expect(hasProductSpecUpdate(response)).toBe(true)
+  })
+
+  it("returns false when only start marker present", () => {
+    expect(hasProductSpecUpdate("PRODUCT_SPEC_UPDATE_START\ncontent")).toBe(false)
+  })
+
+  it("returns false when neither marker present", () => {
+    expect(hasProductSpecUpdate("Just a regular response.")).toBe(false)
+  })
+
+  it("returns false when design draft markers are present but not product spec markers", () => {
+    expect(hasProductSpecUpdate("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
+  })
+})
+
+describe("extractProductSpecUpdate", () => {
+  it("extracts content between product spec update markers", () => {
+    const response = "Authorized.\nPRODUCT_SPEC_UPDATE_START\n# Onboarding — Product Spec\nDark mode primary.\nPRODUCT_SPEC_UPDATE_END"
+    expect(extractProductSpecUpdate(response)).toBe("# Onboarding — Product Spec\nDark mode primary.")
+  })
+
+  it("trims whitespace from extracted content", () => {
+    const response = "PRODUCT_SPEC_UPDATE_START\n\n  # Spec  \n\nPRODUCT_SPEC_UPDATE_END"
+    expect(extractProductSpecUpdate(response).trim()).toBe("# Spec")
+  })
+
+  it("returns empty string when markers are absent", () => {
+    expect(extractProductSpecUpdate("No markers here.")).toBe("")
   })
 })
 
@@ -233,6 +270,33 @@ describe("cross-phase escalation helpers", () => {
     it("tells agent to offer escalation only for product decisions, not engineering or design calls", () => {
       const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
       expect(prompt).toContain("Only emit this marker when you are genuinely blocked on a product decision")
+    })
+  })
+
+  describe("buildDesignSystemPrompt — product spec update instruction", () => {
+    const originalEnv = process.env
+    beforeEach(() => { process.env = { ...originalEnv, PRODUCT_NAME: "T", GITHUB_OWNER: "o", GITHUB_REPO: "r" } })
+    afterEach(() => { process.env = originalEnv })
+
+    it("instructs agent to emit PRODUCT_SPEC_UPDATE markers when PM authorizes direction change", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("PRODUCT_SPEC_UPDATE_START")
+      expect(prompt).toContain("PRODUCT_SPEC_UPDATE_END")
+    })
+
+    it("tells agent to include complete updated product spec, not a diff", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("complete updated product spec")
+    })
+
+    it("instructs agent to end post-draft message with 'say *approved*'", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("say *approved*")
+    })
+
+    it("prohibits 'All locked decisions saved' phrasing after draft save", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("Never say \"All locked decisions saved\"")
     })
   })
 })

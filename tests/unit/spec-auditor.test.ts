@@ -91,6 +91,49 @@ describe("auditSpecDraft", () => {
     expect(result).toEqual({ status: "ok" })
   })
 
+  it("returns ok immediately when productVision, systemArchitecture, AND productSpec are all empty — no API call", async () => {
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDraft({
+      draft: "# Feature spec",
+      productVision: "",
+      systemArchitecture: "",
+      productSpec: "",
+      featureName: "onboarding",
+    })
+    expect(result).toEqual({ status: "ok" })
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("includes productSpec in the audit prompt when provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await auditSpecDraft({
+      draft: "# Design spec — dark mode primary",
+      productVision: "Health360 is a mobile health app.",
+      systemArchitecture: "React Native.",
+      productSpec: "## Mode\nLight mode default. Dark mode supported.",
+      featureName: "onboarding",
+    })
+    const callArgs = mockCreate.mock.calls[0][0]
+    const userContent = callArgs.messages[0].content as string
+    expect(userContent).toContain("Light mode default. Dark mode supported.")
+    expect(userContent).toContain("Approved Product Spec")
+  })
+
+  it("omits productSpec section from prompt when not provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await auditSpecDraft({
+      draft: "# Feature spec",
+      productVision: "Vision.",
+      systemArchitecture: "Arch.",
+      featureName: "onboarding",
+    })
+    const callArgs = mockCreate.mock.calls[0][0]
+    const userContent = callArgs.messages[0].content as string
+    expect(userContent).not.toContain("Approved Product Spec")
+  })
+
   it("uses claude-haiku-4-5-20251001 model", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
     const { auditSpecDraft } = await import("../../runtime/spec-auditor")

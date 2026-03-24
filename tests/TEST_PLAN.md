@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**269 tests across 18 files — all passing**
+**286 tests across 18 files — all passing**
 
 Run: `npx vitest run`
 
@@ -58,6 +58,7 @@ Per-thread state: conversation history, confirmed agent, escalation state.
 - posts placeholder immediately then updates with response
 - on error: logs structured JSON with all required fields
 - on error: updates placeholder with user-facing error message
+- on context-limit error: shows actionable thread-restart message not generic
 - on overloaded error: shows overloaded message not generic
 - on image error: shows image-specific message
 - truncates responses over 39000 chars at paragraph boundary
@@ -101,6 +102,7 @@ All Haiku-based classification functions used for routing decisions.
 **isSpecStateQuery** (user message → is the user asking for spec status?)
 - returns true for 'current state?' query
 - returns true for 'where are we' query
+- returns true for 'are you there' check-in — routes to state fast-path not full agent
 - returns false for specific section query ('open questions?')
 - returns false for 'show me the flows' — specific content request
 - returns false for actual design question
@@ -108,6 +110,7 @@ All Haiku-based classification functions used for routing decisions.
 - returns false for 'yes please and I assume...' — affirmation containing 'spec' is not a state query
 - returns false for 'lets lock option A' — decision confirmation is not a state query
 - falls back to false on unexpected Claude response — don't block real work
+- prompt includes check-in patterns in TRUE examples
 
 ### `tests/unit/pm-agent.test.ts` — 13 tests
 
@@ -175,6 +178,19 @@ Design agent helper functions, system prompt rules, escalation markers.
 - stripEscalationMarker: returns unchanged string when no marker present
 - buildDesignSystemPrompt — escalation instruction: instructs the agent to emit OFFER_PM_ESCALATION marker for blocking product questions
 - buildDesignSystemPrompt — escalation instruction: tells agent to offer escalation only for product decisions, not engineering or design calls
+
+**PM-authorized product spec update helpers**
+- hasProductSpecUpdate: returns true when both markers present
+- hasProductSpecUpdate: returns false when only start marker present
+- hasProductSpecUpdate: returns false when neither marker present
+- hasProductSpecUpdate: returns false when design draft markers present but not product spec markers
+- extractProductSpecUpdate: extracts content between product spec update markers
+- extractProductSpecUpdate: trims whitespace from extracted content
+- extractProductSpecUpdate: returns empty string when markers absent
+- buildDesignSystemPrompt — product spec update instruction: instructs agent to emit PRODUCT_SPEC_UPDATE markers when PM authorizes direction change
+- buildDesignSystemPrompt — product spec update instruction: tells agent to include complete updated product spec, not a diff
+- buildDesignSystemPrompt — product spec update instruction: instructs agent to end post-draft message with 'say *approved*'
+- buildDesignSystemPrompt — product spec update instruction: prohibits 'All locked decisions saved' phrasing after draft save
 
 **buildDesignSystemPrompt — approval-ready message**
 - prompt includes a direct link to the design spec on GitHub
@@ -314,16 +330,19 @@ Context loading for each agent type: reads the right files from GitHub, assemble
 - skips Haiku call and returns empty string when doc is empty
 - uses claude-haiku-4-5-20251001 model for summarization
 
-### `tests/unit/spec-auditor.test.ts` — 6 tests
+### `tests/unit/spec-auditor.test.ts` — 9 tests
 
-`auditSpecDraft` — Haiku call that checks a draft spec for conflicts or gaps with the product vision and system architecture.
+`auditSpecDraft` — Haiku call that checks a draft spec for conflicts or gaps with the product vision, system architecture, and (when provided) the feature-level product spec.
 
 - returns ok immediately when both productVision and systemArchitecture are empty — no API call
+- returns ok immediately when productVision, systemArchitecture, AND productSpec are all empty — no API call
 - returns ok when Claude responds OK
 - returns conflict with stripped message when Claude responds CONFLICT
 - returns gap with stripped message when Claude responds GAP
 - returns ok on unexpected Claude response format — does not block save
 - uses claude-haiku-4-5-20251001 model
+- includes productSpec in the audit prompt when provided
+- omits productSpec section from prompt when not provided
 
 ### `tests/unit/spec-utils.test.ts` — 5 tests
 
