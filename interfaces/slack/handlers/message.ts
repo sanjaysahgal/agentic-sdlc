@@ -425,7 +425,22 @@ async function runDesignAgent(params: {
       const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl })
+
+      // Generate (or regenerate) the HTML preview if a draft exists — non-fatal
+      let previewUrl: string | null = null
+      if (draftContent) {
+        try {
+          await update("_Generating HTML preview..._")
+          const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
+          const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
+          await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
+          previewUrl = buildPreviewUrl({ githubOwner, githubRepo, featureName, featuresRoot: paths.featuresRoot })
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewUrl })
       appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
