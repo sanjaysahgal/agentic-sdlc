@@ -317,7 +317,7 @@ describe("getInProgressFeatures", () => {
     expect(result).toEqual([])
   })
 
-  it("filters out branches that do not match spec/*-product pattern", async () => {
+  it("ignores non-spec branches", async () => {
     mockPaginate.mockResolvedValue([
       { name: "main" },
       { name: "feature/new-ui" },
@@ -329,6 +329,21 @@ describe("getInProgressFeatures", () => {
     const result = await getInProgressFeatures()
     expect(result).toHaveLength(1)
     expect(result[0].featureName).toBe("onboarding")
+  })
+
+  // Regression: product branch is deleted after approval. Only the design branch
+  // remains. The concierge must still surface this feature as design-in-progress.
+  it("returns design-in-progress when only design branch exists (product branch deleted after approval)", async () => {
+    mockPaginate.mockResolvedValue([
+      { name: "spec/onboarding-design" },  // product branch was deleted on approval
+    ])
+    mockGetContent
+      .mockResolvedValueOnce({ data: { content: Buffer.from("# Product Spec").toString("base64") } }) // product on main
+      .mockRejectedValueOnce(new Error("Not Found"))  // design not on main
+      .mockRejectedValueOnce(new Error("Not Found"))  // engineering not on main
+
+    const result = await getInProgressFeatures()
+    expect(result).toEqual([{ featureName: "onboarding", phase: "design-in-progress" }])
   })
 })
 
