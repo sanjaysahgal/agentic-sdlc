@@ -68,7 +68,7 @@ app.message(async ({ message, client }) => {
     thread_ts?: string
     ts: string
     bot_id?: string
-    files?: Array<{ url_private: string; mimetype: string }>
+    files?: Array<{ url_private: string; mimetype: string; name?: string }>
   }
 
   if (msg.bot_id) return
@@ -111,12 +111,25 @@ app.message(async ({ message, client }) => {
 
   const threadTs = msg.thread_ts ?? msg.ts
 
+  // Images are passed to Claude for the current turn but are NOT stored in conversation history
+  // (only text is persisted). Prepend a note so history and extractLockedDecisions can see that
+  // a visual reference was shared — otherwise the agent loses the context after one turn.
+  const imageNote = userImages.length > 0
+    ? `[User shared ${userImages.length} image${userImages.length > 1 ? "s" : ""}: ${
+        rawFiles
+          .filter((f) => SUPPORTED_IMAGE_TYPES.has(f.mimetype))
+          .map((f) => f.name ?? "image")
+          .join(", ")
+      }]`
+    : ""
+  const userMessage = imageNote && text ? `${imageNote}\n\n${text}` : imageNote || text
+
   if (channelName.startsWith("feature-")) {
     const channelState = getChannelState(channelName)
     await handleFeatureChannelMessage({
       channelName,
       threadTs,
-      userMessage: text,
+      userMessage,
       userImages,
       channelId: msg.channel,
       client,
