@@ -9,6 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections } from "../../../runtime/spec-auditor"
+import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 
 const { paths: workspacePaths } = loadWorkspaceConfig()
@@ -489,8 +490,23 @@ async function runDesignAgent(params: {
     await update("_Saving draft to GitHub..._")
     await saveDraftDesignSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").trim()
+
+    // Generate HTML preview alongside every draft save — non-fatal
+    let previewNote = ""
+    try {
+      await update("_Generating HTML preview..._")
+      const { githubOwner, githubRepo, paths } = loadWorkspaceConfig()
+      const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
+      const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
+      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
+      const previewUrl = buildPreviewUrl({ githubOwner, githubRepo, featureName, featuresRoot: paths.featuresRoot })
+      previewNote = `\n\n_Preview:_ ${previewUrl}\n_Open on desktop or mobile — use your browser's device toolbar to switch between layouts._`
+    } catch {
+      // Non-fatal — draft is saved, preview is a nice-to-have
+    }
+
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
+    await update(`${prefix}${cleanResponse}${previewNote}`)
     return
   }
 

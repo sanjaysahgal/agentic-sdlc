@@ -45,6 +45,8 @@ Reads the approved product spec fully before asking a single question. Works wit
 
 **Spec format (`<feature>.design.md`):** Figma link, Design Direction, Brand (tokens + typography), Screens (purpose / states / interactions / notes per screen), User Flows (one per user story), Accessibility decisions, Open Questions. Draft/approval mechanics (auto-save, freeze on approval) wired in Step 3c.
 
+**HTML preview:** On every draft save, the design agent generates a self-contained HTML preview (`<feature>.preview.html`) saved to the design branch alongside the spec. Uses Tailwind CDN + Alpine.js — all screens navigable via tabs, all states (default/loading/empty/error) toggleable per screen, faithful to brand colors and typography. Preview link posted in Slack after every draft save. Open on desktop or mobile (browser device toolbar) to check both layouts. Non-fatal — draft save succeeds even if preview generation fails.
+
 ---
 
 ## architect agent
