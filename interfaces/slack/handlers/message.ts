@@ -251,7 +251,7 @@ async function runPmAgent(params: {
   await update("_Product Manager is reading the spec..._")
   const [context, lockedDecisionsPm] = await Promise.all([
     loadAgentContext(featureName),
-    extractLockedDecisions(getHistory(threadTs)),
+    extractLockedDecisions(getHistory(threadTs)).catch(() => ""),
   ])
   const enrichedUserMessagePm = lockedDecisionsPm
     ? `[Decisions locked in this conversation:\n${lockedDecisionsPm}]\n\n${userMessage}`
@@ -468,7 +468,7 @@ async function runDesignAgent(params: {
   await update("_UX Designer is reading the spec and design context..._")
   const [context, lockedDecisionsDesign] = await Promise.all([
     loadDesignAgentContext(featureName),
-    extractLockedDecisions(getHistory(threadTs)),
+    extractLockedDecisions(getHistory(threadTs)).catch(() => ""),
   ])
   const enrichedUserMessageDesign = lockedDecisionsDesign
     ? `[Decisions locked in this conversation:\n${lockedDecisionsDesign}]\n\n${userMessage}`
@@ -707,7 +707,7 @@ async function runArchitectAgent(params: {
   await update("_Architect is reading the spec chain..._")
   const [context, lockedDecisionsArch] = await Promise.all([
     loadArchitectAgentContext(featureName),
-    extractLockedDecisions(getHistory(threadTs)),
+    extractLockedDecisions(getHistory(threadTs)).catch(() => ""),
   ])
   const enrichedUserMessageArch = lockedDecisionsArch
     ? `[Decisions locked in this conversation:\n${lockedDecisionsArch}]\n\n${userMessage}`
