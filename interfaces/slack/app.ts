@@ -139,7 +139,7 @@ app.message(async ({ message, client }) => {
     await handleGeneralChannelMessage({
       channelId: msg.channel,
       threadTs,
-      userMessage: text,
+      userMessage,
       userImages,
       client,
     })
