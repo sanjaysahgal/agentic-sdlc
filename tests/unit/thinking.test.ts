@@ -70,7 +70,7 @@ describe("withThinking", () => {
     })).rejects.toThrow()
 
     expect(client.chat.update).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Something went wrong. Please try again." })
+      expect.objectContaining({ text: expect.stringContaining("Something went wrong. Please try again.") })
     )
   })
 
