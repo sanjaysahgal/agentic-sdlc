@@ -33,12 +33,14 @@ export async function withThinking(params: {
     return text.slice(0, end) + "\n\n_[Response truncated — see the spec link above for full details.]_"
   }
 
-  // update() replaces the placeholder with the real content
+  // update() replaces the placeholder with the real content.
+  // Agent label is prepended so the user always knows who is responding.
+  const agentPrefix = agent ? `*${agent}*\n\n` : ""
   const update = async (text: string) => {
     await client.chat.update({
       channel: channelId,
       ts: messageTs,
-      text: truncateForSlack(text),
+      text: truncateForSlack(`${agentPrefix}${text}`),
     })
   }
 
