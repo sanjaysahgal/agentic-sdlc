@@ -237,7 +237,7 @@ describe("cross-phase escalation helpers", () => {
   })
 })
 
-describe("approval-ready visualisation offer", () => {
+describe("approval-ready message in system prompt", () => {
   const originalEnv = process.env
 
   beforeEach(() => {
@@ -248,27 +248,20 @@ describe("approval-ready visualisation offer", () => {
     process.env = originalEnv
   })
 
-  it("prompt tells agent to offer Figma AI as a visualisation option when approval-ready", () => {
-    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("Figma AI")
-    expect(prompt).toContain("Make Designs")
-  })
-
   it("prompt includes a direct link to the design spec on GitHub", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("https://github.com/o/r/blob/spec/onboarding-design/")
     expect(prompt).toContain("onboarding.design.md")
   })
 
-  it("prompt tells agent to offer Builder.io or Anima as a second option", () => {
+  it("prompt tells agent an HTML preview has been saved alongside the spec", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("Builder.io")
-    expect(prompt).toContain("Anima")
+    expect(prompt).toContain("HTML preview")
   })
 
-  it("prompt tells agent the offer is one-time and not a prompt for discussion", () => {
+  it("prompt tells agent to direct designer to Slack message for preview link", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("one-time offer")
+    expect(prompt).toContain("Slack message")
   })
 })
 
