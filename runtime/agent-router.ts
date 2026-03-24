@@ -134,7 +134,8 @@ export async function isSpecStateQuery(message: string): Promise<boolean> {
     model: "claude-haiku-4-5-20251001",
     max_tokens: 10,
     system: `Is this message asking for a high-level overview of where a spec stands — not for any specific section's content?
-TRUE (high-level overview only, must be a question or request): "current state", "where are we", "what do we have so far", "catch me up", "status update", "show me what we have", "overview"
+TRUE (high-level overview only): "current state", "where are we", "what do we have so far", "catch me up", "status update", "show me what we have", "overview"
+TRUE (check-ins — user is checking if the bot is alive/recovered, not asking a design question): "are you there", "you there", "still there", "are you still there", "hello?", "hi?", "you back", "you still there", "hey", "ping"
 FALSE — affirmations/confirmations (these are responses to a question, not state queries): "yes please", "yes and I assume...", "ok let's do that", "yes base it on...", "sure go ahead", "yes lock option A", "let's lock option A", any message starting with yes/sure/ok/great/perfect/go ahead
 FALSE — specific content or actions: "open questions", "show me the flows", "what components did we decide", "what's in section X", "what have we decided about Y", "I want to add X", "what about Y", any question about a specific topic
 Respond with exactly one word: yes or no`,
