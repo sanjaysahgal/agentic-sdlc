@@ -322,10 +322,12 @@ export function buildDesignStateResponse(params: {
     }
     lines.push(`Resolve the blocking questions above and reply *approved* to move to engineering.`)
   } else {
-    lines.push(`No blocking questions — ready to approve whenever you are. If you'd like to see this visually before approving:`)
+    lines.push(`No blocking questions — ready to approve whenever you are.`)
     lines.push("")
-    lines.push(`• *Figma AI* — paste the spec into Figma's Make Designs feature and it'll generate a rough frame layout in seconds`)
-    lines.push(`• *Builder.io or Anima* — paste it there for higher-fidelity Figma frames with more structure`)
+    if (previewUrl) {
+      lines.push(`_Preview:_ ${previewUrl}`)
+      lines.push(`_Open on desktop or mobile — use your browser's device toolbar to switch between layouts._`)
+    }
     lines.push("")
     if (nonBlocking.length > 0) {
       lines.push(`*Non-blocking questions* (don't need answers before approval):`)
