@@ -156,6 +156,42 @@ ${specContent}`,
   return { status: "corrections", corrections }
 }
 
+// Extracts explicitly locked decisions from conversation history.
+// Runs before every agent call when history is long enough to have drift risk.
+// Returns a formatted bullet list, or empty string if nothing is locked yet.
+// Injected into the user message so the agent can't "forget" earlier decisions.
+export async function extractLockedDecisions(history: Array<{ role: string; content: string }>): Promise<string> {
+  // Not enough exchanges to have drift risk
+  if (history.length < 6) return ""
+
+  const recentHistory = history.slice(-40)
+  const historyText = recentHistory
+    .map(m => `${m.role === "user" ? "Human" : "Agent"}: ${m.content}`)
+    .join("\n\n")
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 300,
+    system: `Extract explicitly locked decisions from this conversation.
+
+A decision is locked when a human clearly confirmed a specific choice — "yes", "go with that", "lock it in", "confirmed", or a clear affirmation after an agent proposed something specific.
+
+Output one bullet per locked decision, like:
+• Dark mode primary, light secondary
+• Glow opacity: 10%
+• Archon Labs aesthetic — dark backgrounds, gradient accents
+
+Keep each bullet concise. Only include decisions that are clearly and explicitly confirmed — not proposals, options being discussed, or open questions.
+
+If fewer than 2 decisions are clearly locked, output: none`,
+    messages: [{ role: "user", content: historyText }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim() : "none"
+  if (text === "none" || !text.includes("•")) return ""
+  return text
+}
+
 // Applies decision corrections to a spec string via direct text replacement.
 // Returns the corrected spec and a list of corrections that were actually applied.
 export function applyDecisionCorrections(specContent: string, corrections: DecisionCorrection[]): {

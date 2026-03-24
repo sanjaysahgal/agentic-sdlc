@@ -8,7 +8,7 @@ import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, sav
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
-import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections } from "../../../runtime/spec-auditor"
+import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 
@@ -249,8 +249,13 @@ async function runPmAgent(params: {
   }
 
   await update("_Product Manager is reading the spec..._")
-  const context = await loadAgentContext(featureName)
-
+  const [context, lockedDecisionsPm] = await Promise.all([
+    loadAgentContext(featureName),
+    extractLockedDecisions(getHistory(threadTs)),
+  ])
+  const enrichedUserMessagePm = lockedDecisionsPm
+    ? `[Decisions locked in this conversation:\n${lockedDecisionsPm}]\n\n${userMessage}`
+    : userMessage
 
   // If the message is asking about the product as a whole (vision, architecture, principles),
   // answer from context directly — the pm agent is not the right framing for product-level questions.
