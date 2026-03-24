@@ -907,7 +907,7 @@
     <div class="section-label">Early Access</div>
     <h2>License Archon Dev for your team</h2>
     <p>We're opening Archon Dev to a small number of engineering teams. Connect your repo and Slack workspace — your team ships the same way we do. No code changes required to onboard.</p>
-    <form action="https://formspree.io/f/xnjoapoy" method="POST" class="waitlist-form-full">
+    <form id="waitlist-form" class="waitlist-form-full">
       <div class="waitlist-row">
         <input class="waitlist-input" type="text" name="name" placeholder="Your name" required />
         <input class="waitlist-input" type="email" name="email" placeholder="you@company.com" required />
@@ -915,7 +915,26 @@
       <textarea class="waitlist-textarea" name="message" placeholder="Tell us about your team and what you're building (optional)"></textarea>
       <button type="submit" class="btn-primary">Request early access</button>
     </form>
-    <p class="waitlist-note">No commitments. We'll reach out to schedule a conversation.</p>
+    <div id="waitlist-success" style="display:none; text-align:center; padding:1.5rem 0;">
+      <p style="font-size:1rem; font-weight:600; color:var(--teal); margin-bottom:0.4rem;">Thank you — we'll be in touch.</p>
+      <p style="font-size:0.85rem; color:var(--muted);">We'll reach out shortly to schedule a conversation.</p>
+    </div>
+    <p class="waitlist-note" id="waitlist-note">No commitments. We'll reach out to schedule a conversation.</p>
+    <script>
+      document.getElementById('waitlist-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = new FormData(form);
+        await fetch('https://formspree.io/f/xnjoapoy', {
+          method: 'POST',
+          body: data,
+          headers: { 'Accept': 'application/json' }
+        });
+        form.style.display = 'none';
+        document.getElementById('waitlist-note').style.display = 'none';
+        document.getElementById('waitlist-success').style.display = 'block';
+      });
+    </script>
   </div>
 </div>
 

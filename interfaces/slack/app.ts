@@ -111,6 +111,19 @@ app.message(async ({ message, client }) => {
 
   const threadTs = msg.thread_ts ?? msg.ts
 
+  // Reject messages that would poison the conversation history.
+  // A message this long combined with history + system prompt hits token limits and causes
+  // silent failures on every subsequent turn in the thread.
+  const MAX_MESSAGE_CHARS = 2000
+  if ((text ?? "").length > MAX_MESSAGE_CHARS) {
+    await client.chat.postMessage({
+      channel: msg.channel,
+      thread_ts: threadTs,
+      text: `:warning: That message is too long (${text.length.toLocaleString()} characters, limit ${MAX_MESSAGE_CHARS.toLocaleString()}). Please summarise the key decisions in a shorter message — a few sentences is enough for the agent to work from.`,
+    })
+    return
+  }
+
   // Images are passed to Claude for the current turn but are NOT stored in conversation history
   // (only text is persisted). Prepend a note so history and extractLockedDecisions can see that
   // a visual reference was shared — otherwise the agent loses the context after one turn.

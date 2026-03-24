@@ -120,14 +120,15 @@ export async function handleFeatureChannelMessage(params: {
     const pendingEscalation = getPendingEscalation(threadTs)
     if (pendingEscalation && isAffirmative(userMessage)) {
       clearPendingEscalation(threadTs)
-      const escalationBrief =
-        `The UX Designer is blocked on a product decision and needs your input:\n\n` +
-        `"${pendingEscalation.question}"\n\n` +
-        `Current design context:\n${pendingEscalation.designContext}\n\n` +
-        `Give a concrete answer or recommendation — this is blocking the design spec.`
-      await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
-        await runPmAgent({ channelName, channelId, threadTs, userMessage: escalationBrief, client, update })
-      }})
+      const { roles } = loadWorkspaceConfig()
+      const mention = roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`
+      const escalationMsg =
+        `${mention} — UX Designer has a blocking product question that needs a decision before the design spec can continue:\n\n` +
+        `*"${pendingEscalation.question}"*\n\n` +
+        `_Reply here to unblock design._`
+      await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: escalationMsg })
+      appendMessage(threadTs, { role: "user", content: userMessage })
+      appendMessage(threadTs, { role: "assistant", content: `Escalated to PM: "${pendingEscalation.question}". Design is paused until they respond.` })
       return
     }
     // User declined escalation or sent a new message — clear pending and continue normally
