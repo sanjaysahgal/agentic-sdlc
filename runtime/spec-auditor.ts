@@ -76,3 +76,99 @@ ${draft}`,
   // Unexpected format — don't block the save
   return { status: "ok" }
 }
+
+// ─── Decision audit ────────────────────────────────────────────────────────────
+// Checks a final spec against the decisions explicitly locked during the
+// conversation (e.g. "Locked. Glow opacity 10%"). If any locked value
+// appears differently in the spec, the correction is returned so it can be
+// applied before saving — no silent divergence between what was agreed and
+// what gets committed.
+
+export type DecisionCorrection = {
+  description: string  // human-readable label, e.g. "Glow opacity"
+  found: string        // exact string as it appears in the spec
+  correct: string      // agreed value
+}
+
+export type DecisionAuditResult =
+  | { status: "ok" }
+  | { status: "corrections"; corrections: DecisionCorrection[] }
+
+export async function auditSpecDecisions(params: {
+  specContent: string
+  history: Array<{ role: string; content: string }>
+}): Promise<DecisionAuditResult> {
+  const { specContent, history } = params
+
+  // Need at least a few turns to have anything worth auditing
+  if (history.length < 2) return { status: "ok" }
+
+  // Use the last 30 messages — enough to capture all locked decisions without
+  // blowing through context on very long threads
+  const recentHistory = history.slice(-30)
+  const historyText = recentHistory
+    .map(m => `${m.role === "user" ? "Human" : "Agent"}: ${m.content}`)
+    .join("\n\n")
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 400,
+    system: `You are auditing a spec document against decisions that were explicitly locked during a conversation.
+
+Look through the conversation for values that were clearly agreed or "locked" — e.g. "Locked. Glow opacity 10%", "we agreed X", "confirmed: Y is Z", explicit affirmations of a specific value.
+
+Then check if those exact values appear correctly in the spec.
+
+For each mismatch — where a locked value appears DIFFERENTLY in the spec — output exactly one line:
+MISMATCH: <short description> | <exact text as written in spec> | <correct agreed value>
+
+The "exact text as written in spec" must be a substring that appears verbatim in the spec so it can be found and replaced. Keep it as short and specific as possible while still being unique.
+
+If no mismatches are found, output exactly: OK
+
+Only flag concrete, specific value mismatches — numbers, named choices, specific strings. Not tone, style, or vague differences. High confidence only.`,
+    messages: [
+      {
+        role: "user",
+        content: `## Conversation History (most recent ${recentHistory.length} messages)
+${historyText}
+
+## Spec Content
+${specContent}`,
+      },
+    ],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim() : "OK"
+
+  if (text === "OK" || !text.includes("MISMATCH:")) return { status: "ok" }
+
+  const corrections: DecisionCorrection[] = []
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("MISMATCH:")) continue
+    const parts = line.replace("MISMATCH:", "").split("|").map(s => s.trim())
+    if (parts.length === 3) {
+      corrections.push({ description: parts[0], found: parts[1], correct: parts[2] })
+    }
+  }
+
+  if (corrections.length === 0) return { status: "ok" }
+  return { status: "corrections", corrections }
+}
+
+// Applies decision corrections to a spec string via direct text replacement.
+// Returns the corrected spec and a list of corrections that were actually applied.
+export function applyDecisionCorrections(specContent: string, corrections: DecisionCorrection[]): {
+  corrected: string
+  applied: DecisionCorrection[]
+} {
+  let corrected = specContent
+  const applied: DecisionCorrection[] = []
+  for (const c of corrections) {
+    if (corrected.includes(c.found)) {
+      corrected = corrected.split(c.found).join(c.correct)
+      applied.push(c)
+    }
+  }
+  return { corrected, applied }
+}

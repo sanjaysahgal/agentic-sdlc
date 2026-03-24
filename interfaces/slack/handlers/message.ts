@@ -8,7 +8,7 @@ import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, sav
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
-import { auditSpecDraft } from "../../../runtime/spec-auditor"
+import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections } from "../../../runtime/spec-auditor"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 
 const { paths: workspacePaths } = loadWorkspaceConfig()
@@ -341,9 +341,21 @@ async function runPmAgent(params: {
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
+    // Audit spec against locked conversation decisions before caching for approval
+    await update("_Checking spec against locked decisions..._")
+    let finalSpecContent = specContent
+    let correctionNote = ""
+    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(threadTs) })
+    if (decisionAudit.status === "corrections") {
+      const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
+      if (applied.length > 0) {
+        finalSpecContent = corrected
+        correctionNote = `\n\n_Found ${applied.length} value${applied.length > 1 ? "s" : ""} in the spec that differed from what we locked in conversation — corrected before saving:_\n${applied.map(c => `• *${c.description}:* ${c.found} → ${c.correct}`).join("\n")}`
+      }
+    }
     // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(threadTs, { specType: "product", specContent, filePath, featureName })
-    const confirmMsg = `Looks like you're approving the product spec. Just to be certain before I save it — reply *confirmed* to lock it in and move to design, or let me know if there's anything left to review.`
+    setPendingApproval(threadTs, { specType: "product", specContent: finalSpecContent, filePath, featureName })
+    const confirmMsg = `Looks like you're approving the product spec. Just to be certain before I save it — reply *confirmed* to lock it in and move to design, or let me know if there's anything left to review.${correctionNote}`
     appendMessage(threadTs, { role: "assistant", content: confirmMsg })
     await update(`${prefix}${confirmMsg}`)
     return
@@ -490,9 +502,21 @@ async function runDesignAgent(params: {
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
+    // Audit spec against locked conversation decisions before caching for approval
+    await update("_Checking spec against locked decisions..._")
+    let finalSpecContent = specContent
+    let correctionNote = ""
+    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(threadTs) })
+    if (decisionAudit.status === "corrections") {
+      const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
+      if (applied.length > 0) {
+        finalSpecContent = corrected
+        correctionNote = `\n\n_Found ${applied.length} value${applied.length > 1 ? "s" : ""} in the spec that differed from what we locked in conversation — corrected before saving:_\n${applied.map(c => `• *${c.description}:* ${c.found} → ${c.correct}`).join("\n")}`
+      }
+    }
     // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(threadTs, { specType: "design", specContent, filePath, featureName })
-    const confirmMsg = `Looks like you're approving the design spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to engineering, or let me know if there's anything left to review.`
+    setPendingApproval(threadTs, { specType: "design", specContent: finalSpecContent, filePath, featureName })
+    const confirmMsg = `Looks like you're approving the design spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to engineering, or let me know if there's anything left to review.${correctionNote}`
     appendMessage(threadTs, { role: "assistant", content: confirmMsg })
     await update(`${prefix}${confirmMsg}`)
     return
@@ -654,9 +678,21 @@ async function runArchitectAgent(params: {
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
+    // Audit spec against locked conversation decisions before caching for approval
+    await update("_Checking spec against locked decisions..._")
+    let finalSpecContent = specContent
+    let correctionNote = ""
+    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(threadTs) })
+    if (decisionAudit.status === "corrections") {
+      const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
+      if (applied.length > 0) {
+        finalSpecContent = corrected
+        correctionNote = `\n\n_Found ${applied.length} value${applied.length > 1 ? "s" : ""} in the spec that differed from what we locked in conversation — corrected before saving:_\n${applied.map(c => `• *${c.description}:* ${c.found} → ${c.correct}`).join("\n")}`
+      }
+    }
     // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(threadTs, { specType: "engineering", specContent, filePath, featureName })
-    const confirmMsg = `Looks like you're approving the engineering spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to the engineering agents, or let me know if there's anything left to review.`
+    setPendingApproval(threadTs, { specType: "engineering", specContent: finalSpecContent, filePath, featureName })
+    const confirmMsg = `Looks like you're approving the engineering spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to the engineering agents, or let me know if there's anything left to review.${correctionNote}`
     appendMessage(threadTs, { role: "assistant", content: confirmMsg })
     await update(`${prefix}${confirmMsg}`)
     return
