@@ -540,6 +540,15 @@ async function runDesignAgent(params: {
   const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
   const auditProductSpec = updatedProductSpecContent ?? (productSpecMatch ? productSpecMatch[1].trim() : "")
 
+  // Detect truncated DRAFT block — started but never closed (response hit max_tokens mid-spec).
+  // Warn the user immediately rather than silently falling through to a generic response.
+  if (response.includes("DRAFT_DESIGN_SPEC_START") && !response.includes("DRAFT_DESIGN_SPEC_END")) {
+    const warn = `The spec was too long to save in one response — the draft was cut off before it could be committed. Please say *"rebuild the spec"* and I'll try again. (Nothing was saved this time.)`
+    appendMessage(threadTs, { role: "assistant", content: warn })
+    await update(`${prefix}${warn}`)
+    return
+  }
+
   if (hasDraftDesignSpec(response)) {
     const draftContent = extractDraftDesignSpec(response)
     await update("_Auditing draft against product vision and architecture..._")
