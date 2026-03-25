@@ -447,6 +447,7 @@ async function runDesignAgent(params: {
     // Check-in messages skip Haiku and go directly here.
     const isStateQuery = isCheckIn || await isSpecStateQuery(userMessage)
     if (isStateQuery) {
+      await update("_Reading current draft..._")
       const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
       const branchName = `spec/${featureName}-design`
       const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
@@ -465,6 +466,7 @@ async function runDesignAgent(params: {
       const threadHistory = getHistory(threadTs)
       let uncommittedNote = ""
       if (threadHistory.length > 6) {
+        await update("_Reviewing conversation for uncommitted decisions..._")
         const cacheKey = `${threadTs}:${threadHistory.length}`
         const uncommitted = await identifyUncommittedDecisions(threadHistory, draftContent ?? "", cacheKey).catch(() => "")
         const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
