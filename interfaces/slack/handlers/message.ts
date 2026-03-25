@@ -454,14 +454,17 @@ async function runDesignAgent(params: {
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
-      // Link to the already-saved preview — don't regenerate on state queries.
-      // The preview is generated fresh on every draft save; here we just construct the URL.
+      // Link to the saved preview only if the file exists on the branch.
+      // The preview is generated fresh on every draft save — if it hasn't been saved yet, skip the link.
       let previewNote: string | null = null
       if (draftContent) {
         const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
-        const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
-        const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
-        previewNote = `\n\n_<${previewUrl}|Open preview> (or <${rawUrl}|raw HTML> if that link is down) — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+        const previewExists = await readFile(htmlFilePath, branchName)
+        if (previewExists) {
+          const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
+          const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
+          previewNote = `\n\n_<${previewUrl}|Open preview> (or <${rawUrl}|raw HTML> if that link is down) — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+        }
       }
       const threadHistory = getHistory(threadTs)
       let uncommittedNote = ""
