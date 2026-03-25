@@ -401,22 +401,29 @@
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
       <div class="when-read">Read: MEMORY.md loaded every session start · Written: immediately on any correction</div>
-      <div class="code-block" style="font-size:11px; margin-bottom:8px;">
-        <div><span class="cb-comment">// ~/.claude/projects/&lt;project-hash&gt;/memory/</span></div>
-        <div style="margin-top:4px;"><span class="cb-key">MEMORY.md</span>          <span class="cb-comment">← index, loaded at every session start</span></div>
-        <div><span class="cb-key">feedback_tests.md</span>  <span class="cb-comment">← correction: tests required before done</span></div>
-        <div><span class="cb-key">user_profile.md</span>    <span class="cb-comment">← how this engineer learns + works</span></div>
-        <div><span class="cb-key">project_context.md</span> <span class="cb-comment">← current sprint state, blockers</span></div>
-      </div>
-      <div class="code-block" style="font-size:11px;">
-        <div><span class="cb-comment">// Each memory file — frontmatter + body:</span></div>
-        <div style="margin-top:4px; color:#4a7a4a;">---</div>
-        <div><span class="cb-key">name:</span> Tests required for every behavior change</div>
-        <div><span class="cb-key">type:</span> feedback</div>
-        <div style="color:#4a7a4a;">---</div>
-        <div>Never mark a task done without tests. <span class="cb-comment">Why:</span> user had to</div>
-        <div>repeat this three sessions in a row before it was saved.</div>
-        <div><span class="cb-comment">How to apply:</span> check before every task completion.</div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div>
+          <div style="font-size:10px; font-weight:700; color:#3a6a3a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:5px;">① MEMORY.md — the index, auto-loaded every session</div>
+          <div class="code-block" style="font-size:11px; padding:10px 12px;">
+            <div style="color:#2a4a5a;"># links to each memory file with a one-line description</div>
+            <div style="margin-top:4px;">- <span class="cb-key">feedback_tests</span>  <span class="cb-comment">— tests required before done</span></div>
+            <div>- <span class="cb-key">user_profile</span>    <span class="cb-comment">— how this engineer thinks</span></div>
+            <div>- <span class="cb-key">project_sprint</span>  <span class="cb-comment">— current blockers + constraints</span></div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px; font-weight:700; color:#555; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:5px;">② Individual topic files — written when a correction happens</div>
+          <div class="code-block" style="font-size:11px; padding:10px 12px;">
+            <div style="color:#4a7a4a;">---</div>
+            <div><span class="cb-key">name:</span> Tests required for every behavior change</div>
+            <div><span class="cb-key">type:</span> feedback</div>
+            <div style="color:#4a7a4a;">---</div>
+            <div style="margin-top:4px; color:#ccc;">Never mark a task done without tests.</div>
+            <div><span class="cb-comment">Why:</span> <span style="color:#555;">user had to repeat this three sessions in a row.</span></div>
+            <div><span class="cb-comment">How to apply:</span> <span style="color:#555;">check before every task completion.</span></div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="practice-sticky">
