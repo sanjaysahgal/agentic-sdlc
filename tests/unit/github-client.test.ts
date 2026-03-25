@@ -58,7 +58,7 @@ vi.mock("../../runtime/workspace-config", () => ({
   }),
 }))
 
-import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec } from "../../runtime/github-client"
+import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, buildPreviewUrl, createSpecPR, saveAgentFeedback, saveUserFeedback } from "../../runtime/github-client"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -480,5 +480,177 @@ describe("listSubdirectories", () => {
 
     const result = await listSubdirectories("specs/features")
     expect(result).toEqual([])
+  })
+})
+
+// ─── buildPreviewUrl ──────────────────────────────────────────────────────────
+
+describe("buildPreviewUrl", () => {
+  it("builds an htmlpreview.github.io URL for the design branch", () => {
+    const url = buildPreviewUrl({
+      githubOwner: "myorg",
+      githubRepo: "myapp",
+      featureName: "onboarding",
+      featuresRoot: "specs/features",
+    })
+    expect(url).toBe(
+      "https://htmlpreview.github.io/?https://github.com/myorg/myapp/blob/spec/onboarding-design/specs/features/onboarding/onboarding.preview.html"
+    )
+  })
+
+  it("uses spec/{featureName}-design branch", () => {
+    const url = buildPreviewUrl({
+      githubOwner: "o",
+      githubRepo: "r",
+      featureName: "dashboard",
+      featuresRoot: "specs/features",
+    })
+    expect(url).toContain("spec/dashboard-design")
+  })
+
+  it("includes featureName in the file path", () => {
+    const url = buildPreviewUrl({
+      githubOwner: "o",
+      githubRepo: "r",
+      featureName: "profile",
+      featuresRoot: "specs/features",
+    })
+    expect(url).toContain("profile.preview.html")
+  })
+})
+
+// ─── createSpecPR ────────────────────────────────────────────────────────────
+
+describe("createSpecPR", () => {
+  it("creates branch, commits file, opens PR, and returns PR URL", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+    mockCreatePR.mockResolvedValue({ data: { html_url: "https://github.com/test-owner/test-repo/pull/42" } })
+
+    const url = await createSpecPR({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.product.md",
+      content: "# Spec",
+      prTitle: "Spec: onboarding",
+      prBody: "Product spec for onboarding.",
+    })
+
+    expect(url).toBe("https://github.com/test-owner/test-repo/pull/42")
+    expect(mockCreateRef).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: "refs/heads/spec/onboarding-product", sha: "abc123" })
+    )
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "specs/features/onboarding/onboarding.product.md",
+        content: Buffer.from("# Spec").toString("base64"),
+        branch: "spec/onboarding-product",
+      })
+    )
+    expect(mockCreatePR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Spec: onboarding",
+        head: "spec/onboarding-product",
+        base: "main",
+      })
+    )
+  })
+})
+
+// ─── saveAgentFeedback ────────────────────────────────────────────────────────
+
+describe("saveAgentFeedback", () => {
+  it("creates a GitHub issue with agent-feedback label", async () => {
+    mockCreateLabel.mockResolvedValue({})
+    mockCreateIssue.mockResolvedValue({})
+
+    await saveAgentFeedback({ feedback: "The agent asked too many questions at once." })
+
+    expect(mockCreateIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        labels: ["agent-feedback"],
+        title: expect.stringContaining("Agent feedback"),
+      })
+    )
+  })
+
+  it("includes submittedBy in the issue body when provided", async () => {
+    mockCreateLabel.mockResolvedValue({})
+    mockCreateIssue.mockResolvedValue({})
+
+    await saveAgentFeedback({ feedback: "Too slow.", submittedBy: "U123" })
+
+    expect(mockCreateIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining("U123") })
+    )
+  })
+
+  it("does not throw when GitHub API fails — non-fatal", async () => {
+    mockCreateLabel.mockRejectedValue(new Error("Forbidden"))
+    mockCreateIssue.mockRejectedValue(new Error("Forbidden"))
+
+    await expect(saveAgentFeedback({ feedback: "Feedback." })).resolves.toBeUndefined()
+  })
+})
+
+// ─── saveUserFeedback ─────────────────────────────────────────────────────────
+
+describe("saveUserFeedback", () => {
+  const baseParams = {
+    timestamp: "2024-01-01T00:00:00.000Z",
+    channel: "C123",
+    messageTs: "1234.5678",
+    rating: "positive" as const,
+    agentResponse: "Here is the spec.",
+    userMessage: "looks great",
+    reactingUser: "U456",
+  }
+
+  it("appends a new JSONL line when file does not exist yet", async () => {
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await saveUserFeedback(baseParams)
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "specs/feedback/reactions.jsonl",
+        message: "chore: append user reaction feedback",
+      })
+    )
+    const call = mockCreateOrUpdateFileContents.mock.calls[0][0]
+    const written = Buffer.from(call.content, "base64").toString("utf-8")
+    const parsed = JSON.parse(written)
+    expect(parsed.rating).toBe("positive")
+    expect(parsed.reactingUser).toBe("U456")
+  })
+
+  it("appends to existing content when file already exists", async () => {
+    const existing = JSON.stringify({ timestamp: "2024-01-01", rating: "negative" })
+    mockGetContent.mockResolvedValue({
+      data: {
+        content: Buffer.from(existing).toString("base64"),
+        sha: "existing-sha",
+      },
+    })
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await saveUserFeedback(baseParams)
+
+    const call = mockCreateOrUpdateFileContents.mock.calls[0][0]
+    const written = Buffer.from(call.content, "base64").toString("utf-8")
+    const lines = written.trim().split("\n")
+    expect(lines).toHaveLength(2)
+    expect(JSON.parse(lines[0]).rating).toBe("negative")
+    expect(JSON.parse(lines[1]).rating).toBe("positive")
+    // Must pass existing sha for update
+    expect(call.sha).toBe("existing-sha")
+  })
+
+  it("does not throw when GitHub API fails — non-fatal", async () => {
+    mockGetContent.mockRejectedValue(new Error("Network error"))
+    mockCreateOrUpdateFileContents.mockRejectedValue(new Error("Network error"))
+
+    await expect(saveUserFeedback(baseParams)).resolves.toBeUndefined()
   })
 })
