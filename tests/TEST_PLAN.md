@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**286 tests across 18 files — all passing**
+**319 tests across 20 files — all passing**
 
 Run: `npx vitest run`
 
@@ -112,7 +112,7 @@ All Haiku-based classification functions used for routing decisions.
 - falls back to false on unexpected Claude response — don't block real work
 - prompt includes check-in patterns in TRUE examples
 
-### `tests/unit/pm-agent.test.ts` — 13 tests
+### `tests/unit/pm-agent.test.ts` — 19 tests
 
 PM agent helper functions: intent detection, spec extraction.
 
@@ -138,8 +138,13 @@ PM agent helper functions: intent detection, spec extraction.
 
 **buildPmSystemPrompt**
 - includes a GitHub link to the draft spec when the spec is approval-ready
+- requires Product Vision Updates section in every approved spec — non-negotiable enforcement
+- enforces Product Vision Updates section — explicitly states it is required in every spec
+- cross-feature coherence — reads previously approved product specs before every response
+- injects approved feature specs when provided
+- states first feature message when no approved specs available
 
-### `tests/unit/design-agent.test.ts` — 49 tests
+### `tests/unit/design-agent.test.ts` — 54 tests
 
 Design agent helper functions, system prompt rules, escalation markers.
 
@@ -157,6 +162,10 @@ Design agent helper functions, system prompt rules, escalation markers.
 - prohibits ASCII tables — no pipe-and-dash markdown tables in Slack responses
 - auto-save rule triggers after every agreed decision, not just when spec is substantial
 - short reply re-read rule — re-read last question before interpreting a short reply
+- requires Design System Updates section in every approved spec — non-negotiable enforcement
+- enforces Design System Updates section — explicitly states it is required in every spec
+- PRODUCT_SPEC_UPDATE instruction present — design agent can propose product spec changes when PM authorizes direction change
+- post-draft sign-off — prompt instructs agent to end with 'Draft saved to GitHub. Review it and say approved'
 
 **isCreateDesignSpecIntent**
 - returns true when response contains INTENT: CREATE_DESIGN_SPEC
