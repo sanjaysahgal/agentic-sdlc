@@ -152,36 +152,27 @@ Every step from 2.6 onwards assumes writes are reliable and reads are consistent
 
 ---
 
-### Step 2.6 — Spec revision workflow
-
-Support returning to an existing feature at any point in its lifecycle to revise any layer of the spec chain.
+### Step 2.6 — Spec revision: phase detection fix + editor mode
 
 **The problem today:** Once all spec branches are deleted and specs are on `main`, `getInProgressFeatures()` loses track of the feature entirely. `getFeaturePhase()` falls back to `"product-spec-in-progress"` — misidentifying a live feature as a new one. The agent starts from scratch with no context.
 
-**What this adds:**
+**Scope — what this step does and does not do:**
+This step fixes the detection bug and agent behaviour for established features. It does *not* build intent routing ("I want to change X" → which layer → which agent). That routing logic belongs permanently in the Orchestrator (Step 3) and is built there — not here as a patch that gets refactored away.
 
 **Phase detection fix:**
-- `getFeaturePhase()` checks for existing specs on `main` before falling back — if `.product.md`, `.design.md`, or `.engineering.md` exist, the feature is in `"feature-established"` state, not "new"
-
-**Intent-based layer routing:**
-- New Haiku classifier: given "I want to change X", which layer is affected? `product` / `design` / `engineering`
-- User says "I want to change the onboarding flow" → PM, with existing product spec loaded as context (editor mode, not blank)
-- User says "update the welcome screen" → design agent, existing design spec loaded
-- User says "add a new API endpoint" → architect, existing engineering spec loaded
-- No forced top-down cascade — user jumps directly to the right layer
+- `getFeaturePhase()` checks for existing specs on `main` before falling back — if `.product.md`, `.design.md`, or `.engineering.md` exist, the feature is in `"feature-established"` state, not `"new"`
+- Any agent receiving a `"feature-established"` feature loads the existing spec automatically
 
 **Editor mode:**
-- Each agent is given the existing spec as its starting context with an explicit instruction: "This spec exists and is approved. The user wants to revise it. Work from what exists, not from blank."
+- When loading an established feature, each agent receives the existing spec with an explicit instruction: *"This spec exists and is approved. The user wants to revise it. Work from what exists, not from blank."*
 - Same draft → two-step approval flow as new specs
 - On approval, `saveApproved*` already handles "already on main" — updates in place
 
 **Downstream notification (not enforcement):**
-- After an upstream spec is updated (e.g. product spec changes), system posts: *"Product spec updated. The design spec may need a revision pass — it still reflects the previous version."*
+- After an upstream spec is updated, system posts: *"Product spec updated. The design spec may need a revision pass — it still reflects the previous version."*
 - Human decides whether to cascade. System does not auto-invalidate.
 
-**Note on Step 3 overlap:** The routing logic built in this step (message handler → intent classifier → agent) is a patch on the current scattered routing. Step 3 (Orchestrator) replaces this with a centralised routing table. When Step 3 is built, the intent-routing code from this step is absorbed into the Orchestrator — expect a targeted refactor at that point, not a rewrite.
-
-**Note:** "Feature live" vs "feature built but not deployed" is indistinguishable at the spec level — the system tracks spec state only, not deployment state. Revision workflow applies equally to both.
+**Note:** "Feature live" vs "feature built but not deployed" is indistinguishable at the spec level — the system tracks spec state only. Revision workflow applies equally to both.
 
 ---
 
