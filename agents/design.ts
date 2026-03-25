@@ -216,6 +216,11 @@ If a user references something from a previous conversation that you have no rec
 
 Never claim to have generated, sent, or saved something you have no record of. A blank history means a blank slate — not a gap to fill with plausible-sounding fiction.
 
+**When recovering from an error or restart**, if you're unsure what was decided:
+1. State the spec URL and say what is actually committed on GitHub
+2. Do NOT invent a summary of "what we decided" — read the spec at the URL
+3. If the user references a direction change (e.g., dark mode) that you can see in history but not confirmed saved, say so: "I see we were heading toward X in this thread, but I don't have a confirmed save of that in this response — want me to rebuild the draft with X now?"
+
 ## Out-of-scope questions — redirect, don't answer
 If someone asks about how the AI system works, what an agent's persona is, gives feedback about an agent, or asks about anything outside of design spec work for this feature:
 
@@ -274,6 +279,10 @@ Whenever you include a \`DRAFT_DESIGN_SPEC_START\` block, your visible message t
 "Draft saved to GitHub. Review it and say *approved* when you're ready to commit and hand off to engineering."
 
 Never say "All locked decisions saved" or any phrasing that implies work is complete — the draft is not final until the user approves it.
+
+**HTML preview is automatic.** Every time a \`DRAFT_DESIGN_SPEC_START\` block is saved, the platform generates an HTML preview and uploads it to Slack automatically. You do not generate HTML. You do not paste code. You do not tell the user you can't save files — the platform saves everything. If the user asks for a preview, save a draft (emit the DRAFT_DESIGN_SPEC_START block) and the preview will appear.
+
+**Never claim to have saved decisions that are not in your current \`DRAFT_DESIGN_SPEC_START\` block.** A decision is committed when and only when it appears inside a \`DRAFT_DESIGN_SPEC_START...DRAFT_DESIGN_SPEC_END\` block in your response. Never say "I've saved X" or "X is now locked" unless you have that block in this very response. If you're unsure what's committed, say so honestly — the GitHub spec link is the source of truth.
 
 ${readOnly ? `## READ-ONLY MODE — CRITICAL
 The design spec is approved and frozen. You are answering questions about it, not editing it.
@@ -342,9 +351,24 @@ export function buildDesignStateResponse(params: {
   const blocking = allQuestions.filter(l => l.includes("[blocking: yes]")).map(cleanQuestion)
   const nonBlocking = allQuestions.filter(l => l.includes("[blocking: no]")).map(cleanQuestion)
 
+  // Extract key committed decisions so user can verify spec state at a glance
+  // without having to click through to GitHub.
+  const brandSection = extractSection(draftContent, "Brand and Design Direction")
+  const keyDecisions: string[] = []
+  if (brandSection) {
+    // Pull the first 3 non-empty lines from the section as the key decisions snapshot
+    const decisionLines = brandSection.split("\n").filter(l => l.trim() && !l.startsWith("#")).slice(0, 3)
+    keyDecisions.push(...decisionLines)
+  }
+
   const lines: string[] = []
   lines.push(`*${featureName} design* — ${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} flow${flowCount !== 1 ? "s" : ""}`)
   lines.push(`Spec: ${specUrl}`)
+  if (keyDecisions.length > 0) {
+    lines.push("")
+    lines.push(`_Committed decisions (from GitHub):_`)
+    keyDecisions.forEach(d => lines.push(d))
+  }
   lines.push("")
 
   if (blocking.length > 0) {

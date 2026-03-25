@@ -98,13 +98,27 @@ app.message(async ({ message, client }) => {
     throw err
   }
 
-  const hasUnsupportedFiles = rawFiles.some((f) => !SUPPORTED_IMAGE_TYPES.has(f.mimetype) && f.mimetype.startsWith("image/"))
-  if (!text && userImages.length === 0 && hasUnsupportedFiles) {
+  const hasUnsupportedImages = rawFiles.some((f) => !SUPPORTED_IMAGE_TYPES.has(f.mimetype) && f.mimetype.startsWith("image/"))
+  if (!text && userImages.length === 0 && hasUnsupportedImages) {
     const threadTs = msg.thread_ts ?? msg.ts
     await client.chat.postMessage({
       channel: msg.channel,
       thread_ts: threadTs,
       text: "That image format isn't supported. Please send as JPEG, PNG, GIF, or WebP — screenshots from Mac work great.",
+    })
+    return
+  }
+
+  // Reject non-image file uploads (HTML, PDF, code files, etc.).
+  // These can't be processed as vision and their content should not enter the conversation.
+  // If you're sharing a design file, share a screenshot instead.
+  const hasNonImageFiles = rawFiles.some((f) => !f.mimetype.startsWith("image/"))
+  if (hasNonImageFiles) {
+    const threadTs = msg.thread_ts ?? msg.ts
+    await client.chat.postMessage({
+      channel: msg.channel,
+      thread_ts: threadTs,
+      text: ":warning: Only images can be shared here (JPEG, PNG, GIF, WebP). For HTML previews — they're already saved to GitHub automatically after every draft save. For anything else, paste the relevant text as a message instead.",
     })
     return
   }

@@ -18,6 +18,11 @@ function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
 }
 
+// Detects a check-in message ("are you there", "ping", etc.) without a Haiku round-trip.
+// These should always go to the spec state fast-path — never to the full agent.
+// Deterministic keyword match so the check-in → state response path is 100% reliable.
+const CHECK_IN_RE = /^(are you (still )?there|you (still )?there|still there|hello\.?|hi\.?|ping|hey\.?|you back)\.?[?!]?$/i
+
 // Detects a simple affirmative confirmation — used for escalation offers and spec approval.
 function isAffirmative(message: string): boolean {
   const lower = message.toLowerCase().trim()
@@ -423,7 +428,11 @@ async function runDesignAgent(params: {
   // A "give me the latest spec" question in a design thread doesn't need the full
   // design agent — it needs the concierge. Check fast with Haiku before loading anything.
   if (!readOnly) {
-    const offTopic = await isOffTopicForAgent(userMessage, "design")
+    // Check-in messages ("are you there", "ping", etc.) always go straight to the spec state
+    // fast-path — deterministic keyword match, no Haiku round-trip, no chance of hallucination.
+    const isCheckIn = CHECK_IN_RE.test(userMessage.trim())
+
+    const offTopic = isCheckIn ? false : await isOffTopicForAgent(userMessage, "design")
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the UX Designer — I'm here when you're ready to work on screens, flows, or design decisions for this feature.`
@@ -434,7 +443,8 @@ async function runDesignAgent(params: {
     }
 
     // "Where are we" overview — fast path, no context load or Sonnet call needed.
-    const isStateQuery = await isSpecStateQuery(userMessage)
+    // Check-in messages skip Haiku and go directly here.
+    const isStateQuery = isCheckIn || await isSpecStateQuery(userMessage)
     if (isStateQuery) {
       const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
       const branchName = `spec/${featureName}-design`
@@ -669,7 +679,9 @@ async function runArchitectAgent(params: {
   }
 
   if (!readOnly) {
-    const offTopic = await isOffTopicForAgent(userMessage, "engineering")
+    const isCheckInArch = CHECK_IN_RE.test(userMessage.trim())
+
+    const offTopic = isCheckInArch ? false : await isOffTopicForAgent(userMessage, "engineering")
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the Architect — I'm here when you're ready to work on data models, APIs, or engineering decisions for this feature.`
@@ -680,7 +692,7 @@ async function runArchitectAgent(params: {
     }
 
     // "Where are we" overview — fast path, no context load or Sonnet call needed.
-    const isStateQuery = await isSpecStateQuery(userMessage)
+    const isStateQuery = isCheckInArch || await isSpecStateQuery(userMessage)
     if (isStateQuery) {
       const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
       const branchName = `spec/${featureName}-engineering`
