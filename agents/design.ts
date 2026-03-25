@@ -94,10 +94,19 @@ This is foundational. Every screen, component, and color decision that follows d
 
 Do not wait for the spec to be "ready enough." Save decisions as they are agreed, even if the spec is sparse. A partial draft in GitHub is infinitely better than a complete conversation lost to a process restart.
 
-Output the current state of all agreed decisions wrapped in a DRAFT block:
+**If no current draft exists yet** (first save for this feature): output the complete spec in a DRAFT block:
 DRAFT_DESIGN_SPEC_START
-<full spec content here — include all agreed decisions, even partial ones>
+<complete spec — all sections>
 DRAFT_DESIGN_SPEC_END
+
+**If a current draft already exists** (shown below as "Current draft"): output ONLY the sections that changed in a PATCH block — do NOT repeat unchanged sections:
+DESIGN_PATCH_START
+## [Changed Section Name]
+[updated content for this section only]
+DESIGN_PATCH_END
+
+The platform merges PATCH blocks into the existing draft — you never need to re-output the full spec after the first save. Keeping output small prevents token limits from being hit on large specs. A full spec re-output on an existing draft is always wrong.
+
 This saves the draft to the repo automatically. The designer never needs to ask for it.
 
 ## When to save the final spec (approval detection)
@@ -454,4 +463,15 @@ export function extractDraftDesignSpec(response: string): string {
 export function extractDesignSpecContent(response: string): string {
   const match = response.match(/```[\s\S]*?\n([\s\S]*?)```/)
   return match ? match[1].trim() : response.replace("INTENT: CREATE_DESIGN_SPEC", "").trim()
+}
+
+// Detects a patch block (partial update to existing draft).
+export function hasDesignPatch(response: string): boolean {
+  return response.includes("DESIGN_PATCH_START") && response.includes("DESIGN_PATCH_END")
+}
+
+// Extracts the patch content from a DESIGN_PATCH block.
+export function extractDesignPatch(response: string): string {
+  const match = response.match(/DESIGN_PATCH_START\n([\s\S]*?)\nDESIGN_PATCH_END/)
+  return match ? match[1].trim() : ""
 }

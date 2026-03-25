@@ -2,7 +2,7 @@ import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } f
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate } from "../../../agents/design"
+import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
@@ -12,6 +12,7 @@ import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLo
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
+import { applySpecPatch } from "../../../runtime/spec-patcher"
 
 const { paths: workspacePaths } = loadWorkspaceConfig()
 
@@ -546,6 +547,90 @@ async function runDesignAgent(params: {
     const warn = `The spec was too long to save in one response — the draft was cut off before it could be committed. Please say *"rebuild the spec"* and I'll try again. (Nothing was saved this time.)`
     appendMessage(threadTs, { role: "assistant", content: warn })
     await update(`${prefix}${warn}`)
+    return
+  }
+
+  // Detect truncated patch block — same failure mode as above but for PATCH blocks.
+  if (response.includes("DESIGN_PATCH_START") && !response.includes("DESIGN_PATCH_END")) {
+    const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
+    appendMessage(threadTs, { role: "assistant", content: warn })
+    await update(`${prefix}${warn}`)
+    return
+  }
+
+  if (hasDesignPatch(response)) {
+    const patchContent = extractDesignPatch(response)
+    // Read existing draft, apply patch, save merged result
+    const { paths } = loadWorkspaceConfig()
+    const branchName = `spec/${featureName}-design`
+    const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+    const existingDraft = await readFile(designDraftPath, branchName)
+    const mergedDraft = applySpecPatch(existingDraft ?? "", patchContent)
+
+    await update("_Auditing patch against product vision and architecture..._")
+    const audit = await auditSpecDraft({
+      draft: mergedDraft,
+      productVision: context.productVision,
+      systemArchitecture: context.systemArchitecture,
+      productSpec: auditProductSpec,
+      featureName,
+    })
+
+    if (audit.status === "conflict") {
+      const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
+      const conflictQuestion = `Resolve this before we continue. Do you want to adjust the design, or update the product vision/architecture?`
+      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\n${audit.message}\n\n${conflictQuestion}` })
+      await update(`${prefix}${cleanResponse}\n\n:no_entry: *Conflict detected:*\n\n${audit.message}\n\n${conflictQuestion}`)
+      return
+    }
+
+    if (audit.status === "gap") {
+      const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
+      const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension?`
+      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
+      await update(`${prefix}${cleanResponse}\n\n:thinking_face: *Gap detected:*\n\n${audit.message}\n\n${gapQuestion}`)
+      await saveDraftDesignSpec({ featureName, filePath: designDraftPath, content: mergedDraft })
+      return
+    }
+
+    await update("_Saving updated draft to GitHub..._")
+    await saveDraftDesignSpec({ featureName, filePath: designDraftPath, content: mergedDraft })
+
+    const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
+
+    // Generate HTML preview — same as full draft save
+    let previewNote = ""
+    try {
+      await update("_Generating HTML preview..._")
+      const { paths: p, githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
+      const htmlContent = await generateDesignPreview({ specContent: mergedDraft, featureName })
+      const htmlFilePath = `${p.featuresRoot}/${featureName}/${featureName}.preview.html`
+      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
+      try {
+        await client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: htmlContent,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview`,
+        })
+        previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+      } catch (uploadErr: any) {
+        console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
+        previewNote = `\n\n_Preview saved to GitHub. To view it: open the spec branch, download \`${featureName}.preview.html\`, and open in any browser._`
+      }
+    } catch (err: any) {
+      console.error(`[preview] HTML generation failed: ${err?.message}`)
+    }
+
+    const cta = `\n\n_Spec updated and saved to GitHub. Review the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first._`
+    const suffix = previewNote + cta
+    const maxCleanLength = 9_000 - prefix.length
+    const truncatedClean = cleanResponse.length > maxCleanLength
+      ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full patch details saved to GitHub — spec is updated.]_"
+      : cleanResponse
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    await update(`${prefix}${truncatedClean}${suffix}`)
     return
   }
 

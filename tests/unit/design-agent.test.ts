@@ -11,6 +11,8 @@ import {
   buildDesignStateResponse,
   hasProductSpecUpdate,
   extractProductSpecUpdate,
+  hasDesignPatch,
+  extractDesignPatch,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -504,5 +506,59 @@ None.
 `
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoDirection, specUrl: SPEC_URL })
     expect(result).not.toContain("Committed decisions")
+  })
+})
+
+describe("hasDesignPatch", () => {
+  it("returns true when both patch markers are present", () => {
+    const response = "Updating design direction.\nDESIGN_PATCH_START\n## Design Direction\ndark mode\nDESIGN_PATCH_END"
+    expect(hasDesignPatch(response)).toBe(true)
+  })
+
+  it("returns false when only start marker is present", () => {
+    expect(hasDesignPatch("DESIGN_PATCH_START\n## Design Direction\ndark mode")).toBe(false)
+  })
+
+  it("returns false when neither marker is present", () => {
+    expect(hasDesignPatch("Just a regular response.")).toBe(false)
+  })
+
+  it("returns false when draft markers are present but not patch markers", () => {
+    expect(hasDesignPatch("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
+  })
+})
+
+describe("extractDesignPatch", () => {
+  it("extracts content between patch markers", () => {
+    const response = "Applying update.\nDESIGN_PATCH_START\n## Design Direction\ndark mode\nDESIGN_PATCH_END\nMore text."
+    expect(extractDesignPatch(response)).toBe("## Design Direction\ndark mode")
+  })
+
+  it("returns empty string when markers are absent", () => {
+    expect(extractDesignPatch("No markers here.")).toBe("")
+  })
+
+  it("trims whitespace from extracted content", () => {
+    const response = "DESIGN_PATCH_START\n  ## Design Direction\ndark mode  \nDESIGN_PATCH_END"
+    expect(extractDesignPatch(response).trim()).toBe("## Design Direction\ndark mode")
+  })
+
+  it("extracts multi-section patch correctly", () => {
+    const response = [
+      "Updating screens and open questions.",
+      "DESIGN_PATCH_START",
+      "## Screens",
+      "### Screen 1",
+      "Updated screen 1.",
+      "",
+      "## Open Questions",
+      "- [type: product] [blocking: no] New question.",
+      "DESIGN_PATCH_END",
+    ].join("\n")
+    const extracted = extractDesignPatch(response)
+    expect(extracted).toContain("## Screens")
+    expect(extracted).toContain("Updated screen 1.")
+    expect(extracted).toContain("## Open Questions")
+    expect(extracted).toContain("New question.")
   })
 })
