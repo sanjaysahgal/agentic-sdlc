@@ -461,20 +461,9 @@ async function runDesignAgent(params: {
           const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
           const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
           await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-          const blobUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${htmlFilePath}`
-          try {
-            await client.files.uploadV2({
-              channel_id: channelId,
-              thread_ts: threadTs,
-              content: htmlContent,
-              filename: `${featureName}.preview.html`,
-              title: `${featureName} — Design Preview`,
-            })
-            previewNote = `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-          } catch (uploadErr: any) {
-            console.error(`[preview] Slack file upload failed (add files:write scope to fix): ${uploadErr?.message}`)
-            previewNote = `\n\n_Preview saved to GitHub:_ ${blobUrl}\n_Click Raw → save → open in browser. Use device toolbar (Cmd+Shift+M in Chrome) for mobile layout._`
-          }
+          const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
+          const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
+          previewNote = `\n\n_<${previewUrl}|Open preview> — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
         } catch (err: any) {
           console.error(`[preview] HTML generation failed: ${err?.message}`)
         }
@@ -591,20 +580,9 @@ async function runDesignAgent(params: {
       const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
       const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-      const blobUrl = `https://github.com/${owner}/${repo}/blob/spec/${featureName}-design/${htmlFilePath}`
-      try {
-        await client.files.uploadV2({
-          channel_id: channelId,
-          thread_ts: threadTs,
-          content: htmlContent,
-          filename: `${featureName}.preview.html`,
-          title: `${featureName} — Design Preview`,
-        })
-        previewNote = `\n\n_HTML preview attached above — download and open in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-      } catch (uploadErr: any) {
-        console.error(`[preview] Slack file upload failed (add files:write scope to fix): ${uploadErr?.message}`)
-        previewNote = `\n\n_Preview saved to GitHub:_ ${blobUrl}\n_Click Raw → save → open in browser. Use device toolbar (Cmd+Shift+M in Chrome) for mobile layout._`
-      }
+      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/spec/${featureName}-design/${htmlFilePath}`
+      const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
+      previewNote = `\n\n_<${previewUrl}|Open preview> — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
     } catch (err: any) {
       console.error(`[preview] HTML generation failed: ${err?.message}`)
     }
