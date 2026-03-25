@@ -515,7 +515,79 @@
 </section>
 
 <!-- ════════════════════════════════════════
-     10 — THE COMPOUND EFFECT
+     10 — BEHAVIORAL CONTRACTS
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Practice 8</div>
+  <h2 class="tight">Encode how Claude should behave — not just what it should build</h2>
+  <div class="practice" style="margin-top:0;">
+    <div class="practice-challenge">
+      <div class="ps-label challenge">The challenge</div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">By default, Claude is helpful — it will implement what you asked for, call it done, and move on. It will choose the fast path without flagging the tradeoff. It won't tell you when your approach is wrong.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Without explicit behavioral contracts, you get a capable assistant. With them, you get something closer to a senior engineer — one that pushes back, self-critiques, and fixes things end to end.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">The difference isn't the model. It's what you put in the instructions.</div></div>
+    </div>
+    <div class="practice-solution">
+      <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Read: every session start — these become Claude's default operating mode</div>
+      <div class="code-block" style="font-size:11px;">
+        <div><span class="cb-comment">// CLAUDE.md — behavioral sections</span></div>
+        <div style="margin-top:6px;"><span class="cb-key">Autonomous Bug Fixing</span></div>
+        <div style="color:#555; line-height:1.6;">"Fix end-to-end. Read the error, trace the root cause,<br>implement the fix. Zero context-switching cost to the user."</div>
+        <div style="margin-top:6px;"><span class="cb-key">Demand Elegance</span></div>
+        <div style="color:#555; line-height:1.6;">"Before presenting a solution, ask: is there a more<br>elegant way? If it feels hacky, implement the clean version."</div>
+        <div style="margin-top:6px;"><span class="cb-key">Ask Before Acting on Assumptions</span></div>
+        <div style="color:#555; line-height:1.6;">"Flag potential issues and ask before making protective<br>changes unilaterally."</div>
+        <div style="margin-top:6px;"><span class="cb-key">Self-Correction</span></div>
+        <div style="color:#555; line-height:1.6;">"After any correction, save a feedback memory immediately.<br>Rate your own work. Explain why it's not a 10."</div>
+      </div>
+    </div>
+    <div class="practice-sticky">
+      <span class="ps-label sticks">Why it sticks</span>
+      <span class="ps-body">Behavioral rules in CLAUDE.md are active every session — Claude reads them before touching anything. They shift the default from <em>"complete the task"</em> to <em>"complete the task correctly, flag the risks, and tell me what you missed."</em> No prompting required.</span>
+    </div>
+  </div>
+  <aside class="notes">The key insight: you don't get senior-engineer behavior by asking for it in each prompt. You get it by encoding it in the contract Claude reads before every session. The specific behaviors here (autonomous fixing, elegance check, pushback, self-rating) were each added after a moment where the default behavior wasn't good enough.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     11 — DECISIONS.MD PATTERN
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Practice 9</div>
+  <h2 class="tight">Document every shortcut — with its scale trigger</h2>
+  <div class="practice" style="margin-top:0;">
+    <div class="practice-challenge">
+      <div class="ps-label challenge">The challenge</div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">AI moves fast. Shortcuts get taken constantly — things that work fine for two engineers on one product won't survive ten engineers on three.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Without a record, shortcuts are invisible. Nobody knows what's deliberate vs. forgotten until something breaks in production.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">"We'll fix it later" is only a plan if later is defined.</div></div>
+    </div>
+    <div class="practice-solution">
+      <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Written: whenever Claude (or the team) takes a deliberate shortcut · Referenced: when approaching scale triggers</div>
+      <div class="code-block" style="font-size:11px;">
+        <div><span class="cb-comment">// DECISIONS.md — at repo root, one entry per shortcut</span></div>
+        <div style="margin-top:6px;"><span class="cb-key">## [Decision name]</span></div>
+        <div style="margin-top:4px;"><span class="cb-val">Now:</span> <span style="color:#555;">what we do today and why it works</span></div>
+        <div><span class="cb-val">Why it works now:</span> <span style="color:#555;">team size / traffic / constraints</span></div>
+        <div><span class="cb-val">At scale:</span> <span style="color:#555;">what it needs to become, and what triggers the change</span></div>
+        <div style="margin-top:8px;"><span class="cb-comment">// Example entry:</span></div>
+        <div><span class="cb-key">## Conversation history lives on local disk</span></div>
+        <div style="color:#555;">Now: in-memory + disk. Works: one machine, one process.</div>
+        <div style="color:#555;">At scale: Redis — survives redeploys, works multi-instance.</div>
+      </div>
+    </div>
+    <div class="practice-sticky">
+      <span class="ps-label sticks">Why it sticks</span>
+      <span class="ps-body">DECISIONS.md is in the Definition of Done table — if Claude takes a shortcut, the entry is a required deliverable on that task. <strong>Technical debt is documented the moment it's created, not discovered when it breaks.</strong> Claude writes the entry. Humans review it in the PR.</span>
+    </div>
+  </div>
+  <aside class="notes">This is the most underrated practice in the deck. Every fast-moving team accumulates shortcuts. The ones who survive scaling are the ones who knew which shortcuts they took. DECISIONS.md makes the invisible visible — and because it's in the DoD, Claude writes it automatically.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     12 — THE COMPOUND EFFECT
 ════════════════════════════════════════ -->
 <section class="top">
   <div class="eyebrow">How it compounds</div>
@@ -552,11 +624,23 @@
       <span class="cr-arrow">→</span>
       <span class="cr-with" >With: main context stays sharp — focused on the decision, not the search</span>
     </div>
-    <div class="compound-row" style="border:none;">
+    <div class="compound-row">
       <span class="cr-practice">Testing discipline</span>
       <span class="cr-without" >Without: test debt compounds at AI pace — untested surface grows fast</span>
       <span class="cr-arrow">→</span>
       <span class="cr-with" >With: every behavior is tested before the next one starts</span>
+    </div>
+    <div class="compound-row">
+      <span class="cr-practice">Behavioral contracts</span>
+      <span class="cr-without">Without: helpful assistant — does what you asked, fast path, moves on</span>
+      <span class="cr-arrow">→</span>
+      <span class="cr-with">With: senior engineer mode — flags risks, self-critiques, fixes end to end</span>
+    </div>
+    <div class="compound-row" style="border:none;">
+      <span class="cr-practice">DECISIONS.md</span>
+      <span class="cr-without">Without: shortcuts are invisible — discovered when they break at scale</span>
+      <span class="cr-arrow">→</span>
+      <span class="cr-with">With: every shortcut documented with its scale trigger, the moment it's taken</span>
     </div>
   </div>
   <aside class="notes">None of these practices are expensive to put in place. CLAUDE.md takes an hour to write. The CI check takes 40 lines. The memory system is a folder and an index file. The total setup cost is a day. The payoff is months of compounding quality.</aside>
