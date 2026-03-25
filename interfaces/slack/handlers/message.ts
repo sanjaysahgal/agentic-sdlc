@@ -542,9 +542,15 @@ async function runDesignAgent(params: {
   const auditProductSpec = updatedProductSpecContent ?? (productSpecMatch ? productSpecMatch[1].trim() : "")
 
   // Detect truncated DRAFT block — started but never closed (response hit max_tokens mid-spec).
-  // Warn the user immediately rather than silently falling through to a generic response.
+  // "Rebuild the spec" would hit the same limit again. Instruct patch instead.
   if (response.includes("DRAFT_DESIGN_SPEC_START") && !response.includes("DRAFT_DESIGN_SPEC_END")) {
-    const warn = `The spec was too long to save in one response — the draft was cut off before it could be committed. Please say *"rebuild the spec"* and I'll try again. (Nothing was saved this time.)`
+    const existingDraftCheck = await readFile(
+      `${loadWorkspaceConfig().paths.featuresRoot}/${featureName}/${featureName}.design.md`,
+      `spec/${featureName}-design`
+    )
+    const warn = existingDraftCheck
+      ? `The spec is too long for a full rewrite — the response was cut off before it could be saved. Say *"apply the changes as patches"* and I'll update only the sections that changed. (Nothing was saved this time.)`
+      : `The spec was too long to save in one response — the draft was cut off before it could be committed. Please try breaking it into two saves: first the Design Direction and Screens, then say *"continue saving the rest"*. (Nothing was saved this time.)`
     appendMessage(threadTs, { role: "assistant", content: warn })
     await update(`${prefix}${warn}`)
     return

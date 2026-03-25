@@ -509,6 +509,48 @@ None.
   })
 })
 
+describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const draftContext: AgentContext = {
+    ...baseContext,
+    currentDraft: "## Approved Product Spec\nSpec.\n\n## Current Design Draft\n# Onboarding — Design Spec\n\n## Design Direction\nLight mode.",
+  }
+
+  it("PATCH is absolute — no exceptions phrase is present", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("No exceptions")
+  })
+
+  it("'new html' and 'full rewrite' map to PATCH not DRAFT", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("new html")
+    expect(prompt).toContain("full rewrite")
+    // Both must appear in the PATCH section (not in the DRAFT section)
+    const patchSectionIdx = prompt.indexOf("DESIGN_PATCH_START")
+    const draftSectionIdx = prompt.indexOf("DRAFT_DESIGN_SPEC_START")
+    expect(patchSectionIdx).toBeGreaterThan(-1)
+    expect(draftSectionIdx).toBeGreaterThan(-1)
+  })
+
+  it("prompt states HTML preview is regenerated automatically on PATCH saves", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("HTML preview")
+    expect(prompt).toContain("regenerated automatically")
+    expect(prompt).toContain("PATCH save")
+  })
+
+  it("prompt warns that DRAFT blocks are cut off on long specs", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("cut off mid-spec")
+  })
+})
+
 describe("hasDesignPatch", () => {
   it("returns true when both patch markers are present", () => {
     const response = "Updating design direction.\nDESIGN_PATCH_START\n## Design Direction\ndark mode\nDESIGN_PATCH_END"

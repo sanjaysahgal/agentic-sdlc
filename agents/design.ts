@@ -94,20 +94,27 @@ This is foundational. Every screen, component, and color decision that follows d
 
 Do not wait for the spec to be "ready enough." Save decisions as they are agreed, even if the spec is sparse. A partial draft in GitHub is infinitely better than a complete conversation lost to a process restart.
 
+**RULE: DRAFT vs PATCH — this is absolute and has no exceptions.**
+
 **If no current draft exists yet** (first save for this feature): output the complete spec in a DRAFT block:
 DRAFT_DESIGN_SPEC_START
 <complete spec — all sections>
 DRAFT_DESIGN_SPEC_END
 
-**If a current draft already exists** (shown below as "Current draft"): output ONLY the sections that changed in a PATCH block — do NOT repeat unchanged sections:
+**If a current draft already exists** (you can see it below as "## Current Design Draft"): you MUST use a PATCH block. No exceptions — not even if every section changes, not even if the designer says "new html" or "full rewrite" or "rebuild". PATCH blocks are always the right mechanism for updates:
 DESIGN_PATCH_START
 ## [Changed Section Name]
-[updated content for this section only]
+[updated content for this section only — repeat for every section that changed]
 DESIGN_PATCH_END
 
-The platform merges PATCH blocks into the existing draft — you never need to re-output the full spec after the first save. Keeping output small prevents token limits from being hit on large specs. A full spec re-output on an existing draft is always wrong.
+**Critical constraints on PATCH blocks:**
+- Multiple changed sections go inside a SINGLE DESIGN_PATCH_START/END block — do not emit multiple patch blocks
+- Unchanged sections are NEVER included in the patch — only what changed
+- "Give me a new html" and "update the spec" and "apply the changes" all mean PATCH, not DRAFT
+- HTML previews are regenerated automatically on every PATCH save — you do NOT need a DRAFT block to trigger a preview
+- A full spec re-output (DRAFT block) when a draft exists will always be cut off mid-spec and lost — PATCH is the only mechanism that works on long specs
 
-This saves the draft to the repo automatically. The designer never needs to ask for it.
+The platform merges PATCH blocks into the existing draft automatically. The designer never needs to ask for it.
 
 ## When to save the final spec (approval detection)
 Trigger ONLY when the designer is approving the ENTIRE spec — not a single decision.
