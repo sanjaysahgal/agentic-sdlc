@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Archon Labs — AI-Native Software Development</title>
+<title>Archon Dev — The AI Platform for Engineering Teams</title>
+<meta name="description" content="Archon Dev runs your entire engineering team — spec, design, build, QA, ship, monitor, fix. Fully autonomous. Every phase gated by a human. Connect your repo and Slack and ship faster.">
+<meta property="og:title" content="Archon Dev — The AI Platform for Engineering Teams">
+<meta property="og:description" content="One AI specialist per phase, from spec to production. Runs completely autonomously — every decision audited, every phase gated by a human.">
+<meta property="og:url" content="https://getarchon.dev">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Archon Dev — The AI Platform for Engineering Teams">
+<meta name="twitter:description" content="One AI specialist per phase, from spec to production. Fully autonomous. Every phase gated by a human.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -136,6 +144,26 @@
     border-radius: 50%;
     background: linear-gradient(135deg, var(--violet), var(--teal));
   }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .nav-link {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-lg);
+    transition: color 0.15s, background 0.15s;
+  }
+  .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  @media (max-width: 560px) { .nav-links { display: none; } }
+
+  /* offset anchor targets for sticky nav */
+  #platform, #demo, #how, #waitlist, #apps { scroll-margin-top: 72px; }
+
   .nav-badge {
     font-size: 0.68rem;
     font-weight: 600;
@@ -460,6 +488,113 @@
     white-space: nowrap;
   }
 
+  /* ─── CHAT DEMO ─────────────────────────────────────── */
+  .chat-demo {
+    margin: 3.5rem 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+  }
+  .chat-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.25rem;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .chat-tabs::-webkit-scrollbar { display: none; }
+  .chat-tab {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--subtle);
+    padding: 0.75rem 0.9rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    letter-spacing: 0.01em;
+  }
+  .chat-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+  .chat-body {
+    padding: 1.5rem;
+    min-height: 260px;
+    position: relative;
+  }
+  .chat-thread { display: none; flex-direction: column; gap: 1rem; }
+  .chat-thread.active { display: flex; }
+  .chat-msg {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .chat-msg.visible { opacity: 1; transform: translateY(0); }
+  .chat-avatar {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+  }
+  .chat-avatar.human {
+    background: rgba(255,255,255,0.07);
+    color: var(--muted);
+  }
+  .chat-avatar.agent {
+    background: linear-gradient(135deg, rgba(124,111,205,0.25), rgba(79,175,168,0.2));
+    color: var(--teal);
+  }
+  .chat-bubble { flex: 1; }
+  .chat-sender {
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.25rem;
+  }
+  .chat-sender.human { color: var(--subtle); }
+  .chat-sender.agent { color: var(--teal); }
+  .chat-text {
+    font-size: 0.83rem;
+    color: var(--muted);
+    line-height: 1.65;
+  }
+  .chat-commit {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--teal);
+    background: rgba(79,175,168,0.06);
+    border: 1px solid rgba(79,175,168,0.12);
+    border-radius: var(--radius-lg);
+    padding: 0.4rem 0.75rem;
+    margin-top: 0.25rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .chat-progress {
+    display: flex;
+    gap: 3px;
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border);
+    justify-content: center;
+  }
+  .chat-progress-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.3s;
+    cursor: pointer;
+  }
+  .chat-progress-dot.active { background: var(--teal); }
+
   /* ─── LIFECYCLE STRIP ───────────────────────────────── */
   .lifecycle-strip {
     display: flex;
@@ -775,6 +910,11 @@
     <span class="dot"></span>
     Archon Labs
   </a>
+  <div class="nav-links">
+    <a href="#platform" class="nav-link">Platform</a>
+    <a href="#demo" class="nav-link">See it live</a>
+    <a href="#waitlist" class="nav-link">Early access</a>
+  </div>
   <span class="nav-badge">Patent Pending</span>
 </nav>
 
@@ -801,7 +941,7 @@
 <section class="section" id="platform">
   <div class="section-label">The Platform</div>
   <h2>Archon Dev</h2>
-  <p>A licensable AI orchestration platform. Connect your GitHub repo and Slack workspace — a dedicated AI specialist handles every phase of your SDLC, fully autonomously, with a human approval gate between each one.</p>
+  <p>A licensable AI orchestration platform. Connect your GitHub repo and Slack workspace — a dedicated AI specialist handles every phase of your SDLC, fully autonomously, with a human approval gate between each one. Most teams are up and running in under an hour.</p>
 
   <div class="pipeline-grid">
     <div class="pipeline-phase">
@@ -864,6 +1004,203 @@
   <div class="section-label">Under the hood</div>
   <h2>How Archon Dev works</h2>
   <p>Every request follows the same loop — from the first idea all the way to production monitoring and fixes. Stateless agents, fresh context on every call, version control as the only source of truth.</p>
+
+  <div class="chat-demo" id="demo">
+    <div class="chat-tabs">
+      <div class="chat-tab active" data-tab="0">PM Agent</div>
+      <div class="chat-tab" data-tab="1">Design Agent</div>
+      <div class="chat-tab" data-tab="2">Architect → PM Escalation</div>
+      <div class="chat-tab" data-tab="3">QA Agent</div>
+    </div>
+    <div class="chat-body">
+
+      <!-- PM Agent -->
+      <div class="chat-thread active" data-thread="0">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">I want to add a daily health score to the dashboard.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">PM</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">PM Agent</div>
+            <div class="chat-text">Before I spec this — who is the primary audience? Power users tracking trends, or beginners who need reassurance? The scoring model changes significantly depending on the answer.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Beginners first. Should feel encouraging, not clinical.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">PM</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">PM Agent</div>
+            <div class="chat-text">Got it. Spec drafted and saved.</div>
+            <div class="chat-commit">✓ health-score.product.md → spec/health-score-product</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Design Agent -->
+      <div class="chat-thread" data-thread="1">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">The onboarding flow feels too long — users are dropping off at step 4.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">DA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Design Agent</div>
+            <div class="chat-text">The approved product spec requires permission consent at step 4 — that can't move. But steps 2 and 3 (goal selection and wearable pairing) can be deferred to post-onboarding. That gets first-run to 3 steps.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Do it.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">DA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Design Agent</div>
+            <div class="chat-text">Design spec updated. Deferred screens flagged for post-onboarding flow.</div>
+            <div class="chat-commit">✓ onboarding.design.md → spec/onboarding-design</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Architect Agent (with upstream escalation) -->
+      <div class="chat-thread" data-thread="2">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Ready to start the engineering spec for health score.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">AR</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Architect Agent</div>
+            <div class="chat-text">I've read the full spec chain. One blocker before I can proceed — the product spec doesn't define what happens when vitals data is more than 24 hours stale. That's a product decision, not an engineering one. Escalating to PM Agent now.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent" style="background:linear-gradient(135deg,rgba(124,111,205,0.3),rgba(124,111,205,0.15));color:var(--violet);">PM</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent" style="color:var(--violet);">PM Agent</div>
+            <div class="chat-text">Good catch. Stale data should show the last known score with a warning badge — not hide the score entirely. Updating the product spec now.</div>
+            <div class="chat-commit" style="color:var(--violet);background:rgba(124,111,205,0.06);border-color:rgba(124,111,205,0.14);">✓ health-score.product.md updated · stale data behaviour defined</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">AR</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Architect Agent</div>
+            <div class="chat-text">Conflict resolved. Continuing with engineering spec.</div>
+            <div class="chat-commit">✓ health-score.engineering.md → spec/health-score-engineering</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- QA Agent -->
+      <div class="chat-thread" data-thread="3">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Health score feature is ready for QA.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">QA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">QA Agent</div>
+            <div class="chat-text">Running against acceptance criteria from the product spec. Two gaps found: no test coverage for offline state, and the score calculation isn't tested against the edge case where all vitals are missing. Flagging both as blocking before sign-off.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Fixed both. Re-run.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">QA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">QA Agent</div>
+            <div class="chat-text">All acceptance criteria pass. Ready to merge.</div>
+            <div class="chat-commit">✓ QA sign-off · health-score → merge gate green</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="chat-progress">
+      <div class="chat-progress-dot active" data-dot="0"></div>
+      <div class="chat-progress-dot" data-dot="1"></div>
+      <div class="chat-progress-dot" data-dot="2"></div>
+      <div class="chat-progress-dot" data-dot="3"></div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const tabs = document.querySelectorAll('.chat-tab');
+      const threads = document.querySelectorAll('.chat-thread');
+      const dots = document.querySelectorAll('.chat-progress-dot');
+      let current = 0;
+      let autoTimer;
+
+      function showThread(idx) {
+        tabs.forEach(t => t.classList.toggle('active', +t.dataset.tab === idx));
+        threads.forEach(t => t.classList.toggle('active', +t.dataset.thread === idx));
+        dots.forEach(d => d.classList.toggle('active', +d.dataset.dot === idx));
+        // animate messages in sequence
+        const msgs = threads[idx].querySelectorAll('.chat-msg');
+        msgs.forEach(m => m.classList.remove('visible'));
+        msgs.forEach((m, i) => setTimeout(() => m.classList.add('visible'), i * 420));
+        current = idx;
+      }
+
+      function startAuto() {
+        autoTimer = setInterval(() => {
+          showThread((current + 1) % 4);
+        }, 7000);
+      }
+
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          clearInterval(autoTimer);
+          showThread(+tab.dataset.tab);
+          startAuto();
+        });
+      });
+
+      dots.forEach(dot => {
+        dot.addEventListener('click', () => {
+          clearInterval(autoTimer);
+          showThread(+dot.dataset.dot);
+          startAuto();
+        });
+      });
+
+      showThread(0);
+      startAuto();
+    })();
+  </script>
 
   <div class="lifecycle-strip">
     <div class="lifecycle-item"><span class="lifecycle-label">Idea</span><span class="lifecycle-arrow">→</span></div>
@@ -1029,6 +1366,13 @@
     </div>
     <div class="patent-tag">Patent Pending</div>
   </div>
+</div>
+
+<!-- FOUNDER -->
+<div style="max-width:980px;margin:0 auto 4rem;padding:0 2rem;text-align:center;">
+  <p style="font-size:0.82rem;color:var(--subtle);line-height:1.8;">
+    Built by <strong style="color:var(--muted);">Sanjay Sahgal</strong> — engineer and product leader with 20+ years shipping software across enterprise and consumer. Archon Dev is the platform I wished existed every time I watched a good idea get lost in a broken handoff.
+  </p>
 </div>
 
 <!-- FOOTER -->
