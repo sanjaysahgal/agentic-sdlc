@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }))
 
-import { summarizeUnlockedDiscussion, buildEnrichedMessage } from "../../runtime/conversation-summarizer"
+import { summarizeUnlockedDiscussion, buildEnrichedMessage, getPriorContext, clearSummaryCache } from "../../runtime/conversation-summarizer"
 
 function haiku(text: string) {
   return { content: [{ type: "text", text }] }

@@ -9,7 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
-import { summarizeUnlockedDiscussion, buildEnrichedMessage } from "../../../runtime/conversation-summarizer"
+import { getPriorContext, buildEnrichedMessage } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 
@@ -271,9 +271,7 @@ async function runPmAgent(params: {
   const [context, lockedDecisionsPm, priorContextPm] = await Promise.all([
     loadAgentContext(featureName),
     extractLockedDecisions(historyPm).catch(() => ""),
-    historyPm.length > PM_HISTORY_LIMIT
-      ? summarizeUnlockedDiscussion(historyPm.slice(0, -PM_HISTORY_LIMIT)).catch(() => "")
-      : Promise.resolve(""),
+    getPriorContext(threadTs, historyPm, PM_HISTORY_LIMIT),
   ])
   const enrichedUserMessagePm = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsPm, priorContext: priorContextPm })
 
@@ -495,9 +493,7 @@ async function runDesignAgent(params: {
   const [context, lockedDecisionsDesign, priorContextDesign] = await Promise.all([
     loadDesignAgentContext(featureName),
     extractLockedDecisions(historyDesign).catch(() => ""),
-    historyDesign.length > DESIGN_HISTORY_LIMIT
-      ? summarizeUnlockedDiscussion(historyDesign.slice(0, -DESIGN_HISTORY_LIMIT)).catch(() => "")
-      : Promise.resolve(""),
+    getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
   const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
@@ -756,18 +752,18 @@ async function runArchitectAgent(params: {
   }
 
   await update("_Architect is reading the spec chain..._")
-  const [context, lockedDecisionsArch] = await Promise.all([
+  const historyArch = getHistory(threadTs)
+  const ARCH_HISTORY_LIMIT = 40
+  const [context, lockedDecisionsArch, priorContextArch] = await Promise.all([
     loadArchitectAgentContext(featureName),
-    extractLockedDecisions(getHistory(threadTs)).catch(() => ""),
+    extractLockedDecisions(historyArch).catch(() => ""),
+    getPriorContext(threadTs, historyArch, ARCH_HISTORY_LIMIT),
   ])
-  const enrichedUserMessageArch = lockedDecisionsArch
-    ? `[Decisions locked in this conversation:\n${lockedDecisionsArch}]\n\n${userMessage}`
-    : userMessage
+  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch })
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
-  const history = getHistory(threadTs)
 
   await update("_Architect is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessageArch, userImages })
+  const response = await runAgent({ systemPrompt, history: historyArch, userMessage: enrichedUserMessageArch, userImages, historyLimit: ARCH_HISTORY_LIMIT })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`

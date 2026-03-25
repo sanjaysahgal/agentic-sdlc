@@ -106,12 +106,15 @@ Every spec-producing agent in archcon must implement this contract:
 
 ### Model selection
 
-| Use case | Model |
-|---|---|
-| Spec shaping (all agents) | `claude-sonnet-4-6` — best reasoning, handles long contexts |
-| Intent classification | `claude-haiku-4-5-20251001` — fast, cheap, sufficient for classification |
-| Relevance filtering (concierge context) | `claude-haiku-4-5-20251001` — same |
-| Spec auditing (conflict/gap detection) | `claude-haiku-4-5-20251001` — same |
+| Use case | Model | Reason |
+|---|---|---|
+| Spec shaping (all agents) | `claude-sonnet-4-6` | Deep multi-turn reasoning, long-context handling |
+| Intent classification | `claude-haiku-4-5-20251001` | Fast, cheap — no deep reasoning required |
+| Relevance filtering (concierge) | `claude-haiku-4-5-20251001` | Same — extract relevant subset, not reason about it |
+| Spec auditing (conflict/gap) | `claude-haiku-4-5-20251001` | Same — pattern match against vision/architecture |
+| Conversation overflow summarization | `claude-haiku-4-5-20251001` | Compress older turns cheaply; output cached in-memory |
+
+The rule: Sonnet for anything requiring judgment. Haiku for everything else. This is enforced explicitly — no default model is used.
 
 ### The dual role of spec-producing agents
 
@@ -121,6 +124,37 @@ Every spec-producing agent operates simultaneously at two levels:
 - **Domain level:** holds cross-feature coherence for their domain, reads all previously approved specs, flags inconsistencies, and drafts updates to their authoritative doc
 
 This is enforced by context loading — every agent loads both the current feature's draft AND all previously approved specs in its domain before responding.
+
+---
+
+## Efficiency & Robustness Patterns
+
+### Parallel context loading
+
+Every agent loads all its context in a single `Promise.all()` call. GitHub reads for product vision, architecture, design system, current draft, and all approved cross-feature specs fire simultaneously — not sequentially. This is enforced in `context-loader.ts`. Sequential loading would add hundreds of milliseconds per request for no benefit.
+
+Cross-feature spec loading (`loadApprovedSpecs`) races against a 10-second timeout. If the GitHub API is slow, the agent proceeds without cross-feature context rather than blocking the response. Cross-feature coherence is an enhancement, not a hard dependency.
+
+### Conversation context management
+
+Conversation history per Slack thread is capped. When history exceeds the limit, older messages are not discarded — they are summarized by Haiku before being injected into the next request. This preserves conversational continuity across long feature threads without inflating the context window.
+
+The summary is cached in-memory, keyed by `(threadTs, olderMessageCount)`. Because conversation history is append-only (older messages never change), the cache entry for any given `(thread, count)` is valid forever. A cache hit on a long thread avoids a Haiku call on every subsequent message.
+
+Implemented in `runtime/conversation-summarizer.ts`.
+
+### Graceful shutdown
+
+`runtime/request-tracker.ts` tracks all in-flight Claude API requests. On `SIGTERM`, the process waits for all in-flight requests to drain before exiting — with a 6-minute maximum (must exceed Anthropic's 5-minute API timeout). This prevents a deployment or restart from cutting off a user mid-response. Any request still in-flight after the deadline is abandoned and the process exits with a warning.
+
+### Known efficiency gaps (from DECISIONS.md)
+
+| Gap | Current | Target |
+|---|---|---|
+| Phase state | Re-read from GitHub on every message (~200–300ms overhead) | Redis cache, invalidated on spec merge to main |
+| Conversation history | In-memory + disk (one process) | Redis — survives redeploys, works across multiple bot instances |
+| Confirmed agents | `.confirmed-agents.json` on disk | Redis — same reasons |
+| Context limit | Silent failure when thread exceeds model window | Proactive warning at ~70% capacity; explicit error surfaced to user at limit |
 
 ---
 
