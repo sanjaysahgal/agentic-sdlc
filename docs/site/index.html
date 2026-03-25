@@ -159,7 +159,14 @@
     transition: color 0.15s, background 0.15s;
   }
   .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
-  @media (max-width: 560px) { .nav-links { display: none; } }
+  .nav-logo-sub {
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-top: 0.1rem;
+  }
 
   /* offset anchor targets for sticky nav */
   #platform, #demo, #how, #waitlist, #apps { scroll-margin-top: 72px; }
@@ -908,14 +915,16 @@
 <nav>
   <a href="/" class="nav-logo">
     <span class="dot"></span>
-    Archon Labs
+    <div>
+      Archon Labs
+      <div class="nav-logo-sub">Patent Pending</div>
+    </div>
   </a>
   <div class="nav-links">
     <a href="#platform" class="nav-link">Platform</a>
     <a href="#demo" class="nav-link">See it live</a>
     <a href="#waitlist" class="nav-link">Early access</a>
   </div>
-  <span class="nav-badge">Patent Pending</span>
 </nav>
 
 <!-- HERO -->
