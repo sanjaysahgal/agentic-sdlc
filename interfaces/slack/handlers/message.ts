@@ -605,8 +605,16 @@ async function runDesignAgent(params: {
       console.error(`[preview] HTML generation failed: ${err?.message}`)
     }
 
+    // Build a guaranteed suffix so truncation never swallows the preview note or CTA.
+    // Only cleanResponse gets truncated — the suffix always appears.
+    const cta = `\n\n_Draft saved to GitHub. Review the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first._`
+    const suffix = previewNote + cta
+    const maxCleanLength = 9_000 - prefix.length
+    const truncatedClean = cleanResponse.length > maxCleanLength
+      ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full spec details saved to GitHub — draft is complete.]_"
+      : cleanResponse
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}${previewNote}`)
+    await update(`${prefix}${truncatedClean}${suffix}`)
     return
   }
 
