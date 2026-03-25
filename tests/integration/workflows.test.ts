@@ -631,3 +631,62 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(0)
   })
 })
+
+// ─── Scenario 9: Design patch flow ───────────────────────────────────────────
+//
+// When the design agent emits a DESIGN_PATCH_START block instead of a full
+// DRAFT_DESIGN_SPEC_START block, the handler should:
+//   1. Read the existing draft from GitHub (falls back to "" if none)
+//   2. Merge the patch into the existing draft via applySpecPatch
+//   3. Save the merged draft to GitHub
+//   4. Generate an HTML preview
+//   5. Respond with a CTA to approve or refine
+
+describe("Scenario 9 — Design patch flow", () => {
+  const THREAD = "workflow-s9"
+
+  beforeEach(() => { clearHistory(THREAD) })
+  afterEach(() => { clearHistory(THREAD) })
+
+  it("patch block is applied to existing draft and merged draft is saved to GitHub", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    const patchResponse = [
+      "Updated the accessibility section based on your feedback.",
+      "DESIGN_PATCH_START",
+      "## Accessibility",
+      "WCAG AA required. Focus rings on all interactive elements. Min tap target 44px.",
+      "DESIGN_PATCH_END",
+    ].join("\n")
+
+    // Anthropic call sequence (short history → no extractLockedDecisions call):
+    //   1. isOffTopicForAgent → false
+    //   2. isSpecStateQuery   → false
+    //   3. runAgent           → patch response
+    //   4. generateDesignPreview → HTML (productVision + systemArchitecture are empty → auditSpecDraft skips API call)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: patchResponse }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+
+    const params = makeParams(THREAD, "feature-onboarding", "can you tighten up the accessibility section?")
+    await handleFeatureChannelMessage(params)
+
+    // Draft was saved to GitHub (createOrUpdateFileContents called at least once)
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    // The merged draft saved to GitHub contains the updated accessibility section
+    const savedContent = Buffer.from(
+      mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+        c[0]?.path?.includes("onboarding.design.md")
+      )?.[0]?.content ?? "",
+      "base64"
+    ).toString()
+    expect(savedContent).toContain("WCAG AA required")
+
+    // Response includes the approval CTA
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("approved")
+  })
+})

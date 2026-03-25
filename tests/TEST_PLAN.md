@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**319 tests across 20 files — all passing**
+**376 tests across 22 files — all passing**
 
 Run: `npx vitest run`
 
@@ -144,7 +144,7 @@ PM agent helper functions: intent detection, spec extraction.
 - injects approved feature specs when provided
 - states first feature message when no approved specs available
 
-### `tests/unit/design-agent.test.ts` — 54 tests
+### `tests/unit/design-agent.test.ts` — 58 tests
 
 Design agent helper functions, system prompt rules, escalation markers.
 
@@ -394,6 +394,19 @@ Context loading for each agent type: reads the right files from GitHub, assemble
 - uses claude-haiku-4-5-20251001 model
 - includes productSpec in the audit prompt when provided
 - omits productSpec section from prompt when not provided
+
+### `tests/unit/spec-patcher.test.ts` — 7 tests
+
+`applySpecPatch` — merges a section-level patch into an existing spec.
+
+- returns patch as-is when existing is empty
+- returns patch as-is when existing is whitespace only
+- replaces a matching section in the existing spec
+- preserves sections not mentioned in the patch
+- appends new sections not in the existing spec
+- preserves preamble (# heading, metadata lines before first ##)
+- handles patch with only one section
+- handles subsections (### headings) — treats ## section as atomic unit
 
 ### `tests/unit/spec-utils.test.ts` — 5 tests
 

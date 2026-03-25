@@ -99,7 +99,7 @@
   .cb-comment { color: #2a4a5a; }
   .cb-key     { color: #4a8ab0; }
   .cb-val     { color: #7dd3a8; }
-  .cb-bad     { color: #6a2020; text-decoration: line-through; }
+  .cb-bad     { color: #8a3030; }
   .cb-badge   {
     display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; padding: 1px 6px; border-radius: 3px; margin-right: 6px; vertical-align: middle;
@@ -269,15 +269,15 @@
         <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:6px; padding:10px 12px;">
           <div style="font-size:12px; color:#888; margin-bottom:4px; font-weight:700;">Single source of truth</div>
           <div class="code-block" style="padding:0; font-size:11px; background:transparent; border:none;">
-            <div class="cb-bad">vision.slice(0, 3000) <span class="cb-comment">// truncation</span></div>
-            <div class="cb-bad">PRODUCT_SUMMARY.md <span class="cb-comment">// mirrors authoritative doc</span></div>
+            <div class="cb-bad">✗ vision.slice(0, 3000) <span class="cb-comment">// truncation</span></div>
+            <div class="cb-bad">✗ PRODUCT_SUMMARY.md <span class="cb-comment">// mirrors authoritative doc</span></div>
           </div>
         </div>
         <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:6px; padding:10px 12px;">
           <div style="font-size:12px; color:#888; margin-bottom:4px; font-weight:700;">Config over hardcoding</div>
           <div class="code-block" style="padding:0; font-size:11px; background:transparent; border:none;">
-            <div class="cb-bad">if (channel === "#eng-team") <span class="cb-comment">// string literal</span></div>
-            <div class="cb-val">config.mainChannel <span class="cb-comment">// from env/config file</span></div>
+            <div class="cb-bad">✗ if (channel === "#eng-team") <span class="cb-comment">// string literal</span></div>
+            <div class="cb-val">✓ config.mainChannel <span class="cb-comment">// from env/config file</span></div>
           </div>
         </div>
         <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:6px; padding:10px 12px;">
