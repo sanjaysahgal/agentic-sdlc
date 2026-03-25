@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }))
 
-import { summarizeUnlockedDiscussion, buildEnrichedMessage, getPriorContext, clearSummaryCache } from "../../runtime/conversation-summarizer"
+import { summarizeUnlockedDiscussion, buildEnrichedMessage, getPriorContext, clearSummaryCache, identifyUncommittedDecisions } from "../../runtime/conversation-summarizer"
 
 function haiku(text: string) {
   return { content: [{ type: "text", text }] }
@@ -131,6 +131,45 @@ describe("getPriorContext", () => {
   })
 })
 
+describe("identifyUncommittedDecisions", () => {
+  it("returns empty string when history is empty", async () => {
+    const result = await identifyUncommittedDecisions([], "some spec")
+    expect(result).toBe("")
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("sends both spec and conversation to Haiku", async () => {
+    mockCreate.mockResolvedValue(haiku("- Dark mode default not in spec"))
+
+    await identifyUncommittedDecisions(
+      [{ role: "user", content: "Let's do dark mode" }],
+      "## Design Direction\nLight mode default.",
+    )
+
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content
+    expect(prompt).toContain("COMMITTED SPEC")
+    expect(prompt).toContain("Light mode default")
+    expect(prompt).toContain("CONVERSATION HISTORY")
+    expect(prompt).toContain("dark mode")
+  })
+
+  it("asks Haiku to be specific about missing decisions", async () => {
+    mockCreate.mockResolvedValue(haiku("- something"))
+    await identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec")
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content
+    expect(prompt).toContain("NOT reflected in the committed spec")
+    expect(prompt).toContain("specific")
+  })
+
+  it("caches result under uncommitted: prefix", async () => {
+    mockCreate.mockResolvedValue(haiku("- Dark mode"))
+    const msgs = [{ role: "user" as const, content: "dark mode please" }]
+    await identifyUncommittedDecisions(msgs, "spec", "thread1:10")
+    await identifyUncommittedDecisions(msgs, "spec", "thread1:10")
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe("clearSummaryCache", () => {
   it("removes cached entries for the given threadTs", async () => {
     mockCreate.mockResolvedValue(haiku("summary"))
@@ -138,6 +177,15 @@ describe("clearSummaryCache", () => {
     await summarizeUnlockedDiscussion(msgs, "thread-clear:5")
     clearSummaryCache("thread-clear")
     await summarizeUnlockedDiscussion(msgs, "thread-clear:5")
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it("also removes uncommitted: prefixed entries for the given threadTs", async () => {
+    mockCreate.mockResolvedValue(haiku("- Dark mode"))
+    const msgs = [{ role: "user" as const, content: "dark mode" }]
+    await identifyUncommittedDecisions(msgs, "spec", "thread-clear2:5")
+    clearSummaryCache("thread-clear2")
+    await identifyUncommittedDecisions(msgs, "spec", "thread-clear2:5")
     expect(mockCreate).toHaveBeenCalledTimes(2)
   })
 })

@@ -53,6 +53,7 @@ import {
   setPendingApproval,
   setPendingEscalation,
 } from "../../../runtime/conversation-store"
+import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
 
 const originalEnv = process.env
 
@@ -568,39 +569,58 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
 describe("Scenario 8 — State query on long thread surfaces uncommitted-context note", () => {
   const THREAD = "workflow-s8"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory(THREAD); clearSummaryCache(THREAD) })
+  afterEach(() => { clearHistory(THREAD); clearSummaryCache(THREAD) })
 
-  it("state response includes uncommitted-context note when thread has prior history", async () => {
+  it("state response shows specific uncommitted decisions when thread has prior history", async () => {
     setConfirmedAgent(THREAD, "ux-design")
 
-    // Seed >6 messages to trigger the uncommitted note
     for (let i = 0; i < 10; i++) {
       appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
+    // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
+    // identifyUncommittedDecisions is the only Anthropic call.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "true" }] })   // isSpecStateQuery → fast path
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "- Dark mode default (Archon palette)\n- Chip positioning above prompt bar" }] })  // identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).toContain("prior discussion")
-    expect(lastUpdateText(params.client)).toContain("tell me what direction")
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("not yet in the committed spec")
+    expect(text).toContain("Dark mode default")
+    expect(text).toContain("Confirm each one")
   })
 
-  it("state response has no uncommitted note when thread is short (fresh start)", async () => {
+  it("state response skips uncommitted section when all decisions are in the spec", async () => {
     setConfirmedAgent(THREAD, "ux-design")
-    // No history seeded — fresh thread
 
+    for (let i = 0; i < 10; i++) {
+      appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    }
+
+    // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
+    // identifyUncommittedDecisions is the only Anthropic call.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "true" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
 
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("prior discussion")
+    expect(lastUpdateText(params.client)).not.toContain("not yet in the committed spec")
+  })
+
+  it("state response has no uncommitted section when thread is short (fresh start)", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
+    // Thread history is empty (length <= 6), so identifyUncommittedDecisions is also skipped.
+    // No Anthropic calls at all.
+    const params = makeParams(THREAD, "feature-onboarding", "hi")
+    await handleFeatureChannelMessage(params)
+
+    expect(lastUpdateText(params.client)).not.toContain("not yet in the committed spec")
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(0)
   })
 })

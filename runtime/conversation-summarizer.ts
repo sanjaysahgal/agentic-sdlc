@@ -17,7 +17,7 @@ const summaryCache = new Map<string, string>()
 
 export function clearSummaryCache(threadTs: string): void {
   for (const key of summaryCache.keys()) {
-    if (key.startsWith(`${threadTs}:`)) summaryCache.delete(key)
+    if (key.startsWith(`${threadTs}:`) || key.startsWith(`uncommitted:${threadTs}:`)) summaryCache.delete(key)
   }
 }
 
@@ -77,6 +77,55 @@ export function buildEnrichedMessage(params: {
   parts.push(userMessage)
 
   return parts.join("\n\n")
+}
+
+// Compares conversation history against a committed spec and returns bullet points
+// of decisions discussed in the thread that are NOT yet reflected in the spec.
+// Used on the state query path so users can see exactly what was lost.
+export async function identifyUncommittedDecisions(
+  history: Message[],
+  committedSpec: string,
+  cacheKey?: string,
+): Promise<string> {
+  if (history.length === 0) return ""
+
+  if (cacheKey) {
+    const cached = summaryCache.get(`uncommitted:${cacheKey}`)
+    if (cached !== undefined) return cached
+  }
+
+  const formatted = history
+    .map((m) => `${m.role === "user" ? "User" : "Agent"}: ${m.content.slice(0, 600)}`)
+    .join("\n\n")
+
+  const result = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 500,
+    messages: [
+      {
+        role: "user",
+        content: `You are comparing a conversation to a committed spec to find what was discussed but never saved.
+
+COMMITTED SPEC (what is on GitHub):
+---
+${committedSpec.slice(0, 3000)}
+---
+
+CONVERSATION HISTORY:
+---
+${formatted}
+---
+
+List decisions or directions that were DISCUSSED in the conversation but are NOT reflected in the committed spec above. Be specific — name the actual decision (e.g. "Dark mode as default — Archon palette #0A0A0F background", not just "dark mode").
+
+Format: 3-6 bullet points. If everything discussed is already in the spec, respond with exactly: "All discussed decisions appear to be in the committed spec."`,
+      },
+    ],
+  })
+
+  const result_text = result.content[0].type === "text" ? result.content[0].text.trim() : ""
+  if (cacheKey) summaryCache.set(`uncommitted:${cacheKey}`, result_text)
+  return result_text
 }
 
 // Helper used by each agent handler — encapsulates the limit check, cache key, and call.

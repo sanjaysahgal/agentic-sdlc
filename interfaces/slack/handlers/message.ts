@@ -9,7 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
-import { getPriorContext, buildEnrichedMessage } from "../../../runtime/conversation-summarizer"
+import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 
@@ -480,9 +480,15 @@ async function runDesignAgent(params: {
         }
       }
       const threadHistory = getHistory(threadTs)
-      const uncommittedNote = threadHistory.length > 6
-        ? `\n\n_This thread has prior discussion that may not be fully reflected in the committed spec above. To pick up where you left off, tell me what direction you want to continue with._`
-        : ""
+      let uncommittedNote = ""
+      if (threadHistory.length > 6) {
+        const cacheKey = `${threadTs}:${threadHistory.length}`
+        const uncommitted = await identifyUncommittedDecisions(threadHistory, draftContent ?? "", cacheKey).catch(() => "")
+        const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
+        if (uncommitted && !isAllCommitted) {
+          uncommittedNote = `\n\n*Decisions discussed in this thread not yet in the committed spec:*\n${uncommitted}\n\n_Confirm each one and I'll rebuild the spec with them locked in._`
+        }
+      }
       const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote }) + uncommittedNote
       appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
