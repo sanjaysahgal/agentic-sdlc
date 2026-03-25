@@ -158,9 +158,24 @@ describe("withThinking", () => {
     )
   })
 
-  it("truncates responses over 39000 chars at paragraph boundary", async () => {
+  it("on msg_too_long: shows specific message not generic", async () => {
     const client = makeClient()
-    const longText = "A".repeat(38_000) + "\n\n" + "B".repeat(2000)
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("An API error occurred: msg_too_long") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("too long for Slack") })
+    )
+    expect(client.chat.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("Something went wrong") })
+    )
+  })
+
+  it("truncates responses over 12000 chars at paragraph boundary", async () => {
+    const client = makeClient()
+    const longText = "A".repeat(11_000) + "\n\n" + "B".repeat(2000)
 
     await withThinking({
       client, channelId: "C123", threadTs: "1000.0",

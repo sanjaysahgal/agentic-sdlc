@@ -25,7 +25,7 @@ export async function withThinking(params: {
 
   // Slack's text limit is 40,000 chars. Truncate long responses at a paragraph
   // boundary rather than letting chat.update fail with msg_too_long.
-  const SLACK_MAX_CHARS = 30_000  // Conservative: real limit is 40k but encoding overhead is unpredictable
+  const SLACK_MAX_CHARS = 12_000  // Slack's practical limit is lower than the documented 40k in busy threads
   function truncateForSlack(text: string): string {
     if (text.length <= SLACK_MAX_CHARS) return text
     const cutoff = text.lastIndexOf("\n\n", SLACK_MAX_CHARS)
@@ -51,6 +51,7 @@ export async function withThinking(params: {
     const errMsg = err instanceof Error ? err.message : String(err)
     const isOverloaded = errMsg.includes("overloaded")
     const isImageError = errMsg.includes("Could not process image") || errMsg.includes("image.source")
+    const isSlackTooLong = errMsg.includes("msg_too_long")
     // Anthropic surfaces context limit errors with several different phrasings depending on
     // the SDK version and error path — check all known variants
     const isContextLimit =
@@ -63,7 +64,9 @@ export async function withThinking(params: {
       errMsg.includes("token") && errMsg.includes("maximum") ||
       errMsg.includes("maximum context") ||
       errMsg.includes("reduce the length")
-    const msg = isOverloaded
+    const msg = isSlackTooLong
+      ? "The response was too long for Slack. Any draft has been saved to GitHub — check the spec link above. Ask a follow-up question to continue."
+      : isOverloaded
       ? "The AI is overloaded right now. Please try again in a moment."
       : isImageError
         ? "I couldn't process the attached image. Try sending it as a PNG screenshot instead of directly from the camera roll."
