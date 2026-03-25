@@ -261,9 +261,9 @@ Concierge system prompt content — the main-channel status agent.
 - lists every agent in ACTIVE_AGENTS registry — fails if a new agent is added without updating the concierge
 - includes all in-progress features in the prompt
 
-### `tests/unit/github-client.test.ts` — 29 tests
+### `tests/unit/github-client.test.ts` — 47 tests
 
-GitHub API wrapper: file reads, spec saves, branch management, phase detection.
+GitHub API wrapper: file reads, spec saves, branch management, phase detection, preview URLs, PRs, feedback.
 
 **readFile**
 - decodes base64 content and returns string
@@ -305,6 +305,48 @@ GitHub API wrapper: file reads, spec saves, branch management, phase detection.
 - returns empty array when path does not exist
 - returns empty array when response is not an array (single file returned)
 - returns empty array on GitHub API timeout
+
+**buildPreviewUrl**
+- builds an htmlpreview.github.io URL for the design branch
+- uses spec/{featureName}-design branch
+- includes featureName in the file path
+
+**createSpecPR**
+- creates branch, commits file, opens PR, and returns PR URL
+
+**saveAgentFeedback**
+- creates a GitHub issue with agent-feedback label
+- includes submittedBy in the issue body when provided
+- does not throw when GitHub API fails — non-fatal
+
+**saveUserFeedback**
+- appends a new JSONL line when file does not exist yet
+- appends to existing content when file already exists
+- does not throw when GitHub API fails — non-fatal
+
+### `tests/unit/claude-client.test.ts` — 8 tests
+
+`runAgent` — the core Anthropic API call with history sanitization, image support, and history truncation.
+
+- returns text from first content block
+- returns empty string when first content block is not text
+- passes systemPrompt as cached system block
+- appends userMessage as final user turn after history
+- strips leading assistant messages from history to satisfy Anthropic API constraint
+- collapses consecutive same-role messages — keeps the later one
+- includes image blocks before text when userImages are provided
+- truncates history to last 40 messages before the new user turn
+
+### `tests/unit/html-renderer.test.ts` — 6 tests
+
+`generateDesignPreview` — generates self-contained HTML from a design spec.
+
+- returns HTML content from Claude response
+- strips leading ```html fence if model adds one
+- strips leading ``` fence without language tag
+- passes featureName and specContent to Claude
+- uses claude-sonnet-4-6 model
+- returns empty string when first content block is not text
 
 ### `tests/unit/context-loader.test.ts` — 22 tests
 
