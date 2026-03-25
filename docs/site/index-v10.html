@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archon Dev — The AI Platform for Engineering Teams</title>
+<meta name="description" content="Archon Dev runs your entire engineering team — spec, design, build, QA, ship, monitor, fix. Fully autonomous. Every phase gated by a human. Connect your repo and Slack and ship faster.">
+<meta property="og:title" content="Archon Dev — The AI Platform for Engineering Teams">
+<meta property="og:description" content="One AI specialist per phase, from spec to production. Runs completely autonomously — every decision audited, every phase gated by a human.">
+<meta property="og:url" content="https://getarchon.dev">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Archon Dev — The AI Platform for Engineering Teams">
+<meta name="twitter:description" content="One AI specialist per phase, from spec to production. Fully autonomous. Every phase gated by a human.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --violet: #7C6FCD;
+    --teal:   #4FAFA8;
+    --bg:     #0A0A0F;
+    --surface: #13131A;
+    --border:  rgba(255,255,255,0.07);
+    --text:    #F8F8F7;
+    --muted:   rgba(248,248,247,0.45);
+    --subtle:  rgba(248,248,247,0.18);
+    --font: 'Inter', system-ui, sans-serif;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 24px;
+    --radius-full: 9999px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* ─── GLOW LAYER ─────────────────────────────────────── */
+  .glow-layer {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .glow-violet,
+  .glow-teal {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    will-change: transform, opacity;
+  }
+
+  /* violet bloom */
+  .glow-violet {
+    width: 900px;
+    height: 750px;
+    top: -160px;
+    left: 50%;
+    transform: translateX(-65%);
+    background: radial-gradient(ellipse at center,
+      rgba(124, 111, 205, 0.42) 0%,
+      rgba(124, 111, 205, 0.14) 40%,
+      transparent 68%
+    );
+    animation: heartbeat-violet 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* teal bloom */
+  .glow-teal {
+    width: 720px;
+    height: 620px;
+    top: -80px;
+    left: 50%;
+    transform: translateX(-18%);
+    background: radial-gradient(ellipse at center,
+      rgba(79, 175, 168, 0.34) 0%,
+      rgba(79, 175, 168, 0.11) 40%,
+      transparent 68%
+    );
+    animation: heartbeat-teal 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation-delay: -1.8s; /* offset — teal beats while violet is recovering */
+  }
+
+  /* lub-dub: quick surge → partial drop → smaller surge → slow decay */
+  @keyframes heartbeat-violet {
+    0%   { opacity: 0.55; transform: translateX(-65%) scale(0.97); }
+    12%  { opacity: 1;    transform: translateX(-65%) scale(1.20); } /* lub */
+    24%  { opacity: 0.70; transform: translateX(-65%) scale(1.05); } /* between beats */
+    36%  { opacity: 0.90; transform: translateX(-65%) scale(1.13); } /* dub */
+    60%  { opacity: 0.58; transform: translateX(-65%) scale(0.98); } /* decay */
+    100% { opacity: 0.55; transform: translateX(-65%) scale(0.97); } /* rest */
+  }
+
+  @keyframes heartbeat-teal {
+    0%   { opacity: 0.50; transform: translateX(-18%) scale(0.97); }
+    12%  { opacity: 0.95; transform: translateX(-18%) scale(1.18); } /* lub */
+    24%  { opacity: 0.65; transform: translateX(-18%) scale(1.04); } /* between beats */
+    36%  { opacity: 0.85; transform: translateX(-18%) scale(1.11); } /* dub */
+    60%  { opacity: 0.53; transform: translateX(-18%) scale(0.98); } /* decay */
+    100% { opacity: 0.50; transform: translateX(-18%) scale(0.97); } /* rest */
+  }
+
+  /* all content sits above glow */
+  nav, .hero-wrap, .divider, .section, .patent-banner, footer {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ─── NAV ───────────────────────────────────────────── */
+  nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 2.5rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: rgba(10, 10, 15, 0.7);
+    backdrop-filter: blur(16px);
+    z-index: 100;
+  }
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav-logo .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .nav-link {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-lg);
+    transition: color 0.15s, background 0.15s;
+  }
+  .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  @media (max-width: 560px) { .nav-links { display: none; } }
+
+  /* offset anchor targets for sticky nav */
+  #platform, #demo, #how, #waitlist, #apps { scroll-margin-top: 72px; }
+
+  .nav-badge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: rgba(79, 175, 168, 0.08);
+    border: 1px solid rgba(79, 175, 168, 0.18);
+    padding: 0.2rem 0.65rem;
+    border-radius: var(--radius-full);
+  }
+
+  /* ─── HERO ──────────────────────────────────────────── */
+  .hero {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 7rem 2rem 5rem;
+    text-align: center;
+  }
+  .hero-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: rgba(79, 175, 168, 0.07);
+    border: 1px solid rgba(79, 175, 168, 0.16);
+    padding: 0.28rem 0.75rem;
+    border-radius: var(--radius-full);
+    margin-bottom: 2rem;
+  }
+  .hero-label .pulse {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--teal);
+    animation: dot-pulse 2s infinite;
+  }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .hero h1 {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.06;
+    margin-bottom: 1.5rem;
+    color: var(--text);
+  }
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--violet) 20%, var(--teal) 80%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    color: var(--muted);
+    max-width: 500px;
+    margin: 0 auto 2.75rem;
+  }
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.7rem 1.5rem;
+    border-radius: var(--radius-lg);
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.7rem 1.5rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    text-decoration: none;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-secondary:hover { border-color: rgba(79,175,168,0.3); color: var(--text); }
+
+  /* ─── DIVIDER ───────────────────────────────────────── */
+  .divider {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ─── SECTIONS ──────────────────────────────────────── */
+  .section {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 4.5rem 2rem;
+  }
+  .section-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 0.6rem;
+  }
+  .section h2 {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    margin-bottom: 0.6rem;
+  }
+  .section > p {
+    font-size: 0.95rem;
+    color: var(--muted);
+    line-height: 1.75;
+    max-width: 500px;
+    margin-bottom: 2.5rem;
+  }
+
+  /* ─── PLATFORM CARD ─────────────────────────────────── */
+  .platform-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .platform-card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .platform-icon {
+    width: 42px; height: 42px;
+    border-radius: var(--radius-lg);
+    background: rgba(124,111,205,0.1);
+    border: 1px solid rgba(124,111,205,0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .platform-card-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    margin-bottom: 0.1rem;
+  }
+  .platform-card-header p {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .platform-features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+    gap: 0.55rem;
+  }
+  .feature-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.45rem 0.7rem;
+  }
+  .feature-pill .check {
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 0.65rem;
+    flex-shrink: 0;
+  }
+
+  /* ─── APPS ──────────────────────────────────────────── */
+  .apps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .app-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    padding: 1.75rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .app-card:hover { border-color: rgba(79,175,168,0.22); }
+  .app-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, var(--violet), var(--teal));
+  }
+  .app-card-tag {
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 0.875rem;
+  }
+  .app-card h3 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+  }
+  .app-card p {
+    font-size: 0.875rem;
+    color: var(--muted);
+    line-height: 1.65;
+    margin-bottom: 1.25rem;
+  }
+  .app-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .app-status {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--subtle);
+  }
+  .dot-live {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--teal);
+    animation: dot-pulse 2s infinite;
+  }
+  .dot-soon {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+  .built-on {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.18);
+    font-weight: 500;
+  }
+  .built-on span {
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ─── PATENT BANNER ─────────────────────────────────── */
+  .patent-banner {
+    max-width: 980px;
+    margin: 0 auto 4.5rem;
+    padding: 0 2rem;
+  }
+  .patent-inner {
+    background: var(--surface);
+    border: 1px solid rgba(124,111,205,0.16);
+    border-radius: var(--radius-2xl);
+    padding: 1.5rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .patent-inner h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+  }
+  .patent-inner p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.55;
+    max-width: 500px;
+  }
+  .patent-tag {
+    flex-shrink: 0;
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--violet);
+    background: rgba(124,111,205,0.08);
+    border: 1px solid rgba(124,111,205,0.18);
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+  }
+
+  /* ─── CHAT DEMO ─────────────────────────────────────── */
+  .chat-demo {
+    margin: 3.5rem 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+  }
+  .chat-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.25rem;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .chat-tabs::-webkit-scrollbar { display: none; }
+  .chat-tab {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--subtle);
+    padding: 0.75rem 0.9rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    letter-spacing: 0.01em;
+  }
+  .chat-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+  .chat-body {
+    padding: 1.5rem;
+    min-height: 260px;
+    position: relative;
+  }
+  .chat-thread { display: none; flex-direction: column; gap: 1rem; }
+  .chat-thread.active { display: flex; }
+  .chat-msg {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .chat-msg.visible { opacity: 1; transform: translateY(0); }
+  .chat-avatar {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+  }
+  .chat-avatar.human {
+    background: rgba(255,255,255,0.07);
+    color: var(--muted);
+  }
+  .chat-avatar.agent {
+    background: linear-gradient(135deg, rgba(124,111,205,0.25), rgba(79,175,168,0.2));
+    color: var(--teal);
+  }
+  .chat-bubble { flex: 1; }
+  .chat-sender {
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.25rem;
+  }
+  .chat-sender.human { color: var(--subtle); }
+  .chat-sender.agent { color: var(--teal); }
+  .chat-text {
+    font-size: 0.83rem;
+    color: var(--muted);
+    line-height: 1.65;
+  }
+  .chat-commit {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--teal);
+    background: rgba(79,175,168,0.06);
+    border: 1px solid rgba(79,175,168,0.12);
+    border-radius: var(--radius-lg);
+    padding: 0.4rem 0.75rem;
+    margin-top: 0.25rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .chat-progress {
+    display: flex;
+    gap: 3px;
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border);
+    justify-content: center;
+  }
+  .chat-progress-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.3s;
+    cursor: pointer;
+  }
+  .chat-progress-dot.active { background: var(--teal); }
+
+  /* ─── LIFECYCLE STRIP ───────────────────────────────── */
+  .lifecycle-strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0;
+    margin-bottom: 3.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 0.6rem 1rem;
+  }
+  .lifecycle-item {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .lifecycle-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 0.35rem 0.6rem;
+    white-space: nowrap;
+  }
+  .lifecycle-label.active {
+    color: var(--text);
+    background: rgba(124,111,205,0.1);
+    border-radius: 6px;
+  }
+  .lifecycle-arrow {
+    font-size: 0.65rem;
+    color: var(--subtle);
+    padding: 0 0.1rem;
+  }
+
+  /* ─── PIPELINE GRID ─────────────────────────────────── */
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+    margin-bottom: 0;
+  }
+  .pipeline-phase {
+    background: var(--surface);
+    padding: 1.5rem;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    transition: background 0.15s;
+  }
+  .pipeline-phase:hover { background: rgba(124,111,205,0.05); }
+  .pipeline-phase-num {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--violet);
+    opacity: 0.6;
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+  .pipeline-phase-body h4 {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+    letter-spacing: -0.01em;
+  }
+  .pipeline-phase-body p {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ─── HOW IT WORKS ──────────────────────────────────── */
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 3rem;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(124,111,205,0.1);
+    border: 1px solid rgba(124,111,205,0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--violet);
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+  .flow-step-content h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.2rem;
+    letter-spacing: -0.01em;
+  }
+  .flow-step-content p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .flow-step-content code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    color: var(--teal);
+    background: rgba(79,175,168,0.07);
+    border: 1px solid rgba(79,175,168,0.12);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+  }
+  .how-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 2.5rem;
+  }
+  .how-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 1.5rem;
+  }
+  .how-card-label {
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.65rem;
+  }
+  .how-card-label.ok       { color: var(--teal); }
+  .how-card-label.conflict { color: #e06c75; }
+  .how-card-label.gap      { color: #e5c07b; }
+  .how-card h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.35rem;
+    letter-spacing: -0.01em;
+  }
+  .how-card p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .github-callout {
+    background: var(--surface);
+    border: 1px solid rgba(79,175,168,0.16);
+    border-radius: var(--radius-xl);
+    padding: 1.75rem 2rem;
+    margin-top: 2.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+  .github-callout-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 0.1rem; }
+  .github-callout h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+    letter-spacing: -0.015em;
+  }
+  .github-callout p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  /* ─── WAITLIST ───────────────────────────────────────── */
+  .waitlist-wrap {
+    max-width: 980px;
+    margin: 0 auto 0;
+    padding: 0 2rem 4.5rem;
+  }
+  .waitlist-inner {
+    background: linear-gradient(135deg, rgba(124,111,205,0.08) 0%, rgba(79,175,168,0.06) 100%);
+    border: 1px solid rgba(124,111,205,0.2);
+    border-radius: var(--radius-2xl);
+    padding: 3rem 2.5rem;
+    text-align: center;
+  }
+  .waitlist-inner .section-label { margin-bottom: 0.75rem; }
+  .waitlist-inner h2 {
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    margin-bottom: 0.75rem;
+  }
+  .waitlist-inner > p {
+    font-size: 0.95rem;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 480px;
+    margin: 0 auto 2rem;
+  }
+  .waitlist-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .waitlist-input {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    font-family: var(--font);
+    width: 280px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .waitlist-input::placeholder { color: var(--subtle); }
+  .waitlist-input:focus { border-color: rgba(124,111,205,0.4); }
+  .waitlist-form-full {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .waitlist-row {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .waitlist-row .waitlist-input { flex: 1; min-width: 160px; }
+  .waitlist-textarea {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    font-family: var(--font);
+    width: 100%;
+    height: 90px;
+    resize: none;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .waitlist-textarea::placeholder { color: var(--subtle); }
+  .waitlist-textarea:focus { border-color: rgba(124,111,205,0.4); }
+  .waitlist-form-full .btn-primary { width: 100%; justify-content: center; }
+  .waitlist-note {
+    font-size: 0.75rem;
+    color: var(--subtle);
+    margin-top: 0.5rem;
+  }
+
+  /* ─── FOOTER ────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 1.75rem 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .footer-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--subtle);
+  }
+  .footer-logo .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--violet), var(--teal));
+  }
+  footer p { font-size: 0.75rem; color: rgba(255,255,255,0.15); }
+</style>
+</head>
+<body>
+
+<!-- GLOW -->
+<div class="glow-layer">
+  <div class="glow-violet"></div>
+  <div class="glow-teal"></div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo">
+    <span class="dot"></span>
+    Archon Labs
+  </a>
+  <div class="nav-links">
+    <a href="#platform" class="nav-link">Platform</a>
+    <a href="#demo" class="nav-link">See it live</a>
+    <a href="#waitlist" class="nav-link">Early access</a>
+  </div>
+  <span class="nav-badge">Patent Pending</span>
+</nav>
+
+<!-- HERO -->
+<div class="hero-wrap">
+  <section class="hero">
+    <div class="hero-label">
+      <span class="pulse"></span>
+      Autonomous Engineering, Human Control
+    </div>
+    <h1>Archon — the AI platform that<br>runs your <span>entire engineering team</span></h1>
+    <p>One AI specialist per phase, from spec to production. Runs completely autonomously — every decision audited, every phase gated by a human. Connect your repo and Slack. Nothing slips through.</p>
+    <div class="hero-actions">
+      <a href="#waitlist" class="btn-primary">Request early access</a>
+      <a href="#platform" class="btn-secondary">See the platform →</a>
+    </div>
+    <p style="margin-top:2rem; font-size:0.78rem; color:var(--subtle);">Built by Archon Labs. Used to ship our own products from day one.</p>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<!-- PLATFORM -->
+<section class="section" id="platform">
+  <div class="section-label">The Platform</div>
+  <h2>Archon Dev</h2>
+  <p>A licensable AI orchestration platform. Connect your GitHub repo and Slack workspace — a dedicated AI specialist handles every phase of your SDLC, fully autonomously, with a human approval gate between each one. Most teams are up and running in under an hour.</p>
+
+  <div class="pipeline-grid">
+    <div class="pipeline-phase">
+      <div class="pipeline-phase-num">01</div>
+      <div class="pipeline-phase-body">
+        <h4>PM Agent</h4>
+        <p>Shapes ideas into specs. Asks hard questions. Surfaces gaps before a line of code is written.</p>
+      </div>
+    </div>
+    <div class="pipeline-phase">
+      <div class="pipeline-phase-num">02</div>
+      <div class="pipeline-phase-body">
+        <h4>Design Agent</h4>
+        <p>Screen inventory, user flows, component decisions — all derived from the approved product spec.</p>
+      </div>
+    </div>
+    <div class="pipeline-phase">
+      <div class="pipeline-phase-num">03</div>
+      <div class="pipeline-phase-body">
+        <h4>Architect Agent</h4>
+        <p>Reads the full spec chain. Produces an engineering spec with explicit tradeoff decisions documented.</p>
+      </div>
+    </div>
+    <div class="pipeline-phase">
+      <div class="pipeline-phase-num">04</div>
+      <div class="pipeline-phase-body">
+        <h4>Backend + Frontend</h4>
+        <p>Implement from the approved engineering spec. No ambiguity — every decision was made upstream.</p>
+      </div>
+    </div>
+    <div class="pipeline-phase">
+      <div class="pipeline-phase-num">05</div>
+      <div class="pipeline-phase-body">
+        <h4>QA Agent</h4>
+        <p>Generates test plans from acceptance criteria. Verifies against the full spec chain before sign-off.</p>
+      </div>
+    </div>
+    <div class="pipeline-phase">
+      <div class="pipeline-phase-num">06</div>
+      <div class="pipeline-phase-body">
+        <h4>CI/CD Pipeline</h4>
+        <p>Preview deploy, QA sign-off, merge gate, production. Reusable GitHub Actions — works with any stack.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="platform-features" style="margin-top:1.5rem;">
+    <div class="feature-pill"><span class="check">✦</span> Version control as state machine</div>
+    <div class="feature-pill"><span class="check">✦</span> Stateless agents, fresh context every call</div>
+    <div class="feature-pill"><span class="check">✦</span> Synchronous conflict detection</div>
+    <div class="feature-pill"><span class="check">✦</span> Full spec chain enforcement</div>
+    <div class="feature-pill"><span class="check">✦</span> Cross-phase agent escalation</div>
+    <div class="feature-pill"><span class="check">✦</span> Zero-code multi-tenant onboarding</div>
+    <div class="feature-pill"><span class="check">✦</span> Real-time SDLC dashboard</div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how">
+  <div class="section-label">Under the hood</div>
+  <h2>How Archon Dev works</h2>
+  <p>Every request follows the same loop — from the first idea all the way to production monitoring and fixes. Stateless agents, fresh context on every call, version control as the only source of truth.</p>
+
+  <div class="chat-demo" id="demo">
+    <div class="chat-tabs">
+      <div class="chat-tab active" data-tab="0">PM Agent</div>
+      <div class="chat-tab" data-tab="1">Design Agent</div>
+      <div class="chat-tab" data-tab="2">Architect → PM Escalation</div>
+      <div class="chat-tab" data-tab="3">QA Agent</div>
+    </div>
+    <div class="chat-body">
+
+      <!-- PM Agent -->
+      <div class="chat-thread active" data-thread="0">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">I want to add a daily health score to the dashboard.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">PM</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">PM Agent</div>
+            <div class="chat-text">Before I spec this — who is the primary audience? Power users tracking trends, or beginners who need reassurance? The scoring model changes significantly depending on the answer.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Beginners first. Should feel encouraging, not clinical.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">PM</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">PM Agent</div>
+            <div class="chat-text">Got it. Spec drafted and saved.</div>
+            <div class="chat-commit">✓ health-score.product.md → spec/health-score-product</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Design Agent -->
+      <div class="chat-thread" data-thread="1">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">The onboarding flow feels too long — users are dropping off at step 4.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">DA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Design Agent</div>
+            <div class="chat-text">The approved product spec requires permission consent at step 4 — that can't move. But steps 2 and 3 (goal selection and wearable pairing) can be deferred to post-onboarding. That gets first-run to 3 steps.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Do it.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">DA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Design Agent</div>
+            <div class="chat-text">Design spec updated. Deferred screens flagged for post-onboarding flow.</div>
+            <div class="chat-commit">✓ onboarding.design.md → spec/onboarding-design</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Architect Agent (with upstream escalation) -->
+      <div class="chat-thread" data-thread="2">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Ready to start the engineering spec for health score.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">AR</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Architect Agent</div>
+            <div class="chat-text">I've read the full spec chain. One blocker before I can proceed — the product spec doesn't define what happens when vitals data is more than 24 hours stale. That's a product decision, not an engineering one. Escalating to PM Agent now.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent" style="background:linear-gradient(135deg,rgba(124,111,205,0.3),rgba(124,111,205,0.15));color:var(--violet);">PM</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent" style="color:var(--violet);">PM Agent</div>
+            <div class="chat-text">Good catch. Stale data should show the last known score with a warning badge — not hide the score entirely. Updating the product spec now.</div>
+            <div class="chat-commit" style="color:var(--violet);background:rgba(124,111,205,0.06);border-color:rgba(124,111,205,0.14);">✓ health-score.product.md updated · stale data behaviour defined</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">AR</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Architect Agent</div>
+            <div class="chat-text">Conflict resolved. Continuing with engineering spec.</div>
+            <div class="chat-commit">✓ health-score.engineering.md → spec/health-score-engineering</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- QA Agent -->
+      <div class="chat-thread" data-thread="3">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Health score feature is ready for QA.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">QA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">QA Agent</div>
+            <div class="chat-text">Running against acceptance criteria from the product spec. Two gaps found: no test coverage for offline state, and the score calculation isn't tested against the edge case where all vitals are missing. Flagging both as blocking before sign-off.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Fixed both. Re-run.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">QA</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">QA Agent</div>
+            <div class="chat-text">All acceptance criteria pass. Ready to merge.</div>
+            <div class="chat-commit">✓ QA sign-off · health-score → merge gate green</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="chat-progress">
+      <div class="chat-progress-dot active" data-dot="0"></div>
+      <div class="chat-progress-dot" data-dot="1"></div>
+      <div class="chat-progress-dot" data-dot="2"></div>
+      <div class="chat-progress-dot" data-dot="3"></div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const tabs = document.querySelectorAll('.chat-tab');
+      const threads = document.querySelectorAll('.chat-thread');
+      const dots = document.querySelectorAll('.chat-progress-dot');
+      let current = 0;
+      let autoTimer;
+
+      function showThread(idx) {
+        tabs.forEach(t => t.classList.toggle('active', +t.dataset.tab === idx));
+        threads.forEach(t => t.classList.toggle('active', +t.dataset.thread === idx));
+        dots.forEach(d => d.classList.toggle('active', +d.dataset.dot === idx));
+        // animate messages in sequence
+        const msgs = threads[idx].querySelectorAll('.chat-msg');
+        msgs.forEach(m => m.classList.remove('visible'));
+        msgs.forEach((m, i) => setTimeout(() => m.classList.add('visible'), i * 420));
+        current = idx;
+      }
+
+      function startAuto() {
+        autoTimer = setInterval(() => {
+          showThread((current + 1) % 4);
+        }, 7000);
+      }
+
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          clearInterval(autoTimer);
+          showThread(+tab.dataset.tab);
+          startAuto();
+        });
+      });
+
+      dots.forEach(dot => {
+        dot.addEventListener('click', () => {
+          clearInterval(autoTimer);
+          showThread(+dot.dataset.dot);
+          startAuto();
+        });
+      });
+
+      showThread(0);
+      startAuto();
+    })();
+  </script>
+
+  <div class="lifecycle-strip">
+    <div class="lifecycle-item"><span class="lifecycle-label">Idea</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Spec</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Design</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Engineering</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Build</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">QA</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Ship</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Monitor</span><span class="lifecycle-arrow">→</span></div>
+    <div class="lifecycle-item"><span class="lifecycle-label active">Fix</span></div>
+  </div>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-step-content">
+        <h4>Message in</h4>
+        <p>User sends a message via Slack. The platform receives it over WebSocket — no polling, no delay.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-step-content">
+        <h4>Classify intent</h4>
+        <p>A lightweight model (<code>Haiku</code>) reads the message and routes to the right agent — PM, Design, Architect, QA. No hardcoded keyword matching.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-step-content">
+        <h4>Read state from GitHub</h4>
+        <p>The agent reads the current spec, product vision, and architecture directly from the repo. No cached copies. Every call gets the authoritative version.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-step-content">
+        <h4>Filter to what's relevant</h4>
+        <p><code>Haiku</code> trims the context to only what matters for this specific request. The reasoning model stays focused — no noise, no token waste.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-step-content">
+        <h4>Draft + audit</h4>
+        <p>The specialist agent (<code>Sonnet</code>) generates the response. A separate audit pass checks for conflicts with existing decisions and flags open questions before anything is saved.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-step-content">
+        <h4>Write to GitHub, respond to user</h4>
+        <p>Approved drafts commit to the feature branch. The loop continues — spec leads to design, design to engineering, engineering to build, build to QA, QA to ship. The same request-respond-commit pattern runs at every phase through to production.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="github-callout">
+    <div class="github-callout-icon">⬡</div>
+    <div>
+      <h4>GitHub is the only memory</h4>
+      <p>There is no separate state database. Phase state is derived entirely from branch names and file presence in the repo. Any agent, re-run on the same GitHub state, produces the same result — deterministic by design.</p>
+    </div>
+  </div>
+
+  <div class="how-cards">
+    <div class="how-card">
+      <div class="how-card-label ok">Spec → Code</div>
+      <h4>From idea to running software</h4>
+      <p>PM, Design, and Architect agents shape every feature into an approved spec chain before a line of code is written. Backend and Frontend agents implement from that chain — no ambiguity, no rework.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-card-label conflict">Ship with confidence</div>
+      <h4>QA and CI/CD built in</h4>
+      <p>QA agent generates test plans from acceptance criteria and verifies against the full spec chain. The CI/CD pipeline handles preview deploy, sign-off, merge gate, and production — no manual steps.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-card-label gap">Monitor and fix</div>
+      <h4>The loop doesn't stop at launch</h4>
+      <p>Production monitoring, user feedback, and bug reports feed back into the same agent pipeline. Issues become specs. Specs become fixes. The platform closes the loop from production back to code.</p>
+    </div>
+  </div>
+</section>
+
+<!-- WAITLIST -->
+<div class="waitlist-wrap" id="waitlist">
+  <div class="waitlist-inner">
+    <div class="section-label">Early Access</div>
+    <h2>License Archon Dev for your team</h2>
+    <p>We're opening Archon Dev to a small number of engineering teams. Connect your repo and Slack workspace — your team ships the same way we do. No code changes required to onboard.</p>
+    <form id="waitlist-form" class="waitlist-form-full">
+      <div class="waitlist-row">
+        <input class="waitlist-input" type="text" name="name" placeholder="Your name" required />
+        <input class="waitlist-input" type="email" name="email" placeholder="you@company.com" required />
+      </div>
+      <textarea class="waitlist-textarea" name="message" placeholder="Tell us about your team and what you're building (optional)"></textarea>
+      <button type="submit" class="btn-primary">Request early access</button>
+    </form>
+    <div id="waitlist-success" style="display:none; text-align:center; padding:1.5rem 0;">
+      <p style="font-size:1rem; font-weight:600; color:var(--teal); margin-bottom:0.4rem;">Thank you — we'll be in touch.</p>
+      <p style="font-size:0.85rem; color:var(--muted);">We'll reach out shortly to schedule a conversation.</p>
+    </div>
+    <p class="waitlist-note" id="waitlist-note">No commitments. We'll reach out to schedule a conversation.</p>
+    <script>
+      document.getElementById('waitlist-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = new FormData(form);
+        await fetch('https://formspree.io/f/xnjoapoy', {
+          method: 'POST',
+          body: data,
+          headers: { 'Accept': 'application/json' }
+        });
+        form.style.display = 'none';
+        document.getElementById('waitlist-note').style.display = 'none';
+        document.getElementById('waitlist-success').style.display = 'block';
+      });
+    </script>
+  </div>
+</div>
+
+<!-- APPS -->
+<section class="section" id="apps">
+  <div class="section-label">Built on Archon Dev</div>
+  <h2>Our own products, built the same way</h2>
+  <p>Every Archon Labs product is designed, engineered, and shipped entirely through Archon Dev. We use the same platform we license to you.</p>
+
+  <div class="apps-grid">
+    <div class="app-card">
+      <div class="app-card-tag">Health &amp; Wellness</div>
+      <h3>Health360</h3>
+      <p>Your AI health companion. Connects wearables, tracks vitals, and gives you personalised insights — built for 100M+ users from day one.</p>
+      <div class="app-card-footer">
+        <div class="app-status">
+          <span class="dot-live"></span>
+          In development
+        </div>
+        <div class="built-on">Built on <span>Archon Dev</span></div>
+      </div>
+    </div>
+    <div class="app-card" style="opacity:0.42;">
+      <div class="app-card-tag">Coming soon</div>
+      <h3>More products</h3>
+      <p>Every product Archon Labs ships will be 100% AI-native, built entirely through Archon Dev.</p>
+      <div class="app-card-footer">
+        <div class="app-status">
+          <span class="dot-soon"></span>
+          Announced later
+        </div>
+        <div class="built-on">Built on <span>Archon Dev</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PATENT BANNER -->
+<div class="patent-banner">
+  <div class="patent-inner">
+    <div>
+      <h4>Archon Dev — Patent Pending</h4>
+      <p>System and Method for Orchestrating Stateless AI Agents Across Software Development Lifecycle Phases Using Version Control as Authoritative State. USPTO provisional application filed March 24, 2026. Application #64/015,378.</p>
+    </div>
+    <div class="patent-tag">Patent Pending</div>
+  </div>
+</div>
+
+<!-- FOUNDER -->
+<div style="max-width:980px;margin:0 auto 4rem;padding:0 2rem;text-align:center;">
+  <p style="font-size:0.82rem;color:var(--subtle);line-height:1.8;">
+    Built by <strong style="color:var(--muted);">Sanjay Sahgal</strong> — engineer and product leader with 20+ years shipping software across enterprise and consumer. Archon Dev is the platform I wished existed every time I watched a good idea get lost in a broken handoff.
+  </p>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">
+    <span class="dot"></span>
+    Archon Labs
+  </div>
+  <p>© 2026 Archon Labs. All rights reserved. Patent Pending.</p>
+</footer>
+
+</body>
+</html>

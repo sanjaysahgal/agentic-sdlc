@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // vi.mock() factories are hoisted above module-level code, so top-level `const mockFn = vi.fn()`
 // would be undefined when the factory runs. Use vi.hoisted() to create variables
 // that are available at factory execution time.
-const { mockGetContent, mockGetRef, mockCreateRef, mockCreateOrUpdateFileContents, mockPaginate, mockListBranches } =
+const { mockGetContent, mockGetRef, mockCreateRef, mockCreateOrUpdateFileContents, mockPaginate, mockListBranches, mockCreateLabel, mockCreateIssue, mockCreatePR, mockDeleteRef } =
   vi.hoisted(() => ({
     mockGetContent: vi.fn(),
     mockGetRef: vi.fn(),
@@ -12,6 +12,10 @@ const { mockGetContent, mockGetRef, mockCreateRef, mockCreateOrUpdateFileContent
     mockCreateOrUpdateFileContents: vi.fn(),
     mockPaginate: vi.fn(),
     mockListBranches: vi.fn(),
+    mockCreateLabel: vi.fn(),
+    mockCreateIssue: vi.fn(),
+    mockCreatePR: vi.fn(),
+    mockDeleteRef: vi.fn(),
   }))
 
 vi.mock("@octokit/rest", () => ({
@@ -25,6 +29,14 @@ vi.mock("@octokit/rest", () => ({
       git: {
         getRef: mockGetRef,
         createRef: mockCreateRef,
+        deleteRef: mockDeleteRef,
+      },
+      issues: {
+        createLabel: mockCreateLabel,
+        create: mockCreateIssue,
+      },
+      pulls: {
+        create: mockCreatePR,
       },
       paginate: mockPaginate,
     }
