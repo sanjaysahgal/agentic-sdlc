@@ -225,13 +225,16 @@
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
       <div class="code-block">
-        <div><span class="cb-badge rule">Context</span> <span class="cb-key">What this repo is</span> <span class="cb-comment">— and what it isn't</span></div>
-        <div><span class="cb-badge rule">Rule</span> <span class="cb-key">Non-negotiable constraints</span> <span class="cb-comment">+ violation examples</span></div>
-        <div><span class="cb-badge check">Before</span> <span class="cb-key">Pre-code checklist</span> <span class="cb-comment">— 4 questions before writing</span></div>
-        <div><span class="cb-badge rule">Rule</span> <span class="cb-key">Behavioral rules</span> <span class="cb-comment">— durable, autonomous, elegant</span></div>
-        <div><span class="cb-badge check">Ref</span> <span class="cb-key">Where to look</span> <span class="cb-comment">— backlog, decisions, architecture</span></div>
+        <div><span class="cb-comment">// CLAUDE.md — checked into repo root, read every session</span></div>
+        <div style="margin-top:8px;"><span class="cb-badge rule">§1</span> <span class="cb-key">What is this repo?</span> <span class="cb-comment">— product identity + what it is NOT</span></div>
+        <div><span class="cb-badge rule">§2</span> <span class="cb-key">Core Principles</span> <span class="cb-comment">— each rule + violation examples inline</span></div>
+        <div><span class="cb-badge check">§3</span> <span class="cb-key">Before Writing Any Code</span> <span class="cb-comment">— 4-question checklist, must pass</span></div>
+        <div><span class="cb-badge check">§4</span> <span class="cb-key">Behavioral Rules</span> <span class="cb-comment">— autonomous, durable, self-correcting</span></div>
+        <div><span class="cb-badge rule">§5</span> <span class="cb-key">Definition of Done</span> <span class="cb-comment">— table: change type → required doc</span></div>
+        <div><span class="cb-badge check">§6</span> <span class="cb-key">Subagent Strategy</span> <span class="cb-comment">— delegate vs. keep in main</span></div>
+        <div><span class="cb-badge check">§7</span> <span class="cb-key">Testing Discipline</span> <span class="cb-comment">— rule + mocking pattern</span></div>
       </div>
-      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Claude reads this <strong>before touching anything</strong> in every session.</div></div>
+      <div class="practice-item" style="margin-top:6px;"><div class="pi-dot"></div><div class="pi-text">Opening line: <em>"Read this before doing anything. These are non-negotiable constraints."</em></div></div>
     </div>
     <div class="practice-sticky">
       <span class="ps-label sticks">Why it sticks</span>
@@ -256,26 +259,30 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:8px; padding:12px 14px;">
-          <div style="font-size:13px; font-weight:700; color:#c0c0c0; margin-bottom:6px;">Single source of truth</div>
-          <div style="font-size:13px; color:#555; margin-bottom:6px;">Never duplicate information from authoritative docs.</div>
-          <div class="code-block" style="padding:8px 12px; font-size:12px;">
-            <div class="cb-bad">productSummary = vision.slice(0, 3000)</div>
-            <div class="cb-bad">PRODUCT_SUMMARY.md  <span class="cb-comment">// mirrors vision doc</span></div>
+      <div class="code-block" style="font-size:12px;">
+        <div><span class="cb-comment">// CLAUDE.md > Core Principles — each rule formatted as:</span></div>
+        <div style="margin-top:6px;"><span class="cb-key">### Rule name</span></div>
+        <div><span class="cb-comment">One sentence. Then violation examples inline:</span></div>
+        <div style="margin-top:4px;"><span class="cb-comment">**Violation examples to avoid:**</span></div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+        <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:6px; padding:10px 12px;">
+          <div style="font-size:12px; color:#888; margin-bottom:4px; font-weight:700;">Single source of truth</div>
+          <div class="code-block" style="padding:0; font-size:11px; background:transparent; border:none;">
+            <div class="cb-bad">vision.slice(0, 3000) <span class="cb-comment">// truncation</span></div>
+            <div class="cb-bad">PRODUCT_SUMMARY.md <span class="cb-comment">// mirrors authoritative doc</span></div>
           </div>
         </div>
-        <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:8px; padding:12px 14px;">
-          <div style="font-size:13px; font-weight:700; color:#c0c0c0; margin-bottom:6px;">Config over hardcoding</div>
-          <div style="font-size:13px; color:#555; margin-bottom:6px;">No team-specific values as string literals in code.</div>
-          <div class="code-block" style="padding:8px 12px; font-size:12px;">
-            <div class="cb-bad">if (channel === "#eng-team")</div>
-            <div class="cb-val">config.mainChannel  <span class="cb-comment">// from WorkspaceConfig</span></div>
+        <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:6px; padding:10px 12px;">
+          <div style="font-size:12px; color:#888; margin-bottom:4px; font-weight:700;">Config over hardcoding</div>
+          <div class="code-block" style="padding:0; font-size:11px; background:transparent; border:none;">
+            <div class="cb-bad">if (channel === "#eng-team") <span class="cb-comment">// string literal</span></div>
+            <div class="cb-val">config.mainChannel <span class="cb-comment">// from env/config file</span></div>
           </div>
         </div>
-        <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:8px; padding:12px 14px;">
-          <div style="font-size:13px; font-weight:700; color:#c0c0c0; margin-bottom:4px;">Durable over fast</div>
-          <div style="font-size:13px; color:#555;">Flag the tradeoff before implementing. Never choose the brittle path silently.</div>
+        <div style="background:#0a0a0a; border:1px solid #1a1a1a; border-radius:6px; padding:10px 12px;">
+          <div style="font-size:12px; color:#888; margin-bottom:2px; font-weight:700;">Durable over fast</div>
+          <div style="font-size:11px; color:#444; font-style:italic;">Flag the tradeoff explicitly before implementing. Never choose the brittle path silently.</div>
         </div>
       </div>
     </div>
@@ -302,17 +309,18 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div style="font-size:11px; color:#555; font-family:var(--mono); margin-bottom:8px;">CLAUDE.md › Definition of Done (Non-Negotiable)</div>
       <table class="doc-table">
         <thead><tr><th>What changed</th><th>Must also update</th></tr></thead>
         <tbody>
-          <tr><td>New module or agent built</td><td>Architecture doc — design, inputs, outputs</td></tr>
-          <tr><td>New runtime behavior or data flow</td><td>Architecture doc — routing, sequence</td></tr>
-          <tr><td>New config field</td><td>.env.example — with comment</td></tr>
-          <tr><td>Solo-team shortcut taken</td><td>DECISIONS.md — what, why, scale gap</td></tr>
-          <tr><td>Backlog item completed</td><td>BACKLOG.md — move to Completed</td></tr>
+          <tr><td>New module or agent built</td><td><code>AGENTS.md</code> — persona, inputs, outputs</td></tr>
+          <tr><td>New runtime behavior or data flow</td><td><code>SYSTEM_ARCHITECTURE.md</code></td></tr>
+          <tr><td>New config field</td><td><code>.env.example</code> — with comment</td></tr>
+          <tr><td>Solo-team shortcut taken</td><td><code>DECISIONS.md</code> — what, why, scale gap</td></tr>
+          <tr><td>Backlog item completed</td><td><code>BACKLOG.md</code> — move to Completed</td></tr>
         </tbody>
       </table>
-      <div style="margin-top:10px; font-size:14px; color:#444; font-style:italic;">Rule: Do not ask if docs need updating — they always do if code changed. Do not defer.</div>
+      <div style="margin-top:8px; font-size:13px; color:#333; font-style:italic; border-left:2px solid #2a1515; padding-left:10px;">Do not ask if docs need updating — they always do if code changed. Do not defer to a later session.</div>
     </div>
     <div class="practice-sticky">
       <span class="ps-label sticks">Why it sticks</span>
@@ -337,22 +345,26 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
-      <div style="background:#060c14; border:1px solid #1a2a3a; border-radius:8px; padding:14px 16px; font-family:var(--mono); font-size:12px; color:#3a6a8a; margin-bottom:12px;">doc-sync-check.yml — runs on every PR to main</div>
+      <div class="code-block" style="font-size:11px; margin-bottom:8px;">
+        <div><span class="cb-comment">// .github/workflows/doc-sync-check.yml</span></div>
+        <div style="margin-top:4px;"><span class="cb-key">on:</span> <span class="cb-comment">pull_request: branches: [main]</span></div>
+        <div><span class="cb-key">jobs:</span> <span class="cb-comment">doc-sync → runs-on: ubuntu-latest</span></div>
+      </div>
       <div style="display:flex; flex-direction:column;">
         <div class="ci-rule">
           <span class="ci-trigger">agents/ modified</span>
-          <span class="ci-then">→ <strong>AGENTS.md</strong> must be in the diff or PR fails</span>
+          <span class="ci-then">→ <strong>AGENTS.md</strong> must be in the diff — <code>git diff --name-only origin/main</code></span>
         </div>
         <div class="ci-rule">
           <span class="ci-trigger">runtime/ modified</span>
-          <span class="ci-then">→ <strong>ARCHITECTURE.md</strong> must be in the diff or PR fails</span>
+          <span class="ci-then">→ <strong>SYSTEM_ARCHITECTURE.md</strong> must be in the diff</span>
         </div>
         <div class="ci-rule">
-          <span class="ci-trigger">config file modified</span>
-          <span class="ci-then">→ <strong>.env.example</strong> must be in the diff or PR fails</span>
+          <span class="ci-trigger">workspace-config.ts modified</span>
+          <span class="ci-then">→ <strong>.env.example</strong> must be in the diff</span>
         </div>
       </div>
-      <div style="margin-top:10px; font-size:13px; color:#3a1015; font-family:var(--mono);">❌ agents/ was modified but AGENTS.md was not updated.</div>
+      <div style="margin-top:10px; font-size:12px; color:#6a1a1a; font-family:var(--mono); background:#0a0505; border:1px solid #2a1010; padding:8px 10px; border-radius:6px;">❌ Error: agents/ was modified but AGENTS.md was not updated. PR blocked.</div>
     </div>
     <div class="practice-sticky">
       <span class="ps-label sticks">Why it sticks</span>
@@ -377,27 +389,22 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
-      <div style="display:flex; flex-direction:column;">
-        <div class="mem-row">
-          <span class="mem-type-name">feedback</span>
-          <span class="mem-type-when">How Claude should (and shouldn't) approach work. Saved on every correction <em>and</em> every confirmed non-obvious success.</span>
-          <span class="mem-type-ex">"Tests required for every behavior change — user had to ask twice before it was saved."</span>
-        </div>
-        <div class="mem-row">
-          <span class="mem-type-name">user</span>
-          <span class="mem-type-when">How this engineer thinks, what context they bring, how they prefer to learn.</span>
-          <span class="mem-type-ex">"Learns best from concrete/observable examples first, then abstract."</span>
-        </div>
-        <div class="mem-row">
-          <span class="mem-type-name">project</span>
-          <span class="mem-type-when">In-progress work, current constraints, decisions made this sprint.</span>
-          <span class="mem-type-ex">"Redis persistence is a prerequisite before the next phase can ship."</span>
-        </div>
-        <div class="mem-row">
-          <span class="mem-type-name">reference</span>
-          <span class="mem-type-when">Where things live in external systems — repos, dashboards, docs.</span>
-          <span class="mem-type-ex">"Brand tokens live in the brand repo, not this one."</span>
-        </div>
+      <div class="code-block" style="font-size:11px; margin-bottom:8px;">
+        <div><span class="cb-comment">// ~/.claude/projects/&lt;project-hash&gt;/memory/</span></div>
+        <div style="margin-top:4px;"><span class="cb-key">MEMORY.md</span>          <span class="cb-comment">← index, loaded at every session start</span></div>
+        <div><span class="cb-key">feedback_tests.md</span>  <span class="cb-comment">← correction: tests required before done</span></div>
+        <div><span class="cb-key">user_profile.md</span>    <span class="cb-comment">← how this engineer learns + works</span></div>
+        <div><span class="cb-key">project_context.md</span> <span class="cb-comment">← current sprint state, blockers</span></div>
+      </div>
+      <div class="code-block" style="font-size:11px;">
+        <div><span class="cb-comment">// Each memory file — frontmatter + body:</span></div>
+        <div style="margin-top:4px; color:#4a7a4a;">---</div>
+        <div><span class="cb-key">name:</span> Tests required for every behavior change</div>
+        <div><span class="cb-key">type:</span> feedback</div>
+        <div style="color:#4a7a4a;">---</div>
+        <div>Never mark a task done without tests. <span class="cb-comment">Why:</span> user had to</div>
+        <div>repeat this three sessions in a row before it was saved.</div>
+        <div><span class="cb-comment">How to apply:</span> check before every task completion.</div>
       </div>
     </div>
     <div class="practice-sticky">
@@ -423,20 +430,24 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        <div style="background:#080f08; border:1px solid #1a3a1a; border-radius:8px; padding:14px 16px;">
-          <div style="font-size:12px; font-weight:700; color:#4ade80; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;">Delegate to subagents</div>
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text">Broad codebase search — "find all places X is called"</div></div>
-            <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text">Multi-file research — "how does the auth flow work end to end?"</div></div>
-            <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text">Parallel independent questions — run both simultaneously</div></div>
+      <div class="code-block" style="font-size:11px; margin-bottom:8px;">
+        <div><span class="cb-comment">// CLAUDE.md › Subagent Strategy</span></div>
+        <div style="margin-top:6px; color:#ccc; line-height:1.7;">"Use subagents for exploration, research, and parallel analysis.<br>Keep the main context focused on implementation decisions.<br>One task per subagent."</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="background:#080f08; border:1px solid #1a3a1a; border-radius:6px; padding:10px 12px;">
+          <div style="font-size:11px; font-weight:700; color:#4ade80; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px;">Delegate</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text" style="font-size:12px;">Broad search — "find all callers of X across the repo"</div></div>
+            <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text" style="font-size:12px;">Multi-file trace — "how does auth flow end to end?"</div></div>
+            <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text" style="font-size:12px;">Parallel questions — fire both simultaneously</div></div>
           </div>
         </div>
-        <div style="background:#0f0808; border:1px solid #3a1a1a; border-radius:8px; padding:14px 16px;">
-          <div style="font-size:12px; font-weight:700; color:var(--red); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;">Keep in main context</div>
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Implementation decisions — writing code, making architectural calls</div></div>
-            <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Anything where the answer informs the next action immediately</div></div>
+        <div style="background:#0f0808; border:1px solid #3a1a1a; border-radius:6px; padding:10px 12px;">
+          <div style="font-size:11px; font-weight:700; color:var(--red); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px;">Keep in main</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div class="practice-item"><div class="pi-dot"></div><div class="pi-text" style="font-size:12px;">Writing code, making architectural calls</div></div>
+            <div class="practice-item"><div class="pi-dot"></div><div class="pi-text" style="font-size:12px;">Anything that immediately informs the next action</div></div>
           </div>
         </div>
       </div>
@@ -464,18 +475,20 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        <div style="background:#130508; border:1px solid #3a1015; border-radius:8px; padding:14px 16px;">
-          <div style="font-size:14px; color:#888; line-height:1.7;">
-            Before building the <strong style="color:#d0d0d0;">second piece</strong> of any system, a test suite must exist for the first.<br>
-            A behavior with no test <strong style="color:#d0d0d0;">does not count as done.</strong>
-          </div>
+      <div class="code-block" style="font-size:11px; margin-bottom:8px;">
+        <div><span class="cb-comment">// CLAUDE.md › Testing Discipline (Non-Negotiable)</span></div>
+        <div style="margin-top:6px; color:#ccc; line-height:1.7;">"Before building the second piece of any system,<br>a test suite must exist for the first.<br>A behavior with no test does not count as done."</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="background:var(--card); border:1px solid var(--border); border-radius:6px; padding:10px 12px;">
+          <div style="font-size:11px; font-weight:700; color:#444; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px;">Mocking pattern — also documented in CLAUDE.md</div>
+          <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text" style="font-size:12px;">All external deps mocked — no real API calls in CI</div></div>
+          <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text" style="font-size:12px;"><code>vi.hoisted()</code> for mocks used in <code>vi.mock()</code> factories</div></div>
+          <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text" style="font-size:12px;"><code>function()</code> syntax (not arrow) for constructors used with <code>new</code></div></div>
         </div>
-        <div style="display:flex; flex-direction:column; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:14px 16px;">
-          <div style="font-size:12px; font-weight:700; color:#444; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:2px;">Mocking discipline — also in CLAUDE.md</div>
-          <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text">All external dependencies mocked — no real API calls in the test suite</div></div>
-          <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text">Document the mocking pattern explicitly — it has sharp edges that trip everyone up</div></div>
-          <div class="practice-item"><div class="pi-dot" style="background:var(--green)"></div><div class="pi-text">CI runs the full suite on every push and PR to main</div></div>
+        <div class="code-block" style="font-size:11px;">
+          <div><span class="cb-comment">// CI: runs on every push + PR to main</span></div>
+          <div><span class="cb-key">npx vitest run</span> <span class="cb-comment">— zero real network calls, exits non-zero on fail</span></div>
         </div>
       </div>
     </div>
