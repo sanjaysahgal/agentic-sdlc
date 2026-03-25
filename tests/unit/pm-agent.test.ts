@@ -95,4 +95,32 @@ describe("buildPmSystemPrompt — spec link on approval-ready", () => {
     expect(prompt).toContain("https://github.com/o/r/blob/spec/onboarding-product/")
     expect(prompt).toContain("onboarding.product.md")
   })
+
+  it("requires Product Vision Updates section in every approved spec — non-negotiable enforcement", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Product Vision Updates")
+    expect(prompt).toContain("PROPOSED ADDITION TO PRODUCT_VISION.md")
+    expect(prompt).toContain("END PROPOSED ADDITION")
+  })
+
+  it("enforces Product Vision Updates section — explicitly states it is required in every spec", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Every approved feature spec must include the \"Product Vision Updates\" section")
+  })
+
+  it("cross-feature coherence — reads previously approved product specs before every response", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("cross-feature coherence")
+  })
+
+  it("injects approved feature specs when provided", () => {
+    const contextWithSpecs = { ...baseContext, approvedFeatureSpecs: "# Login Spec\n## Problem\nUsers can't log in." }
+    const prompt = buildPmSystemPrompt(contextWithSpecs, "onboarding")
+    expect(prompt).toContain("Users can't log in.")
+  })
+
+  it("states first feature message when no approved specs available", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("No other approved product specs yet")
+  })
 })

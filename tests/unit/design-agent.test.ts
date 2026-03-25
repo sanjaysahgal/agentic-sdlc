@@ -103,6 +103,30 @@ describe("buildDesignSystemPrompt", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("re-read the last question you asked")
   })
+
+  it("requires Design System Updates section in every approved spec — non-negotiable enforcement", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Design System Updates")
+    expect(prompt).toContain("PROPOSED ADDITION TO DESIGN_SYSTEM.md")
+    expect(prompt).toContain("END PROPOSED ADDITION")
+  })
+
+  it("enforces Design System Updates section — explicitly states it is required in every spec", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Every approved feature spec must include the \"Design System Updates\" section")
+  })
+
+  it("PRODUCT_SPEC_UPDATE instruction present — design agent can propose product spec changes when PM authorizes direction change", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("PRODUCT_SPEC_UPDATE_START")
+    expect(prompt).toContain("PRODUCT_SPEC_UPDATE_END")
+  })
+
+  it("post-draft sign-off — prompt instructs agent to end with 'Draft saved to GitHub. Review it and say approved'", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Draft saved to GitHub")
+    expect(prompt).toContain("approved")
+  })
 })
 
 describe("isCreateDesignSpecIntent", () => {
