@@ -9,6 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
+import { summarizeUnlockedDiscussion, buildEnrichedMessage } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 
@@ -265,13 +266,16 @@ async function runPmAgent(params: {
   }
 
   await update("_Product Manager is reading the spec..._")
-  const [context, lockedDecisionsPm] = await Promise.all([
+  const historyPm = getHistory(threadTs)
+  const PM_HISTORY_LIMIT = 40
+  const [context, lockedDecisionsPm, priorContextPm] = await Promise.all([
     loadAgentContext(featureName),
-    extractLockedDecisions(getHistory(threadTs)).catch(() => ""),
+    extractLockedDecisions(historyPm).catch(() => ""),
+    historyPm.length > PM_HISTORY_LIMIT
+      ? summarizeUnlockedDiscussion(historyPm.slice(0, -PM_HISTORY_LIMIT)).catch(() => "")
+      : Promise.resolve(""),
   ])
-  const enrichedUserMessagePm = lockedDecisionsPm
-    ? `[Decisions locked in this conversation:\n${lockedDecisionsPm}]\n\n${userMessage}`
-    : userMessage
+  const enrichedUserMessagePm = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsPm, priorContext: priorContextPm })
 
   // If the message is asking about the product as a whole (vision, architecture, principles),
   // answer from context directly — the pm agent is not the right framing for product-level questions.
@@ -295,10 +299,9 @@ async function runPmAgent(params: {
   }
 
   const systemPrompt = buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext)
-  const history = getHistory(threadTs)
 
   await update("_Product Manager is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessagePm, userImages })
+  const response = await runAgent({ systemPrompt, history: historyPm, userMessage: enrichedUserMessagePm, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -487,22 +490,24 @@ async function runDesignAgent(params: {
   }
 
   await update("_UX Designer is reading the spec and design context..._")
-  const [context, lockedDecisionsDesign] = await Promise.all([
+  const historyDesign = getHistory(threadTs)
+  const DESIGN_HISTORY_LIMIT = 20
+  const [context, lockedDecisionsDesign, priorContextDesign] = await Promise.all([
     loadDesignAgentContext(featureName),
-    extractLockedDecisions(getHistory(threadTs)).catch(() => ""),
+    extractLockedDecisions(historyDesign).catch(() => ""),
+    historyDesign.length > DESIGN_HISTORY_LIMIT
+      ? summarizeUnlockedDiscussion(historyDesign.slice(0, -DESIGN_HISTORY_LIMIT)).catch(() => "")
+      : Promise.resolve(""),
   ])
-  const enrichedUserMessageDesign = lockedDecisionsDesign
-    ? `[Decisions locked in this conversation:\n${lockedDecisionsDesign}]\n\n${userMessage}`
-    : userMessage
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
-  const history = getHistory(threadTs)
 
   await update("_UX Designer is thinking..._")
   // Design agent has a much larger context (system prompt + product vision + full draft spec)
   // than the PM agent. Cap at 20 messages (10 exchanges) so the combined payload stays well
-  // under the token limit. Agreed decisions are in the spec on GitHub — history doesn't need
-  // to carry the full negotiation trail.
-  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessageDesign, userImages, historyLimit: 20 })
+  // under the token limit. Prior conversation context beyond the limit is summarized and
+  // injected into the user message — no work is lost on long threads.
+  const response = await runAgent({ systemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`

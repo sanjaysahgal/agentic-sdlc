@@ -542,13 +542,14 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // extractLockedDecisions (Haiku, fires at >6 msgs)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "- Glow timing pending" }] }) // summarizeUnlockedDiscussion (Haiku, fires when history > 20)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // design runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "latest message")
     await handleFeatureChannelMessage(params)
 
-    // The 4th Anthropic call is the runAgent call — inspect its messages array
-    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
+    // The 5th Anthropic call is the runAgent call — inspect its messages array
+    const runAgentCall = mockAnthropicCreate.mock.calls[4][0]
     expect(runAgentCall.messages.length).toBeLessThanOrEqual(21)
 
     // The most recent history message should be present; the oldest (msg 0) should be gone
