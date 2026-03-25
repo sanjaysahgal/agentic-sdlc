@@ -463,7 +463,7 @@ async function runDesignAgent(params: {
           await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
           const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
           const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
-          previewNote = `\n\n_<${previewUrl}|Open preview> — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+          previewNote = `\n\n_<${previewUrl}|Open preview> (or <${rawUrl}|raw HTML> if that link is down) — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
         } catch (err: any) {
           console.error(`[preview] HTML generation failed: ${err?.message}`)
         }
