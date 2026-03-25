@@ -558,3 +558,49 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
     expect(allContent).toContain("latest message")
   })
 })
+
+// ─── Scenario 8: State query on long thread surfaces uncommitted-context note ──
+//
+// When a user says "hi" or "are you there" on a thread with prior history,
+// the state response must include a note that prior discussion may not be committed.
+// This prevents the user from thinking the spec is up to date when it isn't.
+
+describe("Scenario 8 — State query on long thread surfaces uncommitted-context note", () => {
+  const THREAD = "workflow-s8"
+
+  beforeEach(() => { clearHistory(THREAD) })
+  afterEach(() => { clearHistory(THREAD) })
+
+  it("state response includes uncommitted-context note when thread has prior history", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    // Seed >6 messages to trigger the uncommitted note
+    for (let i = 0; i < 10; i++) {
+      appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    }
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "true" }] })   // isSpecStateQuery → fast path
+
+    const params = makeParams(THREAD, "feature-onboarding", "hi")
+    await handleFeatureChannelMessage(params)
+
+    expect(lastUpdateText(params.client)).toContain("prior discussion")
+    expect(lastUpdateText(params.client)).toContain("tell me what direction")
+  })
+
+  it("state response has no uncommitted note when thread is short (fresh start)", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+    // No history seeded — fresh thread
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "true" }] })   // isSpecStateQuery
+
+    const params = makeParams(THREAD, "feature-onboarding", "hi")
+    await handleFeatureChannelMessage(params)
+
+    expect(lastUpdateText(params.client)).not.toContain("prior discussion")
+  })
+})

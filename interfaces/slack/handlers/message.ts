@@ -479,7 +479,11 @@ async function runDesignAgent(params: {
           console.error(`[preview] HTML generation failed: ${err?.message}`)
         }
       }
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote })
+      const threadHistory = getHistory(threadTs)
+      const uncommittedNote = threadHistory.length > 6
+        ? `\n\n_This thread has prior discussion that may not be fully reflected in the committed spec above. To pick up where you left off, tell me what direction you want to continue with._`
+        : ""
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote }) + uncommittedNote
       appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)
