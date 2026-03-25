@@ -454,16 +454,25 @@ async function runDesignAgent(params: {
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
-      // Link to the saved preview only if the file exists on the branch.
-      // The preview is generated fresh on every draft save — if it hasn't been saved yet, skip the link.
+      // Re-upload the saved preview if it exists — non-fatal.
+      // The preview is generated on every draft save; here we just re-serve it.
       let previewNote: string | null = null
       if (draftContent) {
         const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
-        const previewExists = await readFile(htmlFilePath, branchName)
-        if (previewExists) {
-          const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
-          const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
-          previewNote = `\n\n_<${previewUrl}|Open preview> (or <${rawUrl}|raw HTML> if that link is down) — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+        const previewContent = await readFile(htmlFilePath, branchName)
+        if (previewContent) {
+          try {
+            await client.files.uploadV2({
+              channel_id: channelId,
+              thread_ts: threadTs,
+              content: previewContent,
+              filename: `${featureName}.preview.html`,
+              title: `${featureName} — Design Preview`,
+            })
+            previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+          } catch (uploadErr: any) {
+            console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
+          }
         }
       }
       const threadHistory = getHistory(threadTs)
@@ -579,9 +588,19 @@ async function runDesignAgent(params: {
       const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
       const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/spec/${featureName}-design/${htmlFilePath}`
-      const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
-      previewNote = `\n\n_<${previewUrl}|Open preview> — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+      try {
+        await client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: htmlContent,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview`,
+        })
+        previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+      } catch (uploadErr: any) {
+        console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
+        previewNote = `\n\n_Preview saved to GitHub. To view it: open the spec branch, download \`${featureName}.preview.html\`, and open in any browser._`
+      }
     } catch (err: any) {
       console.error(`[preview] HTML generation failed: ${err?.message}`)
     }
