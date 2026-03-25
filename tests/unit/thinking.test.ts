@@ -158,7 +158,7 @@ describe("withThinking", () => {
     )
   })
 
-  it("on msg_too_long: shows specific message not generic", async () => {
+  it("on msg_too_long from run: shows specific message not generic", async () => {
     const client = makeClient()
     await expect(withThinking({
       client, channelId: "C123", threadTs: "1000.0",
@@ -171,6 +171,23 @@ describe("withThinking", () => {
     expect(client.chat.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining("Something went wrong") })
     )
+  })
+
+  it("on msg_too_long from chat.update: retries with shorter content", async () => {
+    const tooLongError = Object.assign(new Error("msg_too_long"), {})
+    const client = {
+      chat: {
+        postMessage: vi.fn().mockResolvedValue({ ts: "1234.5678" }),
+        update: vi.fn()
+          .mockRejectedValueOnce(tooLongError)  // first attempt fails
+          .mockResolvedValue({}),               // retry succeeds
+      },
+    }
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async (update) => { await update("A".repeat(500)) },
+    })
+    expect(client.chat.update).toHaveBeenCalledTimes(2)
   })
 
   it("truncates responses over 12000 chars at paragraph boundary", async () => {

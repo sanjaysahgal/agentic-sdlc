@@ -35,13 +35,24 @@ export async function withThinking(params: {
 
   // update() replaces the placeholder with the real content.
   // Agent label is prepended so the user always knows who is responding.
+  // If chat.update rejects with msg_too_long, retry with progressively shorter content.
   const agentPrefix = agent ? `*${agent}*\n\n` : ""
   const update = async (text: string) => {
-    await client.chat.update({
-      channel: channelId,
-      ts: messageTs,
-      text: truncateForSlack(`${agentPrefix}${text}`),
-    })
+    let truncated = truncateForSlack(`${agentPrefix}${text}`)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await client.chat.update({ channel: channelId, ts: messageTs, text: truncated })
+        return
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!msg.includes("msg_too_long")) throw err
+        // Halve the limit and retry
+        const limit = Math.floor(truncated.length / 2)
+        const cutoff = truncated.lastIndexOf("\n\n", limit)
+        truncated = truncated.slice(0, cutoff > 0 ? cutoff : limit) + "\n\n_[Response truncated.]_"
+      }
+    }
+    await client.chat.update({ channel: channelId, ts: messageTs, text: truncated })
   }
 
   incrementActiveRequests()

@@ -154,7 +154,9 @@ describe("buildEnrichedMessage", () => {
       lockedDecisions: "",
       priorContext: "- Glow timing under discussion",
     })
-    expect(result).toContain("[Prior conversation context — in progress, not yet locked:")
+    expect(result).toContain("Background from earlier in this thread")
+    expect(result).toContain("NEVER COMMITTED")
+    expect(result).toContain("Confirm with the user before acting")
     expect(result).toContain("- Glow timing under discussion")
     expect(result).toContain("Lock all 3")
   })

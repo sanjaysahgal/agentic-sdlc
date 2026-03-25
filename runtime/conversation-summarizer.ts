@@ -69,7 +69,7 @@ export function buildEnrichedMessage(params: {
   const parts: string[] = []
 
   if (priorContext) {
-    parts.push(`[Prior conversation context — in progress, not yet locked:\n${priorContext}]`)
+    parts.push(`[Background from earlier in this thread — these topics were discussed but NEVER COMMITTED to GitHub. Do not rebuild the spec or treat these as locked decisions. Use this only to understand where the conversation left off. Confirm with the user before acting:\n${priorContext}]`)
   }
   if (lockedDecisions) {
     parts.push(`[Decisions locked in this conversation:\n${lockedDecisions}]`)
