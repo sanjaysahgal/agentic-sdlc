@@ -461,7 +461,7 @@ The Anthropic call order differs per runner:
 **Architect agent**
 - runner does NOT crash when extractLockedDecisions throws — architect still responds
 
-### `tests/integration/workflows.test.ts` — 12 tests
+### `tests/integration/workflows.test.ts` — 17 tests
 
 End-to-end multi-turn workflow tests. Each scenario runs multiple `handleFeatureChannelMessage` calls in sequence, asserting state transitions between turns.
 
@@ -491,6 +491,14 @@ A new Slack thread (no `confirmedAgent`) reads GitHub branch state to determine 
 **Scenario 6 — confirmedAgent sticky routing**
 - second message in PM thread skips classifyIntent and goes straight to PM
 - confirmed design agent thread skips classifyIntent — goes straight to UX Designer
+
+**Scenario 8 — State query on long thread surfaces uncommitted-context note**
+- state response shows specific uncommitted decisions when thread has prior history
+- state response skips uncommitted section when all decisions are in the spec
+- state response has no uncommitted section when thread is short (fresh start)
+
+**Scenario 9 — Design patch flow**
+- patch block is applied to existing draft and merged draft is saved to GitHub
 
 ---
 
