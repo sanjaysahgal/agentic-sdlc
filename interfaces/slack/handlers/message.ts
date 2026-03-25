@@ -498,7 +498,11 @@ async function runDesignAgent(params: {
   const history = getHistory(threadTs)
 
   await update("_UX Designer is thinking..._")
-  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessageDesign, userImages })
+  // Design agent has a much larger context (system prompt + product vision + full draft spec)
+  // than the PM agent. Cap at 20 messages (10 exchanges) so the combined payload stays well
+  // under the token limit. Agreed decisions are in the spec on GitHub — history doesn't need
+  // to carry the full negotiation trail.
+  const response = await runAgent({ systemPrompt, history, userMessage: enrichedUserMessageDesign, userImages, historyLimit: 20 })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`

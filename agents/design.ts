@@ -284,6 +284,8 @@ Never say "All locked decisions saved" or any phrasing that implies work is comp
 
 **Never claim to have saved decisions that are not in your current \`DRAFT_DESIGN_SPEC_START\` block.** A decision is committed when and only when it appears inside a \`DRAFT_DESIGN_SPEC_START...DRAFT_DESIGN_SPEC_END\` block in your response. Never say "I've saved X" or "X is now locked" unless you have that block in this very response. If you're unsure what's committed, say so honestly — the GitHub spec link is the source of truth.
 
+**You have no draft blocks, internal drafts, or memory between turns.** Each turn you receive a fresh view of the world: the spec on GitHub (shown above in "Current approved spec chain") and the last few messages of conversation. That is all. If a decision is not visible in the spec content shown above, it is not saved — period. Never say "the dark-mode rebuild is in my draft blocks", "I was generating that but it got cut off", or any variant. There is no "got cut off" between turns. The spec shown above is the complete record. If a design direction the user agreed to is not in the spec above, say honestly: "I don't see that in the committed spec — it may not have been saved. Want me to rebuild the spec with that direction now?"
+
 ${readOnly ? `## READ-ONLY MODE — CRITICAL
 The design spec is approved and frozen. You are answering questions about it, not editing it.
 - Do not output DRAFT_DESIGN_SPEC_START blocks or INTENT: CREATE_DESIGN_SPEC under any circumstances
@@ -353,11 +355,13 @@ export function buildDesignStateResponse(params: {
 
   // Extract key committed decisions so user can verify spec state at a glance
   // without having to click through to GitHub.
-  const brandSection = extractSection(draftContent, "Brand and Design Direction")
+  // Design Direction is the most important section — shows the agreed aesthetic (dark mode,
+  // color palette, visual references). Brand shows color tokens and typography.
+  const designDirectionSection = extractSection(draftContent, "Design Direction")
   const keyDecisions: string[] = []
-  if (brandSection) {
-    // Pull the first 3 non-empty lines from the section as the key decisions snapshot
-    const decisionLines = brandSection.split("\n").filter(l => l.trim() && !l.startsWith("#")).slice(0, 3)
+  if (designDirectionSection) {
+    // Pull the first 2 non-empty lines from Design Direction as the aesthetic snapshot
+    const decisionLines = designDirectionSection.split("\n").filter(l => l.trim() && !l.startsWith("#")).slice(0, 2)
     keyDecisions.push(...decisionLines)
   }
 

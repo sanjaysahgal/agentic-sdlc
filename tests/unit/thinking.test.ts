@@ -82,7 +82,7 @@ describe("withThinking", () => {
     })).rejects.toThrow()
 
     expect(client.chat.update).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining("context limit") })
+      expect.objectContaining({ text: expect.stringContaining("too long") })
     )
     expect(client.chat.update).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })

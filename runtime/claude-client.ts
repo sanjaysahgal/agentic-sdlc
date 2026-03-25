@@ -24,8 +24,9 @@ export async function runAgent(params: {
   history: Message[]
   userMessage: string
   userImages?: UserImage[]
+  historyLimit?: number
 }): Promise<string> {
-  const { systemPrompt, history, userMessage, userImages } = params
+  const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT } = params
 
   const userContent: Anthropic.ContentBlockParam[] | string =
     userImages && userImages.length > 0
@@ -43,7 +44,7 @@ export async function runAgent(params: {
       : userMessage
 
   const raw: Anthropic.MessageParam[] = [
-    ...history.slice(-HISTORY_LIMIT).map((m) => ({
+    ...history.slice(-historyLimit).map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     })),

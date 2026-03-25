@@ -51,14 +51,25 @@ export async function withThinking(params: {
     const errMsg = err instanceof Error ? err.message : String(err)
     const isOverloaded = errMsg.includes("overloaded")
     const isImageError = errMsg.includes("Could not process image") || errMsg.includes("image.source")
-    const isContextLimit = errMsg.includes("too long") || errMsg.includes("context_length") || errMsg.includes("context length") || errMsg.includes("token") && errMsg.includes("maximum")
+    // Anthropic surfaces context limit errors with several different phrasings depending on
+    // the SDK version and error path — check all known variants
+    const isContextLimit =
+      errMsg.includes("too long") ||
+      errMsg.includes("context_length") ||
+      errMsg.includes("context length") ||
+      errMsg.includes("prompt is too long") ||
+      errMsg.includes("Input too long") ||
+      errMsg.includes("exceeded") && errMsg.includes("token") ||
+      errMsg.includes("token") && errMsg.includes("maximum") ||
+      errMsg.includes("maximum context") ||
+      errMsg.includes("reduce the length")
     const msg = isOverloaded
       ? "The AI is overloaded right now. Please try again in a moment."
       : isImageError
         ? "I couldn't process the attached image. Try sending it as a PNG screenshot instead of directly from the camera roll."
         : isContextLimit
-          ? ":warning: *This thread has hit the AI's context limit and can't continue.* Your spec is saved on GitHub — nothing is lost. Start a fresh top-level message (not a reply here) to pick up where you left off."
-          : "Something went wrong. Please try again. If this keeps happening, start a fresh top-level message — the thread may have accumulated too much history."
+          ? ":warning: *This thread is too long for the AI to continue.* Your spec is saved on GitHub — nothing is lost.\n\nStart a fresh top-level message (not a reply here) and say: *\"Continuing onboarding design — check the spec on GitHub for current state.\"* The agent will read the spec and pick up exactly where you left off."
+          : "Something went wrong. Please try again. If this keeps happening, start a fresh top-level message (not a reply) — the thread may have grown too long."
 
     // Structured error log — every field needed to diagnose a production failure
     console.error(JSON.stringify({
