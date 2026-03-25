@@ -516,3 +516,44 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
   })
 })
+
+// ─── Scenario 7: Design agent history cap (historyLimit: 20) ─────────────────
+//
+// runDesignAgent passes historyLimit: 20 to runAgent so the Anthropic payload
+// stays manageable even on long threads. Verify that when the conversation store
+// has more than 20 messages, the actual Anthropic call receives at most 21
+// messages (20 history + the current user message).
+
+describe("Scenario 7 — Design agent caps history at 20 messages", () => {
+  const THREAD = "workflow-s7"
+
+  beforeEach(() => { clearHistory(THREAD) })
+  afterEach(() => { clearHistory(THREAD) })
+
+  it("sends at most 21 messages to Anthropic (20 history + current) even when store has 40+", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    // Seed 40 alternating messages in the conversation store
+    for (let i = 0; i < 40; i++) {
+      appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    }
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // extractLockedDecisions (Haiku, fires at >6 msgs)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // design runAgent
+
+    const params = makeParams(THREAD, "feature-onboarding", "latest message")
+    await handleFeatureChannelMessage(params)
+
+    // The 4th Anthropic call is the runAgent call — inspect its messages array
+    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
+    expect(runAgentCall.messages.length).toBeLessThanOrEqual(21)
+
+    // The most recent history message should be present; the oldest (msg 0) should be gone
+    const allContent = runAgentCall.messages.map((m: { content: string }) => m.content).join(" ")
+    expect(allContent).not.toContain("msg 0")
+    expect(allContent).toContain("latest message")
+  })
+})
