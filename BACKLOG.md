@@ -111,6 +111,7 @@ This is documented in `DECISIONS.md` as a known shortcut. It was acceptable whil
 - `REDIS_URL` added to `.env.example` and `WorkspaceConfig`
 - Graceful degradation: if Redis is unavailable, fall back to in-memory (not disk) with a Slack warning — history may not survive a restart but the bot stays operational
 - Conversation summary cache (`runtime/conversation-summarizer.ts`) moved to Redis — currently in-memory, so the first message after a restart on a long thread re-pays the Haiku summarization cost
+- Adaptive Slack truncation: currently pre-truncates at 12,000 chars (a conservative guess). Proper fix is to catch `msg_too_long` from `chat.update` and retry with progressively shorter content until it succeeds, rather than blindly cutting at a fixed limit
 
 **This is Step 5 of the original backlog, pulled forward.** It was originally bundled with deployment because "Redis needs a server." That thinking is wrong — Redis can be added as a managed add-on to any environment (Railway, Fly.io, Upstash) independently of deploying the bot. Do not wait for full production deployment to fix the memory persistence model.
 

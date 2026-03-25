@@ -183,7 +183,7 @@ describe("withThinking", () => {
     })
 
     const updated = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls[0][0].text
-    expect(updated.length).toBeLessThan(40_000)
+    expect(updated.length).toBeLessThan(13_000)
     expect(updated).toContain("[Response truncated")
   })
 
