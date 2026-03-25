@@ -148,10 +148,10 @@
   /* Compound section */
   .compound-row { display: flex; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid #141414; }
   .compound-row:last-child { border-bottom: none; }
-  .cr-practice { font-size: 13px; font-weight: 700; color: #888; flex-shrink: 0; min-width: 180px; }
-  .cr-without  { font-size: 14px; color: #3a1a1a; flex: 1; }
-  .cr-with     { font-size: 14px; color: #1a3a1a; flex: 1; }
-  .cr-arrow    { color: #252525; flex-shrink: 0; }
+  .cr-practice { font-size: 13px; font-weight: 700; color: #999; flex-shrink: 0; min-width: 180px; }
+  .cr-without  { font-size: 14px; color: #8a4040; flex: 1; }
+  .cr-with     { font-size: 14px; color: #4a8a5a; flex: 1; }
+  .cr-arrow    { color: #444; flex-shrink: 0; }
 
   /* Progress */
   .reveal .progress { color: var(--red); }
@@ -436,9 +436,9 @@
   <div class="practice" style="margin-top:0;">
     <div class="practice-challenge">
       <div class="ps-label challenge">The challenge</div>
-      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Exploration tasks — finding files, reading multiple modules, tracing data flow — flood the main context with raw results.</div></div>
-      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">A context full of search results and intermediate reads degrades the quality of the implementation decision that follows.</div></div>
-      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Claude doing exploration inline means the main session is doing two jobs with one context window.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">Claude's context window is finite. Every inline search, grep, and file read consumes it — permanently.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">By the time exploration finishes, the context is full of dead ends and intermediate results. The implementation decision gets made on a cluttered window — and quality visibly degrades.</div></div>
+      <div class="practice-item"><div class="pi-dot"></div><div class="pi-text">This isn't a readability problem. It's a reasoning quality problem.</div></div>
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
@@ -524,39 +524,39 @@
   <div style="display:flex; flex-direction:column; gap:0; margin-top:8px;">
     <div class="compound-row">
       <span class="cr-practice">CLAUDE.md</span>
-      <span class="cr-without" style="color:#3a1a1a;">Without: every session negotiates constraints from scratch</span>
+      <span class="cr-without" >Without: every session negotiates constraints from scratch</span>
       <span class="cr-arrow">→</span>
-      <span class="cr-with" style="color:#1a3a1a;">With: constraints are the starting point, not the conversation</span>
+      <span class="cr-with" >With: constraints are the starting point, not the conversation</span>
     </div>
     <div class="compound-row">
       <span class="cr-practice">Definition of Done</span>
-      <span class="cr-without" style="color:#3a1a1a;">Without: docs drift silently — noticed months later</span>
+      <span class="cr-without" >Without: docs drift silently — noticed months later</span>
       <span class="cr-arrow">→</span>
-      <span class="cr-with" style="color:#1a3a1a;">With: doc updates are a named deliverable on every task</span>
+      <span class="cr-with" >With: doc updates are a named deliverable on every task</span>
     </div>
     <div class="compound-row">
       <span class="cr-practice">CI enforcement</span>
-      <span class="cr-without" style="color:#3a1a1a;">Without: DoD is aspirational — skipped under deadline pressure</span>
+      <span class="cr-without" >Without: DoD is aspirational — skipped under deadline pressure</span>
       <span class="cr-arrow">→</span>
-      <span class="cr-with" style="color:#1a3a1a;">With: DoD is structural — enforced at merge, no willpower needed</span>
+      <span class="cr-with" >With: DoD is structural — enforced at merge, no willpower needed</span>
     </div>
     <div class="compound-row">
       <span class="cr-practice">Memory system</span>
-      <span class="cr-without" style="color:#3a1a1a;">Without: corrections reset each session — team keeps re-explaining</span>
+      <span class="cr-without" >Without: corrections reset each session — team keeps re-explaining</span>
       <span class="cr-arrow">→</span>
-      <span class="cr-with" style="color:#1a3a1a;">With: corrections compound — AI collaboration improves over time</span>
+      <span class="cr-with" >With: corrections compound — AI collaboration improves over time</span>
     </div>
     <div class="compound-row">
       <span class="cr-practice">Subagent strategy</span>
-      <span class="cr-without" style="color:#3a1a1a;">Without: exploration bloats context — decision quality degrades</span>
+      <span class="cr-without" >Without: exploration bloats context — decision quality degrades</span>
       <span class="cr-arrow">→</span>
-      <span class="cr-with" style="color:#1a3a1a;">With: main context stays sharp — focused on the decision, not the search</span>
+      <span class="cr-with" >With: main context stays sharp — focused on the decision, not the search</span>
     </div>
     <div class="compound-row" style="border:none;">
       <span class="cr-practice">Testing discipline</span>
-      <span class="cr-without" style="color:#3a1a1a;">Without: test debt compounds at AI pace — untested surface grows fast</span>
+      <span class="cr-without" >Without: test debt compounds at AI pace — untested surface grows fast</span>
       <span class="cr-arrow">→</span>
-      <span class="cr-with" style="color:#1a3a1a;">With: every behavior is tested before the next one starts</span>
+      <span class="cr-with" >With: every behavior is tested before the next one starts</span>
     </div>
   </div>
   <aside class="notes">None of these practices are expensive to put in place. CLAUDE.md takes an hour to write. The CI check takes 40 lines. The memory system is a folder and an index file. The total setup cost is a day. The payoff is months of compounding quality.</aside>
