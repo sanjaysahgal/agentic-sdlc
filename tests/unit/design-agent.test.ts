@@ -337,6 +337,21 @@ describe("cross-phase escalation helpers", () => {
       const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
       expect(prompt).toContain("The spec shown above is the complete record")
     })
+
+    it("no-reconstruct rule — forbids listing specific design values not in the spec", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("Never reconstruct or list specific design decisions that are not in the spec above")
+    })
+
+    it("no-reconstruct rule — explicitly names the failure pattern (color tokens, timings)", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("color tokens, animation timings")
+    })
+
+    it("no-reconstruct rule — prescribes the honest response when decisions are missing", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("Could you tell me what was agreed and I'll build the spec with those decisions now?")
+    })
   })
 })
 

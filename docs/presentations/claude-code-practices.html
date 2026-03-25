@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code in Practice</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<style>
+  :root {
+    --red:   #e63946;
+    --white: #f0f0f0;
+    --dim:   #888;
+    --bg:    #0a0a0a;
+    --card:  #0e0e0e;
+    --border:#1e1e1e;
+    --mono:  'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  .reveal-viewport, .reveal { background: var(--bg); }
+  .reveal .slides { text-align: left; }
+  .reveal .slides section {
+    height: 900px;
+    padding: 0 80px;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .reveal .slides section.top { justify-content: flex-start; padding-top: 60px; }
+
+  .reveal h1,.reveal h2,.reveal h3,.reveal p,
+  .reveal ul,.reveal ol,.reveal li { margin: 0; text-transform: none; }
+
+  .reveal .eyebrow {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.15em;
+    text-transform: uppercase !important; color: var(--red); margin-bottom: 20px;
+  }
+  .reveal .eyebrow.gray { color: #333; }
+
+  .reveal h1 {
+    font-size: 96px; font-weight: 800; letter-spacing: -0.04em;
+    line-height: 1; color: var(--white);
+  }
+  .reveal h2 {
+    font-size: 52px; font-weight: 800; letter-spacing: -0.03em;
+    line-height: 1.1; color: var(--white); margin-bottom: 28px;
+  }
+  .reveal h2.tight { margin-bottom: 20px; }
+  .reveal .sub { font-size: 24px; color: var(--dim); font-weight: 400; line-height: 1.5; margin-top: 16px; }
+  .reveal .statement { font-size: 44px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; color: var(--white); }
+  .reveal p { font-size: 22px; line-height: 1.65; color: #bbb; }
+  .reveal .dim { color: #555; font-size: 18px; margin-top: 16px; }
+  .reveal .accent { color: var(--red); }
+  .reveal code {
+    font-family: var(--mono); font-size: 0.85em;
+    background: #1a1a1a; color: var(--red); padding: 2px 7px; border-radius: 4px;
+  }
+
+  /* Pills */
+  .pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 32px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 500; padding: 7px 16px; border-radius: 20px; border: 1px solid; }
+  .pill.red   { color: #e63946; border-color: #3a1015; background: #160508; }
+  .pill.green { color: #4ade80; border-color: #1a3a23; background: #0a180e; }
+  .pill.gray  { color: #888;    border-color: #252525; background: #111; }
+  .pill .dot  { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* Problem list */
+  .problem-list { margin-top: 8px; }
+  .problem-item { padding: 20px 0; border-bottom: 1px solid #1a1a1a; display: flex; gap: 24px; align-items: baseline; }
+  .problem-item:last-child { border-bottom: none; }
+  .problem-item .num { font-size: 14px; font-weight: 700; color: var(--red); flex-shrink: 0; }
+  .problem-item .text { font-size: 26px; font-weight: 500; color: #d0d0d0; line-height: 1.3; }
+
+  /* File anatomy */
+  .file-block {
+    background: #080f18; border: 1px solid #1a2a3a; border-radius: 12px;
+    padding: 20px 24px; font-family: var(--mono); font-size: 13px;
+  }
+  .file-block .fb-filename {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #3a6a8a; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #1a2a3a;
+  }
+  .file-section { margin-bottom: 10px; }
+  .file-section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red); margin-bottom: 6px; }
+  .file-line { display: flex; align-items: baseline; gap: 12px; padding: 3px 0; }
+  .file-line .fl-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 3px; flex-shrink: 0; white-space: nowrap;
+  }
+  .fl-badge.constraint { background: #3a1015; color: #e63946; }
+  .fl-badge.checklist  { background: #1a2a10; color: #6a9a40; }
+  .fl-badge.rule       { background: #1a1a0a; color: #9a8040; }
+  .file-line .fl-text  { font-size: 12px; color: #666; line-height: 1.4; }
+
+  /* DoD table */
+  .dod-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .dod-table th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; padding: 10px 16px; border-bottom: 1px solid #1e1e1e; }
+  .dod-table td { padding: 14px 16px; border-bottom: 1px solid #161616; font-size: 16px; vertical-align: top; }
+  .dod-table td:first-child { color: #888; font-size: 15px; }
+  .dod-table td:last-child  { color: #c0c060; font-family: var(--mono); font-size: 13px; }
+  .dod-table tr:last-child td { border-bottom: none; }
+
+  /* CI anatomy */
+  .ci-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+  .ci-rule { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; display: flex; gap: 20px; align-items: flex-start; }
+  .ci-rule.enforced { border-color: #3a1015; background: #130508; }
+  .ci-trigger { font-family: var(--mono); font-size: 13px; color: var(--red); flex-shrink: 0; min-width: 200px; padding-top: 2px; }
+  .ci-requires { font-size: 15px; color: #666; line-height: 1.5; }
+  .ci-requires strong { color: #c0c060; font-family: var(--mono); font-weight: 600; font-size: 13px; }
+  .ci-error { font-size: 12px; color: #3a1015; font-family: var(--mono); margin-top: 4px; }
+
+  /* Memory system */
+  .mem-types { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+  .mem-type { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .mem-type .mt-name { font-size: 14px; font-weight: 700; color: var(--white); margin-bottom: 6px; }
+  .mem-type .mt-when { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 8px; }
+  .mem-type .mt-example { font-size: 12px; color: #888; font-family: var(--mono); background: #111; padding: 8px 10px; border-radius: 6px; line-height: 1.6; }
+
+  /* Subagent strategy */
+  .sa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+  .sa-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; }
+  .sa-card.do   { border-color: #1a3a1a; background: #080f08; }
+  .sa-card.dont { border-color: #3a1a1a; background: #100808; }
+  .sa-card .sa-label { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 12px; }
+  .sa-card.do .sa-label   { color: #4ade80; }
+  .sa-card.dont .sa-label { color: var(--red); }
+  .sa-card ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .sa-card li { font-size: 17px; color: #888; line-height: 1.4; display: flex; gap: 10px; }
+  .sa-dot { flex-shrink: 0; margin-top: 4px; }
+  .sa-card.do .sa-dot   { color: #4ade80; }
+  .sa-card.dont .sa-dot { color: var(--red); }
+
+  /* Feedback loop */
+  .loop-steps { display: flex; align-items: center; gap: 0; margin-top: 28px; }
+  .loop-step { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 16px; text-align: center; }
+  .loop-step .ls-icon { font-size: 28px; margin-bottom: 8px; }
+  .loop-step .ls-name { font-size: 16px; font-weight: 700; color: var(--white); margin-bottom: 4px; }
+  .loop-step .ls-detail { font-size: 13px; color: #555; line-height: 1.4; }
+  .loop-arrow { padding: 0 8px; color: #252525; font-size: 22px; flex-shrink: 0; }
+
+  /* Principles */
+  .principle-row { padding: 22px 0; border-bottom: 1px solid #141414; display: flex; gap: 28px; align-items: flex-start; }
+  .principle-row:last-child { border-bottom: none; }
+  .pr-num { font-size: 44px; font-weight: 800; color: #1a1a1a; flex-shrink: 0; width: 52px; letter-spacing: -0.04em; line-height: 1; }
+  .pr-body h3 { font-size: 22px; font-weight: 700; color: var(--white); margin-bottom: 4px; }
+  .pr-body p  { font-size: 16px; color: #666; line-height: 1.5; }
+
+  /* Progress */
+  .reveal .progress { color: var(--red); }
+  .reveal .slide-number { font-size: 12px; color: #333; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ════════════════════════════════════════
+     1 — TITLE
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">Engineering · March 2026</div>
+  <h1>Claude Code<br><span class="accent">in practice</span></h1>
+  <div class="sub">How we work with AI on a production codebase — without losing control of it</div>
+  <div class="pills">
+    <span class="pill green"><span class="dot"></span>agentic-sdlc</span>
+    <span class="pill gray">Claude Code CLI + SDK</span>
+  </div>
+  <aside class="notes">This is the meta layer — how we use Claude Code to build the platform that uses Claude. We dog-food our own tooling.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     2 — THE PROBLEM
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The problem</div>
+  <div class="statement">AI helps fast.<br>But it <span class="accent">forgets everything.</span></div>
+  <div class="problem-list" style="margin-top:32px;">
+    <div class="problem-item">
+      <div class="num">01</div>
+      <div class="text">Every session starts from zero — same mistakes, same explanations.</div>
+    </div>
+    <div class="problem-item">
+      <div class="num">02</div>
+      <div class="text">No shared understanding of what "done" means — docs drift from code.</div>
+    </div>
+    <div class="problem-item">
+      <div class="num">03</div>
+      <div class="text">Without constraints, Claude will optimize for fast over durable.</div>
+    </div>
+  </div>
+  <aside class="notes">The default AI coding session: fast output, no memory, no constraints. You get code that works today but accumulates invisible technical debt. The practices in this deck are the answer to all three problems.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     3 — CLAUDE.MD
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The contract</div>
+  <h2 class="tight">CLAUDE.md — Claude reads this before touching anything</h2>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;">
+    <div class="file-block">
+      <div class="fb-filename">CLAUDE.md</div>
+
+      <div class="file-section">
+        <div class="file-section-label">What this repo is</div>
+        <div class="file-line">
+          <span class="fl-badge constraint">Context</span>
+          <span class="fl-text">Generic platform — not tied to one product. Health360 is the first customer, not a dependency.</span>
+        </div>
+      </div>
+
+      <div class="file-section">
+        <div class="file-section-label">Core principles (non-negotiable)</div>
+        <div class="file-line"><span class="fl-badge constraint">Rule</span><span class="fl-text">Single source of truth — never duplicate information</span></div>
+        <div class="file-line"><span class="fl-badge constraint">Rule</span><span class="fl-text">No hardcoding — everything belongs in WorkspaceConfig</span></div>
+        <div class="file-line"><span class="fl-badge constraint">Rule</span><span class="fl-text">Config is the only coupling point — .env only</span></div>
+        <div class="file-line"><span class="fl-badge constraint">Rule</span><span class="fl-text">Durable over fast — flag the tradeoff before implementing</span></div>
+        <div class="file-line"><span class="fl-badge constraint">Rule</span><span class="fl-text">Extensibility by default — build for the next agent coming</span></div>
+      </div>
+
+      <div class="file-section">
+        <div class="file-section-label">Before writing any code</div>
+        <div class="file-line"><span class="fl-badge checklist">Check</span><span class="fl-text">Is this the right next step in BACKLOG.md?</span></div>
+        <div class="file-line"><span class="fl-badge checklist">Check</span><span class="fl-text">Does this value belong in WorkspaceConfig?</span></div>
+        <div class="file-line"><span class="fl-badge checklist">Check</span><span class="fl-text">Is there a single source of truth I'm reading from?</span></div>
+        <div class="file-line"><span class="fl-badge checklist">Check</span><span class="fl-text">Would this work for a second team tomorrow without code changes?</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div class="file-block">
+        <div class="fb-filename">Behavioral rules</div>
+        <div class="file-section">
+          <div class="file-line"><span class="fl-badge rule">Rule</span><span class="fl-text">Autonomous bug fixing — fix end-to-end, no hand-holding</span></div>
+          <div class="file-line"><span class="fl-badge rule">Rule</span><span class="fl-text">Demand elegance — ask "is there a cleaner way?" before presenting</span></div>
+          <div class="file-line"><span class="fl-badge rule">Rule</span><span class="fl-text">Self-correction — save feedback memory immediately on correction</span></div>
+          <div class="file-line"><span class="fl-badge rule">Rule</span><span class="fl-text">Subagent strategy — delegate exploration, keep main context lean</span></div>
+        </div>
+      </div>
+      <div style="background:#080808; border:1px solid #141414; border-radius:10px; padding:16px 18px;">
+        <div style="font-size:13px; color:#555; line-height:1.7;">CLAUDE.md is the first thing loaded on every session. It is checked into the repo — version-controlled, reviewable, enforceable. It is not a suggestion. The opening line is: <span style="font-style:italic; color:#444;">"Read this before doing anything. These are non-negotiable constraints."</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">CLAUDE.md is Claude Code's entry point. It primes the session before any user message is processed. The "before writing any code" checklist is the most important section — it prevents the most common category of drift.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     4 — DEFINITION OF DONE
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Definition of Done</div>
+  <h2 class="tight">Code changed? These docs change too. Always.</h2>
+
+  <table class="dod-table">
+    <thead>
+      <tr><th>What changed</th><th>What must be updated</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>New agent built or modified</td><td>AGENTS.md — persona, capabilities, inputs/outputs</td></tr>
+      <tr><td>New runtime behavior, routing, or data flow</td><td>SYSTEM_ARCHITECTURE.md — architecture section</td></tr>
+      <tr><td>New backlog item completed</td><td>BACKLOG.md — move to Completed</td></tr>
+      <tr><td>New solo-team shortcut taken</td><td>DECISIONS.md — add entry with scale gap</td></tr>
+      <tr><td>New WorkspaceConfig field added</td><td>.env.example — add with comment</td></tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top:20px; padding:16px 20px; background:#080f08; border:1px solid #1a3a1a; border-radius:8px; font-size:17px; color:#555;">
+    <span style="color:#4ade80; font-weight:600;">Enforced rule:</span> Do not ask if docs need updating — they always do if code changed. Do not defer. Update before marking done.
+  </div>
+  <aside class="notes">Without this table, doc drift is inevitable. Claude will happily write code and call it done without touching the docs. The table makes the expectation explicit and machine-enforceable.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     5 — CI ENFORCEMENT
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">CI enforcement</div>
+  <h2 class="tight">The Definition of Done backed by a CI check</h2>
+
+  <div class="ci-flow">
+    <div class="ci-rule enforced">
+      <div class="ci-trigger">agents/ modified</div>
+      <div class="ci-requires">
+        <strong>AGENTS.md</strong> must also be in the diff<br>
+        <div class="ci-error">❌ agents/ was modified but AGENTS.md was not updated.</div>
+      </div>
+    </div>
+    <div class="ci-rule enforced">
+      <div class="ci-trigger">runtime/ modified</div>
+      <div class="ci-requires">
+        <strong>SYSTEM_ARCHITECTURE.md</strong> must also be in the diff<br>
+        <div class="ci-error">❌ runtime/ was modified but SYSTEM_ARCHITECTURE.md was not updated.</div>
+      </div>
+    </div>
+    <div class="ci-rule enforced">
+      <div class="ci-trigger">workspace-config.ts modified</div>
+      <div class="ci-requires">
+        <strong>.env.example</strong> must also be in the diff<br>
+        <div class="ci-error">❌ workspace-config.ts was modified but .env.example was not updated.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; font-size:15px; color:#444;">
+    <code>.github/workflows/doc-sync-check.yml</code> — runs on every PR to main. A PR that touches code without touching the relevant docs <strong style="color:#888;">cannot merge.</strong>
+  </div>
+  <aside class="notes">The CI check is the enforcement layer for the Definition of Done table. Claude writes code correctly most of the time, but the CI catches the cases where it doesn't. You cannot ship a PR that adds an agent without documenting it. This is not optional.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     6 — MEMORY SYSTEM
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Memory system</div>
+  <h2 class="tight">Corrections persist — same mistake never happens twice</h2>
+
+  <div class="mem-types">
+    <div class="mem-type">
+      <div class="mt-name">feedback</div>
+      <div class="mt-when">When: user corrects an approach OR confirms a non-obvious approach worked</div>
+      <div class="mt-example">"Tests required for every behavior change"<br>— user had to point this out twice before it was saved</div>
+    </div>
+    <div class="mem-type">
+      <div class="mt-name">user</div>
+      <div class="mt-when">When: learning how the user thinks, what context they bring</div>
+      <div class="mt-example">"Learns best from concrete/observable first (process, command, file), then abstract"</div>
+    </div>
+    <div class="mem-type">
+      <div class="mt-name">project</div>
+      <div class="mt-when">When: learning about in-progress work, decisions, constraints, deadlines</div>
+      <div class="mt-example">"Redis persistence is a prerequisite before production deployment"</div>
+    </div>
+    <div class="mem-type">
+      <div class="mt-name">reference</div>
+      <div class="mt-when">When: learning where external information lives</div>
+      <div class="mt-example">"Brand tokens and design system live in agentic-brand repo"</div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px; font-size:15px; color:#444;">Each type lives in its own file under <code>~/.claude/projects/&lt;repo&gt;/memory/</code>, indexed by <code>MEMORY.md</code>. Loaded on every session. Corrections are saved immediately — not at session end.</div>
+  <aside class="notes">The memory system is what makes Claude Code feel like a collaborator that learns, not a tool that resets. The key insight: corrections need to be saved immediately. If you wait until the end of the session, you forget. The CLAUDE.md instruction says: "After any correction, immediately save a feedback memory."</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     7 — SUBAGENT STRATEGY
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Subagent strategy</div>
+  <h2 class="tight">Main context for decisions. Subagents for everything else.</h2>
+
+  <div class="sa-grid">
+    <div class="sa-card do">
+      <div class="sa-label">Delegate to subagents</div>
+      <ul>
+        <li><span class="sa-dot">→</span>Broad codebase exploration — finding patterns, tracing data flow</li>
+        <li><span class="sa-dot">→</span>Research tasks — reading multiple files to answer a question</li>
+        <li><span class="sa-dot">→</span>Parallel analysis — two independent questions run simultaneously</li>
+        <li><span class="sa-dot">→</span>Large result sets — grep results that would flood main context</li>
+      </ul>
+    </div>
+    <div class="sa-card dont">
+      <div class="sa-label">Keep in main context</div>
+      <ul>
+        <li><span class="sa-dot">→</span>Implementation decisions — changes that require judgment</li>
+        <li><span class="sa-dot">→</span>Architecture discussions — reasoning over tradeoffs</li>
+        <li><span class="sa-dot">→</span>Anything where the answer informs the next action</li>
+        <li><span class="sa-dot">→</span>The actual writing of code or docs</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; padding:14px 18px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:16px; color:#555; line-height:1.6;">
+    Rule in CLAUDE.md: <em style="color:#777;">"Use subagents for exploration, research, and parallel analysis — keep the main context focused on implementation decisions. One task per subagent."</em>
+  </div>
+  <aside class="notes">Context window is expensive. Flooding the main context with exploration results degrades the quality of implementation decisions. Subagents run in isolated contexts — their results come back as a clean summary, not as noise in the main thread.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     8 — TESTING DISCIPLINE
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Testing discipline</div>
+  <h2 class="tight">Tests are not optional and do not require prompting</h2>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; margin-top:8px;">
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="background:#130508; border:1px solid #3a1015; border-radius:10px; padding:20px 22px;">
+        <div style="font-size:14px; font-weight:700; color:#e63946; margin-bottom:10px;">The rule</div>
+        <div style="font-size:17px; color:#888; line-height:1.6;">Before building the <strong style="color:#d0d0d0;">second piece</strong> of any system, a test suite must exist for the first.<br><br>Every new agent behavior must have a corresponding test. A behavior with no test does not count as done.</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px 20px;">
+        <div style="font-size:14px; font-weight:700; color:#d0d0d0; margin-bottom:8px;">Why it's in CLAUDE.md</div>
+        <div style="font-size:15px; color:#555; line-height:1.6;">Without explicit instruction, Claude will write code, call it done, and move on. The test requirement is not a reminder — it is part of the definition of completion.</div>
+      </div>
+    </div>
+    <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px 22px;">
+      <div style="font-size:13px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#444; margin-bottom:14px;">Current coverage — 86 tests across 8 files</div>
+      <div style="display:flex; flex-direction:column; gap:8px; font-family:var(--mono); font-size:13px;">
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">workspace-config.test.ts</span><span style="color:#555;">env loading, validation</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">pm-agent.test.ts</span><span style="color:#555;">spec helpers, intent detection</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">agent-router.test.ts</span><span style="color:#555;">phase detection, classification</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">spec-auditor.test.ts</span><span style="color:#555;">OK / CONFLICT / GAP</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">github-client.test.ts</span><span style="color:#555;">read, save, phase detection</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">context-loader.test.ts</span><span style="color:#555;">parallel loading, relevance filter</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #161616;"><span style="color:#888;">conversation-store.test.ts</span><span style="color:#555;">thread isolation, persistence</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0;"><span style="color:#888;">concierge.test.ts</span><span style="color:#555;">system prompt, feature status</span></div>
+      </div>
+      <div style="margin-top:12px; font-size:13px; color:#444; font-style:italic;">All external dependencies mocked — no real API calls in tests.</div>
+    </div>
+  </div>
+  <aside class="notes">The vi.hoisted() pattern for mocks in vitest is the key technical pattern — factories run before module-level code, so mocks must be hoisted. This tripped us up early and is now documented in SYSTEM_ARCHITECTURE.md mocking pattern section.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     9 — THE FEEDBACK LOOP
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The feedback loop</div>
+  <h2 class="tight">How behavior change becomes permanent</h2>
+
+  <div class="loop-steps">
+    <div class="loop-step">
+      <div class="ls-icon">💬</div>
+      <div class="ls-name">Correction</div>
+      <div class="ls-detail">User corrects Claude's approach in conversation</div>
+    </div>
+    <div class="loop-arrow">→</div>
+    <div class="loop-step" style="border-color:#3a1015; background:#130508;">
+      <div class="ls-icon">📝</div>
+      <div class="ls-name">Immediate save</div>
+      <div class="ls-detail">Feedback memory written — not at session end. Includes what, why, and how to apply.</div>
+    </div>
+    <div class="loop-arrow">→</div>
+    <div class="loop-step">
+      <div class="ls-icon">🔄</div>
+      <div class="ls-name">Next session</div>
+      <div class="ls-detail">MEMORY.md loaded — correction is in context before the first message</div>
+    </div>
+    <div class="loop-arrow">→</div>
+    <div class="loop-step" style="border-color:#1a3a23; background:#0a180e;">
+      <div class="ls-icon">✓</div>
+      <div class="ls-name">Persistent behavior</div>
+      <div class="ls-detail">Same situation — correct behavior without being told again</div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px; display:flex; flex-direction:column; gap:10px;">
+    <div style="font-size:15px; color:#444; line-height:1.6;">Memory entries have structure: the rule, <strong style="color:#555;">Why:</strong> (the reason — often a past incident), <strong style="color:#555;">How to apply:</strong> (when it kicks in). Knowing <em>why</em> lets Claude judge edge cases instead of blindly following the rule.</div>
+  </div>
+  <aside class="notes">The critical insight is "immediately" — corrections saved at end-of-session are often forgotten or incomplete. The CLAUDE.md instruction is explicit: "After any correction from the user, immediately save a feedback memory." Two memory categories feed this loop: feedback (corrections) and user (learned preferences and mental models).</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     10 — WHAT THIS PRODUCES
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">What this produces</div>
+  <h2 class="tight">Consistent, auditable, self-correcting AI collaboration</h2>
+
+  <div style="display:flex; flex-direction:column; gap:0; margin-top:8px;">
+    <div class="principle-row">
+      <div class="pr-num">01</div>
+      <div class="pr-body">
+        <h3>Docs stay in sync with code — automatically</h3>
+        <p>CLAUDE.md's Definition of Done + CI check means docs cannot drift. Every PR that touches code must touch the corresponding docs or it cannot merge.</p>
+      </div>
+    </div>
+    <div class="principle-row">
+      <div class="pr-num">02</div>
+      <div class="pr-body">
+        <h3>Corrections compound across sessions</h3>
+        <p>Every correction makes the next session better. The feedback loop means the collaboration improves continuously — not just within a session.</p>
+      </div>
+    </div>
+    <div class="principle-row">
+      <div class="pr-num">03</div>
+      <div class="pr-body">
+        <h3>Constraints are explicit and enforced, not implied</h3>
+        <p>CLAUDE.md makes every non-negotiable visible. No ambiguity about what "done" means, what's allowed, or what needs to be checked before starting.</p>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">The meta-point: these are not AI-specific practices. They are good engineering practices applied to AI collaboration. CLAUDE.md is a spec for how Claude should behave. The CI check enforces it. The memory system persists corrections. All the same patterns we use for human engineers.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     11 — CLOSE
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">The pattern</div>
+  <div class="statement" style="font-size:52px; max-width:900px; line-height:1.15;">Treat Claude like a<br>senior engineer joining the team.<br><span class="accent">Give it the same context.</span></div>
+  <div style="margin-top:40px; font-size:20px; color:#444; line-height:1.7;">Onboarding doc. Definition of done. Test requirements. A place to capture what it learned.<br>The rest follows.</div>
+  <aside class="notes">The practices in this deck are not clever hacks. They are the same things you'd do for any new engineer: write down what the project is, what done means, how you want them to work. The only difference is Claude needs it in a file, not a conversation.</aside>
+</section>
+
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    transition: 'fade',
+    transitionSpeed: 'fast',
+    controls: false,
+    progress: true,
+    slideNumber: 'c/t',
+    keyboard: true,
+    center: false,
+    width: 1440,
+    height: 900,
+    margin: 0.04,
+    minScale: 0.2,
+    maxScale: 2.0,
+  });
+</script>
+</body>
+</html>
