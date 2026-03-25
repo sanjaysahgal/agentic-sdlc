@@ -80,6 +80,13 @@
   .ps-label.challenge { color: var(--red); }
   .ps-label.solution  { color: var(--green); }
   .ps-label.sticks    { color: #555; }
+  .when-read {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    color: #3a6a3a; background: #060e06; border: 1px solid #1a3a1a;
+    border-radius: 5px; padding: 5px 10px; display: inline-flex;
+    align-items: center; gap: 6px; align-self: flex-start;
+  }
+  .when-read::before { content: '⏱'; font-size: 10px; }
   .ps-body { font-size: 15px; color: #666; line-height: 1.6; flex: 1; }
   .ps-body strong { color: #999; font-weight: 600; }
 
@@ -224,8 +231,9 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Read: automatically at the start of every session, before any action</div>
       <div class="code-block">
-        <div><span class="cb-comment">// CLAUDE.md — checked into repo root, read every session</span></div>
+        <div><span class="cb-comment">// CLAUDE.md — checked into repo root</span></div>
         <div style="margin-top:8px;"><span class="cb-badge rule">§1</span> <span class="cb-key">What is this repo?</span> <span class="cb-comment">— product identity + what it is NOT</span></div>
         <div><span class="cb-badge rule">§2</span> <span class="cb-key">Core Principles</span> <span class="cb-comment">— each rule + violation examples inline</span></div>
         <div><span class="cb-badge check">§3</span> <span class="cb-key">Before Writing Any Code</span> <span class="cb-comment">— 4-question checklist, must pass</span></div>
@@ -259,6 +267,7 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Read: every session start — Claude checks these before writing any code</div>
       <div class="code-block" style="font-size:12px;">
         <div><span class="cb-comment">// CLAUDE.md > Core Principles — each rule formatted as:</span></div>
         <div style="margin-top:6px;"><span class="cb-key">### Rule name</span></div>
@@ -309,6 +318,7 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Checked: before Claude marks any task complete</div>
       <div style="font-size:11px; color:#555; font-family:var(--mono); margin-bottom:8px;">CLAUDE.md › Definition of Done (Non-Negotiable)</div>
       <table class="doc-table">
         <thead><tr><th>What changed</th><th>Must also update</th></tr></thead>
@@ -345,6 +355,7 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Triggered: automatically on every PR to main — blocks merge on failure</div>
       <div class="code-block" style="font-size:11px; margin-bottom:8px;">
         <div><span class="cb-comment">// .github/workflows/doc-sync-check.yml</span></div>
         <div style="margin-top:4px;"><span class="cb-key">on:</span> <span class="cb-comment">pull_request: branches: [main]</span></div>
@@ -389,6 +400,7 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Read: MEMORY.md loaded every session start · Written: immediately on any correction</div>
       <div class="code-block" style="font-size:11px; margin-bottom:8px;">
         <div><span class="cb-comment">// ~/.claude/projects/&lt;project-hash&gt;/memory/</span></div>
         <div style="margin-top:4px;"><span class="cb-key">MEMORY.md</span>          <span class="cb-comment">← index, loaded at every session start</span></div>
@@ -430,6 +442,7 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Read: every session start — Claude applies it whenever choosing how to explore</div>
       <div class="code-block" style="font-size:11px; margin-bottom:8px;">
         <div><span class="cb-comment">// CLAUDE.md › Subagent Strategy</span></div>
         <div style="margin-top:6px; color:#ccc; line-height:1.7;">"Use subagents for exploration, research, and parallel analysis.<br>Keep the main context focused on implementation decisions.<br>One task per subagent."</div>
@@ -475,6 +488,7 @@
     </div>
     <div class="practice-solution">
       <div class="ps-label solution">What we put in place</div>
+      <div class="when-read">Checked: before Claude marks any task done · CI enforces on every PR</div>
       <div class="code-block" style="font-size:11px; margin-bottom:8px;">
         <div><span class="cb-comment">// CLAUDE.md › Testing Discipline (Non-Negotiable)</span></div>
         <div style="margin-top:6px; color:#ccc; line-height:1.7;">"Before building the second piece of any system,<br>a test suite must exist for the first.<br>A behavior with no test does not count as done."</div>
