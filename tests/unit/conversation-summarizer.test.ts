@@ -69,6 +69,79 @@ describe("summarizeUnlockedDiscussion", () => {
   })
 })
 
+describe("summarizeUnlockedDiscussion — caching", () => {
+  it("returns cached summary on second call with same cacheKey — Haiku called only once", async () => {
+    mockCreate.mockResolvedValue(haiku("- Glow timing pending"))
+
+    const msgs = [{ role: "user" as const, content: "What about glow?" }]
+    const first = await summarizeUnlockedDiscussion(msgs, "thread1:1")
+    const second = await summarizeUnlockedDiscussion(msgs, "thread1:1")
+
+    expect(first).toBe("- Glow timing pending")
+    expect(second).toBe("- Glow timing pending")
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("calls Haiku again when cacheKey changes (more messages overflowed)", async () => {
+    mockCreate.mockResolvedValue(haiku("- New summary"))
+
+    const msgs = [{ role: "user" as const, content: "hi" }]
+    await summarizeUnlockedDiscussion(msgs, "thread2:1")
+    await summarizeUnlockedDiscussion(msgs, "thread2:2")
+
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it("skips cache when no cacheKey provided", async () => {
+    mockCreate.mockResolvedValue(haiku("- summary"))
+
+    const msgs = [{ role: "user" as const, content: "hi" }]
+    await summarizeUnlockedDiscussion(msgs)
+    await summarizeUnlockedDiscussion(msgs)
+
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("getPriorContext", () => {
+  it("returns empty string when history is within limit", async () => {
+    const history = Array.from({ length: 5 }, (_, i) => ({ role: "user" as const, content: `msg ${i}` }))
+    const result = await getPriorContext("t1", history, 20)
+    expect(result).toBe("")
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("calls summarizeUnlockedDiscussion with overflow messages when history exceeds limit", async () => {
+    mockCreate.mockResolvedValue(haiku("- Chip position pending"))
+    const history = Array.from({ length: 25 }, (_, i) => ({ role: "user" as const, content: `msg ${i}` }))
+    const result = await getPriorContext("t2", history, 20)
+    expect(result).toBe("- Chip position pending")
+    // overflow = history.slice(0, -20) = 5 messages
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content
+    expect(prompt).toContain("msg 0")
+    expect(prompt).not.toContain("msg 20")
+  })
+
+  it("uses threadTs and olderMessageCount as cache key", async () => {
+    mockCreate.mockResolvedValue(haiku("- cached"))
+    const history = Array.from({ length: 25 }, (_, i) => ({ role: "user" as const, content: `msg ${i}` }))
+    await getPriorContext("t3", history, 20)
+    await getPriorContext("t3", history, 20)
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("clearSummaryCache", () => {
+  it("removes cached entries for the given threadTs", async () => {
+    mockCreate.mockResolvedValue(haiku("summary"))
+    const msgs = [{ role: "user" as const, content: "hi" }]
+    await summarizeUnlockedDiscussion(msgs, "thread-clear:5")
+    clearSummaryCache("thread-clear")
+    await summarizeUnlockedDiscussion(msgs, "thread-clear:5")
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe("buildEnrichedMessage", () => {
   it("returns only userMessage when no prior context or locked decisions", () => {
     const result = buildEnrichedMessage({ userMessage: "Lock all 3", lockedDecisions: "", priorContext: "" })
