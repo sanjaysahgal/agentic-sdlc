@@ -14,13 +14,13 @@ This file tracks decisions that are correct for a small team today but need to c
 
 ---
 
-## Conversation history is in-memory
+## Conversation history lives on local disk, not in a shared store
 
-**Now:** Conversation history per Slack thread is stored in memory. Lost when the bot restarts. The draft spec on GitHub compensates — the pm agent reads it fresh every message.
+**Now:** Conversation history per Slack thread is written to `.conversation-history.json` on the machine running the bot. It survives process restarts but is lost on redeployments and does not work across multiple bot instances.
 
-**Why it works now:** The draft is the real source of truth. Losing conversation history means losing context on what was already discussed, but the spec itself is preserved.
+**Why it works now:** One machine, one process. The draft spec on GitHub compensates — every agent reads the current spec from GitHub on every message, so the spec state is always fresh even if history is lost.
 
-**At scale:** Conversation history needs Redis or a database (e.g. Neon). Without it, the agent may re-ask questions already answered in previous sessions, reducing quality. Also required for audit trails and handoff summaries.
+**At scale:** Conversation history needs Redis. Without it: (a) a redeploy wipes all in-flight conversation context; (b) horizontal scaling (two bot processes) means different instances have split views of the same thread; (c) the agent may re-ask questions already answered in previous sessions. Trust Step 3 in the backlog — pull forward before any significant traffic increase.
 
 ---
 
@@ -141,3 +141,23 @@ This file tracks decisions that are correct for a small team today but need to c
 **Why it works now:** One person, full visibility into everything.
 
 **At scale:** Every agent action needs to be logged: message received, context loaded (which spec version), response generated, decision made (draft saved / spec approved / escalated). Required for debugging, compliance, and understanding why a spec was shaped the way it was.
+
+---
+
+## Agent reasons from history, not from spec — trust gap
+
+**Now:** Agents maintain two knowledge sources simultaneously: (a) the spec on GitHub, which is read fresh on every message, and (b) the conversation history, which tells the agent what was discussed. In practice, agents sometimes reason from unverified history ("I saved those decisions") rather than confirmed spec state. This causes hallucination: the agent asserts things are saved when they are only in conversation history, not in the GitHub spec.
+
+**Why it works now (poorly):** A solo user can detect the inconsistency and ask the agent to re-confirm. The damage is embarrassment and re-work, not data loss — the spec on GitHub is always the authority.
+
+**At scale:** The agent must not assert the state of anything that can be verified from GitHub unless it has actually read it from GitHub in the current turn. Spec state responses must be derived from GitHub reads, not from memory. The checkpoint protocol (Trust Step 2) addresses this: after every draft save, the agent explicitly distinguishes "committed to GitHub" from "discussed this turn." Until this is enforced, users cannot trust agent assertions about what is saved.
+
+---
+
+## No thread health monitoring — context limit failure is silent
+
+**Now:** When a Slack thread accumulates enough history to approach the model's context limit, the next call either silently fails or returns a degraded response. There is no warning before this happens and no recovery path after. The user sees the agent go quiet or give wrong answers with no explanation.
+
+**Why it works now (poorly):** Specs are developed over relatively short threads. Health360's early sessions stayed well within limits. The failure mode has appeared (evident from user transcripts) but was survivable.
+
+**At scale:** Long feature threads — especially ones that span multiple sessions or involve many revision cycles — will hit the limit reliably. Trust Step 1 in the backlog: implement a turn counter and proactive degradation warning at ~70% of estimated capacity ("This thread is getting long — I'd recommend opening a new thread for the next phase or continuing from a spec link to preserve full context."). When the limit is actually hit, the error must surface explicitly to the user, not silently produce wrong output.
