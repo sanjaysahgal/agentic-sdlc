@@ -322,6 +322,21 @@ describe("cross-phase escalation helpers", () => {
       const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
       expect(prompt).toContain("Never say \"All locked decisions saved\"")
     })
+
+    it("no-draft-blocks rule — agent has no internal memory between turns, only GitHub spec", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("You have no draft blocks, internal drafts, or memory between turns")
+    })
+
+    it("no-draft-blocks rule — explicitly names the hallucination to forbid", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("in my draft blocks")
+    })
+
+    it("no-draft-blocks rule — instructs agent to use GitHub spec as the complete record", () => {
+      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+      expect(prompt).toContain("The spec shown above is the complete record")
+    })
   })
 })
 
@@ -445,5 +460,34 @@ describe("buildDesignStateResponse", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: "", specUrl: SPEC_URL })
     expect(result).toContain("No design draft yet")
     expect(result).not.toContain(SPEC_URL)
+  })
+
+  it("shows committed Design Direction as key decisions when section is present", () => {
+    const draftWithDirection = `# Onboarding — Design Spec
+
+## Design Direction
+Dark mode, Archon Labs aesthetic. #0A0A0F background, pulsing glow treatment.
+High contrast, minimal, single-metric-forward.
+
+### Screen 1: Landing
+
+## Open Questions
+None.
+`
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithDirection, specUrl: SPEC_URL })
+    expect(result).toContain("Committed decisions")
+    expect(result).toContain("Archon Labs")
+  })
+
+  it("omits committed decisions block when no Design Direction section in spec", () => {
+    const draftNoDirection = `# Onboarding — Design Spec
+
+### Screen 1: Landing
+
+## Open Questions
+None.
+`
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoDirection, specUrl: SPEC_URL })
+    expect(result).not.toContain("Committed decisions")
   })
 })

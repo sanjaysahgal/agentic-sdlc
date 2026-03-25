@@ -131,4 +131,39 @@ describe("runAgent", () => {
     // After slicing to last 40 + adding 1 new user message, max is 41
     expect(call.messages.length).toBeLessThanOrEqual(41)
   })
+
+  it("respects historyLimit parameter — design agent passes 20 to cap payload for large-context agents", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "ok" }] })
+
+    // Build 60 alternating messages
+    const history: Message[] = []
+    for (let i = 0; i < 60; i++) {
+      history.push({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    }
+
+    await runAgent({ systemPrompt: "System", history, userMessage: "final", historyLimit: 20 })
+
+    const call = mockCreate.mock.calls[0][0]
+    // After slicing to last 20 + adding 1 new user message, max is 21
+    expect(call.messages.length).toBeLessThanOrEqual(21)
+  })
+
+  it("historyLimit: 20 sends last 20 messages — earlier messages are dropped", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "ok" }] })
+
+    const history: Message[] = []
+    for (let i = 0; i < 40; i++) {
+      history.push({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    }
+
+    await runAgent({ systemPrompt: "System", history, userMessage: "latest", historyLimit: 20 })
+
+    const call = mockCreate.mock.calls[0][0]
+    const contents = call.messages.map((m: { content: string }) => m.content)
+    // msg 0 through msg 19 should be dropped; only msgs 20–39 + "latest" should be present
+    expect(contents).not.toContain("msg 0")
+    expect(contents).not.toContain("msg 19")
+    expect(contents).toContain("msg 20")
+    expect(contents).toContain("latest")
+  })
 })

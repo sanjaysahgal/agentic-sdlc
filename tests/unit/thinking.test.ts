@@ -89,6 +89,51 @@ describe("withThinking", () => {
     )
   })
 
+  it("on context-limit error 'Input too long': shows thread-restart message not generic", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("Input too long: request exceeds context window") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+    expect(client.chat.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("Something went wrong") })
+    )
+  })
+
+  it("on context-limit error 'exceeded' + 'token': shows thread-restart message not generic", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("Request exceeded the maximum token count") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+    expect(client.chat.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("Something went wrong") })
+    )
+  })
+
+  it("on context-limit error 'reduce the length': shows thread-restart message not generic", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("Please reduce the length of the messages or completion") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+    expect(client.chat.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("Something went wrong") })
+    )
+  })
+
   it("on overloaded error: shows overloaded message not generic", async () => {
     const client = makeClient()
     await expect(withThinking({

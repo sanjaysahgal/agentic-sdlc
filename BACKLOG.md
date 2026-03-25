@@ -185,7 +185,7 @@ Support returning to an existing feature at any point in its lifecycle to revise
 
 ---
 
-### Step 2.9 — Agent failure protocol
+### Step 2.7 — Agent failure protocol
 
 **Inspired by OpenAI's harness engineering finding:** when agents produce bad output, the correct human response is never "reprompt and try harder." It is always: *what capability is missing, and how do we make it legible and enforceable for the agent?*
 
@@ -210,6 +210,8 @@ Append-only JSONL log of agent failures reported via Slack reaction or explicit 
 **Slack command:** `/sdlc failure [description]` — creates a failure log entry and optionally opens a GitHub Issue tagged `agent-failure` for tracking.
 
 **Why before Step 3 (Orchestrator):** The Orchestrator will surface conflicts and stalls. Without a defined failure protocol, every Orchestrator alert is handled ad-hoc. This step gives the team a consistent, compounding response to agent failures before the Orchestrator makes them more visible.
+
+**Note on numbering:** Steps 2.7 (bug workflow) and 2.8 (PM review queue) from earlier backlog versions have been relocated — bug workflow moved to Step 9 (only relevant once code is deployed), PM review queue folded into Step 3 (Orchestrator owns all routing). This step takes the 2.7 slot as the next logical item after 2.6.
 
 ---
 
@@ -390,7 +392,7 @@ Each code-executing agent (backend, frontend, QA) maintains a persistent knowled
 
 **Shared constraints:**
 - All agents read the full spec chain — no partial context
-- PRs are opened against the customer's app repo (`agentic-health360`), not the platform repo
+- PRs are opened against the customer's target repo (from `WorkspaceConfig`), not the platform repo
 - External tool use is scoped to technical lookups — agents do not browse arbitrarily, they search for specific things they need to complete the work item
 
 ---
