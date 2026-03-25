@@ -29,7 +29,7 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 > **Priority reset — trust and determinism before anything else.**
 >
-> The platform's core promise is that agents behave predictably and users can always know where they stand. Right now that promise breaks in ways that destroy trust: silent context limit failures, agents claiming to have saved decisions they haven't, no way to tell what's committed vs. what was just discussed. These issues must be fixed before any new agent work. A platform users don't trust is not a platform.
+> The platform's core promise is that agents behave predictably and users can always know where they stand. This requires two layers: user-facing trust (context limits, committed state visibility, persistence) and infrastructure robustness (reliable writes, retries, idempotency). Both must be in place before any new agent work. A platform users don't trust is not a platform.
 
 ---
 
@@ -117,6 +117,41 @@ This is documented in `DECISIONS.md` as a known shortcut. It was acceptable whil
 
 ---
 
+### Trust Step 4 — Infrastructure resilience and atomic writes
+
+**The problem today:** Trust Steps 1–3 address user-facing trust gaps. This step addresses infrastructure trust gaps: what happens when GitHub, Anthropic, or Slack fail. Currently: silent generic errors, no retries, no write verification, and potential duplicate processing from Slack's at-least-once delivery. A spec save that partially fails leaves the spec in an unknown state with no signal to the user.
+
+**What this adds:**
+
+**GitHub API retry with exponential backoff:**
+- All GitHub operations (`saveSpec`, `loadSpec`, `getFeaturePhase`, etc.) wrapped in retry logic: 3 attempts, exponential backoff (1s, 2s, 4s), jitter
+- If GitHub is unreachable after all retries, post a specific message: *"GitHub is unreachable right now. Your work is safe in this thread — I'll save as soon as it comes back. No decisions are lost."*
+- Network errors and 5xx responses are retried; 4xx (auth, not found) are not
+
+**Write verification — atomic spec saves:**
+- After every spec write to GitHub, read the file back and verify the content hash matches
+- If mismatch or missing: surface immediately — *"Spec save failed — your draft is safe in this thread. Retrying..."* — and retry up to 3 times before surfacing as a hard failure
+- Ensures Trust Step 2's committed/discussed boundary is actually reliable, not just claimed
+
+**Anthropic API failure handling:**
+- Rate limits (429) and service errors (529, 5xx) get explicit user messages with recovery context, not "Something went wrong"
+- Rate limits: *"I've hit an API rate limit — retrying in a moment."* with automatic retry
+- Service outages: *"The AI service is temporarily unavailable. Your spec and thread are safe — try again in a minute."*
+- Distinguishes rate limits from context limits from service outages — each gets the correct message
+
+**Slack event idempotency:**
+- Deduplicate incoming Slack events by `event_id` before processing — Slack's at-least-once delivery means without this, duplicate events cause duplicate writes, duplicate Slack responses, and duplicate GitHub commits
+- Event IDs cached in Redis (from Trust Step 3) with a short TTL (5 minutes)
+
+**Slack delivery verification:**
+- If a Slack API call to post a message fails, log it and retry rather than silently dropping the agent response
+- The user always gets a response or an explicit failure message — never silence
+
+**Why before 2.6 and all subsequent steps:**
+Every step from 2.6 onwards assumes writes are reliable and reads are consistent. Spec revision, phase detection, Orchestrator monitoring, spec-validator gates — all of these build on the assumption that what's in GitHub is correct and that writes succeeded. That assumption is false without this step.
+
+---
+
 ### Step 2.6 — Spec revision workflow
 
 Support returning to an existing feature at any point in its lifecycle to revise any layer of the spec chain.
@@ -144,60 +179,9 @@ Support returning to an existing feature at any point in its lifecycle to revise
 - After an upstream spec is updated (e.g. product spec changes), system posts: *"Product spec updated. The design spec may need a revision pass — it still reflects the previous version."*
 - Human decides whether to cascade. System does not auto-invalidate.
 
+**Note on Step 3 overlap:** The routing logic built in this step (message handler → intent classifier → agent) is a patch on the current scattered routing. Step 3 (Orchestrator) replaces this with a centralised routing table. When Step 3 is built, the intent-routing code from this step is absorbed into the Orchestrator — expect a targeted refactor at that point, not a rewrite.
+
 **Note:** "Feature live" vs "feature built but not deployed" is indistinguishable at the spec level — the system tracks spec state only, not deployment state. Revision workflow applies equally to both.
-
----
-
-### Step 2.7 — Bug workflow
-
-A dedicated workflow for bugs that is completely separate from the spec chain. Bugs are deviation from intent — the spec is correct, the code is wrong. No spec update needed (unless the bug reveals the spec was ambiguous, which is rare and handled manually).
-
-**What this adds:**
-
-**Bug intake (Slack):**
-- In any feature channel or a dedicated `#bugs` channel: "we have a bug where X happens when Y"
-- Concierge (or dedicated bug-intake handler) creates a GitHub Issue tagged `bug` with: description, reported-by, feature name, severity (derived from message or asked)
-- Confirmation posted in Slack with a link to the issue
-
-**Triage:**
-- Bugs go into a triage backlog — visible in GitHub Issues with `bug` + `triage` labels
-- Human or future eng-mgr agent sets priority and assigns
-
-**Resolution tracking:**
-- Issue linked to a PR that fixes it
-- On PR merge, issue closed automatically (GitHub standard behavior)
-- Slack notification: "Bug #123 fixed and merged"
-
-**Out of scope for this step:** Automated severity detection from monitoring/alerts, bug SLA tracking, regression test auto-generation. These are follow-on once the basic intake loop is working.
-
-**Prerequisite for practical use:** Engineer agents (Step 6) — bugs only appear when code is running.
-
----
-
-### Step 2.8 — PM Review Queue + per-feature role routing
-
-**The problem today:** `roles.pmUser` (and `designerUser`, `architectUser`) are single Slack user IDs set globally in `.env`. This doesn't scale.
-
-At 10+ people and 100+ simultaneous features:
-- One PM gets @mentioned in every feature thread that hits a blocking product question — notification bomb with no triage, no SLA, no delegation
-- There's no way to assign a specific PM to a specific feature domain
-- The PM has no consolidated view of what's blocked across all features — they only see individual thread mentions
-
-**What this adds:**
-
-**PM Review Queue channel (`#pm-review`):**
-- All blocking product questions from all feature threads are posted here instead of (or in addition to) the originating thread
-- Each post includes: feature name, the blocking question, a link back to the feature thread
-- PM replies in `#pm-review` with the decision; system routes the answer back to the blocked feature thread and resumes the design agent automatically
-- Multiple PMs can watch the same channel — whoever picks up the question owns it
-
-**Per-domain role assignment (WorkspaceConfig):**
-- `roles` gains a `domains` map: `{ growth: { pmUser: "U123", designerUser: "U456" }, platform: { pmUser: "U789" } }`
-- Feature names are matched to domains by prefix convention (e.g. `onboarding` → `growth`)
-- Fallback to global `roles.pmUser` if no domain match
-- Zero-config for solo teams: setting global roles still works, domain routing is opt-in
-
-**Prerequisite for Step 3 (Orchestrator):** The Orchestrator will use this same routing table to know who to alert for each feature.
 
 ---
 
@@ -231,10 +215,10 @@ Append-only JSONL log of agent failures reported via Slack reaction or explicit 
 
 ### Step 3 — Orchestrator agent
 
-A dedicated agent that owns proactive phase coordination AND continuous spec integrity monitoring across all in-flight features. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
+A dedicated agent that owns proactive phase coordination, continuous spec integrity monitoring across all in-flight features, and consolidated human review routing. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
 
 **Routing responsibilities:**
-- Owns the canonical routing table: which agent handles which phase — single source of truth, replaces hardcoded routing in the message handler
+- Owns the canonical routing table: which agent handles which phase — single source of truth, replaces the patched routing from Step 2.6 and all hardcoded routing in the message handler
 - Watches feature phase state (via GitHub branch + file presence) and detects when a handoff is ready
 - At every phase handoff, scans the outgoing spec for unresolved `[blocking: yes]` questions — blocks the handoff until resolved
 - Replaces GitHub Actions as the handoff trigger mechanism — no separate GitHub Actions step needed
@@ -259,16 +243,27 @@ Example:
 > Options: (1) revise the onboarding spec (requires re-approval) or (2) roll back the vision change.
 > Spec: [link] · Vision: [link]
 
-**Role mapping — new WorkspaceConfig fields:**
+**PM / Designer / Architect review queues (absorbed from Step 2.8):**
+At team scale, one PM getting @mentioned in every feature thread is a notification bomb with no triage. The Orchestrator owns consolidated review routing:
+- All blocking questions from all feature threads are posted to dedicated review channels (`#pm-review`, `#design-review`, `#arch-review`) in addition to the originating thread
+- Each post includes: feature name, the blocking question, link back to the feature thread
+- The relevant role replies in the review channel; Orchestrator routes the answer back to the blocked thread and resumes the agent automatically
+- Multiple people can watch the same channel — whoever picks it up owns it
+
+**Per-domain role assignment (WorkspaceConfig):**
+- `roles` gains a `domains` map: `{ growth: { pmUser: "U123", designerUser: "U456" }, platform: { pmUser: "U789" } }`
+- Feature names matched to domains by prefix convention
+- Fallback to global role IDs for solo teams — zero-config for small setups, opt-in for larger ones
+
+**Role mapping — WorkspaceConfig fields:**
 ```
 SLACK_PM_USER         # Slack user ID for the Product Manager
 SLACK_DESIGNER_USER   # Slack user ID for the UX Designer
 SLACK_ARCHITECT_USER  # Slack user ID for the Architect
 ```
-The `[type: product|design|engineering]` tag on every open question is how the Orchestrator knows which role to alert. These tags already exist on all open questions — the Orchestrator reads them.
 
 **Cross-phase escalation — two layers working together:**
-- **Reactive (Steps 1 + 2c):** Agent detects a blocking upstream question mid-conversation and pulls the right agent into the thread immediately
+- **Reactive:** Agent detects a blocking upstream question mid-conversation and pulls the right role into the thread immediately
 - **Proactive (this step):** Orchestrator continuously monitors the full spec chain and alerts the named human the moment a conflict or stall is detected — not just at phase handoff time
 
 ---
@@ -301,29 +296,26 @@ Downstream agents loading a spec can read this score. The architect and engineer
 
 ---
 
-### Step 5 — Redis persistence + agentic-sdlc production deployment + observability
+### Step 5 — agentic-sdlc production deployment + observability
 
-Deploy the SDLC engine to always-on infrastructure. Observability is bundled here — you cannot operate a production system without being able to see what it's doing. These three things ship together.
+Deploy the SDLC engine to always-on infrastructure. Observability is bundled here — you cannot operate a production system without being able to see what it's doing.
 
-**Redis persistence:**
-- Conversation history moves from in-memory to Redis — survives bot restarts, scales across multiple processes
-- Confirmed agent state moves from disk to Redis — consistent across all bot instances
-- Session TTL configurable per workspace
+**Note:** Redis persistence is already handled in Trust Step 3 and is not part of this step. This step covers deployment and observability only.
 
-**Observability (bundled — not deferred):**
+**Observability:**
 - Structured logging per agent invocation: timestamp, workspace, channel, thread, agent, intent markers, GitHub operations, latency
-- Error logging with full context: what failed, which agent, which thread, raw error — extends the basic error logging from Step 1
+- Error logging with full context: what failed, which agent, which thread, raw error
 - Log aggregation service (Datadog, Logtail, or equivalent)
 
 **Trace-level agent logging (JSONL):**
-Each agent invocation emits a structured JSONL trace of *what the agent did*, not just what it produced. Distinct from the output log — this captures the execution path:
+Each agent invocation emits a structured JSONL trace of *what the agent did*, not just what it produced:
 - Which context files were loaded (git SHA + file path)
 - Which tool calls were made and in what order (for engineer/QA agents in Steps 6–7)
 - Token usage per call (prompt + completion)
 - Whether the agent hit a blocking gate, a conflict, or a gap
 - Final disposition: draft saved / approval detected / escalation triggered / error
 
-This trace feeds two systems: (1) the eval harness — evals can assert on *what the agent did*, not just the output text; (2) the failure log from Step 2.9 — a failure entry can link directly to the trace that produced it. Implementation: `runtime/claude-client.ts` wraps each call in a trace context that emits JSONL to the same log aggregator.
+This trace feeds two systems: (1) the eval harness — evals can assert on *what the agent did*, not just the output text; (2) the failure log from Step 2.9 — a failure entry can link directly to the trace that produced it. Implementation: `runtime/claude-client.ts` wraps each call in a trace context that emits JSONL to the log aggregator.
 
 **agentic-sdlc deployment:**
 - Dockerfile with Node.js runtime, tsx compilation, environment variable injection
@@ -374,8 +366,8 @@ Spec-shaping agents do not use external tools. Engineer and QA agents require th
 - No code is written until work items are human-approved
 - pgm agent uses the simple request/response pattern (same as spec-shaping agents) — it reads and reasons, it does not execute
 
-**Depth-first decomposition (explicit execution model — from OpenAI harness engineering):**
-The pgm agent does not generate a flat issue list. It decomposes depth-first: identify the smallest independently-buildable building block first, make it shippable, use it to unlock the next layer. The work item list is a layered dependency graph, not a flat queue. Example: a "user profile" feature decomposes as data model → API → auth middleware → page component → integration, in that order — each layer is a prerequisite for the next. Work items that cannot be started without a prior item complete are blocked in GitHub Issues until the prerequisite merges. This prevents engineer agents from building on incomplete foundations and matches how the OpenAI harness team achieved reliable parallel work.
+**Depth-first decomposition (explicit execution model):**
+The pgm agent does not generate a flat issue list. It decomposes depth-first: identify the smallest independently-buildable building block first, make it shippable, use it to unlock the next layer. The work item list is a layered dependency graph, not a flat queue. Example: a "user profile" feature decomposes as data model → API → auth middleware → page component → integration, in that order — each layer is a prerequisite for the next. Work items that cannot be started without a prior item complete are blocked in GitHub Issues until the prerequisite merges. This prevents engineer agents from building on incomplete foundations.
 
 **Backend agent:**
 - Reads the full spec chain (product → design → engineering) before writing a line of code
@@ -392,6 +384,9 @@ The pgm agent does not generate a flat issue list. It decomposes depth-first: id
 - Implements: components, pages, state management, API integration
 - References design spec states explicitly in code (empty state, error state, loading state)
 - Same PR-per-work-item pattern as backend agent
+
+**Per-agent memory files:**
+Each code-executing agent (backend, frontend, QA) maintains a persistent knowledge file in the target repo — `backend.memory.md`, `frontend.memory.md`, `qa.memory.md`. This is distinct from conversation history (which is ephemeral and stored in Redis) and from specs (which are authoritative product/design/engineering decisions). Agent memory captures what the agent has learned about the codebase over time: conventions it discovered, patterns it established, past failures and their resolutions, gotchas in the repo. The agent reads its memory file at the start of every invocation and appends new learnings after completing a work item. This gives continuity across restarts and across multiple work items — the agent doesn't start from scratch each time. The architect agent already demonstrates this pattern via `SYSTEM_ARCHITECTURE.md` ownership. This step extends it explicitly to all code-executing agents.
 
 **Shared constraints:**
 - All agents read the full spec chain — no partial context
@@ -424,7 +419,7 @@ Generates feature-specific test plans from acceptance criteria and validates shi
 
 ---
 
-### Step 8 — agentic-cicd: customer app deployment pipeline
+### Step 8 — agentic-cicd: customer app deployment pipeline + production monitoring
 
 The second half of the licensed platform. A customer who has the SDLC engine but no deployment pipeline cannot ship anything. This step makes the pipeline a first-class platform deliverable and is the point at which health360 ships to real users.
 
@@ -436,6 +431,13 @@ The second half of the licensed platform. A customer who has the SDLC engine but
 - Rollback: previous deployment retained; one-command rollback
 - Secrets management: customer's production secrets stored as pipeline secrets, never in repos
 
+**Production monitoring (bundled — not deferred):**
+Deploying without monitoring is not shipping — it is guessing. Monitoring ships with the pipeline:
+- Uptime monitoring: health check endpoint polled every minute; Slack alert if down for >2 consecutive checks
+- Error rate alerting: uncaught exceptions and 5xx rates tracked; Slack alert if error rate exceeds threshold (configurable per workspace)
+- Basic performance visibility: p50/p95 response times logged; no alert by default, visible on demand
+- All alerts routed to a configurable `#ops` Slack channel in WorkspaceConfig
+
 **What makes this a platform feature (not customer-specific):**
 The pipeline is templated and configurable — a new customer plugs in their repo, deployment target, and secrets. WorkspaceConfig gains a deployment section alongside the existing GitHub and Slack config.
 
@@ -443,7 +445,33 @@ The pipeline is templated and configurable — a new customer plugs in their rep
 
 ---
 
-### Step 9 — Multi-workspace support
+### Step 9 — Bug workflow
+
+A dedicated workflow for bugs that is completely separate from the spec chain. Bugs are deviation from intent — the spec is correct, the code is wrong. No spec update needed (unless the bug reveals the spec was ambiguous, which is rare and handled manually).
+
+**Why here (not earlier):** Bugs only exist when code is running in production. This step has no value before Step 8 — there is no code to have bugs in. Placing it here means it's built exactly when it becomes needed.
+
+**What this adds:**
+
+**Bug intake (Slack):**
+- In any feature channel or a dedicated `#bugs` channel: "we have a bug where X happens when Y"
+- Concierge (or dedicated bug-intake handler) creates a GitHub Issue tagged `bug` with: description, reported-by, feature name, severity (derived from message or asked)
+- Confirmation posted in Slack with a link to the issue
+
+**Triage:**
+- Bugs go into a triage backlog — visible in GitHub Issues with `bug` + `triage` labels
+- Human or future eng-mgr agent sets priority and assigns to the relevant engineer agent
+
+**Resolution tracking:**
+- Issue linked to a PR that fixes it
+- On PR merge, issue closed automatically (GitHub standard behavior)
+- Slack notification: "Bug #123 fixed and merged"
+
+**Out of scope for this step:** Automated severity detection from monitoring/alerts, bug SLA tracking, regression test auto-generation. These are follow-on once the basic intake loop is working.
+
+---
+
+### Step 10 — Multi-workspace support
 
 Make agentic-sdlc serve multiple customer teams simultaneously without code changes.
 
@@ -459,7 +487,7 @@ Multi-workspace requires the full pipeline to exist first. health360 shipping (S
 
 ---
 
-### Step 10 — Full audit trail
+### Step 11 — Full audit trail
 
 Extend the basic observability from Step 5 into a compliance-grade audit trail.
 
@@ -475,7 +503,7 @@ The basic observability in Step 5 handles operational debugging. The full audit 
 
 ---
 
-### Step 11 — Figma integration + brand token support
+### Step 12 — Figma integration + brand token support
 
 Agent creates Figma files directly via the Figma API on design spec approval. Brand token reading folded in via `brandPath` in WorkspaceConfig.
 
@@ -489,7 +517,7 @@ Agent creates Figma files directly via the Figma API on design spec approval. Br
 
 ---
 
-### Step 12 — Vision refinement channel
+### Step 13 — Vision refinement channel
 
 A dedicated Slack channel where the pm agent interrogates and strengthens the product vision itself — not spec shaping for a feature, but product strategy.
 
