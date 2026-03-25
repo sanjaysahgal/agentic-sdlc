@@ -208,13 +208,21 @@ Append-only JSONL log of agent failures reported via Slack reaction or explicit 
 
 ### Step 3 — Orchestrator agent
 
-A dedicated agent that owns proactive phase coordination, continuous spec integrity monitoring across all in-flight features, and consolidated human review routing. Built before engineer agents because routing logic scattered across message handlers becomes unmaintainable as the agent roster grows — and because spec conflicts that go undetected compound into expensive rework.
+A dedicated agent that owns all routing logic, proactive phase coordination, continuous spec integrity monitoring, and consolidated human review queues. Built before engineer agents because routing scattered across message handlers becomes unmaintainable as the roster grows — and because spec conflicts that go undetected compound into expensive rework.
 
 **Routing responsibilities:**
-- Owns the canonical routing table: which agent handles which phase — single source of truth, replaces the patched routing from Step 2.6 and all hardcoded routing in the message handler
+- Owns the canonical routing table: which agent handles which phase — single source of truth, replaces all hardcoded routing in the message handler
 - Watches feature phase state (via GitHub branch + file presence) and detects when a handoff is ready
 - At every phase handoff, scans the outgoing spec for unresolved `[blocking: yes]` questions — blocks the handoff until resolved
 - Replaces GitHub Actions as the handoff trigger mechanism — no separate GitHub Actions step needed
+
+**Intent-based layer routing for established features:**
+- Haiku classifier: given "I want to change X" on a `feature-established` feature, which layer is affected? `product` / `design` / `engineering`
+- Routes directly to the correct agent with the existing spec loaded in editor mode — no forced top-down cascade
+- "I want to change the onboarding flow" → PM agent, existing product spec as context
+- "Update the welcome screen" → design agent, existing design spec as context
+- "Add a new API endpoint" → architect, existing engineering spec as context
+- This is the permanent home for this logic — Step 2.6 fixes the detection bug; Step 3 owns the routing
 
 **Proactive monitoring — runs on schedule and on GitHub push events:**
 - Re-validates all approved feature specs whenever an authoritative doc (`PRODUCT_VISION.md`, `DESIGN_SYSTEM.md`, `SYSTEM_ARCHITECTURE.md`) is updated — catches conflicts introduced by doc changes, not just new specs
