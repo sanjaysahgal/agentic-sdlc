@@ -467,7 +467,7 @@
     </div>
     <div class="practice-sticky">
       <span class="ps-label sticks">Why it sticks</span>
-      <span class="ps-body">Rule in CLAUDE.md: <em>"Use subagents for exploration, research, and parallel analysis. Keep the main context for implementation decisions. One task per subagent."</em> Subagents return a clean summary — not noise.</span>
+      <span class="ps-body">Subagents run in their own context window. They return a clean summary — not raw search noise. The main session never sees the intermediate results. <strong>The implementation decision is made on a lean, focused context.</strong> Rule is in CLAUDE.md so Claude chooses this path by default, not as an afterthought.</span>
     </div>
   </div>
   <aside class="notes">Context window is a finite resource and quality degrades as it fills. The explicit rule prevents Claude from defaulting to inline grep loops and read chains when a subagent would do the job more cleanly.</aside>
