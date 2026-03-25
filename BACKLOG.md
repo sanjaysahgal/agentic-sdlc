@@ -152,6 +152,25 @@ Every step from 2.6 onwards assumes writes are reliable and reads are consistent
 
 ---
 
+### Step 2.5b — Remaining API cost optimizations (minor)
+
+Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps.
+
+**Structured prompt caching (static/dynamic split):**
+- The `cache_control` marker on the system prompt busts the cache on every new feature because `featureName` and live spec context are embedded throughout the prompt
+- Fix: split each agent's `build*SystemPrompt()` into a static block (persona, workflow, spec format, rules) and a dynamic block (featureName, specUrl, current context)
+- Pass both to `runAgent()` as separate params; apply `cache_control` only to the static block
+- Static block is ~90% of each prompt — gives cross-feature cache hits instead of per-session only
+- Affects: `agents/pm.ts`, `agents/design.ts`, `agents/architect.ts`, `runtime/claude-client.ts`
+
+**Application-level response cache for `context-loader.ts`:**
+- The context loader calls Haiku to summarize large docs (product vision, architecture) per question
+- If the same question hits the same doc at the same git SHA, the answer is deterministic — no need to call the API again
+- Cache key: `hash(question + filePath + gitSHA)` → cached summary string, in-memory with a short TTL
+- Small savings (already Haiku-level cost) but trivially easy to add
+
+---
+
 ### Step 2.6 — Spec revision: phase detection fix + editor mode
 
 **The problem today:** Once all spec branches are deleted and specs are on `main`, `getInProgressFeatures()` loses track of the feature entirely. `getFeaturePhase()` falls back to `"product-spec-in-progress"` — misidentifying a live feature as a new one. The agent starts from scratch with no context.
