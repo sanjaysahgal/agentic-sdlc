@@ -486,10 +486,10 @@ async function runDesignAgent(params: {
         const uncommitted = await identifyUncommittedDecisions(threadHistory, draftContent ?? "", cacheKey).catch(() => "")
         const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
         if (uncommitted && !isAllCommitted) {
-          uncommittedNote = `\n\n*Decisions discussed in this thread not yet in the committed spec:*\n${uncommitted}\n\n_Confirm each one and I'll rebuild the spec with them locked in._`
+          uncommittedNote = `*Decisions from our conversation not yet committed to GitHub — my recommendations:*\n${uncommitted}\n\n_Reply with the numbers you want to lock in (e.g. "1 and 3") and I'll update the spec._`
         }
       }
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote }) + uncommittedNote
+      const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote })
       appendMessage(threadTs, { role: "user", content: userMessage })
       appendMessage(threadTs, { role: "assistant", content: msg })
       await update(msg)

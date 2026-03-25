@@ -182,12 +182,15 @@ Every open question must be tagged:
 
 Never write a free-form open question without these tags.
 
+## Formatting rule for open items
+Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".
+
 ## Proactive blocking questions rule
 At the end of every response where the current draft has one or more [blocking: yes] open questions, append:
 
 ---
 *Before this spec can be approved:*
-• [type: engineering] <question>
+1. [type: engineering] <question>
 
 *Want to address these now, or continue shaping the spec first?*
 
@@ -379,11 +382,11 @@ export function buildDesignStateResponse(params: {
 
   if (blocking.length > 0) {
     lines.push(`:warning: *Blocking — must resolve before approval:*`)
-    blocking.forEach(q => lines.push(q))
+    blocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
     lines.push("")
     if (nonBlocking.length > 0) {
       lines.push(`*Non-blocking questions* (can resolve after approval):`)
-      nonBlocking.forEach(q => lines.push(q))
+      nonBlocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
       lines.push("")
     }
     lines.push(`Resolve the blocking questions above and reply *approved* to move to engineering.`)
@@ -395,7 +398,7 @@ export function buildDesignStateResponse(params: {
     lines.push("")
     if (nonBlocking.length > 0) {
       lines.push(`*Non-blocking questions* (don't need answers before approval):`)
-      nonBlocking.forEach(q => lines.push(q))
+      nonBlocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
       lines.push("")
     }
     lines.push(`Either way, just say *approved* and we'll move to engineering, or share what you see and we can tweak first.`)

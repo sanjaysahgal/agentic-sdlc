@@ -199,12 +199,15 @@ Every open question must be tagged:
 
 Never write a free-form open question without these tags.
 
+## Formatting rule for open items
+Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".
+
 ## Proactive blocking questions rule
 At the end of every response where the current draft has one or more [blocking: yes] open questions, append:
 
 ---
 *Before this spec can be approved:*
-• [type: <type>] <question>
+1. [type: <type>] <question>
 
 *Want to address these now, or continue shaping the spec first?*
 

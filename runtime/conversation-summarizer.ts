@@ -100,7 +100,7 @@ export async function identifyUncommittedDecisions(
 
   const result = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 500,
+    max_tokens: 600,
     messages: [
       {
         role: "user",
@@ -118,7 +118,9 @@ ${formatted}
 
 List decisions or directions that were DISCUSSED in the conversation but are NOT reflected in the committed spec above. Be specific — name the actual decision (e.g. "Dark mode as default — Archon palette #0A0A0F background", not just "dark mode").
 
-Format: 3-6 bullet points. If everything discussed is already in the spec, respond with exactly: "All discussed decisions appear to be in the committed spec."`,
+Format: numbered list (1. 2. 3.), 3-6 items. For each item, include a concrete recommendation from the agent: "1. [Decision]: I recommend [X] — [brief reason from the thread]"
+
+If everything discussed is already in the spec, respond with exactly: "All discussed decisions appear to be in the committed spec."`,
       },
     ],
   })

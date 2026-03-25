@@ -106,8 +106,8 @@ Each question must follow this format:
 - [type: design|engineering|product] [blocking: yes|no] <the question>
 
 Example:
-- [type: design] [blocking: yes] Should the onboarding flow be a modal or a dedicated page?
-- [type: engineering] [blocking: no] Which third-party library should handle step progress state?
+1. [type: design] [blocking: yes] Should the onboarding flow be a modal or a dedicated page?
+2. [type: engineering] [blocking: no] Which third-party library should handle step progress state?
 \`\`\`
 
 ## Enforcement
@@ -128,13 +128,16 @@ Every open question in the spec must be tagged with a type (design, engineering,
 
 A blocking question means: this spec cannot be approved until this is resolved. A non-blocking question means: it can be resolved later, in the design or engineering phase.
 
+## Formatting rule for open items
+Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".
+
 ## Proactive blocking questions rule
 At the end of every response where the current draft has one or more [blocking: yes] open questions, append a short summary — do not wait to be asked. Format it exactly like this:
 
 ---
 *Before this spec can be approved:*
-• [type: design] What does the soft logged-out indicator look like?
-• [type: engineering] Confirm session TTL with infrastructure.
+1. [type: design] What does the soft logged-out indicator look like?
+2. [type: engineering] Confirm session TTL with infrastructure.
 
 *Want to address these now, or continue shaping the spec first?*
 

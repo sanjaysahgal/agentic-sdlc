@@ -139,7 +139,7 @@ describe("identifyUncommittedDecisions", () => {
   })
 
   it("sends both spec and conversation to Haiku", async () => {
-    mockCreate.mockResolvedValue(haiku("- Dark mode default not in spec"))
+    mockCreate.mockResolvedValue(haiku("1. Dark mode default: I recommend going with Archon palette — discussed in thread"))
 
     await identifyUncommittedDecisions(
       [{ role: "user", content: "Let's do dark mode" }],
@@ -154,15 +154,17 @@ describe("identifyUncommittedDecisions", () => {
   })
 
   it("asks Haiku to be specific about missing decisions", async () => {
-    mockCreate.mockResolvedValue(haiku("- something"))
+    mockCreate.mockResolvedValue(haiku("1. something"))
     await identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec")
     const prompt = mockCreate.mock.calls[0][0].messages[0].content
     expect(prompt).toContain("NOT reflected in the committed spec")
     expect(prompt).toContain("specific")
+    expect(prompt).toContain("numbered list")
+    expect(prompt).toContain("recommendation")
   })
 
   it("caches result under uncommitted: prefix", async () => {
-    mockCreate.mockResolvedValue(haiku("- Dark mode"))
+    mockCreate.mockResolvedValue(haiku("1. Dark mode: I recommend Archon palette — discussed in thread"))
     const msgs = [{ role: "user" as const, content: "dark mode please" }]
     await identifyUncommittedDecisions(msgs, "spec", "thread1:10")
     await identifyUncommittedDecisions(msgs, "spec", "thread1:10")
@@ -181,7 +183,7 @@ describe("clearSummaryCache", () => {
   })
 
   it("also removes uncommitted: prefixed entries for the given threadTs", async () => {
-    mockCreate.mockResolvedValue(haiku("- Dark mode"))
+    mockCreate.mockResolvedValue(haiku("1. Dark mode: I recommend Archon palette — discussed in thread"))
     const msgs = [{ role: "user" as const, content: "dark mode" }]
     await identifyUncommittedDecisions(msgs, "spec", "thread-clear2:5")
     clearSummaryCache("thread-clear2")

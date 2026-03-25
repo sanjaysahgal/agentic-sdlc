@@ -582,15 +582,22 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
     // identifyUncommittedDecisions is the only Anthropic call.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "- Dark mode default (Archon palette)\n- Chip positioning above prompt bar" }] })  // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode default: I recommend Archon palette — discussed in thread\n2. Chip positioning: I recommend above prompt bar — agreed in conversation" }] })  // identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
     const text = lastUpdateText(params.client)
-    expect(text).toContain("not yet in the committed spec")
+    expect(text).toContain("not yet committed to GitHub")
     expect(text).toContain("Dark mode default")
-    expect(text).toContain("Confirm each one")
+    expect(text).toContain("Reply with the numbers")
+
+    // uncommittedNote must appear BEFORE the committed state response
+    expect(text.indexOf("not yet committed")).toBeLessThan(text.indexOf("No design draft yet") !== -1 ? text.indexOf("No design draft yet") : text.length)
+    // More precise: uncommitted section comes before the spec link or "No design draft" section
+    const uncommittedIdx = text.indexOf("not yet committed")
+    const committedStateIdx = text.indexOf("---\n\n")
+    expect(uncommittedIdx).toBeLessThan(committedStateIdx)
   })
 
   it("state response skips uncommitted section when all decisions are in the spec", async () => {
@@ -608,7 +615,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("not yet in the committed spec")
+    expect(lastUpdateText(params.client)).not.toContain("not yet committed to GitHub")
   })
 
   it("state response has no uncommitted section when thread is short (fresh start)", async () => {
@@ -620,7 +627,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("not yet in the committed spec")
+    expect(lastUpdateText(params.client)).not.toContain("not yet committed to GitHub")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(0)
   })
 })
