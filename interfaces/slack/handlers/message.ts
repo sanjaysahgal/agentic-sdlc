@@ -453,20 +453,14 @@ async function runDesignAgent(params: {
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
-      // Generate (or regenerate) the HTML preview if a draft exists — non-fatal
+      // Link to the already-saved preview — don't regenerate on state queries.
+      // The preview is generated fresh on every draft save; here we just construct the URL.
       let previewNote: string | null = null
       if (draftContent) {
-        try {
-          await update("_Generating HTML preview..._")
-          const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
-          const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
-          await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
-          const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
-          const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
-          previewNote = `\n\n_<${previewUrl}|Open preview> (or <${rawUrl}|raw HTML> if that link is down) — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-        } catch (err: any) {
-          console.error(`[preview] HTML generation failed: ${err?.message}`)
-        }
+        const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
+        const rawUrl = `https://raw.githubusercontent.com/${githubOwner}/${githubRepo}/spec/${featureName}-design/${htmlFilePath}`
+        const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`
+        previewNote = `\n\n_<${previewUrl}|Open preview> (or <${rawUrl}|raw HTML> if that link is down) — use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
       }
       const threadHistory = getHistory(threadTs)
       let uncommittedNote = ""
