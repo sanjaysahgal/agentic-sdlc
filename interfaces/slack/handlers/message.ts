@@ -499,6 +499,48 @@ async function runDesignAgent(params: {
   // A "give me the latest spec" question in a design thread doesn't need the full
   // design agent — it needs the concierge. Check fast with Haiku before loading anything.
   if (!readOnly) {
+    // "regenerate preview" fast path — re-render HTML from the current spec without
+    // any spec changes. Triggered by "regenerate preview", "new render", "give me a new html",
+    // "new html", "refresh preview", etc. Deterministic keyword match — no Haiku round-trip.
+    const REGEN_PREVIEW_RE = /\b(regenerate\s+(preview|html|render)|new\s+(html|render|preview)|(give\s+(me\s+)?)?(a\s+)?(new|fresh)\s+(html|render|preview)|refresh\s+(the\s+)?preview)\b/i
+    if (REGEN_PREVIEW_RE.test(userMessage)) {
+      await update("_Regenerating HTML preview from current spec..._")
+      const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
+      const branchName = `spec/${featureName}-design`
+      const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+      const specContent = await readFile(designDraftPath, branchName)
+      if (!specContent) {
+        const msg = "No saved spec found — save a draft first and a preview will auto-generate."
+        appendMessage(threadTs, { role: "user", content: userMessage })
+        appendMessage(threadTs, { role: "assistant", content: msg })
+        await update(msg)
+        return
+      }
+      let regenNote: string
+      try {
+        const htmlContent = await generateDesignPreview({ specContent, featureName })
+        const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
+        await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
+        await client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: htmlContent,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview`,
+        })
+        regenNote = `_Fresh HTML preview generated from the current spec on GitHub — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._\n\nSay *approved* to lock in the spec and move to engineering, or share what still needs work.`
+      } catch (err: any) {
+        console.error(`[regen-preview] HTML generation failed: ${err?.message}`)
+        regenNote = `_HTML preview couldn't be generated — ${err?.message ?? "unknown error"}. The spec on GitHub is correct — say *approved* to move to engineering, or share what needs changing._`
+      }
+      const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
+      const msg = `${regenNote}\n\nSpec: ${specUrl}`
+      appendMessage(threadTs, { role: "user", content: userMessage })
+      appendMessage(threadTs, { role: "assistant", content: msg })
+      await update(msg)
+      return
+    }
+
     // Check-in messages ("are you there", "ping", etc.) always go straight to the spec state
     // fast-path — deterministic keyword match, no Haiku round-trip, no chance of hallucination.
     const isCheckIn = CHECK_IN_RE.test(userMessage.trim())

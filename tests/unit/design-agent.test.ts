@@ -567,6 +567,16 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("Do NOT suggest skipping the preview")
     expect(prompt).toContain("fix the spec and save it with a PATCH block")
   })
+
+  it("prohibits platform diagnosis — designer must not call renderer fundamentally broken", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("You are a designer, not a platform engineer")
+  })
+
+  it("instructs agent not to save draft on regenerate-render requests — platform handles it", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("The platform handles this directly")
+  })
 })
 
 describe("hasDesignPatch", () => {
