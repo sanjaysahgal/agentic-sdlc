@@ -796,9 +796,17 @@ describe("Scenario 12 — Auto-retry on truncated DRAFT (design agent)", () => {
   it("retries with forced PATCH when DRAFT block is truncated and existing draft exists", async () => {
     setConfirmedAgent(THREAD, "ux-design")
 
-    // Simulate an existing draft on GitHub (mockGetContent returns it for the spec branch)
-    const existingDraft = Buffer.from("# Onboarding — Design Spec\n\n## Design Direction\nLight mode.\n\n## Screens\nScreen 1.").toString("base64")
-    mockGetContent.mockResolvedValueOnce({ data: { content: existingDraft, type: "file" } })
+    // Use a path-aware mock so any getContent call for the design spec path returns
+    // the existing draft — regardless of which call number it is in the sequence.
+    // Context-loading calls (productVision, systemArchitecture, etc.) all hit the default
+    // rejected value; only calls for the onboarding.design.md path resolve successfully.
+    const existingDraftContent = "# Onboarding — Design Spec\n\n## Design Direction\nLight mode.\n\n## Screens\nScreen 1."
+    mockGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.design.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(existingDraftContent).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
 
     const truncatedResponse = "Updating the spec with all changes.\nDRAFT_DESIGN_SPEC_START\n# Onboarding — Design Spec\n\n## Design Direction\nDark mode."
     // No DRAFT_DESIGN_SPEC_END — simulates truncation
@@ -811,17 +819,17 @@ describe("Scenario 12 — Auto-retry on truncated DRAFT (design agent)", () => {
       "DESIGN_PATCH_END",
     ].join("\n")
 
-    // Call sequence:
+    // Anthropic call sequence:
     //   1. isOffTopicForAgent → false
     //   2. isSpecStateQuery   → false
-    //   3. runAgent (main)    → truncated DRAFT
-    //   4. readFile (existing draft check) → resolved by mockGetContent above
-    //   5. runAgent (retry)   → PATCH block
-    //   6. generateDesignPreview → HTML
+    //   3. runAgent (main)    → truncated DRAFT (no DRAFT_DESIGN_SPEC_END)
+    //   4. runAgent (retry)   → PATCH block (auto-retry transparently)
+    //   5. generateDesignPreview → HTML
+    //   (auditSpecDraft skipped — empty productVision/systemArchitecture)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedResponse }] }) // runAgent (truncated)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedResponse }] })  // runAgent (truncated)
       .mockResolvedValueOnce({ content: [{ type: "text", text: patchRetryResponse }] }) // runAgent (retry)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
 
