@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk"
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+// 5 minute timeout — consistent with claude-client.ts. Without this, the default
+// is 10 minutes, which leaves the user staring at "thinking" for far too long.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000 })
 
 // Generates a self-contained HTML preview from a design spec.
 // Uses Tailwind CDN + Alpine.js for interactivity — no build step, no external deps.
