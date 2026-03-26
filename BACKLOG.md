@@ -157,6 +157,36 @@ The first auto-retry succeeds in the vast majority of cases — a second failure
 
 ---
 
+### Trust Step 4e — Visual regression tests for HTML preview
+
+**The problem today:** The HTML renderer prompt is tested for correct instructions but not for correct output. Glow effects, color palette, animations, and layout have regressed silently multiple times — each caught only when a human looked at the preview in Slack. A prompt change that produces invisible glows or wrong colors passes all current CI checks.
+
+**What this adds:**
+
+**Screenshot-based regression tests (Playwright + pixelmatch or similar):**
+- Generate the HTML from a fixed, deterministic spec fixture (no LLM call — use a pre-generated HTML snapshot)
+- Render in a headless browser (Playwright) at mobile viewport
+- Take a screenshot and diff against a committed baseline PNG
+- Fail CI if pixel diff exceeds threshold (e.g. 2% of pixels changed)
+
+**Fixtures to test:**
+- Glow present and visible (pixel brightness check on the glow area — not just HTML structure check)
+- Dark background correctly applied (#0A0A0F)
+- Text legible (contrast ratio check via accessibility API)
+- Animation keyframes present in rendered DOM (check via `getComputedStyle`)
+
+**Scope:**
+- Does NOT test LLM output quality — tests that a valid HTML spec renders correctly in a browser
+- The LLM prompt tests (existing) check that the renderer is instructed correctly
+- These tests check that the generated HTML actually works when opened
+
+**Why this is important:**
+The current test suite checks `expect(prompt).toContain("glow-pulse")` — it proves the renderer is told to use a glow, not that the glow is visible. Every glow regression we've hit was caught by eye, not by CI.
+
+**Implementation:** `tests/visual/` directory, Playwright as test runner, baseline PNGs committed to repo. Run in CI on any change to `runtime/html-renderer.ts`.
+
+---
+
 ### Step 2.5a — Agent persona upgrades + authoritative doc ownership
 
 All three spec-producing agents are upgraded simultaneously. This is one step, not three — the pattern is identical across PM, design, and architect, and shipping it piecemeal creates inconsistency.
