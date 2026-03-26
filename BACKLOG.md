@@ -154,6 +154,27 @@ Every step from 2.6 onwards assumes writes are reliable and reads are consistent
 
 ---
 
+### Trust Step 4b — Auto-retry loop: handle second truncation in PATCH recovery
+
+**The problem today:** When a DRAFT block is truncated (spec too large), the platform auto-retries with a SYSTEM OVERRIDE to force PATCH. But if that retry also fails to produce a valid PATCH block (truncated again, or falls back to a generic response), the user sees: *"Unable to apply the changes automatically. Please say which specific section you'd like to update."* This still puts the user in the recovery loop.
+
+**What this adds:**
+
+**Retry loop with progressively scoped instruction:**
+- On first auto-retry failure, do not surface the error immediately
+- Instead, retry a second time with a more constrained instruction: pick the single most-changed section from the original request and ask the agent to patch only that section
+- If that also fails, then surface the "specify a section" message — but attach the list of sections from the existing spec so the user can pick one by name without reading the spec themselves
+- Cap at 3 total attempts before surfacing the actionable fallback
+
+**Section inventory from existing draft:**
+- When surfacing the fallback message, extract all `## Section` headers from the existing draft and include them in the message: *"Which of these sections needs the most attention: [list]?"*
+- Removes cognitive load — user doesn't need to remember section names
+
+**Why deferred (not a blocker for current work):**
+The first auto-retry succeeds in the vast majority of cases — a second failure only happens when a single PATCH section is also too large to fit in one response, which requires an unusually long spec and an unusually large change. This is a tail case. The first-attempt auto-retry (Trust Step 4's predecessor) is already in place. Fix this before going to production.
+
+---
+
 ### Step 2.5b — Remaining API cost optimizations (minor)
 
 Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps.
