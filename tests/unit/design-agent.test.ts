@@ -581,8 +581,8 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
 
   it("handles HTML rendering feedback by patching spec — not suggesting to skip preview", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("Do NOT suggest skipping the preview")
-    expect(prompt).toContain("fix the spec and save it with a PATCH block")
+    expect(prompt).toContain("No options. No asking permission.")
+    expect(prompt).toContain("Fix the spec")
   })
 
   it("prohibits platform diagnosis — designer must not call renderer fundamentally broken", () => {

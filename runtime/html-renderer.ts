@@ -70,22 +70,44 @@ Read the Brand section of the spec for exact hex values. Configure them like thi
 
 **This is how to get custom colors and animations into Tailwind — never skip this step.** If you define colors in the config, you can use them as Tailwind classes. If you skip this, all custom colors will fail to render — the designer will see a broken black screen instead of the designed palette.
 
-## Glow and gradient effects — must be visible
+## Glow and gradient effects — use this exact pattern, always
 
-**Minimum opacity for glow effects: 0.30.** Values below 0.20 are invisible in practice — the designer will see a black screen where they expect a glowing background. Use:
-- Subtle glow: opacity 0.30–0.45
-- Medium glow: opacity 0.45–0.60
-- Strong glow: opacity 0.60–0.80
+When the spec describes a pulsing glow effect, use this EXACT structure. Do not improvise. Do not use Tailwind keyframes for the glow — use a \`<style>\` tag placed in \`<head>\`.
 
-For radial glow effects (a light emanating from behind an element), use an absolutely-positioned div with a radial-gradient background and the animate class:
+**Step 1 — add glow keyframe to \`<head>\`:**
 \`\`\`html
-<div class="absolute inset-0 pointer-events-none overflow-hidden">
-  <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-80 h-40 rounded-full animate-glow-pulse"
-       style="background: radial-gradient(ellipse at center, rgba(124,58,237,0.55) 0%, transparent 70%)"></div>
+<style>
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 0.45; }
+    50%       { opacity: 0.75; }
+  }
+</style>
+\`\`\`
+
+**Step 2 — wrap the target element in a relative container and place the glow div as the FIRST child:**
+\`\`\`html
+<div class="relative">
+  <!-- glow: first child so it renders behind content; use colors from spec -->
+  <div aria-hidden="true" class="absolute inset-0 pointer-events-none"
+       style="background: radial-gradient(ellipse at 50% 85%, rgba(124,111,205,0.65) 0%, rgba(79,175,168,0.35) 45%, transparent 70%);
+              filter: blur(48px);
+              animation: glow-pulse 2.5s ease-in-out infinite;
+              z-index: 0;"></div>
+  <!-- content: always sits above the glow -->
+  <div class="relative" style="z-index: 1;">
+    <!-- actual screen content here -->
+  </div>
 </div>
 \`\`\`
 
-**IMPORTANT:** Use \`style="background: radial-gradient(...)"\` directly for glow/gradient elements — do NOT rely on Tailwind gradient classes for these. Tailwind's \`from-*/to-*\` gradient syntax does not support arbitrary rgba values reliably.
+**Rules that must not be broken:**
+- Always use a \`<style>\` keyframe for glow animation — Tailwind CDN keyframes are unreliable for glow
+- Glow div must be the FIRST child inside the relative wrapper — later siblings stack on top via z-index
+- Content must be in a div with \`position: relative; z-index: 1\` — without this, content sits behind the glow
+- Use \`filter: blur(40px)\` or higher on the glow div — this creates the soft-bloom look; without it the gradient has hard edges
+- Opacity range 0.40–0.80 — values below 0.30 are invisible on dark backgrounds in practice
+- Use inline \`style=""\` for radial-gradient and filter — never Tailwind \`from-*/to-*\` classes for arbitrary rgba values
+- If the spec names TWO glow locations (e.g. home prompt bar AND auth sheet), implement BOTH independently with separate glow divs
 
 ## Structure
 

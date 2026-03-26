@@ -103,8 +103,8 @@ describe("generateDesignPreview", () => {
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     const call = mockCreate.mock.calls[0][0]
-    expect(call.system).toContain("0.30")
-    expect(call.system).toContain("Minimum opacity")
+    expect(call.system).toContain("0.40")
+    expect(call.system).toContain("glow-pulse")
   })
 
   it("system prompt uses non-prefixed color names to avoid Tailwind class collision", async () => {
