@@ -499,10 +499,12 @@ async function runDesignAgent(params: {
   // A "give me the latest spec" question in a design thread doesn't need the full
   // design agent — it needs the concierge. Check fast with Haiku before loading anything.
   if (!readOnly) {
-    // "regenerate preview" fast path — re-render HTML from the current spec without
-    // any spec changes. Triggered by "regenerate preview", "new render", "give me a new html",
-    // "new html", "refresh preview", etc. Deterministic keyword match — no Haiku round-trip.
-    const REGEN_PREVIEW_RE = /\b(regenerate\s+(preview|html|render)|new\s+(html|render|preview)|(give\s+(me\s+)?)?(a\s+)?(new|fresh)\s+(html|render|preview)|refresh\s+(the\s+)?preview)\b/i
+    // "regenerate preview" fast path — re-render HTML from the current saved spec without
+    // any spec changes. Only triggered by UNAMBIGUOUS re-render commands like
+    // "regenerate preview" or "refresh preview". Does NOT match "new render", "new html",
+    // or "give me a preview" — those may imply pending recommendations should be applied
+    // first and must go through the design agent (which saves a DRAFT then triggers a render).
+    const REGEN_PREVIEW_RE = /\b(regenerate\s+(preview|html|render|the\s+preview|the\s+html)|refresh\s+(the\s+)?preview)\b/i
     if (REGEN_PREVIEW_RE.test(userMessage)) {
       await update("_Regenerating HTML preview from current spec..._")
       const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
