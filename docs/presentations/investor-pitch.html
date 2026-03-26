@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archon Dev — Investor Pitch</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<style>
+  :root {
+    --red:    #e63946;
+    --white:  #f0f0f0;
+    --dim:    #888;
+    --bg:     #0a0a0a;
+    --card:   #0e0e0e;
+    --border: #1e1e1e;
+    --mono:   'SF Mono', 'Fira Code', 'Consolas', monospace;
+    --green:  #4ade80;
+  }
+
+  .reveal-viewport, .reveal { background: var(--bg); }
+  .reveal .slides { text-align: left; }
+  .reveal .slides section {
+    height: 900px; padding: 0 80px;
+    display: flex !important; flex-direction: column;
+    justify-content: center; box-sizing: border-box;
+  }
+  .reveal .slides section.top { justify-content: flex-start; padding-top: 60px; }
+
+  .reveal h1,.reveal h2,.reveal h3,.reveal p,
+  .reveal ul,.reveal ol,.reveal li { margin: 0; text-transform: none; }
+
+  .reveal .eyebrow {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.15em;
+    text-transform: uppercase !important; color: var(--red); margin-bottom: 20px;
+  }
+  .reveal h1 { font-size: 96px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: var(--white); }
+  .reveal h2 { font-size: 48px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; color: var(--white); margin-bottom: 28px; }
+  .reveal h2.tight { margin-bottom: 20px; }
+  .reveal .sub { font-size: 24px; color: var(--dim); font-weight: 400; line-height: 1.5; margin-top: 16px; }
+  .reveal .statement { font-size: 52px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; color: var(--white); }
+  .reveal p { font-size: 20px; line-height: 1.65; color: #bbb; }
+  .reveal .accent { color: var(--red); }
+  .reveal .dim { color: #444; }
+  .reveal code { font-family: var(--mono); font-size: 0.85em; background: #1a1a1a; color: var(--red); padding: 2px 7px; border-radius: 4px; }
+
+  /* Pills */
+  .pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 500; padding: 7px 16px; border-radius: 20px; border: 1px solid; }
+  .pill.red   { color: #e63946; border-color: #3a1015; background: #160508; }
+  .pill.white { color: #888;    border-color: #252525; background: #111; }
+
+  /* Big number stat */
+  .stats { display: flex; gap: 40px; margin-top: 40px; }
+  .stat { display: flex; flex-direction: column; gap: 6px; }
+  .stat-n { font-size: 72px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: var(--white); }
+  .stat-n .accent { color: var(--red); }
+  .stat-l { font-size: 16px; color: #555; font-weight: 500; max-width: 200px; line-height: 1.4; }
+
+  /* Problem rows */
+  .problem-rows { display: flex; flex-direction: column; gap: 0; margin-top: 32px; max-width: 960px; }
+  .problem-row {
+    display: flex; gap: 24px; align-items: baseline;
+    padding: 20px 0; border-bottom: 1px solid #111;
+  }
+  .problem-row:last-child { border-bottom: none; }
+  .pr-num { font-size: 13px; font-weight: 700; color: #3a1015; flex-shrink: 0; min-width: 28px; font-family: var(--mono); }
+  .pr-phase { font-size: 18px; font-weight: 700; color: #444; flex-shrink: 0; min-width: 180px; }
+  .pr-loss { font-size: 18px; color: #333; line-height: 1.4; flex: 1; }
+
+  /* Insight boxes */
+  .insight-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 32px; }
+  .insight-card {
+    background: #0e0e0e; border: 1px solid #1e1e1e; border-radius: 14px;
+    padding: 28px 26px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .insight-card.hl { background: #0a0505; border-color: #2a1015; }
+  .ic-num { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: #333; text-transform: uppercase; }
+  .ic-head { font-size: 22px; font-weight: 700; color: var(--white); line-height: 1.2; }
+  .insight-card.hl .ic-head { color: var(--red); }
+  .ic-body { font-size: 15px; color: #555; line-height: 1.6; }
+
+  /* Pipeline */
+  .inv-pipeline { display: flex; align-items: stretch; gap: 0; margin-top: 32px; }
+  .inv-phase {
+    flex: 1; background: #0e0e0e; border: 1px solid #1e1e1e;
+    padding: 20px 18px; display: flex; flex-direction: column; gap: 8px;
+    border-radius: 0;
+  }
+  .inv-phase:first-child { border-radius: 12px 0 0 12px; }
+  .inv-phase:last-child  { border-radius: 0 12px 12px 0; }
+  .inv-phase.live { background: #080f08; border-color: #1a3a1a; }
+  .inv-phase-arrow { display: flex; align-items: center; color: #222; font-size: 18px; flex-shrink: 0; padding: 0 2px; }
+  .iph-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #333; }
+  .iph-label.live { color: #2a6a3a; }
+  .iph-name { font-size: 16px; font-weight: 700; color: #666; line-height: 1.2; }
+  .iph-name.live { color: var(--white); }
+  .iph-agent { font-size: 12px; color: #333; font-family: var(--mono); }
+  .iph-agent.live { color: #4a8a5a; }
+
+  /* Traction */
+  .traction-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 28px; }
+  .traction-card {
+    background: #0e0e0e; border: 1px solid #1e1e1e; border-radius: 14px;
+    padding: 26px 28px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .traction-card.hl { background: #080f08; border-color: #1a3a1a; }
+  .tc-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #333; }
+  .tc-label.live { color: #2a6a3a; }
+  .tc-head { font-size: 22px; font-weight: 700; color: var(--white); line-height: 1.2; }
+  .tc-body { font-size: 15px; color: #555; line-height: 1.6; }
+  .tc-item { display: flex; gap: 10px; align-items: baseline; font-size: 15px; color: #555; line-height: 1.5; }
+  .tc-dot { width: 5px; height: 5px; border-radius: 50%; background: #4ade80; flex-shrink: 0; margin-top: 7px; }
+
+  /* Market */
+  .market-row { display: flex; gap: 24px; margin-top: 32px; }
+  .market-card {
+    flex: 1; background: #0e0e0e; border: 1px solid #1e1e1e; border-radius: 14px;
+    padding: 28px 26px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .mk-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #444; }
+  .mk-num { font-size: 48px; font-weight: 800; letter-spacing: -0.03em; color: var(--white); line-height: 1; }
+  .mk-label { font-size: 16px; color: #555; line-height: 1.5; }
+
+  /* Roadmap */
+  .roadmap { display: flex; flex-direction: column; gap: 0; margin-top: 28px; max-width: 880px; }
+  .rm-row {
+    display: flex; gap: 24px; align-items: baseline;
+    padding: 18px 0; border-bottom: 1px solid #111;
+  }
+  .rm-row:last-child { border-bottom: none; }
+  .rm-step { font-size: 11px; font-weight: 700; color: #333; font-family: var(--mono); flex-shrink: 0; min-width: 60px; }
+  .rm-step.done { color: #2a6a3a; }
+  .rm-head { font-size: 20px; font-weight: 700; color: #555; flex-shrink: 0; min-width: 260px; }
+  .rm-head.done { color: var(--white); }
+  .rm-detail { font-size: 15px; color: #333; line-height: 1.5; flex: 1; }
+  .rm-detail.done { color: #444; }
+
+  /* Moat */
+  .moat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 28px; }
+  .moat-card {
+    background: #0e0e0e; border: 1px solid #1e1e1e; border-radius: 14px;
+    padding: 26px 28px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .moat-card.hl { background: #0a0505; border-color: #2a1015; }
+  .mc-num { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #333; }
+  .mc-head { font-size: 20px; font-weight: 700; color: var(--white); line-height: 1.2; }
+  .moat-card.hl .mc-head { color: #e07070; }
+  .mc-body { font-size: 15px; color: #555; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ════════════════════════════════════════
+     1 — TITLE
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">Archon Dev</div>
+  <h1>The missing<br>layer in<br><span class="accent">software.</span></h1>
+  <div class="sub">An AI specialist at every phase of your product lifecycle —<br>from first idea to shipped code.</div>
+  <div class="pills">
+    <span class="pill white">getarchon.dev</span>
+    <span class="pill red">Early access</span>
+  </div>
+  <aside class="notes">The pitch in one sentence: software teams have always had a spec problem — the gap between what was decided and what was built. Archon Dev closes that gap with an AI specialist at every phase.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     2 — THE VISION
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">The vision</div>
+  <div class="statement">Every software team deserves<br>a world-class expert<br><span class="accent">at every phase.</span></div>
+  <div style="margin-top: 48px; max-width: 780px;">
+    <p style="font-size: 22px; color: #444; line-height: 1.7;">Not one brilliant generalist. A principal designer, a senior architect, a meticulous QA lead — each one laser-focused on their domain, always available, never politically biased. And when they hand off to each other, nothing is lost.</p>
+  </div>
+  <aside class="notes">This is the north star. Today only the biggest, best-funded teams have this. We're making it available to every team.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     3 — THE PROBLEM
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The problem</div>
+  <h2 class="tight">Every handoff <span class="accent">loses something.</span></h2>
+  <div class="problem-rows">
+    <div class="problem-row">
+      <span class="pr-num">01</span>
+      <span class="pr-phase">Idea → Product spec</span>
+      <span class="pr-loss">Assumptions go unquestioned. Scope quietly expands. Success criteria stay vague.</span>
+    </div>
+    <div class="problem-row">
+      <span class="pr-num">02</span>
+      <span class="pr-phase">Spec → Design</span>
+      <span class="pr-loss">Designers fill in gaps the spec left open. UI decisions get made that should have been product decisions.</span>
+    </div>
+    <div class="problem-row">
+      <span class="pr-num">03</span>
+      <span class="pr-phase">Design → Engineering</span>
+      <span class="pr-loss">Engineers make architecture calls in code that should have been explicit. Tech debt is born here.</span>
+    </div>
+    <div class="problem-row">
+      <span class="pr-num">04</span>
+      <span class="pr-phase">Engineering → Shipped</span>
+      <span class="pr-loss">What ships doesn't match what was specced. The retrospective finds the break — six months too late.</span>
+    </div>
+  </div>
+  <aside class="notes">This isn't a people problem. It's a structural problem. The handoff is where context dies. Every team has this problem regardless of size or process maturity.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     4 — THE INSIGHT
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The insight</div>
+  <h2 class="tight">Other tools automate execution.<br><span class="accent">We automate the decisions that precede it.</span></h2>
+  <div class="insight-grid">
+    <div class="insight-card hl">
+      <div class="ic-num">The gap</div>
+      <div class="ic-head">Code-gen tools write code faster.<br>They don't fix what the code should do.</div>
+      <div class="ic-body">Copilot, Cursor, and their successors are execution accelerators. They start after the most expensive decisions are already made — or unmade.</div>
+    </div>
+    <div class="insight-card">
+      <div class="ic-num">The spec layer</div>
+      <div class="ic-head">Nobody owns the translation from idea to implementation-ready spec.</div>
+      <div class="ic-body">PM tools track what's in progress. They don't create or enforce the quality of the decisions that go in. That's a human problem — until now.</div>
+    </div>
+    <div class="insight-card">
+      <div class="ic-num">The unlock</div>
+      <div class="ic-head">A specialist at every phase, enforcing coherence across all of them.</div>
+      <div class="ic-body">Each agent reads every upstream decision before writing a word. Conflicts are blocked. Gaps are surfaced. Nothing slips through the cracks between phases.</div>
+    </div>
+  </div>
+  <aside class="notes">The positioning is clear: Copilot is a better autocomplete. We're the spec layer that makes what you're autocompleting worth building.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     5 — THE PRODUCT
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">The product</div>
+  <h2 class="tight">A specialist for every phase.<br>Each one reads everything that came before.</h2>
+
+  <div class="inv-pipeline" style="margin-top: 28px;">
+    <div class="inv-phase live">
+      <div class="iph-label live">Live</div>
+      <div class="iph-name live">Product<br>Spec</div>
+      <div class="iph-agent live">PM agent</div>
+    </div>
+    <div class="inv-phase-arrow">→</div>
+    <div class="inv-phase live">
+      <div class="iph-label live">Live</div>
+      <div class="iph-name live">Design<br>Spec</div>
+      <div class="iph-agent live">Design agent</div>
+    </div>
+    <div class="inv-phase-arrow">→</div>
+    <div class="inv-phase live">
+      <div class="iph-label live">Live</div>
+      <div class="iph-name live">Engineering<br>Spec</div>
+      <div class="iph-agent live">Architect agent</div>
+    </div>
+    <div class="inv-phase-arrow">→</div>
+    <div class="inv-phase">
+      <div class="iph-label">Next</div>
+      <div class="iph-name">Work<br>Items</div>
+      <div class="iph-agent">PGM agent</div>
+    </div>
+    <div class="inv-phase-arrow">→</div>
+    <div class="inv-phase">
+      <div class="iph-label">Planned</div>
+      <div class="iph-name">Code<br>& QA</div>
+      <div class="iph-agent">Backend · Frontend · QA</div>
+    </div>
+    <div class="inv-phase-arrow">→</div>
+    <div class="inv-phase">
+      <div class="iph-label">Planned</div>
+      <div class="iph-name">Deploy</div>
+      <div class="iph-agent">agentic-cicd</div>
+    </div>
+  </div>
+
+  <div style="margin-top: 28px; display: flex; gap: 32px;">
+    <div style="display: flex; gap: 10px; align-items: baseline;">
+      <span style="font-size: 13px; font-weight: 700; color: #2a6a3a;">●</span>
+      <span style="font-size: 16px; color: #555;">Every spec auto-saved to GitHub. Every phase gated by human approval.</span>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: baseline;">
+      <span style="font-size: 13px; font-weight: 700; color: #2a6a3a;">●</span>
+      <span style="font-size: 16px; color: #555;">Conflicts with upstream decisions blocked automatically. Gaps flagged before they become bugs.</span>
+    </div>
+  </div>
+  <aside class="notes">The human is always in the loop — they approve before any phase advances. The AI does the drafting, the surfacing, the coherence-checking. The human makes the call.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     6 — TRACTION
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Traction</div>
+  <h2 class="tight">Live. Running. Proving the pattern.</h2>
+  <div class="traction-grid">
+    <div class="traction-card hl">
+      <div class="tc-label live">Live today</div>
+      <div class="tc-head">4 specialists, fully automated specification workflow</div>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+        <div class="tc-item"><div class="tc-dot"></div><span>PM agent — shapes feature ideas into structured product specs through conversation</span></div>
+        <div class="tc-item"><div class="tc-dot"></div><span>Design agent — produces screen inventory, user flows, and a live HTML preview on every save</span></div>
+        <div class="tc-item"><div class="tc-dot"></div><span>Architect agent — reads the full spec chain, produces data model + API surface, owns the architecture doc</span></div>
+        <div class="tc-item"><div class="tc-dot"></div><span>Concierge — front door for every role, reads live project state from GitHub on every message</span></div>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div class="traction-card">
+        <div class="tc-label">Customer zero</div>
+        <div class="tc-head">Health360</div>
+        <div class="tc-body">The reference customer. Full specification workflow running in production — feature idea through approved engineering spec, with zero manual code changes to onboard.</div>
+      </div>
+      <div class="traction-card">
+        <div class="tc-label">The platform guarantee</div>
+        <div class="tc-head">New team onboards by changing one config file.</div>
+        <div class="tc-body">No TypeScript changes. No architecture changes. Point it at a Slack workspace and a GitHub repo — it works.</div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">Health360 is the internal reference implementation. The key proof point isn't the product — it's the onboarding model. Any new customer is a config change, not a consulting engagement.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     7 — THE MOAT
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Why this is hard to replicate</div>
+  <h2 class="tight">The agents are easy.<br><span class="accent">The infrastructure around them is not.</span></h2>
+  <div class="moat-grid">
+    <div class="moat-card hl">
+      <div class="mc-num">Coherence enforcement</div>
+      <div class="mc-head">Every draft audited against every upstream decision before it saves.</div>
+      <div class="mc-body">Conflicts are blocked. Gaps are flagged. An agent cannot drift from the product vision or architecture without a human explicitly resolving the conflict first.</div>
+    </div>
+    <div class="moat-card">
+      <div class="mc-num">Phase-aware routing</div>
+      <div class="mc-head">The system knows where every feature is and routes to the right specialist automatically.</div>
+      <div class="mc-body">No manual handoffs. GitHub is the state machine. The right agent activates based on what specs exist and what's been approved — no configuration required.</div>
+    </div>
+    <div class="moat-card">
+      <div class="mc-num">Context that never goes stale</div>
+      <div class="mc-head">Every agent reads all upstream decisions fresh on every single message.</div>
+      <div class="mc-body">Product vision, architecture, prior specs — all loaded from GitHub in parallel on every call. No caching, no drift, no agent working from outdated context.</div>
+    </div>
+    <div class="moat-card">
+      <div class="mc-num">Zero-code onboarding</div>
+      <div class="mc-head">One config file. Any team, any repo, any Slack workspace.</div>
+      <div class="mc-body">The entire platform is parameterised through WorkspaceConfig. Multi-tenant by design from day one. Adding a customer is an operational task, not an engineering one.</div>
+    </div>
+  </div>
+  <aside class="notes">Any team can prompt Claude. The hard part is the infrastructure: coherence gates, phase detection, parallel context loading, graceful degradation, session persistence. That's what took months to build.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     8 — MARKET
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Market</div>
+  <h2 class="tight">Every team that ships software.</h2>
+  <div class="market-row">
+    <div class="market-card">
+      <div class="mk-eyebrow">Initial wedge</div>
+      <div class="mk-num" style="font-size: 32px; color: var(--white);">Startups &amp; scale-ups</div>
+      <div class="mk-label">Teams of 3–30 who can't afford to hire every specialist. They're making product, design, and architecture calls simultaneously — and getting some of them wrong. Archon Dev gives them the specialist layer they can't hire.</div>
+    </div>
+    <div class="market-card">
+      <div class="mk-eyebrow">Expansion</div>
+      <div class="mk-num" style="font-size: 32px; color: var(--white);">Enterprises</div>
+      <div class="mk-label">Large teams who need consistency across squads. Every team running the same spec chain means no more "this team does product specs, that team doesn't." The platform enforces the standard.</div>
+    </div>
+    <div class="market-card">
+      <div class="mk-eyebrow">Model</div>
+      <div class="mk-num" style="font-size: 32px; color: var(--white);">Per workspace</div>
+      <div class="mk-label">Flat monthly fee per Slack workspace + GitHub repo. Simple to buy, simple to expand. Cost scales with customers, not with compute — most of the work is Haiku, not Sonnet.</div>
+    </div>
+  </div>
+  <aside class="notes">The wedge is the spec layer. Once a team is running product + design + engineering specs through Archon Dev, they don't go back — the GitHub history becomes their institutional memory. Switching cost compounds every month.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     9 — ROADMAP
+════════════════════════════════════════ -->
+<section class="top">
+  <div class="eyebrow">Roadmap</div>
+  <h2 class="tight">Spec to shipped code — <span class="accent">fully autonomous.</span></h2>
+  <div class="roadmap">
+    <div class="rm-row">
+      <span class="rm-step done">✓ Now</span>
+      <span class="rm-head done">Full specification workflow</span>
+      <span class="rm-detail done">PM, Design, Architect, Concierge — live. Feature idea to approved engineering spec, automated end-to-end.</span>
+    </div>
+    <div class="rm-row">
+      <span class="rm-step">Next</span>
+      <span class="rm-head">Work item generation</span>
+      <span class="rm-detail">PGM agent breaks approved engineering specs into GitHub Issues — one per discrete unit of work, dependency-ordered, acceptance criteria included.</span>
+    </div>
+    <div class="rm-row">
+      <span class="rm-step">Step 3</span>
+      <span class="rm-head">Autonomous code generation</span>
+      <span class="rm-detail">Backend and frontend agents implement GitHub Issues against the full spec chain. PRs opened automatically, reviewed by QA agent against acceptance criteria.</span>
+    </div>
+    <div class="rm-row">
+      <span class="rm-step">Step 4</span>
+      <span class="rm-head">Spec to production, zero humans required</span>
+      <span class="rm-detail">agentic-cicd pipeline deploys QA-approved code. The loop closes: feature brief in Slack, running code in production — no human wrote a line.</span>
+    </div>
+  </div>
+  <aside class="notes">Step 4 is the north star. We're not promising it's coming next quarter — we're proving the architecture that makes it possible. The spec chain is the foundation everything else builds on.</aside>
+</section>
+
+<!-- ════════════════════════════════════════
+     10 — CLOSE
+════════════════════════════════════════ -->
+<section>
+  <div class="eyebrow">Archon Dev</div>
+  <div class="statement" style="font-size: 56px; max-width: 960px; line-height: 1.1;">
+    Software teams have always needed<br>a specialist at every phase.<br>
+    <span class="accent">Now they can have one.</span>
+  </div>
+  <div style="margin-top: 48px; display: flex; flex-direction: column; gap: 10px;">
+    <div style="font-size: 20px; color: #333;">4 specialists live and running today.</div>
+    <div style="font-size: 20px; color: #333;">Full specification workflow automated end-to-end.</div>
+    <div style="font-size: 20px; color: #333;">The pattern is proven. The pipeline is next.</div>
+    <div style="font-size: 18px; color: #222; margin-top: 12px; font-family: var(--mono);">getarchon.dev</div>
+  </div>
+  <aside class="notes">The close ties back to the opening. We opened with the vision — every team deserves a world-class expert at every phase. We close by restating it as a fact: now they can have one.</aside>
+</section>
+
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    transition: 'fade',
+    transitionSpeed: 'fast',
+    controls: false,
+    progress: true,
+    slideNumber: 'c/t',
+    keyboard: true,
+    center: false,
+    width: 1440,
+    height: 900,
+    margin: 0.04,
+    minScale: 0.2,
+    maxScale: 2.0,
+  });
+</script>
+</body>
+</html>

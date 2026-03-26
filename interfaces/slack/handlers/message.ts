@@ -300,7 +300,7 @@ async function runPmAgent(params: {
   const systemPrompt = buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext)
 
   await update("_Product Manager is thinking..._")
-  const response = await runAgent({ systemPrompt, history: historyPm, userMessage: enrichedUserMessagePm, userImages })
+  let response = await runAgent({ systemPrompt, history: historyPm, userMessage: enrichedUserMessagePm, userImages })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -569,7 +569,7 @@ async function runDesignAgent(params: {
   // than the PM agent. Cap at 20 messages (10 exchanges) so the combined payload stays well
   // under the token limit. Prior conversation context beyond the limit is summarized and
   // injected into the user message — no work is lost on long threads.
-  const response = await runAgent({ systemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
+  let response = await runAgent({ systemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
