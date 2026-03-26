@@ -495,8 +495,9 @@ async function runDesignAgent(params: {
     }
   }
 
-  // Platform enforcement flag — set inside the !readOnly block when apply-and-render intent is detected.
-  // Used after context loading to inject a mandatory PATCH override into the agent's context.
+  // Platform enforcement flags — set inside the !readOnly block when render intent is detected.
+  // Both inject a mandatory override after context loading. The agent is always in the loop.
+  let forcePreviewOnly = false
   let forceApplyAndRender = false
 
   // Short-circuit status/general queries before loading expensive design context.
@@ -569,40 +570,16 @@ async function runDesignAgent(params: {
     }
 
     // PLATFORM ENFORCEMENT (Trust Step 0.5): detect render/preview intent before the agent runs.
-    // render-only: read the current draft from GitHub and generate HTML directly — agent bypassed.
-    //   Deterministic: the agent cannot refuse, diagnose the renderer, or offer A/B choices
-    //   because it is never called.
-    // apply-and-render: inject a mandatory PATCH override into the agent's context.
-    //   The platform renders HTML automatically on every patch save — no agent decision needed.
+    // The agent is ALWAYS in the loop — it has conversation context the platform does not.
+    // The platform only enforces what block the agent must output; the agent decides the content.
+    //
+    // render intent → force PREVIEW_ONLY: agent outputs a preview block incorporating any
+    //   uncommitted decisions from the conversation. Nothing saved until user approves.
+    // apply-and-render → force PATCH: agent applies changes and saves. HTML renders on every save.
     const renderIntent = await detectRenderIntent(userMessage)
 
     if (renderIntent === "render-only") {
-      const renderDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
-      const existingDraft = await readFile(renderDraftPath, `spec/${featureName}-design`)
-      if (existingDraft) {
-        await update("_Generating HTML preview..._")
-        try {
-          const htmlContent = await generateDesignPreview({ specContent: existingDraft, featureName })
-          await client.files.uploadV2({
-            channel_id: channelId,
-            thread_ts: threadTs,
-            content: htmlContent,
-            filename: `${featureName}.preview.html`,
-            title: `${featureName} — Design Preview`,
-          })
-          const msg = `_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._\n\nSay *approved* to lock this in and move to engineering, or share what needs changing.`
-          appendMessage(threadTs, { role: "user", content: userMessage })
-          appendMessage(threadTs, { role: "assistant", content: msg })
-          await update(msg)
-        } catch (err: any) {
-          const errMsg = `_Preview generation failed: ${err?.message ?? "unknown error"}. The spec is saved on GitHub — share what needs changing and I'll update it._`
-          appendMessage(threadTs, { role: "user", content: userMessage })
-          appendMessage(threadTs, { role: "assistant", content: errMsg })
-          await update(errMsg)
-        }
-        return
-      }
-      // No draft exists yet — fall through to normal agent flow
+      forcePreviewOnly = true
     }
 
     if (renderIntent === "apply-and-render") {
@@ -619,9 +596,11 @@ async function runDesignAgent(params: {
     getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
   const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
-  const enrichedUserMessageDesign = forceApplyAndRender
-    ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
-    : baseEnrichedMessage
+  const enrichedUserMessageDesign = forcePreviewOnly
+    ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Output a PREVIEW_ONLY_START block containing the full current design spec. Incorporate any decisions agreed in this conversation that have not yet been committed to GitHub — mark each one "[pending approval]" inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform handles rendering automatically. Output the block now.`
+    : forceApplyAndRender
+      ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
+      : baseEnrichedMessage
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")

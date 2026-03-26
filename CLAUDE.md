@@ -29,6 +29,15 @@ A new team onboarding to agentic-sdlc changes only their `.env`. Nothing in the 
 ### 4. Durable over fast
 When two approaches solve the problem — one fast/brittle, one slower/durable — always choose durable. Flag the tradeoff explicitly before implementing. Never implement a shortcut without saying so and getting confirmation.
 
+### 6. Never bypass an agent — ever
+An agent bypass is any implementation that reads state directly (GitHub, disk, memory) and produces output without calling the agent. **Do not propose it. Do not recommend it as an option. Do not implement it.**
+
+The reason is correctness, not performance: agents hold conversation context that the platform cannot access. Bypassing an agent means losing uncommitted decisions, in-flight reasoning, and any context that exists only in the conversation history. The output will be stale or wrong.
+
+**Platform enforcement means enforcing the output shape — not replacing the agent.** If the design agent needs to render a preview, the platform injects a PLATFORM OVERRIDE that tells the agent what block to output. The agent still runs. Platform enforcement = mandatory output block. Platform bypass = agent never called. These are opposites, not synonyms.
+
+**If you are about to write code that reads from GitHub/disk and generates output without calling the agent: stop. That is a bypass. Do not propose it as one option among several. Propose only the agent-in-the-loop approach.**
+
 ### 5. Extensibility by default
 Every agent, function, and data structure should be built assuming more agents and more teams are coming. The pattern established for the pm agent is the pattern for all future agents. Build it right the first time.
 
