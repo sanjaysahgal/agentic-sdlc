@@ -573,16 +573,17 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("You are a designer, not a platform engineer")
   })
 
-  it("instructs agent to save DRAFT on new-render requests so pending recommendations are captured", () => {
+  it("instructs agent to save DRAFT on any render/preview request — includes pending recommendations", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
     expect(prompt).toContain("Save the current spec as a DRAFT block")
-    expect(prompt).toContain("include any recommendations from the conversation that have not yet been saved")
+    expect(prompt).toContain("include any recommendations from this conversation that have not yet been saved")
   })
 
-  it("distinguishes regenerate-preview (platform) from new-render (agent saves DRAFT)", () => {
+  it("applies DRAFT rule to all preview phrasings — no exceptions for regenerate/refresh", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
     expect(prompt).toContain("regenerate preview")
     expect(prompt).toContain("refresh preview")
+    expect(prompt).toContain("all of them mean: save a DRAFT now")
   })
 })
 
