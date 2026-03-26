@@ -175,6 +175,105 @@ The first auto-retry succeeds in the vast majority of cases — a second failure
 
 ---
 
+### Step 2.5a — Agent persona upgrades + authoritative doc ownership
+
+All three spec-producing agents are upgraded simultaneously. This is one step, not three — the pattern is identical across PM, design, and architect, and shipping it piecemeal creates inconsistency.
+
+**Why before 2.5b and 2.6:** These upgrades change what the agents produce (new required spec sections, authoritative doc drafts). The spec schema enforcement step (Trust Step 4c) validates those sections. The spec validator (Step 4) enforces them at approval. Both downstream steps depend on knowing which sections are required — this step defines that.
+
+**PM agent → CPO-level**
+
+Persona: leads product organizations of 50+ PMs, set company-level product vision, made portfolio-level tradeoffs, launched multiple 0→1 products, scaled to 100M+ users. Operates simultaneously at feature level (spec shaping) and product level (cross-feature vision coherence).
+
+New behaviors:
+- Holds the full product in mind at all times — evaluates every feature decision against the whole product, flags contradictions with previously approved specs before proceeding
+- Owns `PRODUCT_VISION.md` — drafts proposed changes inline in every approved spec, ready-to-apply text not a to-do list
+- Cross-feature coherence — reads all approved `.product.md` specs before every response
+
+New required spec section (after Non-Goals, before Open Questions):
+```
+## Product Vision Updates
+<Proposed additions or changes to PRODUCT_VISION.md. Written as ready-to-merge text.>
+If no updates needed: "No product vision updates — this feature operates entirely within existing vision constraints."
+```
+
+**Design agent → Design Director level**
+
+Persona: has led design organizations, set design systems for products used by millions, directed brand evolution through multiple product generations.
+
+New behaviors:
+- Holds the full product design in mind — evaluates every decision against the product's established design language
+- Owns `DESIGN_SYSTEM.md` — reads it before every session; drafts additions/changes inline in every approved spec
+- Reads all approved `.design.md` specs before opening proposal — flags contradictions with established patterns
+- `DESIGN_SYSTEM.md` bootstrap — if no design system doc exists (first feature), drafts the initial `DESIGN_SYSTEM.md` as part of the approved spec
+
+New required spec section (after Accessibility, before Open Questions):
+```
+## Design System Updates
+<Proposed additions or changes to DESIGN_SYSTEM.md. Written as ready-to-apply text.
+Covers: new components, updated tokens, new interaction patterns, naming conventions.>
+If no updates needed: "No design system updates — this feature uses only established patterns."
+```
+
+**Architect agent → strengthen "always draft" language**
+
+The spec section already exists. Change from "list required updates" to "write the proposed additions/changes as `[PROPOSED ADDITION TO SYSTEM_ARCHITECTURE.md]` blocks — ready to paste in, not a to-do list." Add enforcement: spec cannot be marked approval-ready until this section contains actual proposed text.
+
+**WorkspaceConfig + context-loader changes:**
+- Add `designSystem` path to `WorkspaceConfig`: `PATH_DESIGN_SYSTEM` env var, defaults to `specs/design/DESIGN_SYSTEM.md`
+- Update `loadDesignAgentContext()` to read `DESIGN_SYSTEM.md` and all approved `.design.md` specs
+- Update `loadPmAgentContext()` to read all approved `.product.md` specs for cross-feature coherence
+- Add to `.env.example`
+
+**Files:** `agents/pm.ts`, `agents/design.ts`, `agents/architect.ts`, `runtime/workspace-config.ts`, `runtime/context-loader.ts`, `.env.example`
+
+**Tests:** Existing unit tests must still pass. New tests for: new required section present in prompt, cross-feature spec injected in prompt, no-specs-yet message present, PROPOSED ADDITION language in architect prompt.
+
+**SYSTEM_ARCHITECTURE.md update:** Three-authoritative-docs table updated with Design Director + DESIGN_SYSTEM.md ownership.
+
+---
+
+### Trust Step 4c — Pre-commit spec schema enforcement
+
+**The problem today:** Required spec sections (Product Vision Updates, Design System Updates, PROPOSED ADDITION blocks) are enforced by prompt only — if the LLM skips a section, the spec is saved without it. Step 4 (spec-validator) runs at approval time. But by approval time, missing sections have been in the draft for multiple turns and the human has already seen an incomplete spec.
+
+**What this adds:**
+
+**Pre-commit section validator (runs before every draft save):**
+- After agent produces a response with a DRAFT or PATCH block, and before writing to GitHub, run a lightweight structural check:
+  - PM agent response with approval intent: must contain `## Product Vision Updates`
+  - Design agent response with approval intent: must contain `## Design System Updates`
+  - Architect agent response with approval intent: must contain `PROPOSED ADDITION TO SYSTEM_ARCHITECTURE.md`
+- If a required section is absent, do not save the spec. Instead, auto-retry the agent with a targeted instruction: *"Your response is missing the [section name] section. Add it now — write the proposed text as ready-to-apply content. Do not rewrite the rest of the spec."*
+- One retry. If still missing after retry, surface to user: *"I couldn't generate the [section] automatically — please tell me what [vision/design system/architecture] updates this feature requires and I'll add them."*
+- Draft responses (not final approval) are NOT checked — this gate only applies at the point of approval intent detection.
+
+**Why this is different from Step 4 (spec-validator):**
+- Step 4 validates the full spec at approval time: structure, cross-references, acceptance criteria, internal consistency
+- This step validates one specific rule at commit time: required sections exist before the human sees the spec
+- They compound: this step catches missing sections early; Step 4 catches quality issues at the gate
+
+**Implementation:** `runtime/spec-schema.ts` (new file, ~30 lines) — `validateRequiredSections(agentType, response): string | null` returns the missing section name or null. Called from each agent's approval-intent handler in `message.ts` before `saveApproved*`.
+
+---
+
+### Trust Step 4d — Phase state caching
+
+**The problem today:** Phase detection (`getInProgressFeatures()` + `getFeaturePhase()`) re-reads from GitHub on every message. Each read costs ~200–300ms of latency and one GitHub API call. On a busy channel with multiple team members active, this adds up fast — and the phase almost never changes between messages.
+
+**What this adds:**
+- In-memory phase state cache: `Map<featureName, { phase, cachedAt }>` with a 30-second TTL
+- Cache is invalidated immediately on any spec save operation (the one moment phase actually changes)
+- On cache hit: phase returned instantly, no GitHub API call
+- On cache miss or invalidation: read from GitHub, populate cache
+
+**Why deferred (not a blocker):**
+Phase detection latency is invisible to users today because it runs in parallel with context loading. It becomes a bottleneck only at higher message volumes. Implement before Step 5 (production deployment) — latency becomes measurable in production.
+
+**Implementation:** `runtime/github-client.ts` — add `phaseCache` Map, wrap `getInProgressFeatures()` with cache check, add `invalidatePhaseCache(featureName)` called from all `save*Spec()` functions.
+
+---
+
 ### Step 2.5b — Remaining API cost optimizations (minor)
 
 Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps.
@@ -576,6 +675,8 @@ Most valuable once several features have shipped and patterns in the vision show
 ---
 
 ## Completed
+
+- **PATCH mechanism + auto-retry on truncation (all agents)** — All three spec-producing agents (PM, design, architect) use section-level PATCH blocks (`PRODUCT_PATCH_START/END`, `DESIGN_PATCH_START/END`, `ENGINEERING_PATCH_START/END`) when a draft already exists. `runtime/spec-patcher.ts` (`applySpecPatch`) merges patches into the existing draft by section. When a DRAFT block is truncated (start marker present, end marker absent), the platform auto-retries with a SYSTEM OVERRIDE instruction to force PATCH — user never sees the error. 401 tests across 22 files. Unit tests for all patch helpers + `applySpecPatch`. Integration tests for all three patch flows + truncation auto-retry.
 
 - **Design agent HTML preview** — On every design spec draft save, generates a self-contained HTML preview (`<feature>.preview.html`) on the design branch using Tailwind CDN + Alpine.js. All screens tabbed, all states (default/loading/empty/error) toggleable. Preview link posted in Slack. Non-fatal. Implemented in `runtime/html-renderer.ts` + `github-client.ts` + `interfaces/slack/handlers/message.ts`.
 
