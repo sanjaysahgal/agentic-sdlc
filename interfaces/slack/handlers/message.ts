@@ -314,15 +314,26 @@ async function runPmAgent(params: {
     return
   }
 
-  // Detect truncated DRAFT block for PM — same failure mode as design agent.
+  // Detect truncated DRAFT block for PM — auto-retry with forced PATCH if draft exists.
   if (response.includes("DRAFT_SPEC_START") && !response.includes("DRAFT_SPEC_END")) {
-    const existingDraftCheck = await readFile(filePath, `spec/${featureName}-product`)
-    const warn = existingDraftCheck
-      ? `The spec is too long for a full rewrite — the response was cut off before it could be saved. Say *"apply the changes as patches"* and I'll update only the sections that changed. (Nothing was saved this time.)`
-      : `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Problem and Goals sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-    appendMessage(threadTs, { role: "assistant", content: warn })
-    await update(`${prefix}${warn}`)
-    return
+    const existingDraft = await readFile(filePath, `spec/${featureName}-product`)
+    if (existingDraft) {
+      await update("_Spec is large — switching to section-level update..._")
+      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use PRODUCT_PATCH_START/END instead — output only the sections that changed. Do not use DRAFT_SPEC_START. Apply the changes from the original request: "${userMessage}"`
+      response = await runAgent({ systemPrompt, history: historyPm, userMessage: retryInstruction })
+      if (!hasPmPatch(response)) {
+        const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
+        appendMessage(threadTs, { role: "assistant", content: warn })
+        await update(`${prefix}${warn}`)
+        return
+      }
+      // Fall through to hasPmPatch handler below.
+    } else {
+      const warn = `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Problem and Goals sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
+      appendMessage(threadTs, { role: "assistant", content: warn })
+      await update(`${prefix}${warn}`)
+      return
+    }
   }
 
   // Detect truncated patch block for PM.
@@ -599,19 +610,29 @@ async function runDesignAgent(params: {
   const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
   const auditProductSpec = updatedProductSpecContent ?? (productSpecMatch ? productSpecMatch[1].trim() : "")
 
-  // Detect truncated DRAFT block — started but never closed (response hit max_tokens mid-spec).
-  // "Rebuild the spec" would hit the same limit again. Instruct patch instead.
+  // Detect truncated DRAFT block — response hit max_tokens mid-spec.
+  // If a draft exists: auto-retry with a forced PATCH instruction — user never sees the error.
+  // If no draft yet (first save): guide toward a split save.
   if (response.includes("DRAFT_DESIGN_SPEC_START") && !response.includes("DRAFT_DESIGN_SPEC_END")) {
-    const existingDraftCheck = await readFile(
-      `${loadWorkspaceConfig().paths.featuresRoot}/${featureName}/${featureName}.design.md`,
-      `spec/${featureName}-design`
-    )
-    const warn = existingDraftCheck
-      ? `The spec is too long for a full rewrite — the response was cut off before it could be saved. Say *"apply the changes as patches"* and I'll update only the sections that changed. (Nothing was saved this time.)`
-      : `The spec was too long to save in one response — the draft was cut off before it could be committed. Please try breaking it into two saves: first the Design Direction and Screens, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-    appendMessage(threadTs, { role: "assistant", content: warn })
-    await update(`${prefix}${warn}`)
-    return
+    const existingDraft = await readFile(filePath, `spec/${featureName}-design`)
+    if (existingDraft) {
+      await update("_Spec is large — switching to section-level update..._")
+      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_DESIGN_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use DESIGN_PATCH_START/END instead — output only the sections that changed. Do not use DRAFT_DESIGN_SPEC_START. Apply the changes from the original request: "${userMessage}"`
+      response = await runAgent({ systemPrompt, history: historyDesign, userMessage: retryInstruction, historyLimit: DESIGN_HISTORY_LIMIT })
+      // If the retry didn't produce a PATCH block, fall through to the error below.
+      if (!hasDesignPatch(response)) {
+        const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update (e.g. "update just the Design Direction section") and I'll patch it directly.`
+        appendMessage(threadTs, { role: "assistant", content: warn })
+        await update(`${prefix}${warn}`)
+        return
+      }
+      // Retry produced a PATCH — fall through to the hasDesignPatch handler below.
+    } else {
+      const warn = `The spec was too long to save in one response — the draft was cut off. Please try breaking it into two saves: first the Design Direction and Screens, then say *"continue saving the rest"*. (Nothing was saved this time.)`
+      appendMessage(threadTs, { role: "assistant", content: warn })
+      await update(`${prefix}${warn}`)
+      return
+    }
   }
 
   // Detect truncated patch block — same failure mode as above but for PATCH blocks.
@@ -935,7 +956,7 @@ async function runArchitectAgent(params: {
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
-  const response = await runAgent({ systemPrompt, history: historyArch, userMessage: enrichedUserMessageArch, userImages, historyLimit: ARCH_HISTORY_LIMIT })
+  let response = await runAgent({ systemPrompt, history: historyArch, userMessage: enrichedUserMessageArch, userImages, historyLimit: ARCH_HISTORY_LIMIT })
   appendMessage(threadTs, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
@@ -951,15 +972,26 @@ async function runArchitectAgent(params: {
     return
   }
 
-  // Detect truncated DRAFT block for architect — same failure mode as other agents.
+  // Detect truncated DRAFT block for architect — auto-retry with forced PATCH if draft exists.
   if (response.includes("DRAFT_ENGINEERING_SPEC_START") && !response.includes("DRAFT_ENGINEERING_SPEC_END")) {
-    const existingDraftCheck = await readFile(filePath, `spec/${featureName}-engineering`)
-    const warn = existingDraftCheck
-      ? `The spec is too long for a full rewrite — the response was cut off before it could be saved. Say *"apply the changes as patches"* and I'll update only the sections that changed. (Nothing was saved this time.)`
-      : `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Data Model and API sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-    appendMessage(threadTs, { role: "assistant", content: warn })
-    await update(`${prefix}${warn}`)
-    return
+    const existingDraft = await readFile(filePath, `spec/${featureName}-engineering`)
+    if (existingDraft) {
+      await update("_Spec is large — switching to section-level update..._")
+      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_ENGINEERING_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use ENGINEERING_PATCH_START/END instead — output only the sections that changed. Do not use DRAFT_ENGINEERING_SPEC_START. Apply the changes from the original request: "${userMessage}"`
+      response = await runAgent({ systemPrompt, history: historyArch, userMessage: retryInstruction, historyLimit: ARCH_HISTORY_LIMIT })
+      if (!hasArchitectPatch(response)) {
+        const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
+        appendMessage(threadTs, { role: "assistant", content: warn })
+        await update(`${prefix}${warn}`)
+        return
+      }
+      // Fall through to hasArchitectPatch handler below.
+    } else {
+      const warn = `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Data Model and API sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
+      appendMessage(threadTs, { role: "assistant", content: warn })
+      await update(`${prefix}${warn}`)
+      return
+    }
   }
 
   // Detect truncated patch block for architect.
