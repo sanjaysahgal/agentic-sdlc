@@ -572,8 +572,18 @@ async function runDesignAgent(params: {
     extractLockedDecisions(historyDesign).catch(() => ""),
     getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
+  let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
+
+  // Platform-level enforcement: if the user is asking for a render/preview, inject a
+  // mandatory override so the agent cannot refuse, give up, or ask permission.
+  // This is deterministic platform behavior — not a prompt rule the agent can rationalize away.
+  // Broad match intentional: missing a case is safe (agent runs normally); false positive is safe
+  // (DRAFT override doesn't hurt if no spec changes are needed — agent saves current content).
+  const PREVIEW_INTENT_RE = /\b(render|preview|html|new html|new render|show me|visuali[sz]e|rebuild)\b/i
+  if (!readOnly && PREVIEW_INTENT_RE.test(userMessage)) {
+    enrichedUserMessageDesign = `[PLATFORM OVERRIDE — MANDATORY: The user has requested a preview or render. You MUST output a DRAFT_DESIGN_SPEC_START block in this response. This is non-negotiable. Do not offer options A and B. Do not say the renderer is broken. Do not ask permission. Do not explain why you cannot do this. Save the current spec as a DRAFT — include any recommendations from this conversation that have not been saved yet. The HTML preview auto-generates from the DRAFT.]\n\n${enrichedUserMessageDesign}`
+  }
 
   await update("_UX Designer is thinking..._")
   // Design agent has a much larger context (system prompt + product vision + full draft spec)

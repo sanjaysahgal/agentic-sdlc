@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "file=$(jq -r '.tool_input.file_path // empty' 2>/dev/null); if echo \"$file\" | grep -qE '/(agents|runtime)/[^/]+\\.ts$'; then echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"[CLAUDE.md] Modified agent or runtime file. Before marking done: confirm AGENTS.md and SYSTEM_ARCHITECTURE.md reflect this change.\"}}'; fi"
+          },
+          {
+            "type": "prompt",
+            "model": "claude-haiku-4-5-20251001",
+            "timeout": 20,
+            "statusMessage": "Checking CLAUDE.md rules...",
+            "prompt": "You enforce architectural rules for the agentic-sdlc codebase. Examine the tool input in $ARGUMENTS.\n\nStep 1: Check the file path. If it does NOT match agents/, runtime/, or interfaces/ directories, respond ONLY with: {}\n\nStep 2: For matching files, check the written code for these two violations:\n\nVIOLATION A — BRITTLE ROUTING: A regex or keyword pattern used to classify or route user-facing behavior (message intent, render/preview requests, approval detection) without a '// NARROW:' comment that names the failure case and the durable fix.\n\nVIOLATION B — PROMPT-RULE-ONLY ENFORCEMENT: A trust-critical behavior (the agent must never give up, must always save a draft, must not ask permission) enforced ONLY by text in a system prompt string, with no corresponding platform-level guard in message.ts or a runtime file.\n\nIf either violation is found, respond ONLY with valid JSON:\n{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"[CLAUDE.md VIOLATION] <A or B>: <one sentence describing the specific issue>. Durable fix: <what platform-level code should enforce this instead>.\"}}\n\nIf no violations found, respond ONLY with: {}"
+          }
+        ]
+      }
+    ]
+  }
+}
