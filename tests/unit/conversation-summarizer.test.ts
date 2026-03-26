@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }))
 
-import { summarizeUnlockedDiscussion, buildEnrichedMessage, getPriorContext, clearSummaryCache, identifyUncommittedDecisions } from "../../runtime/conversation-summarizer"
+import { summarizeUnlockedDiscussion, buildEnrichedMessage, getPriorContext, clearSummaryCache, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../runtime/conversation-summarizer"
 
 function haiku(text: string) {
   return { content: [{ type: "text", text }] }
@@ -233,5 +233,55 @@ describe("buildEnrichedMessage", () => {
     const msgIdx = result.indexOf("Lock all 3")
     expect(priorIdx).toBeLessThan(lockedIdx)
     expect(lockedIdx).toBeLessThan(msgIdx)
+  })
+})
+
+describe("generateSaveCheckpoint", () => {
+  it("returns committed bullets and empty notCommitted when everything is saved", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• Dark-mode-default (#0A0A0F)\n• Glow 10→15→10%, 2.5s\nNOT_COMMITTED:\nnothing — all discussed decisions are in the spec above"))
+
+    const result = await generateSaveCheckpoint(
+      "## Design Direction\nDark mode default, #0A0A0F background",
+      [{ role: "user", content: "let's use dark mode" }, { role: "assistant", content: "Done" }]
+    )
+
+    expect(result.committed).toContain("Dark-mode-default")
+    expect(result.notCommitted).toBe("") // "nothing" phrase → empty
+  })
+
+  it("returns notCommitted items when decisions are in thread but not spec", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• Light mode default\nNOT_COMMITTED:\n1. Glow animation timing (2.5s) — discussed, not in spec\n2. Chip positioning above prompt bar"))
+
+    const result = await generateSaveCheckpoint("## Design Direction\nLight mode default", [])
+
+    expect(result.committed).toContain("Light mode default")
+    expect(result.notCommitted).toContain("Glow animation timing")
+    expect(result.notCommitted).toContain("Chip positioning")
+  })
+
+  it("uses Haiku model", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• something\nNOT_COMMITTED:\nnothing"))
+    await generateSaveCheckpoint("spec content", [])
+    expect(mockCreate.mock.calls[0][0].model).toBe("claude-haiku-4-5-20251001")
+  })
+
+  it("prompt includes both saved spec and conversation", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• x\nNOT_COMMITTED:\nnothing"))
+    await generateSaveCheckpoint("the spec text", [
+      { role: "user", content: "user message" },
+      { role: "assistant", content: "agent message" },
+    ])
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content
+    expect(prompt).toContain("the spec text")
+    expect(prompt).toContain("user message")
+    expect(prompt).toContain("COMMITTED:")
+    expect(prompt).toContain("NOT_COMMITTED:")
+  })
+
+  it("handles Haiku returning only COMMITTED with no NOT_COMMITTED section gracefully", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• Dark mode\n"))
+    const result = await generateSaveCheckpoint("spec", [])
+    expect(result.committed).toContain("Dark mode")
+    expect(result.notCommitted).toBe("")
   })
 })

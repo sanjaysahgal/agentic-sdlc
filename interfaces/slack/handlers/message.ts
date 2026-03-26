@@ -9,12 +9,30 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
-import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions } from "../../../runtime/conversation-summarizer"
+import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 
 const { paths: workspacePaths } = loadWorkspaceConfig()
+
+// Formats a save checkpoint into the Slack footer shown after every DRAFT or PATCH save.
+// Shows what key decisions were just committed and flags anything still only in the thread.
+// Non-fatal: callers pass a null checkpoint and fall back to the simple CTA.
+function buildCheckpointFooter(
+  checkpoint: { committed: string; notCommitted: string } | null,
+  specUrl: string,
+): string {
+  const specLink = `<${specUrl}|Spec>`
+  if (!checkpoint || !checkpoint.committed) {
+    return `\n\n✓ _Draft committed to GitHub  ·  ${specLink}_`
+  }
+  const committedSection = `*Key decisions in this commit:*\n${checkpoint.committed}`
+  const notCommittedSection = checkpoint.notCommitted
+    ? `\n\n⚠️ *Discussed in this thread but not yet committed:*\n${checkpoint.notCommitted}\n_Reply with the numbers you want to lock in and I'll update the spec._`
+    : `\n\n_Discussed in this thread but not yet committed: nothing — everything is in the spec above._`
+  return `\n\n✓ *Draft committed to GitHub*  ·  ${specLink}\n\n${committedSection}${notCommittedSection}`
+}
 
 function getFeatureName(channelName: string): string {
   return channelName.replace(/^feature-/, "")
@@ -748,14 +766,20 @@ async function runDesignAgent(params: {
 
     const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
 
-    // Generate HTML preview — same as full draft save
+    // Generate HTML preview and checkpoint in parallel — both non-fatal.
+    const { paths: p, githubOwner: pOwner, githubRepo: pRepo } = loadWorkspaceConfig()
+    const patchSpecUrl = `https://github.com/${pOwner}/${pRepo}/blob/spec/${featureName}-design/${p.featuresRoot}/${featureName}/${featureName}.design.md`
     let previewNote = ""
-    try {
-      await update("_Generating HTML preview..._")
-      const { paths: p, githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
-      const htmlContent = await generateDesignPreview({ specContent: mergedDraft, featureName })
+    let checkpoint: { committed: string; notCommitted: string } | null = null
+    await update("_Generating HTML preview and save checkpoint..._")
+    const [previewResult, checkpointResult] = await Promise.allSettled([
+      generateDesignPreview({ specContent: mergedDraft, featureName }),
+      generateSaveCheckpoint(mergedDraft, historyDesign),
+    ])
+    if (previewResult.status === "fulfilled") {
+      const htmlContent = previewResult.value
       const htmlFilePath = `${p.featuresRoot}/${featureName}/${featureName}.preview.html`
-      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
+      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent }).catch(() => {})
       try {
         await client.files.uploadV2({
           channel_id: channelId,
@@ -766,16 +790,18 @@ async function runDesignAgent(params: {
         })
         previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
       } catch (uploadErr: any) {
-        console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
+        console.error(`[preview] Slack upload failed: ${uploadErr?.message}`)
         previewNote = `\n\n_Preview saved to GitHub. To view it: open the spec branch, download \`${featureName}.preview.html\`, and open in any browser._`
       }
-    } catch (err: any) {
-      console.error(`[preview] HTML generation failed: ${err?.message}`)
-      previewNote = `\n\n_HTML preview couldn't be generated for this draft — the spec may be complex. Say *"regenerate preview"* to try again, or say *approved* to move to engineering without a preview._`
+    } else {
+      console.error(`[preview] HTML generation failed: ${previewResult.reason?.message}`)
+      previewNote = `\n\n_HTML preview couldn't be generated. Say *"regenerate preview"* to try again._`
     }
+    if (checkpointResult.status === "fulfilled") checkpoint = checkpointResult.value
 
-    const cta = `\n\n_Spec updated and saved to GitHub. Review the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first._`
-    const suffix = previewNote + cta
+    const checkpointFooter = buildCheckpointFooter(checkpoint, patchSpecUrl)
+    const cta = `\n\nReview the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first.`
+    const suffix = previewNote + checkpointFooter + cta
     const maxCleanLength = 9_000 - prefix.length
     const truncatedClean = cleanResponse.length > maxCleanLength
       ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full patch details saved to GitHub — spec is updated.]_"
@@ -825,14 +851,22 @@ async function runDesignAgent(params: {
     await saveDraftDesignSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
 
-    // Generate HTML preview alongside every draft save — non-fatal
+    // Generate HTML preview and save checkpoint in parallel — both non-fatal.
+    // The checkpoint shows what key decisions are now committed and flags
+    // anything discussed in this thread that is not yet in the spec.
+    const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
+    const draftSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${paths.featuresRoot}/${featureName}/${featureName}.design.md`
     let previewNote = ""
-    try {
-      await update("_Generating HTML preview..._")
-      const { paths, githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
-      const htmlContent = await generateDesignPreview({ specContent: draftContent, featureName })
+    let draftCheckpoint: { committed: string; notCommitted: string } | null = null
+    await update("_Generating HTML preview and save checkpoint..._")
+    const [draftPreviewResult, draftCheckpointResult] = await Promise.allSettled([
+      generateDesignPreview({ specContent: draftContent, featureName }),
+      generateSaveCheckpoint(draftContent, historyDesign),
+    ])
+    if (draftPreviewResult.status === "fulfilled") {
+      const htmlContent = draftPreviewResult.value
       const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
-      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent })
+      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent }).catch(() => {})
       try {
         await client.files.uploadV2({
           channel_id: channelId,
@@ -846,15 +880,17 @@ async function runDesignAgent(params: {
         console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
         previewNote = `\n\n_Preview saved to GitHub. To view it: open the spec branch, download \`${featureName}.preview.html\`, and open in any browser._`
       }
-    } catch (err: any) {
-      console.error(`[preview] HTML generation failed: ${err?.message}`)
-      previewNote = `\n\n_HTML preview couldn't be generated for this draft — the spec may be complex. Say *"regenerate preview"* to try again, or say *approved* to move to engineering without a preview._`
+    } else {
+      console.error(`[preview] HTML generation failed: ${draftPreviewResult.reason?.message}`)
+      previewNote = `\n\n_HTML preview couldn't be generated for this draft. Say *"regenerate preview"* to try again._`
     }
+    if (draftCheckpointResult.status === "fulfilled") draftCheckpoint = draftCheckpointResult.value
 
-    // Build a guaranteed suffix so truncation never swallows the preview note or CTA.
+    // Build a guaranteed suffix so truncation never swallows the checkpoint or CTA.
     // Only cleanResponse gets truncated — the suffix always appears.
-    const cta = `\n\n_Draft saved to GitHub. Review the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first._`
-    const suffix = previewNote + cta
+    const checkpointFooter = buildCheckpointFooter(draftCheckpoint, draftSpecUrl)
+    const cta = `\n\nReview the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first.`
+    const suffix = previewNote + checkpointFooter + cta
     const maxCleanLength = 9_000 - prefix.length
     const truncatedClean = cleanResponse.length > maxCleanLength
       ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full spec details saved to GitHub — draft is complete.]_"

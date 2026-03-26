@@ -130,6 +130,66 @@ If everything discussed is already in the spec, respond with exactly: "All discu
   return result_text
 }
 
+// Generates a structured checkpoint after a spec draft is saved.
+// Returns committed decisions (what was just saved) and any uncommitted
+// decisions still only in the thread. Both are formatted for Slack display.
+//
+// Non-fatal — callers .catch(() => null) so a Haiku failure never blocks the save.
+export interface SaveCheckpoint {
+  committed: string    // bullet list of key decisions now in the spec
+  notCommitted: string // what's in thread but not in spec (empty = everything saved)
+}
+
+export async function generateSaveCheckpoint(
+  savedContent: string,
+  recentHistory: Message[],
+): Promise<SaveCheckpoint> {
+  const specPreview = savedContent.slice(0, 3000)
+  const historyText = recentHistory
+    .slice(-12)
+    .map(m => `${m.role === "user" ? "User" : "Agent"}: ${m.content.slice(0, 400)}`)
+    .join("\n\n")
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 400,
+    messages: [{
+      role: "user",
+      content: `Compare this saved spec against the conversation to produce a save checkpoint.
+
+SAVED SPEC:
+---
+${specPreview}
+---
+
+RECENT CONVERSATION:
+---
+${historyText}
+---
+
+Output EXACTLY this format (no preamble, no extra text):
+COMMITTED:
+• [decision 1 — be specific: colors, layout choices, interaction patterns, values]
+• [decision 2]
+• [decision 3, max 5 bullets total]
+NOT_COMMITTED:
+[Either write exactly "nothing — all discussed decisions are in the spec above" OR write a numbered list of specific things discussed in the conversation that do NOT appear in the saved spec above — e.g. "1. Glow shrinking over conversation (discussed, not in spec)"]`,
+    }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
+  const committedMatch = text.match(/COMMITTED:\s*([\s\S]*?)(?=\nNOT_COMMITTED:|$)/i)
+  const notCommittedMatch = text.match(/NOT_COMMITTED:\s*([\s\S]*)$/i)
+
+  const committed = committedMatch?.[1]?.trim() ?? ""
+  const raw = notCommittedMatch?.[1]?.trim() ?? ""
+  const notCommitted = raw.toLowerCase().includes("nothing") || raw.toLowerCase().includes("all discussed")
+    ? ""
+    : raw
+
+  return { committed, notCommitted }
+}
+
 // Helper used by each agent handler — encapsulates the limit check, cache key, and call.
 export async function getPriorContext(
   threadTs: string,

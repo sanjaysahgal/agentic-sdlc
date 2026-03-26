@@ -64,34 +64,6 @@ The context limit error handling already exists — this step improves the proac
 
 ---
 
-### Trust Step 2 — Checkpoint protocol: explicit committed/discussed boundary
-
-**The problem today:** After every draft save, the agent says something like "Draft saved to GitHub." But the user has no way to know exactly what is committed vs. what was discussed in the thread. When the thread is interrupted or errors, decisions discussed but not yet in the spec are silently lost — and neither the user nor the agent flags this.
-
-**What this adds:**
-
-**Structured checkpoint message after every draft save:**
-Replace the current "Draft saved" footer with a structured checkpoint that explicitly separates committed state from thread-only state:
-
-```
-✓ Draft committed to GitHub
-Spec: [url]
-
-Key decisions in this commit:
-• Dark-mode-default (#0A0A0F background, #F8F8F7 text)
-• Wordmark → Tagline → Chips → Prompt bar layout (Option 2)
-• Pulsing violet-teal glow on home screen
-
-Discussed in this thread but not yet committed: nothing — everything is in the spec above.
-```
-
-The "discussed but not yet committed" line is the critical new piece. If there are things in thread history that are not yet in the draft, the checkpoint flags them explicitly.
-
-**Enhanced "are you there" state response:**
-The fast-path state response (already reading from GitHub) adds the same structured format: what's committed, and what (if anything) from the thread history is not yet in the spec.
-
-**Implementation:** `interfaces/slack/handlers/message.ts` (checkpoint after every draft save), `agents/design.ts` `buildDesignStateResponse` (enhanced format).
-
 ---
 
 ### Trust Step 3 — Redis persistence: history survives deployments and scales across instances
@@ -675,6 +647,8 @@ Most valuable once several features have shipped and patterns in the vision show
 ---
 
 ## Completed
+
+- **Trust Step 2 — Save checkpoint (committed vs discussed)** — After every DRAFT/PATCH spec save, `generateSaveCheckpoint()` in `runtime/conversation-summarizer.ts` runs a Haiku call in parallel with HTML preview generation (`Promise.allSettled`). Haiku compares the saved spec against the last 12 conversation turns and returns `{ committed, notCommitted }`. `buildCheckpointFooter()` in `message.ts` formats this as a Slack block showing key committed decisions (bullets) and anything still only in the thread (with a numbered prompt to lock them in). Zero added latency. 5 new unit tests in `conversation-summarizer.test.ts`; all 444 tests pass.
 
 - **Trust Step 0.5 — Platform-enforced render/preview behavior** — `runtime/agent-router.ts` exports `detectRenderIntent()` (Haiku classifier). `interfaces/slack/handlers/message.ts` calls it before the design agent runs on every non-short-circuit message. `render-only` intent: reads current draft from GitHub and calls `generateDesignPreview()` directly — agent is bypassed, deterministic. `apply-and-render` intent: injects a mandatory PLATFORM OVERRIDE into the enriched user message, forcing a PATCH block output. Replaces prompt-rule-only approach which was probabilistic. 9 new `detectRenderIntent` tests in agent-router.test.ts; all 432 tests pass.
 
