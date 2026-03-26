@@ -147,6 +147,20 @@ Implemented in `runtime/conversation-summarizer.ts`.
 
 `runtime/request-tracker.ts` tracks all in-flight Claude API requests. On `SIGTERM`, the process waits for all in-flight requests to drain before exiting — with a 6-minute maximum (must exceed Anthropic's 5-minute API timeout). This prevents a deployment or restart from cutting off a user mid-response. Any request still in-flight after the deadline is abandoned and the process exits with a warning.
 
+### Platform-enforced render/preview behavior
+
+The design agent's render behavior is enforced at the platform layer (`message.ts`), not by prompt rules. Prompt rules are probabilistic — an agent in a confused state can still refuse to render, ask permission, or offer choices. Platform enforcement is deterministic.
+
+**Before the agent runs**, the platform calls `detectRenderIntent(userMessage)` (Haiku) to classify the message:
+
+| Intent | Platform action |
+|---|---|
+| `render-only` ("give a new render", "show me the preview") | Platform reads the current draft from GitHub directly and calls `generateDesignPreview()`. The design agent is **bypassed entirely** — it cannot refuse, diagnose the renderer, or offer A/B choices. |
+| `apply-and-render` ("rebuild with recommendations and render") | Platform injects a mandatory PLATFORM OVERRIDE into the agent's context that forces a PATCH block output. The HTML preview renders automatically on every patch save. |
+| `other` | Normal agent flow, no injection. |
+
+**Why this matters:** Any behavior critical to user trust (no refusing a render, no asking permission on a known action) must be enforced by the platform, not by asking the LLM to follow a rule. This replaces the previous prompt-rule-only approach.
+
 ### Known efficiency gaps (from DECISIONS.md)
 
 | Gap | Current | Target |

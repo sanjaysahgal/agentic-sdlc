@@ -5,7 +5,7 @@ import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSp
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch, hasPreviewOnly, extractPreviewOnly } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent, hasArchitectPatch, extractArchitectPatch } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
@@ -495,6 +495,10 @@ async function runDesignAgent(params: {
     }
   }
 
+  // Platform enforcement flag — set inside the !readOnly block when apply-and-render intent is detected.
+  // Used after context loading to inject a mandatory PATCH override into the agent's context.
+  let forceApplyAndRender = false
+
   // Short-circuit status/general queries before loading expensive design context.
   // A "give me the latest spec" question in a design thread doesn't need the full
   // design agent — it needs the concierge. Check fast with Haiku before loading anything.
@@ -521,6 +525,7 @@ async function runDesignAgent(params: {
       const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
       const branchName = `spec/${featureName}-design`
       const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
@@ -562,6 +567,47 @@ async function runDesignAgent(params: {
       await update(msg)
       return
     }
+
+    // PLATFORM ENFORCEMENT (Trust Step 0.5): detect render/preview intent before the agent runs.
+    // render-only: read the current draft from GitHub and generate HTML directly — agent bypassed.
+    //   Deterministic: the agent cannot refuse, diagnose the renderer, or offer A/B choices
+    //   because it is never called.
+    // apply-and-render: inject a mandatory PATCH override into the agent's context.
+    //   The platform renders HTML automatically on every patch save — no agent decision needed.
+    const renderIntent = await detectRenderIntent(userMessage)
+
+    if (renderIntent === "render-only") {
+      const renderDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
+      const existingDraft = await readFile(renderDraftPath, `spec/${featureName}-design`)
+      if (existingDraft) {
+        await update("_Generating HTML preview..._")
+        try {
+          const htmlContent = await generateDesignPreview({ specContent: existingDraft, featureName })
+          await client.files.uploadV2({
+            channel_id: channelId,
+            thread_ts: threadTs,
+            content: htmlContent,
+            filename: `${featureName}.preview.html`,
+            title: `${featureName} — Design Preview`,
+          })
+          const msg = `_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._\n\nSay *approved* to lock this in and move to engineering, or share what needs changing.`
+          appendMessage(threadTs, { role: "user", content: userMessage })
+          appendMessage(threadTs, { role: "assistant", content: msg })
+          await update(msg)
+        } catch (err: any) {
+          const errMsg = `_Preview generation failed: ${err?.message ?? "unknown error"}. The spec is saved on GitHub — share what needs changing and I'll update it._`
+          appendMessage(threadTs, { role: "user", content: userMessage })
+          appendMessage(threadTs, { role: "assistant", content: errMsg })
+          await update(errMsg)
+        }
+        return
+      }
+      // No draft exists yet — fall through to normal agent flow
+    }
+
+    if (renderIntent === "apply-and-render") {
+      forceApplyAndRender = true
+    }
   }
 
   await update("_UX Designer is reading the spec and design context..._")
@@ -572,7 +618,10 @@ async function runDesignAgent(params: {
     extractLockedDecisions(historyDesign).catch(() => ""),
     getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
+  const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
+  const enrichedUserMessageDesign = forceApplyAndRender
+    ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
+    : baseEnrichedMessage
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")

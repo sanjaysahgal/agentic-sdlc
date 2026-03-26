@@ -45,7 +45,12 @@ Reads the approved product spec fully before asking a single question. Works wit
 
 **Spec format (`<feature>.design.md`):** Figma link, Design Direction, Brand (tokens + typography), Screens (purpose / states / interactions / notes per screen), User Flows (one per user story), Accessibility decisions, Open Questions. Draft/approval mechanics (auto-save, freeze on approval) wired in Step 3c.
 
-**HTML preview:** On every draft save, the design agent generates a self-contained HTML preview (`<feature>.preview.html`) saved to the design branch alongside the spec. Uses Tailwind CDN + Alpine.js — all screens navigable via tabs, all states (default/loading/empty/error) toggleable per screen, faithful to brand colors and typography. Preview link posted in Slack after every draft save. Open on desktop or mobile (browser device toolbar) to check both layouts. Non-fatal — draft save succeeds even if preview generation fails.
+**HTML preview:** On every draft save, the design agent generates a self-contained HTML preview (`<feature>.preview.html`) saved to the design branch alongside the spec. Uses Tailwind CDN + Alpine.js — all screens navigable via tabs, all states (default/loading/empty/error) toggleable per screen, faithful to brand colors and typography. Preview link posted in Slack after every draft save. Non-fatal — draft save succeeds even if preview generation fails.
+
+**Platform-enforced render/preview behavior (Trust Step 0.5):** When a user requests a render or preview, the platform detects the intent via Haiku classification before the agent runs:
+- **render-only** ("give a new render", "show me the preview"): the platform reads the current draft directly from GitHub and generates HTML — the design agent is bypassed entirely. Deterministic: the agent cannot refuse, diagnose the renderer, or offer A/B choices because it is never called.
+- **apply-and-render** ("rebuild with recommendations and render"): the platform injects a mandatory PLATFORM OVERRIDE into the agent's context that forces a PATCH block output. The agent cannot ask permission or offer alternatives. HTML renders automatically on every patch save.
+This replaces the previous prompt-rule-only approach, which was probabilistic. Render behavior is now platform-enforced.
 
 ---
 

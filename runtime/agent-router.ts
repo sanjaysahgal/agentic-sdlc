@@ -146,6 +146,28 @@ Respond with exactly one word: yes or no`,
   return text === "yes"
 }
 
+// Detects whether a message is requesting an HTML render or visual preview of the design.
+// Returns:
+//   "render-only"      — render the current spec as-is, no new changes needed
+//   "apply-and-render" — apply requested changes first, then render the result
+//   "other"            — not a render/preview request
+export async function detectRenderIntent(message: string): Promise<"render-only" | "apply-and-render" | "other"> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 20,
+    system: `Classify whether this message is requesting an HTML render or visual preview of a design.
+- render-only: user wants a render/preview of the current spec with no new changes ("give a new render", "show me the preview", "new HTML", "regenerate preview", "show me what it looks like", "render it", "give me a preview", "new render")
+- apply-and-render: user wants changes applied first then rendered ("rebuild with recommendations and render", "apply the changes and show me", "incorporate the feedback and give me a preview")
+- other: not a render/preview request at all — questions, decisions, approvals, feedback, etc.
+Respond with exactly one: render-only, apply-and-render, or other`,
+    messages: [{ role: "user", content: message }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "other"
+  const valid = ["render-only", "apply-and-render", "other"] as const
+  return valid.includes(text as (typeof valid)[number]) ? (text as (typeof valid)[number]) : "other"
+}
+
 export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean

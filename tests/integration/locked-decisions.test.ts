@@ -152,7 +152,7 @@ describe("locked decisions — PM agent", () => {
 })
 
 // ─── Design agent ─────────────────────────────────────────────────────────────
-// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions, [3] runAgent
+// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] detectRenderIntent, [3] extractLockedDecisions, [4] runAgent
 
 describe("locked decisions — design agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
@@ -162,13 +162,14 @@ describe("locked decisions — design agent", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [1] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [2] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [3] runAgent (Sonnet)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                                      // [2] detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [3] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [4] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("rebuild the spec", client))
 
-    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[3])
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[4])
     expect(lastUserContent).toContain("Decisions locked in this conversation")
     expect(lastUserContent).toContain("Dark primary")
     expect(lastUserContent).toContain("Archon Labs aesthetic")
@@ -182,8 +183,9 @@ describe("locked decisions — design agent", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
-      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [2] extractLockedDecisions → caught
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [3] runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // [2] detectRenderIntent
+      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [3] extractLockedDecisions → caught
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [4] runAgent
 
     const client = makeClient()
     await expect(handleFeatureChannelMessage(makeParams("rebuild the spec", client))).resolves.toBeUndefined()

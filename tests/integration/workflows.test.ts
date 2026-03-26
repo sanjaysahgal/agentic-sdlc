@@ -210,11 +210,12 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
     // GitHub: product spec on main, no design spec, no design branch → product-spec-approved-awaiting-design
     mockProductApprovedState()
 
-    // Design agent calls: isOffTopicForAgent, isSpecStateQuery, runAgent
+    // Design agent calls: isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, runAgent
     // history.length = 2 → extractLockedDecisions short-circuits (< 6), no Haiku call
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                           // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                           // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with flows." }] })         // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "let's start the design phase")
@@ -304,6 +305,7 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })              // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here are the flows." }] }) // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "what are we designing?")
@@ -367,6 +369,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: [
         "This is a product decision — want me to pull the PM in?",
         "",
@@ -457,6 +460,7 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })          // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] }) // design runAgent
 
     const paramsB = makeParams(THREAD_B, "feature-dashboard", "update the flows")
@@ -507,13 +511,14 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] })  // design runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "another design question")
     await handleFeatureChannelMessage(params)
 
-    // 3 calls: isOffTopicForAgent, isSpecStateQuery, runAgent — no classifyIntent
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+    // 4 calls: isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, runAgent — no classifyIntent
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
   })
 })
@@ -542,6 +547,7 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })           // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // extractLockedDecisions (Haiku, fires at >6 msgs)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "- Glow timing pending" }] }) // summarizeUnlockedDiscussion (Haiku, fires when history > 20)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // design runAgent
@@ -549,8 +555,8 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
     const params = makeParams(THREAD, "feature-onboarding", "latest message")
     await handleFeatureChannelMessage(params)
 
-    // The 5th Anthropic call is the runAgent call — inspect its messages array
-    const runAgentCall = mockAnthropicCreate.mock.calls[4][0]
+    // The 6th Anthropic call is the runAgent call — inspect its messages array
+    const runAgentCall = mockAnthropicCreate.mock.calls[5][0]
     expect(runAgentCall.messages.length).toBeLessThanOrEqual(21)
 
     // The most recent history message should be present; the oldest (msg 0) should be gone
@@ -660,13 +666,15 @@ describe("Scenario 9 — Design patch flow", () => {
     ].join("\n")
 
     // Anthropic call sequence (short history → no extractLockedDecisions call):
-    //   1. isOffTopicForAgent → false
-    //   2. isSpecStateQuery   → false
-    //   3. runAgent           → patch response
-    //   4. generateDesignPreview → HTML (productVision + systemArchitecture are empty → auditSpecDraft skips API call)
+    //   1. isOffTopicForAgent   → false
+    //   2. isSpecStateQuery     → false
+    //   3. detectRenderIntent   → other
+    //   4. runAgent             → patch response
+    //   5. generateDesignPreview → HTML (productVision + systemArchitecture are empty → auditSpecDraft skips API call)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })       // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: patchResponse }] }) // runAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
 
@@ -820,15 +828,17 @@ describe("Scenario 12 — Auto-retry on truncated DRAFT (design agent)", () => {
     ].join("\n")
 
     // Anthropic call sequence:
-    //   1. isOffTopicForAgent → false
-    //   2. isSpecStateQuery   → false
-    //   3. runAgent (main)    → truncated DRAFT (no DRAFT_DESIGN_SPEC_END)
-    //   4. runAgent (retry)   → PATCH block (auto-retry transparently)
-    //   5. generateDesignPreview → HTML
+    //   1. isOffTopicForAgent  → false
+    //   2. isSpecStateQuery    → false
+    //   3. detectRenderIntent  → other
+    //   4. runAgent (main)     → truncated DRAFT (no DRAFT_DESIGN_SPEC_END)
+    //   5. runAgent (retry)    → PATCH block (auto-retry transparently)
+    //   6. generateDesignPreview → HTML
     //   (auditSpecDraft skipped — empty productVision/systemArchitecture)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })            // detectRenderIntent
       .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedResponse }] })  // runAgent (truncated)
       .mockResolvedValueOnce({ content: [{ type: "text", text: patchRetryResponse }] }) // runAgent (retry)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview

@@ -33,18 +33,6 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### Trust Step 0.5 — Platform-enforced render/preview behavior (not prompt-rule-dependent)
-
-**The problem today:** "Any render/preview request → save a DRAFT" is enforced by a prompt rule, not by the platform. LLM prompt rules are probabilistic — an agent in a confused state can still give up, ask permission, or refuse. The current fix improved behavior but did not make it deterministic.
-
-**What this requires:** The platform (message.ts) detects render/preview intent before the agent runs. When detected, it injects a mandatory system override into the agent's context that cannot be ignored: "You MUST output a DRAFT_DESIGN_SPEC_START block in this response. Nothing else is acceptable." The detection itself can be a simple Haiku call or keyword heuristic — the key is that the enforcement happens at the platform layer, not inside the agent's prompt.
-
-**Why this matters:** Prompt rules govern behavior probabilistically. Platform-level enforcement is deterministic. Any behavior that is critical to user trust (no giving up, no asking permission on a known action) must be enforced by the platform, not by asking the LLM to follow a rule.
-
-**Scope:** Design agent first (HTML preview is the visible failure point). Then PM and architect for their equivalent "save draft" behaviors.
-
----
-
 ### Trust Step 1 — Thread health: proactive degradation before context limit
 
 **The problem today:** When a thread gets too long, the Anthropic API call silently fails and the user sees "Something went wrong." They have no warning it was coming, no idea what context was lost, and no clear path forward. This is the single biggest trust destroyer in the current system.
@@ -687,6 +675,8 @@ Most valuable once several features have shipped and patterns in the vision show
 ---
 
 ## Completed
+
+- **Trust Step 0.5 — Platform-enforced render/preview behavior** — `runtime/agent-router.ts` exports `detectRenderIntent()` (Haiku classifier). `interfaces/slack/handlers/message.ts` calls it before the design agent runs on every non-short-circuit message. `render-only` intent: reads current draft from GitHub and calls `generateDesignPreview()` directly — agent is bypassed, deterministic. `apply-and-render` intent: injects a mandatory PLATFORM OVERRIDE into the enriched user message, forcing a PATCH block output. Replaces prompt-rule-only approach which was probabilistic. 9 new `detectRenderIntent` tests in agent-router.test.ts; all 432 tests pass.
 
 - **Trust Step 0 — Slack event idempotency** — `interfaces/slack/app.ts` deduplicates by `event_id` using a module-level `Map<string, number>`. On each incoming event: purge entries older than 5 minutes, drop silently if `event_id` already seen, otherwise record and process. Eliminates duplicate parallel agent runs from Slack's at-least-once delivery (was causing 6-minute hangs and double responses).
 
