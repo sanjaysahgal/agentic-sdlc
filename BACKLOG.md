@@ -33,6 +33,18 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Trust Step 0.5 — Platform-enforced render/preview behavior (not prompt-rule-dependent)
+
+**The problem today:** "Any render/preview request → save a DRAFT" is enforced by a prompt rule, not by the platform. LLM prompt rules are probabilistic — an agent in a confused state can still give up, ask permission, or refuse. The current fix improved behavior but did not make it deterministic.
+
+**What this requires:** The platform (message.ts) detects render/preview intent before the agent runs. When detected, it injects a mandatory system override into the agent's context that cannot be ignored: "You MUST output a DRAFT_DESIGN_SPEC_START block in this response. Nothing else is acceptable." The detection itself can be a simple Haiku call or keyword heuristic — the key is that the enforcement happens at the platform layer, not inside the agent's prompt.
+
+**Why this matters:** Prompt rules govern behavior probabilistically. Platform-level enforcement is deterministic. Any behavior that is critical to user trust (no giving up, no asking permission on a known action) must be enforced by the platform, not by asking the LLM to follow a rule.
+
+**Scope:** Design agent first (HTML preview is the visible failure point). Then PM and architect for their equivalent "save draft" behaviors.
+
+---
+
 ### Trust Step 1 — Thread health: proactive degradation before context limit
 
 **The problem today:** When a thread gets too long, the Anthropic API call silently fails and the user sees "Something went wrong." They have no warning it was coming, no idea what context was lost, and no clear path forward. This is the single biggest trust destroyer in the current system.
