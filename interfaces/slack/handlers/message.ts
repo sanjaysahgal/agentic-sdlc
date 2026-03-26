@@ -596,15 +596,17 @@ async function runDesignAgent(params: {
     getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
   const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
+  const previewOnlyOverride = `First, briefly list any specific design decisions from this conversation that have NOT yet been saved to GitHub — name them concisely (e.g. "Dark mode (#0A0A0F)", "Glow 10→15→10% at 2.5s"). If everything is already in the spec, say so in one line. Then output a PREVIEW_ONLY_START block containing the full current design spec with those uncommitted decisions incorporated and marked [pending approval] inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform renders automatically.`
+  const applyAndRenderOverride = `Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
   const enrichedUserMessageDesign = forcePreviewOnly
-    ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Output a PREVIEW_ONLY_START block containing the full current design spec. Incorporate any decisions agreed in this conversation that have not yet been committed to GitHub — mark each one "[pending approval]" inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform handles rendering automatically. Output the block now.`
+    ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${previewOnlyOverride}`
     : forceApplyAndRender
-      ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
+      ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${applyAndRenderOverride}`
       : baseEnrichedMessage
   const systemPromptOverride = forcePreviewOnly
-    ? `Output a PREVIEW_ONLY_START block containing the full current design spec. Incorporate any decisions agreed in this conversation that have not yet been committed to GitHub — mark each one "[pending approval]" inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform handles rendering automatically. Output the block now.`
+    ? previewOnlyOverride
     : forceApplyAndRender
-      ? `Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
+      ? applyAndRenderOverride
       : undefined
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, systemPromptOverride)
 
