@@ -72,6 +72,33 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("Help users onboard.")
   })
 
+  it("injects brand tokens when BRAND.md is present", () => {
+    const prompt = buildDesignSystemPrompt({ ...baseContext, brand: "--bg: #0A0A0F\n--violet: #7C6FCD" }, "onboarding")
+    expect(prompt).toContain("--bg: #0A0A0F")
+    expect(prompt).toContain("--violet: #7C6FCD")
+  })
+
+  it("states brand tokens are the production site values — agent must not ask for external URLs", () => {
+    const prompt = buildDesignSystemPrompt({ ...baseContext, brand: "--bg: #0A0A0F" }, "onboarding")
+    expect(prompt).toContain("Do NOT ask for a Figma file")
+    expect(prompt).toContain("these tokens ARE that website")
+  })
+
+  it("falls back gracefully when no BRAND.md — tells agent to use spec Brand section", () => {
+    const prompt = buildDesignSystemPrompt({ ...baseContext, brand: "" }, "onboarding")
+    expect(prompt).toContain("No BRAND.md found")
+  })
+
+  it("bans asking for brand tokens when BRAND.md is present — explicit banned phrase", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Asking for brand tokens, Figma files")
+  })
+
+  it("bans 'I cannot extract values from a live website' — agent already has the values", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("I cannot extract values from a live website")
+  })
+
   it("warns when no approved product spec found", () => {
     const prompt = buildDesignSystemPrompt({ ...baseContext, currentDraft: "" }, "onboarding")
     expect(prompt).toContain("No approved product spec found")

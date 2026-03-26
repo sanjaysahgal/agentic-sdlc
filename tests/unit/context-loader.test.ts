@@ -198,6 +198,31 @@ describe("context-loader", () => {
       const result = await loadDesignAgentContext("onboarding")
       expect(result.approvedFeatureSpecs).toContain("# Dashboard design")
     })
+
+    it("loads brand tokens into brand field", async () => {
+      mockReadFile.mockImplementation((path: string) => {
+        if (path.includes("BRAND")) return Promise.resolve("# Brand Tokens\n--bg: #0A0A0F")
+        return Promise.resolve("")
+      })
+
+      const result = await loadDesignAgentContext("onboarding")
+      expect(result.brand).toBe("# Brand Tokens\n--bg: #0A0A0F")
+    })
+
+    it("sets brand to empty string when no BRAND.md exists", async () => {
+      mockReadFile.mockResolvedValue("")
+
+      const result = await loadDesignAgentContext("onboarding")
+      expect(result.brand).toBe("")
+    })
+
+    it("reads brand from configured brand path", async () => {
+      mockReadFile.mockResolvedValue("")
+
+      await loadDesignAgentContext("onboarding")
+
+      expect(mockReadFile).toHaveBeenCalledWith("specs/brand/BRAND.md")
+    })
   })
 
   // ─── loadArchitectAgentContext ───────────────────────────────────────────
