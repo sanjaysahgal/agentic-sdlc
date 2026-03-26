@@ -50,5 +50,15 @@ jobs:
             fi
           fi
 
+      - name: Check AGENTS.md status changes require PRESENTATIONS.md update
+        run: |
+          if grep -q "^AGENTS.md" /tmp/changed.txt; then
+            if ! grep -q "^PRESENTATIONS.md" /tmp/changed.txt; then
+              echo "❌ AGENTS.md was modified but PRESENTATIONS.md was not updated."
+              echo "If an agent's status changed (e.g. planned → live), PRESENTATIONS.md must reflect it."
+              exit 1
+            fi
+          fi
+
       - name: All doc checks passed
         run: echo "✅ All documentation is in sync with code changes."

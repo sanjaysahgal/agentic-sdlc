@@ -96,6 +96,10 @@ A task is NOT done until the following are updated to reflect the change:
 | New backlog item completed | `BACKLOG.md` — move to Completed |
 | New solo-team shortcut taken | `DECISIONS.md` — add entry with scale gap |
 | New WorkspaceConfig field added | `.env.example` — add with comment |
+| New agent goes live | `PRESENTATIONS.md` + `platform-engineering-deep-dive.html` + `investor-pitch.html` |
+| Roadmap step completes | `PRESENTATIONS.md` + `investor-pitch.html` + `platform-engineering-deep-dive.html` |
+| New Claude Code practice added | `PRESENTATIONS.md` + `ai-engineering-practices.html` |
+| Website positioning changes | Cross-check `investor-pitch.html` against `getarchon.dev` |
 
 **This applies to every session, every task, without exception.** Do not ask the human if docs need updating — they always do if code changed. Do not defer doc updates to a later session. Update them before marking the task complete.
 
