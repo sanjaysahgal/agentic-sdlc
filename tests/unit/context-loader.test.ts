@@ -28,6 +28,7 @@ vi.mock("../../runtime/workspace-config", () => ({
       productVision: "specs/product/PRODUCT_VISION.md",
       systemArchitecture: "specs/architecture/system-architecture.md",
       designSystem: "specs/design/DESIGN_SYSTEM.md",
+      brand: "specs/brand/BRAND.md",
       featureConventions: "specs/features/CLAUDE.md",
       featuresRoot: "specs/features",
     },

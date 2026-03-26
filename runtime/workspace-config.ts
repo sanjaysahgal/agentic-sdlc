@@ -18,6 +18,7 @@ export type WorkspaceConfig = {
     productVision: string          // Product vision doc — injected into every agent
     systemArchitecture: string     // Architecture constraints — injected into every agent
     designSystem: string           // Design system doc — injected into design agent
+    brand: string                  // Brand tokens (colors, typography, animation) — injected into design agent
     featureConventions: string     // Feature-level conventions — injected into pm agent
     featuresRoot: string           // Root dir for feature specs, e.g. "specs/features"
   }
@@ -49,6 +50,7 @@ export function loadWorkspaceConfig(): WorkspaceConfig {
       productVision:       process.env.PATH_PRODUCT_VISION       ?? "specs/product/PRODUCT_VISION.md",
       systemArchitecture:  process.env.PATH_SYSTEM_ARCHITECTURE  ?? "specs/architecture/system-architecture.md",
       designSystem:        process.env.PATH_DESIGN_SYSTEM        ?? "specs/design/DESIGN_SYSTEM.md",
+      brand:               process.env.PATH_BRAND                ?? "specs/brand/BRAND.md",
       featureConventions:  process.env.PATH_FEATURE_CONVENTIONS  ?? "specs/features/CLAUDE.md",
       featuresRoot:        process.env.PATH_FEATURES_ROOT        ?? "specs/features",
     },

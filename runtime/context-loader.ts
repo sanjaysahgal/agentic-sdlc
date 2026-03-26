@@ -13,6 +13,7 @@ export type AgentContext = {
   systemArchitecture: string
   currentDraft: string
   designSystem?: string             // Design system doc — injected into design agent
+  brand?: string                    // Brand tokens (colors, typography, animation) — injected into design agent
   approvedFeatureSpecs?: string     // All approved specs in this agent's domain (cross-feature coherence)
 }
 
@@ -88,13 +89,14 @@ export async function loadDesignAgentContext(featureName: string): Promise<Agent
   const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
   const designBranch = `spec/${featureName}-design`
 
-  const [productVision, featureConventions, systemArchitecture, approvedProductSpec, designDraft, designSystem, approvedFeatureSpecs] = await Promise.all([
+  const [productVision, featureConventions, systemArchitecture, approvedProductSpec, designDraft, designSystem, brand, approvedFeatureSpecs] = await Promise.all([
     readFile(paths.productVision),
     readFile(paths.featureConventions),
     readFile(paths.systemArchitecture),
     readFile(productSpecPath),           // approved spec lives on main
     readFile(designDraftPath, designBranch), // design draft on feature branch
     readFile(paths.designSystem),        // design system doc — may not exist yet (first feature)
+    readFile(paths.brand),               // brand tokens — may not exist yet (first feature)
     // Load all other approved design specs for cross-feature coherence
     loadApprovedSpecs(paths.featuresRoot, ".design.md", featureName),
   ])
@@ -107,7 +109,7 @@ export async function loadDesignAgentContext(featureName: string): Promise<Agent
     designDraft ? `## Current Design Draft\n${designDraft}` : "",
   ].filter(Boolean).join("\n\n")
 
-  return { productVision, featureConventions, systemArchitecture, currentDraft, designSystem, approvedFeatureSpecs }
+  return { productVision, featureConventions, systemArchitecture, currentDraft, designSystem, brand, approvedFeatureSpecs }
 }
 
 // Loads context for the Architect agent.

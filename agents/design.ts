@@ -224,6 +224,11 @@ ${context.currentDraft
     ? `The following specs define what must be designed. Read them fully before forming your opening proposal:\n\n${context.currentDraft}`
     : "No approved product spec found. Tell the designer that the product spec must be approved before the design phase can begin."}
 
+## Brand tokens (authoritative — always use these exact values)
+${context.brand
+    ? `This is the customer's brand. Every color, animation, and typography decision must come from these tokens — do not invent values:\n\n${context.brand}`
+    : "No BRAND.md found — use values from the spec's Brand section, or ask the designer for the brand tokens."}
+
 ## Design system (your authoritative document)
 ${context.designSystem
     ? `Read this before every response. Every design decision must be consistent with established patterns:\n\n${context.designSystem}`
