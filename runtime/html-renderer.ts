@@ -42,18 +42,19 @@ Read the Brand section of the spec for exact hex values. Configure them like thi
     theme: {
       extend: {
         colors: {
-          "bg-primary": "#0A0A0F",
+          "primary": "#0A0A0F",
           "surface": "#13131A",
-          "text-primary": "#F8F8F7",
-          "accent": "#7C3AED"
-          // etc — use the actual values from the spec
+          "fg": "#F8F8F7",
+          "accent": "#7C3AED",
+          "accent2": "#0EA5E9"
+          // use the ACTUAL values from the spec — never invent colors
         },
         keyframes: {
           "glow-pulse": {
-            "0%, 100%": { opacity: "0.10" },
-            "50%": { opacity: "0.15" }
+            "0%, 100%": { opacity: "0.35" },
+            "50%": { opacity: "0.65" }
           }
-          // etc — include all animations from the spec
+          // include ALL animations from the spec
         },
         animation: {
           "glow-pulse": "glow-pulse 2.5s ease-in-out infinite"
@@ -65,7 +66,26 @@ Read the Brand section of the spec for exact hex values. Configure them like thi
 <script src="https://cdn.tailwindcss.com"></script>
 \`\`\`
 
-**This is how to get custom colors and animations into Tailwind — never skip this step.** If you define colors in the config, you can use them as Tailwind classes (bg-bg-primary, text-text-primary, etc). If you skip this, all custom colors will fail to render — the designer will see a broken black screen instead of the designed palette.
+**Color naming rule:** Name colors WITHOUT a CSS-property prefix. Use \`"primary"\` not \`"bg-primary"\` — then use them as \`bg-primary\`, \`text-fg\`, \`border-accent\` etc. The prefix comes from Tailwind, not the color name.
+
+**This is how to get custom colors and animations into Tailwind — never skip this step.** If you define colors in the config, you can use them as Tailwind classes. If you skip this, all custom colors will fail to render — the designer will see a broken black screen instead of the designed palette.
+
+## Glow and gradient effects — must be visible
+
+**Minimum opacity for glow effects: 0.30.** Values below 0.20 are invisible in practice — the designer will see a black screen where they expect a glowing background. Use:
+- Subtle glow: opacity 0.30–0.45
+- Medium glow: opacity 0.45–0.60
+- Strong glow: opacity 0.60–0.80
+
+For radial glow effects (a light emanating from behind an element), use an absolutely-positioned div with a radial-gradient background and the animate class:
+\`\`\`html
+<div class="absolute inset-0 pointer-events-none overflow-hidden">
+  <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-80 h-40 rounded-full animate-glow-pulse"
+       style="background: radial-gradient(ellipse at center, rgba(124,58,237,0.55) 0%, transparent 70%)"></div>
+</div>
+\`\`\`
+
+**IMPORTANT:** Use \`style="background: radial-gradient(...)"\` directly for glow/gradient elements — do NOT rely on Tailwind gradient classes for these. Tailwind's \`from-*/to-*\` gradient syntax does not support arbitrary rgba values reliably.
 
 ## Structure
 
@@ -100,6 +120,15 @@ Read the spec's Interactions sections carefully. Implement:
 For any text input or textarea:
 - Set explicit text color that contrasts with the input background
 - On dark backgrounds: text-text-primary or text-white. NEVER leave input color as browser default on a dark-bg page — the default is black, which produces black-on-black text.
+
+## Sheets, modals, and auth flows
+
+If the spec describes an auth sheet, login sheet, or bottom sheet that slides up over a screen:
+- Give it its OWN named tab in the navigation bar (e.g. "Auth Sheet", "Login")
+- Do NOT hide it as a conditional overlay that requires clicking through another screen
+- Render its content fully — SSO buttons, dividers, copy, glow effects — exactly as specified
+
+Every named screen and every named state (auth, onboarding, empty, loading, error) must be reachable directly from the nav bar or state pills. Nothing should require navigating through other states to see.
 
 ## Mobile-first
 Default width should be a mobile frame (max-w-sm centered) with a toggle to expand to full-width desktop.`,

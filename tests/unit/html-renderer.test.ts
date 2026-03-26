@@ -96,4 +96,35 @@ describe("generateDesignPreview", () => {
       expect.objectContaining({ max_tokens: 16000 })
     )
   })
+
+  it("system prompt enforces minimum visible glow opacity", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("0.30")
+    expect(call.system).toContain("Minimum opacity")
+  })
+
+  it("system prompt uses non-prefixed color names to avoid Tailwind class collision", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    // Color naming rule: use unprefixed names like "primary", "fg" so Tailwind classes are bg-primary, text-fg
+    expect(call.system).toContain('"primary"')
+    expect(call.system).toContain('"fg"')
+    expect(call.system).toContain("Color naming rule")
+  })
+
+  it("system prompt instructs sheets and modals to be own nav tabs", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("OWN named tab")
+  })
 })

@@ -561,6 +561,12 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("3 most significant sections")
     expect(prompt).toContain("more than 3 sections")
   })
+
+  it("handles HTML rendering feedback by patching spec — not suggesting to skip preview", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("Do NOT suggest skipping the preview")
+    expect(prompt).toContain("fix the spec and save it with a PATCH block")
+  })
 })
 
 describe("hasDesignPatch", () => {
