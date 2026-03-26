@@ -187,6 +187,57 @@ describe("render-only PLATFORM OVERRIDE content", () => {
   })
 })
 
+// ─── PREVIEW_ONLY truncation recovery ─────────────────────────────────────────
+
+describe("PREVIEW_ONLY truncation recovery", () => {
+  it("retries when PREVIEW_ONLY_START is present but PREVIEW_ONLY_END is absent", async () => {
+    seedHistory()
+    setConfirmedAgent(THREAD, "ux-design")
+
+    const truncatedPreview = "Some preamble.\nPREVIEW_ONLY_START\n# Spec\n## Direction\nDark mode.\n[truncated]"
+    const fullPreview = "PREVIEW_ONLY_START\n# Spec\n## Direction\nDark mode.\nPREVIEW_ONLY_END"
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "render-only" }] })  // [2] detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })             // [3] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedPreview }] }) // [4] runAgent — truncated
+      .mockResolvedValueOnce({ content: [{ type: "text", text: fullPreview }] })    // [5] retry runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // [6] generateDesignPreview
+
+    await handleFeatureChannelMessage(makeParams("give a new render"))
+
+    // Retry must have been called (7 total Anthropic calls including HTML renderer)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+
+    // Retry instruction must contain SYSTEM OVERRIDE and PREVIEW_ONLY
+    const retryMsg = mockAnthropicCreate.mock.calls[5]?.[0]?.messages?.at(-1)?.content
+    expect(retryMsg).toContain("SYSTEM OVERRIDE")
+    expect(retryMsg).toContain("PREVIEW_ONLY_START")
+    expect(retryMsg).toContain("PREVIEW_ONLY_END")
+  })
+
+  it("shows graceful fallback message when retry also fails to produce PREVIEW_ONLY_END", async () => {
+    seedHistory()
+    setConfirmedAgent(THREAD, "ux-design")
+    const client = makeClient()
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "render-only" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PREVIEW_ONLY_START\ntruncated again" }] }) // truncated
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PREVIEW_ONLY_START\nstill truncated" }] }) // retry also truncated
+
+    await handleFeatureChannelMessage(makeParams("give a new render", client))
+
+    const lastUpdate = client.chat.update.mock.calls.at(-1)?.[0]?.text ?? ""
+    expect(lastUpdate).toMatch(/too large|specific section|approved/i)
+  })
+})
+
 // ─── apply-and-render override content ────────────────────────────────────────
 
 describe("apply-and-render PLATFORM OVERRIDE content", () => {

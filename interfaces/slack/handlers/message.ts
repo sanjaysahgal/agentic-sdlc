@@ -646,6 +646,19 @@ async function runDesignAgent(params: {
     return
   }
 
+  // Detect truncated PREVIEW_ONLY block — response hit max_tokens before PREVIEW_ONLY_END.
+  // Retry asking for only the block with no preamble. The uncommitted decisions were already
+  // shown in the previous (truncated) response so the user has seen them.
+  if (response.includes("PREVIEW_ONLY_START") && !response.includes("PREVIEW_ONLY_END")) {
+    await update("_Preview is large — resuming..._")
+    const retryInstruction = `SYSTEM OVERRIDE: Your previous response started a PREVIEW_ONLY_START block but was cut off before PREVIEW_ONLY_END. Output ONLY the PREVIEW_ONLY_START/END block now — no preamble, no commentary, no uncommitted decisions list (you already showed it). Keep section prose concise but include all sections.`
+    response = await runAgent({ systemPrompt, history: historyDesign, userMessage: retryInstruction, historyLimit: DESIGN_HISTORY_LIMIT })
+    if (!hasPreviewOnly(response)) {
+      await update(`${prefix}_The preview was too large to generate in one response. Try asking for a render of a specific section, or say *approved* to save the current spec as-is._`)
+      return
+    }
+  }
+
   // PREVIEW_ONLY block — render HTML from proposed content without saving to GitHub.
   // Used when the user wants to see a proposal before agreeing to it.
   // Nothing is committed. If the user approves after seeing it, the next response saves a DRAFT.

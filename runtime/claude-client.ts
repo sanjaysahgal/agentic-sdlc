@@ -70,7 +70,7 @@ export async function runAgent(params: {
 
   const response = await client.messages.create({
     model: AGENT_MODEL,
-    max_tokens: 8192,
+    max_tokens: 16000,
     system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     messages,
   })
