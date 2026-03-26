@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:visual": "playwright test tests/visual/",
+    "test:all": "vitest run && playwright test tests/visual/",
     "test:watch": "vitest",
     "eval": "tsx scripts/run-evals.ts",
     "eval:pm": "tsx scripts/run-evals.ts -- --agent pm",
@@ -29,6 +31,7 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^22.19.15",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

@@ -155,35 +155,6 @@ Every step from 2.6 onwards assumes writes are reliable and reads are consistent
 **Why deferred (not a blocker for current work):**
 The first auto-retry succeeds in the vast majority of cases — a second failure only happens when a single PATCH section is also too large to fit in one response, which requires an unusually long spec and an unusually large change. This is a tail case. The first-attempt auto-retry (Trust Step 4's predecessor) is already in place. Fix this before going to production.
 
----
-
-### Trust Step 4e — Visual regression tests for HTML preview
-
-**The problem today:** The HTML renderer prompt is tested for correct instructions but not for correct output. Glow effects, color palette, animations, and layout have regressed silently multiple times — each caught only when a human looked at the preview in Slack. A prompt change that produces invisible glows or wrong colors passes all current CI checks.
-
-**What this adds:**
-
-**Screenshot-based regression tests (Playwright + pixelmatch or similar):**
-- Generate the HTML from a fixed, deterministic spec fixture (no LLM call — use a pre-generated HTML snapshot)
-- Render in a headless browser (Playwright) at mobile viewport
-- Take a screenshot and diff against a committed baseline PNG
-- Fail CI if pixel diff exceeds threshold (e.g. 2% of pixels changed)
-
-**Fixtures to test:**
-- Glow present and visible (pixel brightness check on the glow area — not just HTML structure check)
-- Dark background correctly applied (#0A0A0F)
-- Text legible (contrast ratio check via accessibility API)
-- Animation keyframes present in rendered DOM (check via `getComputedStyle`)
-
-**Scope:**
-- Does NOT test LLM output quality — tests that a valid HTML spec renders correctly in a browser
-- The LLM prompt tests (existing) check that the renderer is instructed correctly
-- These tests check that the generated HTML actually works when opened
-
-**Why this is important:**
-The current test suite checks `expect(prompt).toContain("glow-pulse")` — it proves the renderer is told to use a glow, not that the glow is visible. Every glow regression we've hit was caught by eye, not by CI.
-
-**Implementation:** `tests/visual/` directory, Playwright as test runner, baseline PNGs committed to repo. Run in CI on any change to `runtime/html-renderer.ts`.
 
 ---
 
@@ -697,6 +668,8 @@ Most valuable once several features have shipped and patterns in the vision show
 - **PATCH mechanism + auto-retry on truncation (all agents)** — All three spec-producing agents (PM, design, architect) use section-level PATCH blocks (`PRODUCT_PATCH_START/END`, `DESIGN_PATCH_START/END`, `ENGINEERING_PATCH_START/END`) when a draft already exists. `runtime/spec-patcher.ts` (`applySpecPatch`) merges patches into the existing draft by section. When a DRAFT block is truncated (start marker present, end marker absent), the platform auto-retries with a SYSTEM OVERRIDE instruction to force PATCH — user never sees the error. 401 tests across 22 files. Unit tests for all patch helpers + `applySpecPatch`. Integration tests for all three patch flows + truncation auto-retry.
 
 - **Design agent HTML preview** — On every design spec draft save, generates a self-contained HTML preview (`<feature>.preview.html`) on the design branch using Tailwind CDN + Alpine.js. All screens tabbed, all states (default/loading/empty/error) toggleable. Preview link posted in Slack. Non-fatal. Implemented in `runtime/html-renderer.ts` + `github-client.ts` + `interfaces/slack/handlers/message.ts`.
+
+- **Trust Step 4e — Visual regression tests for HTML preview** — Playwright tests open a fixture HTML file (using the exact glow template from the renderer prompt) in a real headless Chromium browser and assert: glow element is visible and attached, `glow-pulse` animation is applied (not "none"), `filter: blur` is present, glow is z-index 0 behind content at z-index 1, page background is #0A0A0F, text luminance > 0.5 (not black-on-black), input text color is light, `@keyframes glow-pulse` is in document stylesheets. 10 tests. Run with `npm run test:visual`. Catches the class of silent regressions (invisible glow, wrong colors, missing animations) that unit tests cannot.
 
 - **Step 2.5 — API cost optimization** — `SDLC_DEV_MODE` env flag in `claude-client.ts` switches all agent calls to Haiku when `true`. `cache_control: ephemeral` applied to system prompts for prompt caching.
 

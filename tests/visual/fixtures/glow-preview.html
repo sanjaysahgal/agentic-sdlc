@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glow Preview Fixture</title>
+
+<!-- Glow keyframe — must be in <head> as a <style> tag, not Tailwind config -->
+<style>
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 0.45; }
+    50%       { opacity: 0.75; }
+  }
+  body {
+    background-color: #0A0A0F;
+    color: #F8F8F7;
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+</style>
+
+<script>
+  window.tailwind = {
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#0A0A0F",
+          "surface": "#13131A",
+          "fg": "#F8F8F7",
+          "muted": "#9B9BA3"
+        }
+      }
+    }
+  }
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-primary text-fg">
+
+  <!-- ── Home screen: prompt bar with glow ── -->
+  <div id="home-screen" class="w-full max-w-sm mx-auto min-h-screen flex flex-col justify-end pb-8 px-4">
+
+    <div class="text-center mb-8">
+      <h1 id="wordmark" class="text-2xl font-semibold text-fg">Health360</h1>
+      <p id="tagline" class="text-muted text-sm mt-1">What can I help you with today?</p>
+    </div>
+
+    <!-- Prompt bar with glow — exact pattern from renderer template -->
+    <div class="relative" id="prompt-bar-container">
+      <!-- glow: first child, behind content -->
+      <div
+        id="home-glow"
+        aria-hidden="true"
+        class="absolute inset-0 pointer-events-none"
+        style="background: radial-gradient(ellipse at 50% 85%, rgba(124,111,205,0.65) 0%, rgba(79,175,168,0.35) 45%, transparent 70%);
+               filter: blur(48px);
+               animation: glow-pulse 2.5s ease-in-out infinite;
+               z-index: 0;"
+      ></div>
+      <!-- content: above glow -->
+      <div class="relative" style="z-index: 1;">
+        <input
+          id="prompt-input"
+          type="text"
+          placeholder="Ask me anything..."
+          class="w-full rounded-2xl px-4 py-3 text-fg"
+          style="background: #13131A; border: 1px solid rgba(248,248,247,0.1); color: #F8F8F7;"
+        />
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Auth Sheet: SSO buttons with independent glow ── -->
+  <div id="auth-sheet" class="w-full max-w-sm mx-auto bg-surface rounded-t-3xl p-6 mt-4">
+    <h2 class="text-lg font-semibold text-fg mb-4">Sign in to Health360</h2>
+
+    <!-- Auth sheet glow — independent instance, same pattern -->
+    <div class="relative" id="auth-glow-container">
+      <div
+        id="auth-glow"
+        aria-hidden="true"
+        class="absolute inset-0 pointer-events-none"
+        style="background: radial-gradient(ellipse at 50% 85%, rgba(124,111,205,0.65) 0%, rgba(79,175,168,0.35) 45%, transparent 70%);
+               filter: blur(48px);
+               animation: glow-pulse 2.5s ease-in-out infinite;
+               z-index: 0;"
+      ></div>
+      <div class="relative flex flex-col gap-3" style="z-index: 1;">
+        <button id="sso-google" class="w-full py-3 rounded-xl text-fg text-sm" style="background: #13131A; border: 1px solid rgba(248,248,247,0.15);">
+          Continue with Google
+        </button>
+        <button id="sso-apple" class="w-full py-3 rounded-xl text-fg text-sm" style="background: #13131A; border: 1px solid rgba(248,248,247,0.15);">
+          Continue with Apple
+        </button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
