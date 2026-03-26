@@ -66,6 +66,16 @@ The context limit error handling already exists — this step improves the proac
 
 ---
 
+### Trust Step 2b — Extend save checkpoint to PM and architect agents
+
+**The problem today:** `buildCheckpointFooter` + `generateSaveCheckpoint` fire only on design spec saves (DRAFT/PATCH). PM and architect agents produce approved specs too — users face the same "what did I just lose?" ambiguity after approving a product or engineering spec, with no committed-vs-discussed boundary shown.
+
+**What this adds:** Call `generateSaveCheckpoint` on every approved PM spec save (`saveApprovedProductSpec`) and every approved architect spec save (`saveApprovedEngineeringSpec`). Post the checkpoint footer alongside the GitHub link, same format as the design agent.
+
+**Implementation:** `interfaces/slack/handlers/message.ts` (PM approval save path, architect approval save path). No changes to `conversation-summarizer.ts` — the function is already generic.
+
+---
+
 ### Trust Step 3 — Redis persistence: history survives deployments and scales across instances
 
 **The problem today:** Conversation history and confirmed agent state are stored in two local disk files (`.conversation-history.json`, `.confirmed-agents.json`). This means:
