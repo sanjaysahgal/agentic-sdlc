@@ -61,13 +61,13 @@ describe("generateDesignPreview", () => {
     expect(userMessage).toContain("## Screens")
   })
 
-  it("uses claude-sonnet-4-6 model", async () => {
+  it("uses claude-haiku model (fast rendering)", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "claude-sonnet-4-6" })
+      expect.objectContaining({ model: "claude-haiku-4-5-20251001" })
     )
   })
 
@@ -103,7 +103,7 @@ describe("generateDesignPreview", () => {
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     const call = mockCreate.mock.calls[0][0]
-    expect(call.system).toContain("0.40")
+    expect(call.system).toContain("0.45")
     expect(call.system).toContain("glow-pulse")
   })
 

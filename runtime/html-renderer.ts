@@ -15,7 +15,7 @@ export async function generateDesignPreview(params: {
   const { specContent, featureName } = params
 
   const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 16000,
     system: `You generate beautiful, self-contained HTML preview files directly from design specs. The output will be opened in a browser to let a designer approve or iterate on the spec before it goes to engineering.
 
@@ -104,8 +104,8 @@ When the spec describes a pulsing glow effect, use this EXACT structure. Do not 
 - Always use a \`<style>\` keyframe for glow animation — Tailwind CDN keyframes are unreliable for glow
 - Glow div must be the FIRST child inside the relative wrapper — later siblings stack on top via z-index
 - Content must be in a div with \`position: relative; z-index: 1\` — without this, content sits behind the glow
-- Use \`filter: blur(40px)\` or higher on the glow div — this creates the soft-bloom look; without it the gradient has hard edges
-- Opacity range 0.40–0.80 — values below 0.30 are invisible on dark backgrounds in practice
+- Use \`filter: blur(48px)\` or higher on the glow div — this creates the soft-bloom look; without it the gradient has hard edges
+- **ALWAYS use opacity 0.45→0.75 in the glow keyframe — do not copy opacity percentages from the spec.** Spec values like "10%", "20–30%", "opacity 0.2" are design intent for final production code, not CSS preview values. On dark backgrounds (#0A0A0F), CSS opacity below 0.35 is invisible. The keyframe MUST be exactly: \`0%, 100% { opacity: 0.45; } 50% { opacity: 0.75; }\`
 - Use inline \`style=""\` for radial-gradient and filter — never Tailwind \`from-*/to-*\` classes for arbitrary rgba values
 - If the spec names TWO glow locations (e.g. home prompt bar AND auth sheet), implement BOTH independently with separate glow divs
 
