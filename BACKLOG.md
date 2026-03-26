@@ -33,6 +33,24 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Trust Step 0 — Slack event idempotency (blocking — do this first)
+
+**The problem today:** Slack's event delivery is at-least-once — the same user message is regularly delivered twice. Without deduplication, both events are processed: two parallel agent runs, two API calls, two HTML generations, two GitHub writes, two Slack responses. This has caused visible production failures: 6-minute hangs (two 5-minute HTML renderers running simultaneously), double responses in the channel, and potential duplicate spec saves.
+
+**What this adds:**
+
+- On every incoming Slack event, check the `event_id` against a short-lived in-memory Set before processing
+- If the `event_id` has been seen in the last 5 minutes, drop the event silently
+- TTL: 5 minutes covers Slack's retry window; entries older than 5 minutes are purged on each check
+- In-memory is sufficient for single-instance deployment (no Redis needed for this step — Redis is Trust Step 3)
+- When Redis is added (Trust Step 3), migrate the Set to Redis with the same TTL so idempotency survives restarts and works across multiple instances
+
+**Implementation:** `interfaces/slack/handlers/general.ts` — check `event_id` before calling `handleFeatureChannelMessage` or any other handler. The dedup store is a `Map<eventId, timestamp>` with periodic cleanup of expired entries.
+
+**Why before Trust Step 1:** Trust Step 1 adds a proactive context-limit warning. Trust Step 0 stops the same message from being processed twice. A warning that fires twice is worse than no warning — and a spec that gets saved twice may corrupt state. This is the minimum viable fix before any further work.
+
+---
+
 ### Trust Step 1 — Thread health: proactive degradation before context limit
 
 **The problem today:** When a thread gets too long, the Anthropic API call silently fails and the user sees "Something went wrong." They have no warning it was coming, no idea what context was lost, and no clear path forward. This is the single biggest trust destroyer in the current system.
