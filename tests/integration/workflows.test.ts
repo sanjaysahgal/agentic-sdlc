@@ -780,3 +780,61 @@ describe("Scenario 11 — Architect patch flow", () => {
     expect(savedContent).toContain("cursor-based pagination")
   })
 })
+
+// ─── Scenario 12: Auto-retry on truncated DRAFT — design agent ────────────────
+//
+// When the design agent emits a truncated DRAFT block (start marker but no end marker)
+// and a draft already exists, the handler auto-retries with a forced PATCH instruction.
+// The user never sees an error — they just see the spec update.
+
+describe("Scenario 12 — Auto-retry on truncated DRAFT (design agent)", () => {
+  const THREAD = "workflow-s12"
+
+  beforeEach(() => { clearHistory(THREAD) })
+  afterEach(() => { clearHistory(THREAD) })
+
+  it("retries with forced PATCH when DRAFT block is truncated and existing draft exists", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    // Simulate an existing draft on GitHub (mockGetContent returns it for the spec branch)
+    const existingDraft = Buffer.from("# Onboarding — Design Spec\n\n## Design Direction\nLight mode.\n\n## Screens\nScreen 1.").toString("base64")
+    mockGetContent.mockResolvedValueOnce({ data: { content: existingDraft, type: "file" } })
+
+    const truncatedResponse = "Updating the spec with all changes.\nDRAFT_DESIGN_SPEC_START\n# Onboarding — Design Spec\n\n## Design Direction\nDark mode."
+    // No DRAFT_DESIGN_SPEC_END — simulates truncation
+
+    const patchRetryResponse = [
+      "Applied all changes as section patches.",
+      "DESIGN_PATCH_START",
+      "## Design Direction",
+      "Dark mode. Archon Labs aesthetic.",
+      "DESIGN_PATCH_END",
+    ].join("\n")
+
+    // Call sequence:
+    //   1. isOffTopicForAgent → false
+    //   2. isSpecStateQuery   → false
+    //   3. runAgent (main)    → truncated DRAFT
+    //   4. readFile (existing draft check) → resolved by mockGetContent above
+    //   5. runAgent (retry)   → PATCH block
+    //   6. generateDesignPreview → HTML
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedResponse }] }) // runAgent (truncated)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: patchRetryResponse }] }) // runAgent (retry)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+
+    const params = makeParams(THREAD, "feature-onboarding", "apply all the changes we discussed")
+    await handleFeatureChannelMessage(params)
+
+    // Draft was saved (retry succeeded)
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    // No error message shown to user — they see the CTA
+    const text = lastUpdateText(params.client)
+    expect(text).not.toContain("too long")
+    expect(text).not.toContain("cut off")
+    expect(text).toContain("approved")
+  })
+})
