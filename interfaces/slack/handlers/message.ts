@@ -650,7 +650,7 @@ async function runDesignAgent(params: {
   // Figma files) or offering numbered options instead of acting. One retry with PLATFORM OVERRIDE.
   if (isAgentStalling(response)) {
     await update("_UX Designer is re-reading the context..._")
-    const stallRetryOverride = `PLATFORM OVERRIDE: Your previous response stalled — either by asking for information already in your system prompt, or by offering options instead of acting. You have everything you need. Pick the most complete interpretation of the request and act on it immediately. No questions. No options. Output a structural block (DESIGN_PATCH, DRAFT, or PREVIEW_ONLY) now.`
+    const stallRetryOverride = `PLATFORM OVERRIDE: Your previous response stalled — either by asking for information already in your system prompt, or by offering options instead of acting. Read the "Brand tokens" section at the top of your system prompt. Those ARE the authoritative values for this product — extracted from the production site and committed to the repo. Do not use values from your training data. Do not reverse-engineer anything. Use the exact tokens above, act on the user's request, and output a structural block (DESIGN_PATCH, DRAFT, or PREVIEW_ONLY) now. No questions. No options.`
     const retrySystemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, stallRetryOverride)
     response = await runAgent({ systemPrompt: retrySystemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
   }

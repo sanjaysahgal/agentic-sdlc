@@ -238,6 +238,81 @@ describe("PREVIEW_ONLY truncation recovery", () => {
   })
 })
 
+// ─── stall retry ──────────────────────────────────────────────────────────────
+
+describe("stall retry — isAgentStalling", () => {
+  it("retries when first response offers options without a structural marker", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    const stallingResponse = `I need to confirm one thing before I touch the spec:
+
+Are you asking me to:
+
+**Option 1:** Keep the spec as-is and just rebuild the HTML preview?
+
+**Option 2:** Extract new values from getarchon.dev and override what's locked?
+
+Which is it — **1 or 2?**`
+
+    const actionResponse = "DESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END"
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // [2] detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: stallingResponse }] }) // [3] runAgent — stall
+      .mockResolvedValueOnce({ content: [{ type: "text", text: actionResponse }] })   // [4] retry runAgent
+
+    await handleFeatureChannelMessage(makeParams("match getarchon.dev exactly"))
+
+    // Retry fired — 5th call (index 4) is the retry, its system prompt has PLATFORM OVERRIDE
+    const retrySystemPrompt = getSystemPrompt(4)
+    expect(retrySystemPrompt).toContain("PLATFORM OVERRIDE — MANDATORY")
+  })
+
+  it("retry system prompt tells agent to use brand tokens from system prompt, not training data", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    const stallingResponse = "Do you have the official brand tokens or a Figma file? Which is it?"
+    const actionResponse = "DESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END"
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: stallingResponse }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: actionResponse }] })
+
+    await handleFeatureChannelMessage(makeParams("match our brand"))
+
+    const retrySystemPrompt = getSystemPrompt(4)
+    expect(retrySystemPrompt).toContain("PLATFORM OVERRIDE — MANDATORY")
+    expect(retrySystemPrompt).toContain("Brand tokens")
+    expect(retrySystemPrompt).toContain("Do not use values from your training data")
+  })
+
+  it("does not retry when first response contains a structural marker", async () => {
+    setConfirmedAgent(THREAD, "ux-design")
+
+    // Response with structural marker and a question — isAgentStalling returns false
+    const actionResponse = "Applying tokens.\nDESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END\nIs the glow correct?"
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: actionResponse }] })
+      .mockResolvedValue({ content: [{ type: "text", text: "" }] }) // any downstream calls (html renderer etc)
+
+    await handleFeatureChannelMessage(makeParams("apply the brand tokens"))
+
+    // 4th call (index 3) is the main agent call — no retry means no PLATFORM OVERRIDE in 5th call
+    const fifthCallSystemPrompt = getSystemPrompt(4)
+    expect(fifthCallSystemPrompt).not.toContain("stalled")
+    expect(fifthCallSystemPrompt).not.toContain("Your previous response stalled")
+  })
+})
+
 // ─── apply-and-render override content ────────────────────────────────────────
 
 describe("apply-and-render PLATFORM OVERRIDE content", () => {
