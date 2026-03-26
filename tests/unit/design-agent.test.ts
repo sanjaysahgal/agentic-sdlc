@@ -15,7 +15,7 @@ import {
   extractDesignPatch,
   hasPreviewOnly,
   extractPreviewOnly,
-  isBrandContextBlind,
+  isAgentStalling,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -727,13 +727,14 @@ describe("extractDesignPatch", () => {
   })
 })
 
-describe("isBrandContextBlind", () => {
+describe("isAgentStalling", () => {
+  // Brand context blindness
   it("returns true when response asks for design tokens without a structural marker", () => {
     const response = "I need to confirm — do you have the official design tokens or a Figma file for the brand?"
-    expect(isBrandContextBlind(response)).toBe(true)
+    expect(isAgentStalling(response)).toBe(true)
   })
 
-  it("returns true for the exact stall pattern seen in production", () => {
+  it("returns true for the exact brand-stall pattern seen in production", () => {
     const response = `I cannot extract exact design tokens from a live website with certainty.
 
 **Do you have the official brand tokens file?**
@@ -742,31 +743,58 @@ describe("isBrandContextBlind", () => {
 **If no:** I'll reverse-engineer getarchon.dev.
 
 Which is it?`
-    expect(isBrandContextBlind(response)).toBe(true)
+    expect(isAgentStalling(response)).toBe(true)
   })
 
   it("returns true when response asks to reverse-engineer the site", () => {
     const response = "Should I reverse-engineer getarchon.dev to get the brand tokens?"
-    expect(isBrandContextBlind(response)).toBe(true)
+    expect(isAgentStalling(response)).toBe(true)
   })
 
+  // Option-offering
+  it("returns true for the exact option-offering pattern seen in production", () => {
+    const response = `I see the full context now. But now you're asking me to match getarchon.dev "exactly" — which implies potentially different values.
+
+**I need to confirm one thing:**
+
+Are you asking me to:
+
+**Option 1:** Keep the spec exactly as locked, but just rebuild the HTML preview so it finally renders correctly?
+
+**Option 2:** Extract new color/animation/typography values from getarchon.dev and override what's currently locked?
+
+Which is it — **1 or 2?**`
+    expect(isAgentStalling(response)).toBe(true)
+  })
+
+  it("returns true when response offers numbered options without structural marker", () => {
+    const response = "Which approach would you prefer? Option 1: update the spec. Option 2: keep it as-is."
+    expect(isAgentStalling(response)).toBe(true)
+  })
+
+  it("returns true for 'if yes / if no' framing", () => {
+    const response = "Before I proceed — if yes: share the file. If no: I'll reverse-engineer it. Which is it?"
+    expect(isAgentStalling(response)).toBe(true)
+  })
+
+  // Pass-throughs — should NOT trigger retry
   it("returns false when response contains a structural marker — agent is acting, not stalling", () => {
     const response = "Applying the brand tokens now.\nDESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END\nIs the glow correct?"
-    expect(isBrandContextBlind(response)).toBe(false)
+    expect(isAgentStalling(response)).toBe(false)
   })
 
-  it("returns false when response has a legitimate single question with no blindness signals", () => {
+  it("returns false when response has a legitimate single question with no stall signals", () => {
     const response = "I've applied the violet glow. Should the teal glow use the same blur radius, or a slightly tighter spread?"
-    expect(isBrandContextBlind(response)).toBe(false)
+    expect(isAgentStalling(response)).toBe(false)
   })
 
   it("returns false when response has no question mark at all", () => {
     const response = "I cannot extract design tokens from a live website without certainty — please provide the official file."
-    expect(isBrandContextBlind(response)).toBe(false)
+    expect(isAgentStalling(response)).toBe(false)
   })
 
-  it("returns false when response asks about Figma but has a structural marker", () => {
-    const response = "Using brand tokens from context.\nDRAFT_DESIGN_SPEC_START\n# Spec\ncontent\nDRAFT_DESIGN_SPEC_END\nDo you have a Figma link for reference?"
-    expect(isBrandContextBlind(response)).toBe(false)
+  it("returns false when response offers options but has a structural marker", () => {
+    const response = "Here's the draft:\nDRAFT_DESIGN_SPEC_START\n# Spec\ncontent\nDRAFT_DESIGN_SPEC_END\nDo you prefer option 1 or option 2 for the glow?"
+    expect(isAgentStalling(response)).toBe(false)
   })
 })

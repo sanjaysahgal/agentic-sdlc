@@ -2,7 +2,7 @@ import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } f
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec, hasPmPatch, extractPmPatch } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch, hasPreviewOnly, extractPreviewOnly, isBrandContextBlind } from "../../../agents/design"
+import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch, hasPreviewOnly, extractPreviewOnly, isAgentStalling } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent, hasArchitectPatch, extractArchitectPatch } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, AgentType } from "../../../runtime/agent-router"
@@ -646,13 +646,12 @@ async function runDesignAgent(params: {
     return
   }
 
-  // Detect brand context-blindness — agent asked for tokens it already has in its system prompt.
-  // Only fires when BRAND.md is loaded and response contains blindness signals (no structural marker,
-  // asks for Figma/tokens/external URL). One retry with an explicit PLATFORM OVERRIDE.
-  if (context.brand && isBrandContextBlind(response)) {
-    await update("_UX Designer is re-reading the brand context..._")
-    const brandRetryOverride = `PLATFORM OVERRIDE: You just asked for brand tokens or design assets that are already in your system prompt under "Brand tokens — read this before anything else". You do not need a Figma file, an external URL, or any additional information. The tokens are there. Re-read them now and respond with a concrete design action — no questions about brand sources.`
-    const retrySystemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, brandRetryOverride)
+  // Detect agent stall — either asking for context already in the system prompt (brand tokens,
+  // Figma files) or offering numbered options instead of acting. One retry with PLATFORM OVERRIDE.
+  if (isAgentStalling(response)) {
+    await update("_UX Designer is re-reading the context..._")
+    const stallRetryOverride = `PLATFORM OVERRIDE: Your previous response stalled — either by asking for information already in your system prompt, or by offering options instead of acting. You have everything you need. Pick the most complete interpretation of the request and act on it immediately. No questions. No options. Output a structural block (DESIGN_PATCH, DRAFT, or PREVIEW_ONLY) now.`
+    const retrySystemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, stallRetryOverride)
     response = await runAgent({ systemPrompt: retrySystemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
   }
 

@@ -540,23 +540,34 @@ export function extractPreviewOnly(response: string): string {
   return match ? match[1].trim() : ""
 }
 
-// Detects whether the agent responded with a brand-context-blind stall:
-// asking the user for brand tokens / Figma files / external URLs it already has in context.
-// Used by the platform to trigger a retry with a PLATFORM OVERRIDE.
-// Only meaningful when context.brand is non-empty — caller must check that first.
-const BRAND_BLINDNESS_SIGNALS = [
+// Detects whether the agent stalled instead of acting — either by asking for context it already
+// has (brand tokens, Figma files) or by offering options instead of making a decision.
+// Used by the platform to trigger a PLATFORM OVERRIDE retry.
+// A stall response has no structural marker and contains one of the known stall signals.
+const STALL_SIGNALS = [
+  // Brand context blindness — asking for tokens already in the system prompt
   "design tokens",
   "brand tokens",
   "figma",
   "official tokens",
   "cannot extract",
   "reverse-engineer",
-  "do you have",
   "brand system file",
   "design system file",
+  // Option-offering — asking the user to choose a path instead of acting
+  "option 1",
+  "option 2",
+  "which is it",
+  "which path",
+  "path a",
+  "path b",
+  "which would you",
+  "which approach",
+  "if yes:",
+  "if no:",
 ]
 
-export function isBrandContextBlind(response: string): boolean {
+export function isAgentStalling(response: string): boolean {
   if (!response.includes("?")) return false
   const hasStructuralMarker =
     response.includes("DRAFT_DESIGN_SPEC_START") ||
@@ -567,5 +578,10 @@ export function isBrandContextBlind(response: string): boolean {
     response.includes("PRODUCT_SPEC_UPDATE_START")
   if (hasStructuralMarker) return false
   const lower = response.toLowerCase()
-  return BRAND_BLINDNESS_SIGNALS.some((signal) => lower.includes(signal))
+  return STALL_SIGNALS.some((signal) => lower.includes(signal))
+}
+
+/** @deprecated use isAgentStalling */
+export function isBrandContextBlind(response: string): boolean {
+  return isAgentStalling(response)
 }
