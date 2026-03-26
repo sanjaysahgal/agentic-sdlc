@@ -650,7 +650,10 @@ async function runDesignAgent(params: {
   // Figma files) or offering numbered options instead of acting. One retry with PLATFORM OVERRIDE.
   if (isAgentStalling(response)) {
     await update("_UX Designer is re-reading the context..._")
-    const stallRetryOverride = `PLATFORM OVERRIDE: Your previous response stalled — either by asking for information already in your system prompt, or by offering options instead of acting. Read the "Brand tokens" section at the top of your system prompt. Those ARE the authoritative values for this product — extracted from the production site and committed to the repo. Do not use values from your training data. Do not reverse-engineer anything. Use the exact tokens above, act on the user's request, and output a structural block (DESIGN_PATCH, DRAFT, or PREVIEW_ONLY) now. No questions. No options.`
+    const brandSection = context.brand
+      ? `The brand tokens are already in your system prompt. Use them exactly as written — do not approximate, reverse-engineer, or ask the user to tell you what's wrong.`
+      : `You have no brand tokens — use what is in the current spec.`
+    const stallRetryOverride = `PLATFORM OVERRIDE: Your previous response stalled instead of acting. ${brandSection} The correct action when a user asks you to match their brand or fix the visual direction: (1) read the Brand tokens section above, (2) compare to the current spec's Brand section, (3) output a DESIGN_PATCH_START block with the corrected Brand section using exact token values. Do that now. No questions. No options. No asking what specifically is wrong.`
     const retrySystemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, stallRetryOverride)
     response = await runAgent({ systemPrompt: retrySystemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
   }

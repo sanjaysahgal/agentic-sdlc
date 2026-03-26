@@ -777,6 +777,25 @@ Which is it — **1 or 2?**`
     expect(isAgentStalling(response)).toBe(true)
   })
 
+  it("returns true for the exact clarification-seeking pattern seen in production", () => {
+    const response = `You're right — I need to look at what's actually rendering on getarchon.dev vs what I put in the spec.
+
+Before I rebuild, I need you to tell me what's wrong:
+
+**What specifically does not match getarchon.dev in the HTML preview?**
+
+- Background color too light/dark?
+- Glow invisible, wrong color, wrong animation timing?
+
+Tell me what you see that's off-brand, and I'll patch the spec to fix it.`
+    expect(isAgentStalling(response)).toBe(true)
+  })
+
+  it("returns true when asking 'what specifically is wrong'", () => {
+    const response = "What specifically is wrong with the preview? Tell me what you see and I'll fix it."
+    expect(isAgentStalling(response)).toBe(true)
+  })
+
   // Pass-throughs — should NOT trigger retry
   it("returns false when response contains a structural marker — agent is acting, not stalling", () => {
     const response = "Applying the brand tokens now.\nDESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END\nIs the glow correct?"

@@ -565,6 +565,16 @@ const STALL_SIGNALS = [
   "which approach",
   "if yes:",
   "if no:",
+  // Clarification-seeking before acting — agent has enough context, should just act
+  "what specifically",
+  "tell me what",
+  "what do you see",
+  "what's wrong",
+  "what is wrong",
+  "before i rebuild",
+  "before i proceed",
+  "need you to tell me",
+  "need to know what",
 ]
 
 export function isAgentStalling(response: string): boolean {

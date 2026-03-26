@@ -288,7 +288,7 @@ Which is it — **1 or 2?**`
     const retrySystemPrompt = getSystemPrompt(4)
     expect(retrySystemPrompt).toContain("PLATFORM OVERRIDE — MANDATORY")
     expect(retrySystemPrompt).toContain("Brand tokens")
-    expect(retrySystemPrompt).toContain("Do not use values from your training data")
+    expect(retrySystemPrompt).toContain("DESIGN_PATCH_START")
   })
 
   it("does not retry when first response contains a structural marker", async () => {
