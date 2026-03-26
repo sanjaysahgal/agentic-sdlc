@@ -156,9 +156,12 @@ export async function detectRenderIntent(message: string): Promise<"render-only"
     model: "claude-haiku-4-5-20251001",
     max_tokens: 20,
     system: `Classify whether this message is requesting an HTML render or visual preview of a design.
-- render-only: user wants a render/preview of the current spec with no new changes ("give a new render", "show me the preview", "new HTML", "regenerate preview", "show me what it looks like", "render it", "give me a preview", "new render")
-- apply-and-render: user wants changes applied first then rendered ("rebuild with recommendations and render", "apply the changes and show me", "incorporate the feedback and give me a preview")
-- other: not a render/preview request at all — questions, decisions, approvals, feedback, etc.
+
+- render-only: the user wants to see the current spec rendered as HTML — no new changes requested. Key signals: "render", "preview", "show me", "new render", "regenerate", "what does it look like". Qualifiers like "true to the spec", "based on the spec", "accurate to what we have", "that reflects the spec" describe render faithfulness — NOT spec changes. "I will review and let you know if I approve" is a strong render-only signal.
+- apply-and-render: the user explicitly wants changes applied AND rendered — both must be present in the same message ("rebuild with the recommendations and show me", "apply the changes we discussed and render it")
+- other: not a render/preview request at all
+
+When in doubt between render-only and apply-and-render, choose render-only.
 Respond with exactly one: render-only, apply-and-render, or other`,
     messages: [{ role: "user", content: message }],
   })

@@ -315,4 +315,14 @@ describe("detectRenderIntent", () => {
     expect(callArgs.system).toContain("render-only")
     expect(callArgs.system).toContain("apply-and-render")
   })
+
+  it("prompt disambiguates faithfulness qualifiers from change requests and defaults to render-only on doubt", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "render-only" }] })
+    await detectRenderIntent("give a new render that is true to the updated spec")
+    const callArgs = mockCreate.mock.calls[0][0]
+    // "true to the spec" phrases must be documented as faithfulness qualifiers, not change requests
+    expect(callArgs.system).toContain("true to the spec")
+    // When ambiguous, the classifier must default to render-only (not apply-and-render or other)
+    expect(callArgs.system).toContain("When in doubt")
+  })
 })
