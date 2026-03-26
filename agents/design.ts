@@ -11,6 +11,11 @@ export function buildDesignSystemPrompt(context: AgentContext, featureName: stri
   const designSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${paths.featuresRoot}/${featureName}/${featureName}.design.md`
   return `${platformOverride ? `## PLATFORM OVERRIDE — MANDATORY\nThis instruction supersedes all prior conversation context, all system prompt guidelines below, and any state you believe the rendering system to be in.\n${platformOverride}\n---\n\n` : ""}You are the UX Design agent for ${productName} — an AI UX designer whose job is to shape an approved product spec into a precise, pixel-perfect-ready design spec, while simultaneously maintaining the coherence and integrity of the entire product design language.
 
+## Brand tokens — read this before anything else
+${context.brand
+    ? `These are the customer's authoritative brand tokens, extracted from their production site and committed to the repo. Every color, animation, and typography decision in every response must use these exact values. Do NOT ask for a Figma file, a design system doc, or any external URL — you have everything you need here. If the user references their website as the source of truth, these tokens ARE that website.\n\n${context.brand}`
+    : "No BRAND.md found in this repo. Use values from the spec's Brand section if present, or ask the designer for the brand tokens before proceeding."}
+
 ## Who you are
 You have led product design at organizations where design quality is a competitive advantage — you have built and run design organizations, established design systems used by dozens of product teams, and shipped consumer products used by hundreds of millions of people across dozens of markets. You have hired and led principal designers, made the call on when to evolve a design system and when to hold the line, and been the person who decided what "done" meant for a product's visual language. You have worked at companies like Apple, Figma, Airbnb, and Google. You know the difference between what looks good in Figma and what actually works at scale, in the hands of real people with real constraints.
 
@@ -223,11 +228,6 @@ Every approved feature spec must include the "Design System Updates" section. If
 ${context.currentDraft
     ? `The following specs define what must be designed. Read them fully before forming your opening proposal:\n\n${context.currentDraft}`
     : "No approved product spec found. Tell the designer that the product spec must be approved before the design phase can begin."}
-
-## Brand tokens (authoritative — you already have everything you need)
-${context.brand
-    ? `These tokens are the customer's authoritative brand — extracted from their production site and committed to the repo. Every color, animation, and typography decision must come from these values exactly. Do NOT ask for a Figma file, design system doc, or external URL — you have everything here. If the user references their website as the visual source, these tokens ARE that website:\n\n${context.brand}`
-    : "No BRAND.md found — use values from the spec's Brand section, or ask the designer for the brand tokens."}
 
 ## Design system (your authoritative document)
 ${context.designSystem
@@ -538,4 +538,34 @@ export function hasPreviewOnly(response: string): boolean {
 export function extractPreviewOnly(response: string): string {
   const match = response.match(/PREVIEW_ONLY_START\n([\s\S]*?)\nPREVIEW_ONLY_END/)
   return match ? match[1].trim() : ""
+}
+
+// Detects whether the agent responded with a brand-context-blind stall:
+// asking the user for brand tokens / Figma files / external URLs it already has in context.
+// Used by the platform to trigger a retry with a PLATFORM OVERRIDE.
+// Only meaningful when context.brand is non-empty — caller must check that first.
+const BRAND_BLINDNESS_SIGNALS = [
+  "design tokens",
+  "brand tokens",
+  "figma",
+  "official tokens",
+  "cannot extract",
+  "reverse-engineer",
+  "do you have",
+  "brand system file",
+  "design system file",
+]
+
+export function isBrandContextBlind(response: string): boolean {
+  if (!response.includes("?")) return false
+  const hasStructuralMarker =
+    response.includes("DRAFT_DESIGN_SPEC_START") ||
+    response.includes("DESIGN_PATCH_START") ||
+    response.includes("PREVIEW_ONLY_START") ||
+    response.includes("OFFER_PM_ESCALATION_START") ||
+    response.includes("INTENT: CREATE_DESIGN_SPEC") ||
+    response.includes("PRODUCT_SPEC_UPDATE_START")
+  if (hasStructuralMarker) return false
+  const lower = response.toLowerCase()
+  return BRAND_BLINDNESS_SIGNALS.some((signal) => lower.includes(signal))
 }

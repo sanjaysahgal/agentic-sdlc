@@ -15,6 +15,7 @@ import {
   extractDesignPatch,
   hasPreviewOnly,
   extractPreviewOnly,
+  isBrandContextBlind,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -76,6 +77,15 @@ describe("buildDesignSystemPrompt", () => {
     const prompt = buildDesignSystemPrompt({ ...baseContext, brand: "--bg: #0A0A0F\n--violet: #7C6FCD" }, "onboarding")
     expect(prompt).toContain("--bg: #0A0A0F")
     expect(prompt).toContain("--violet: #7C6FCD")
+  })
+
+  it("brand tokens appear before the persona — model reads them first", () => {
+    const prompt = buildDesignSystemPrompt({ ...baseContext, brand: "--bg: #0A0A0F" }, "onboarding")
+    const brandIdx = prompt.indexOf("--bg: #0A0A0F")
+    const personaIdx = prompt.indexOf("## Who you are")
+    expect(brandIdx).toBeGreaterThan(-1)
+    expect(personaIdx).toBeGreaterThan(-1)
+    expect(brandIdx).toBeLessThan(personaIdx)
   })
 
   it("states brand tokens are the production site values — agent must not ask for external URLs", () => {
@@ -714,5 +724,49 @@ describe("extractDesignPatch", () => {
     expect(extracted).toContain("Updated screen 1.")
     expect(extracted).toContain("## Open Questions")
     expect(extracted).toContain("New question.")
+  })
+})
+
+describe("isBrandContextBlind", () => {
+  it("returns true when response asks for design tokens without a structural marker", () => {
+    const response = "I need to confirm — do you have the official design tokens or a Figma file for the brand?"
+    expect(isBrandContextBlind(response)).toBe(true)
+  })
+
+  it("returns true for the exact stall pattern seen in production", () => {
+    const response = `I cannot extract exact design tokens from a live website with certainty.
+
+**Do you have the official brand tokens file?**
+
+**If yes:** Share the link.
+**If no:** I'll reverse-engineer getarchon.dev.
+
+Which is it?`
+    expect(isBrandContextBlind(response)).toBe(true)
+  })
+
+  it("returns true when response asks to reverse-engineer the site", () => {
+    const response = "Should I reverse-engineer getarchon.dev to get the brand tokens?"
+    expect(isBrandContextBlind(response)).toBe(true)
+  })
+
+  it("returns false when response contains a structural marker — agent is acting, not stalling", () => {
+    const response = "Applying the brand tokens now.\nDESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END\nIs the glow correct?"
+    expect(isBrandContextBlind(response)).toBe(false)
+  })
+
+  it("returns false when response has a legitimate single question with no blindness signals", () => {
+    const response = "I've applied the violet glow. Should the teal glow use the same blur radius, or a slightly tighter spread?"
+    expect(isBrandContextBlind(response)).toBe(false)
+  })
+
+  it("returns false when response has no question mark at all", () => {
+    const response = "I cannot extract design tokens from a live website without certainty — please provide the official file."
+    expect(isBrandContextBlind(response)).toBe(false)
+  })
+
+  it("returns false when response asks about Figma but has a structural marker", () => {
+    const response = "Using brand tokens from context.\nDRAFT_DESIGN_SPEC_START\n# Spec\ncontent\nDRAFT_DESIGN_SPEC_END\nDo you have a Figma link for reference?"
+    expect(isBrandContextBlind(response)).toBe(false)
   })
 })
