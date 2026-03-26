@@ -319,7 +319,7 @@ async function runPmAgent(params: {
     const existingDraft = await readFile(filePath, `spec/${featureName}-product`)
     if (existingDraft) {
       await update("_Spec is large — switching to section-level update..._")
-      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use PRODUCT_PATCH_START/END instead — output only the sections that changed. Do not use DRAFT_SPEC_START. Apply the changes from the original request: "${userMessage}"`
+      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use PRODUCT_PATCH_START/END instead. Look at the conversation history to identify what changes were requested or agreed. Output a PATCH block covering the 2-3 most important changed sections only — do not try to patch all sections at once. Remaining sections can be patched in a follow-up response.`
       response = await runAgent({ systemPrompt, history: historyPm, userMessage: retryInstruction })
       if (!hasPmPatch(response)) {
         const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
@@ -617,7 +617,7 @@ async function runDesignAgent(params: {
     const existingDraft = await readFile(filePath, `spec/${featureName}-design`)
     if (existingDraft) {
       await update("_Spec is large — switching to section-level update..._")
-      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_DESIGN_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use DESIGN_PATCH_START/END instead — output only the sections that changed. Do not use DRAFT_DESIGN_SPEC_START. Apply the changes from the original request: "${userMessage}"`
+      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_DESIGN_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use DESIGN_PATCH_START/END instead. Look at the conversation history to identify what changes were requested or agreed. Output a PATCH block covering the 2-3 most important changed sections only — do not try to patch all sections at once. Remaining sections can be patched in a follow-up response.`
       response = await runAgent({ systemPrompt, history: historyDesign, userMessage: retryInstruction, historyLimit: DESIGN_HISTORY_LIMIT })
       // If the retry didn't produce a PATCH block, fall through to the error below.
       if (!hasDesignPatch(response)) {
@@ -977,7 +977,7 @@ async function runArchitectAgent(params: {
     const existingDraft = await readFile(filePath, `spec/${featureName}-engineering`)
     if (existingDraft) {
       await update("_Spec is large — switching to section-level update..._")
-      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_ENGINEERING_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use ENGINEERING_PATCH_START/END instead — output only the sections that changed. Do not use DRAFT_ENGINEERING_SPEC_START. Apply the changes from the original request: "${userMessage}"`
+      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_ENGINEERING_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use ENGINEERING_PATCH_START/END instead. Look at the conversation history to identify what changes were requested or agreed. Output a PATCH block covering the 2-3 most important changed sections only — do not try to patch all sections at once. Remaining sections can be patched in a follow-up response.`
       response = await runAgent({ systemPrompt, history: historyArch, userMessage: retryInstruction, historyLimit: ARCH_HISTORY_LIMIT })
       if (!hasArchitectPatch(response)) {
         const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`

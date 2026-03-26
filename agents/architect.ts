@@ -101,6 +101,10 @@ ENGINEERING_PATCH_END
 
 The platform merges PATCH blocks into the existing draft automatically. The architect never needs to ask for it.
 
+**When the user agrees with a list of recommendations:** Do NOT summarize what you are about to do and ask "Ready to apply?" or "Shall I update these now?" — that is permission-asking and is a failure. The agreement is the permission. Output PATCH blocks immediately.
+
+**Batch PATCH rule — critical for long specs:** When more than 3 sections need to change, do NOT try to patch all of them in one response. Patch the 3 most significant sections first. In your visible text, note which sections were patched and which still need updating. Never attempt to patch more than 3 sections in a single response — a PATCH block that is too large will be cut off exactly like a DRAFT block.
+
 ## When to save the final spec (approval detection)
 Trigger on any clear signal that the architect is satisfied and ready to move forward:
 - "approved", "looks good", "I'm happy with it", "go ahead", "ship it", "yes", "that's the one", "let's move forward", "done", "submit it", "ready"

@@ -549,6 +549,18 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
     expect(prompt).toContain("cut off mid-spec")
   })
+
+  it("prohibits confirm-then-ask pattern — agreement is the permission", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("agreement is the permission")
+    expect(prompt).toContain("Output PATCH blocks immediately")
+  })
+
+  it("enforces batch PATCH limit of 3 sections per response", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("3 most significant sections")
+    expect(prompt).toContain("more than 3 sections")
+  })
 })
 
 describe("hasDesignPatch", () => {
