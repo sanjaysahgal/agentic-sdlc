@@ -406,7 +406,7 @@
 ════════════════════════════════════════ -->
 <section class="top">
   <div class="eyebrow">The team</div>
-  <h2 class="tight">One specialist per phase — <span style="color:#444;">2 live · 8 planned</span></h2>
+  <h2 class="tight">One specialist per phase — <span style="color:#444;">4 live · 6 planned</span></h2>
   <div class="roster">
     <div class="roster-card live">
       <div class="r-phase">Entry · Live</div>
@@ -418,13 +418,13 @@
       <div class="r-name">PM agent</div>
       <div class="r-desc">Shapes ideas into specs. Asks the hard questions. Hard stop on conflicts.</div>
     </div>
-    <div class="roster-card">
-      <div class="r-phase">Phase 2 · Planned</div>
+    <div class="roster-card live">
+      <div class="r-phase">Phase 2 · Live</div>
       <div class="r-name">Design agent</div>
-      <div class="r-desc">Screen inventory, user flows, component decisions. No silent UI choices.</div>
+      <div class="r-desc">Screen inventory, user flows, component decisions. HTML preview on every draft save.</div>
     </div>
-    <div class="roster-card">
-      <div class="r-phase">Phase 3 · Planned</div>
+    <div class="roster-card live">
+      <div class="r-phase">Phase 3 · Live</div>
       <div class="r-name">Architect agent</div>
       <div class="r-desc">Reads the full spec chain. No architecture without acknowledged tradeoffs.</div>
     </div>
@@ -802,18 +802,18 @@
       <div class="ph-badge live-badge">Live</div>
     </div>
     <div class="phase-arrow">→</div>
-    <div class="phase">
+    <div class="phase live">
       <div class="ph-num">Phase 2</div>
       <div class="ph-name">Design Spec</div>
       <div class="ph-agent">design agent</div>
-      <div class="ph-badge planned-badge">Planned</div>
+      <div class="ph-badge live-badge">Live</div>
     </div>
     <div class="phase-arrow">→</div>
-    <div class="phase">
+    <div class="phase live">
       <div class="ph-num">Phase 3</div>
       <div class="ph-name">Eng Spec</div>
       <div class="ph-agent">architect agent</div>
-      <div class="ph-badge planned-badge">Planned</div>
+      <div class="ph-badge live-badge">Live</div>
     </div>
     <div class="phase-arrow">→</div>
     <div class="phase">
@@ -873,30 +873,46 @@
 ════════════════════════════════════════ -->
 <section class="top">
   <div class="eyebrow">Live today</div>
-  <h2 class="tight">Two agents — Phase 1 complete</h2>
-  <div class="live-grid">
-    <div class="live-agent">
-      <div class="agent-label">Entry point · always available</div>
+  <h2 class="tight">Four agents — Phase 3 complete</h2>
+  <div class="live-grid" style="grid-template-columns: repeat(4, 1fr); gap: 16px;">
+    <div class="live-agent" style="padding: 18px 20px;">
+      <div class="agent-label">Entry point · always on</div>
       <h3>Concierge</h3>
       <ul>
-        <li><span class="li-dot">→</span>Front door for everyone — PM, engineer, designer, exec</li>
-        <li><span class="li-dot">→</span>Reads live feature state from GitHub on every message</li>
-        <li><span class="li-dot">→</span>Role-aware — calibrates to who's asking</li>
-        <li><span class="li-dot">→</span>Always plain English</li>
+        <li><span class="li-dot">→</span>Front door for any role</li>
+        <li><span class="li-dot">→</span>Live feature status from GitHub</li>
+        <li><span class="li-dot">→</span>Role-aware, plain English</li>
       </ul>
     </div>
-    <div class="live-agent">
+    <div class="live-agent" style="padding: 18px 20px;">
       <div class="agent-label">Phase 1 · product spec</div>
       <h3>PM agent</h3>
       <ul>
-        <li><span class="li-dot">→</span>Shapes feature ideas into product specs via conversation</li>
-        <li><span class="li-dot">→</span>Auto-saves draft to GitHub after every response</li>
-        <li><span class="li-dot">→</span>Hard stop on vision/architecture conflicts</li>
-        <li><span class="li-dot">→</span>Re-reads GitHub to verify fixes — never trusts verbal confirmation</li>
+        <li><span class="li-dot">→</span>Shapes ideas into specs</li>
+        <li><span class="li-dot">→</span>Auto-saves draft to GitHub</li>
+        <li><span class="li-dot">→</span>Hard stop on conflicts</li>
+      </ul>
+    </div>
+    <div class="live-agent" style="padding: 18px 20px;">
+      <div class="agent-label">Phase 2 · design spec</div>
+      <h3>Design agent</h3>
+      <ul>
+        <li><span class="li-dot">→</span>Screen inventory + user flows</li>
+        <li><span class="li-dot">→</span>HTML preview on every save</li>
+        <li><span class="li-dot">→</span>Escalates product decisions to PM</li>
+      </ul>
+    </div>
+    <div class="live-agent" style="padding: 18px 20px;">
+      <div class="agent-label">Phase 3 · engineering spec</div>
+      <h3>Architect agent</h3>
+      <ul>
+        <li><span class="li-dot">→</span>Reads full spec chain before writing</li>
+        <li><span class="li-dot">→</span>Data model + API surface first</li>
+        <li><span class="li-dot">→</span>Owns SYSTEM_ARCHITECTURE.md</li>
       </ul>
     </div>
   </div>
-  <aside class="notes">Both live and in daily use. The concierge lives in the main channel. PM agent drives spec conversations from first message to approval.</aside>
+  <aside class="notes">All four live and in daily use on health360. The full spec chain is working end to end — from feature brief to approved engineering spec, with HTML previews generated at design phase and cross-feature coherence enforced at engineering phase.</aside>
 </section>
 
 <!-- ════════════════════════════════════════
@@ -937,7 +953,7 @@
 <section>
   <div class="eyebrow">The vision</div>
   <div class="statement" style="font-size:52px; max-width:900px; line-height:1.15;">An expert at every phase.<br>From first idea to <span class="accent">shipped code.</span></div>
-  <div style="margin-top:48px; font-size:22px; color:#444; line-height:1.6;">Phase 1 live. 8 agents in build. The pattern is set.</div>
+  <div style="margin-top:48px; font-size:22px; color:#444; line-height:1.6;">Phases 1–3 live. 6 agents in build. The pattern is set.</div>
   <aside class="notes">The test suite is the hard gate before Phase 2 ships. Every behavior that exists today must be tested — that's done before the design agent starts. The pattern established in Phase 1 (conflict detection, audit gate, GitHub as truth) is the pattern every future agent inherits.</aside>
 </section>
 
