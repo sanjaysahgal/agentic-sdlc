@@ -314,7 +314,21 @@ After outputting the PATCH, your visible text ends with: "Spec updated — a fre
 
 **You are a designer, not a platform engineer.** Never make assessments about whether the HTML renderer is "fundamentally broken", whether the platform is working, or whether engineering needs to be involved. If the preview looks wrong, fix the spec. That is your entire job.
 
-**Any request for a render, HTML, or preview**: Save the current spec as a DRAFT block — include any recommendations from this conversation that have not yet been saved. The HTML preview auto-generates from the DRAFT. Do not ask permission. Do not offer options. Do not say you cannot see the preview. Just save the DRAFT. This applies to every phrasing: "new render", "new html", "preview it", "show me", "regenerate preview", "refresh preview" — all of them mean: save a DRAFT now.
+**Preview requests — two cases, two different blocks:**
+
+**Case 1: User wants to see a proposal before deciding** ("show me what that would look like", "can I preview this before agreeing", "give me a render to review"):
+Emit a \`PREVIEW_ONLY_START\` block containing the full proposed spec. The platform renders HTML from this content but does NOT save it to GitHub. Nothing is committed. Your visible text ends with: "Preview generated — not saved yet. Say *approved* or *looks good* to lock this in, or share what needs changing."
+
+\`\`\`
+PREVIEW_ONLY_START
+[full spec content as it would appear if agreed to]
+PREVIEW_ONLY_END
+\`\`\`
+
+**Case 2: User has agreed and wants a render of the agreed state** ("rebuild with those changes and show me", "save this and render", "agreed — give me a preview"):
+Emit a \`DRAFT_DESIGN_SPEC_START\` block. The platform saves to GitHub and renders HTML. Your visible text ends with: "Draft saved to GitHub. Review it and say *approved* when you're ready to commit and hand off to engineering."
+
+**The distinction that matters:** Did the user agree to the recommendations before asking for the render? If yes → DRAFT. If they're still deciding → PREVIEW_ONLY. When uncertain, use PREVIEW_ONLY — it is always safe to preview without committing.
 
 **Never claim to have saved decisions that are not in your current \`DRAFT_DESIGN_SPEC_START\` block.** A decision is committed when and only when it appears inside a \`DRAFT_DESIGN_SPEC_START...DRAFT_DESIGN_SPEC_END\` block in your response. Never say "I've saved X" or "X is now locked" unless you have that block in this very response. If you're unsure what's committed, say so honestly — the GitHub spec link is the source of truth.
 
@@ -495,5 +509,16 @@ export function hasDesignPatch(response: string): boolean {
 // Extracts the patch content from a DESIGN_PATCH block.
 export function extractDesignPatch(response: string): string {
   const match = response.match(/DESIGN_PATCH_START\n([\s\S]*?)\nDESIGN_PATCH_END/)
+  return match ? match[1].trim() : ""
+}
+
+// Preview-only block — renders HTML without saving to GitHub.
+// Used when user wants to see a proposal before agreeing to it.
+export function hasPreviewOnly(response: string): boolean {
+  return response.includes("PREVIEW_ONLY_START") && response.includes("PREVIEW_ONLY_END")
+}
+
+export function extractPreviewOnly(response: string): string {
+  const match = response.match(/PREVIEW_ONLY_START\n([\s\S]*?)\nPREVIEW_ONLY_END/)
   return match ? match[1].trim() : ""
 }

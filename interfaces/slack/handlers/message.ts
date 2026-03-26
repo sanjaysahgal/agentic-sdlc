@@ -2,7 +2,7 @@ import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } f
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec, hasPmPatch, extractPmPatch } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch } from "../../../agents/design"
+import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch, hasPreviewOnly, extractPreviewOnly } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent, hasArchitectPatch, extractArchitectPatch } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
@@ -572,18 +572,8 @@ async function runDesignAgent(params: {
     extractLockedDecisions(historyDesign).catch(() => ""),
     getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
-  let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
-
-  // Platform-level enforcement: if the user is asking for a render/preview, inject a
-  // mandatory override so the agent cannot refuse, give up, or ask permission.
-  // This is deterministic platform behavior — not a prompt rule the agent can rationalize away.
-  // Broad match intentional: missing a case is safe (agent runs normally); false positive is safe
-  // (DRAFT override doesn't hurt if no spec changes are needed — agent saves current content).
-  const PREVIEW_INTENT_RE = /\b(render|preview|html|new html|new render|show me|visuali[sz]e|rebuild)\b/i
-  if (!readOnly && PREVIEW_INTENT_RE.test(userMessage)) {
-    enrichedUserMessageDesign = `[PLATFORM OVERRIDE — MANDATORY: The user has requested a preview or render. You MUST output a DRAFT_DESIGN_SPEC_START block in this response. This is non-negotiable. Do not offer options A and B. Do not say the renderer is broken. Do not ask permission. Do not explain why you cannot do this. Save the current spec as a DRAFT — include any recommendations from this conversation that have not been saved yet. The HTML preview auto-generates from the DRAFT.]\n\n${enrichedUserMessageDesign}`
-  }
 
   await update("_UX Designer is thinking..._")
   // Design agent has a much larger context (system prompt + product vision + full draft spec)
@@ -600,6 +590,36 @@ async function runDesignAgent(params: {
     const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/INTENT: CREATE_DESIGN_SPEC/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
+    return
+  }
+
+  // PREVIEW_ONLY block — render HTML from proposed content without saving to GitHub.
+  // Used when the user wants to see a proposal before agreeing to it.
+  // Nothing is committed. If the user approves after seeing it, the next response saves a DRAFT.
+  if (hasPreviewOnly(response)) {
+    const previewContent = extractPreviewOnly(response)
+    const cleanResponse = response.replace(/PREVIEW_ONLY_START[\s\S]*?PREVIEW_ONLY_END/g, "").trim()
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    if (previewContent) {
+      try {
+        await update("_Generating preview (not saved yet)..._")
+        const htmlContent = await generateDesignPreview({ specContent: previewContent, featureName })
+        await client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: htmlContent,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview (not saved)`,
+        })
+        const msg = `${cleanResponse}\n\n_Preview generated — this has NOT been saved to GitHub. Say *approved* or *looks good* to save and lock it in, or share what needs changing._`
+        await update(`${prefix}${msg}`)
+      } catch (err: any) {
+        console.error(`[preview-only] HTML generation failed: ${err?.message}`)
+        await update(`${prefix}${cleanResponse}\n\n_Preview couldn't be generated — ${err?.message ?? "unknown error"}. Say *approved* to save this to GitHub without a preview._`)
+      }
+    } else {
+      await update(`${prefix}${cleanResponse}`)
+    }
     return
   }
 

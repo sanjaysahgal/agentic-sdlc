@@ -13,6 +13,8 @@ import {
   extractProductSpecUpdate,
   hasDesignPatch,
   extractDesignPatch,
+  hasPreviewOnly,
+  extractPreviewOnly,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -573,17 +575,49 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("You are a designer, not a platform engineer")
   })
 
-  it("instructs agent to save DRAFT on any render/preview request — includes pending recommendations", () => {
+  it("distinguishes preview-before-agreeing (PREVIEW_ONLY) from agreed render (DRAFT)", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("Save the current spec as a DRAFT block")
-    expect(prompt).toContain("include any recommendations from this conversation that have not yet been saved")
+    expect(prompt).toContain("PREVIEW_ONLY_START")
+    expect(prompt).toContain("PREVIEW_ONLY_END")
+    expect(prompt).toContain("does NOT save it to GitHub")
   })
 
-  it("applies DRAFT rule to all preview phrasings — no exceptions for regenerate/refresh", () => {
+  it("instructs agent to use PREVIEW_ONLY when user is still deciding", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("regenerate preview")
-    expect(prompt).toContain("refresh preview")
-    expect(prompt).toContain("all of them mean: save a DRAFT now")
+    expect(prompt).toContain("When uncertain, use PREVIEW_ONLY")
+  })
+})
+
+describe("hasPreviewOnly", () => {
+  it("returns true when both PREVIEW_ONLY markers are present", () => {
+    expect(hasPreviewOnly("PREVIEW_ONLY_START\n# Spec\ncontent\nPREVIEW_ONLY_END")).toBe(true)
+  })
+
+  it("returns false when only start marker is present", () => {
+    expect(hasPreviewOnly("PREVIEW_ONLY_START\ncontent")).toBe(false)
+  })
+
+  it("returns false when neither marker is present", () => {
+    expect(hasPreviewOnly("Just a regular response.")).toBe(false)
+  })
+
+  it("returns false for DRAFT markers", () => {
+    expect(hasPreviewOnly("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
+  })
+})
+
+describe("extractPreviewOnly", () => {
+  it("extracts content between PREVIEW_ONLY markers", () => {
+    const response = "Here's the preview:\nPREVIEW_ONLY_START\n# Design Spec\ncontent\nPREVIEW_ONLY_END\nNot saved yet."
+    expect(extractPreviewOnly(response)).toBe("# Design Spec\ncontent")
+  })
+
+  it("returns empty string when markers not found", () => {
+    expect(extractPreviewOnly("no markers here")).toBe("")
+  })
+
+  it("trims whitespace from extracted content", () => {
+    expect(extractPreviewOnly("PREVIEW_ONLY_START\n  content  \nPREVIEW_ONLY_END")).toBe("content")
   })
 })
 
