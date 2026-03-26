@@ -706,6 +706,7 @@ async function runDesignAgent(params: {
       }
     } catch (err: any) {
       console.error(`[preview] HTML generation failed: ${err?.message}`)
+      previewNote = `\n\n_HTML preview couldn't be generated for this draft — the spec may be complex. Say *"regenerate preview"* to try again, or say *approved* to move to engineering without a preview._`
     }
 
     const cta = `\n\n_Spec updated and saved to GitHub. Review the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first._`
@@ -782,6 +783,7 @@ async function runDesignAgent(params: {
       }
     } catch (err: any) {
       console.error(`[preview] HTML generation failed: ${err?.message}`)
+      previewNote = `\n\n_HTML preview couldn't be generated for this draft — the spec may be complex. Say *"regenerate preview"* to try again, or say *approved* to move to engineering without a preview._`
     }
 
     // Build a guaranteed suffix so truncation never swallows the preview note or CTA.

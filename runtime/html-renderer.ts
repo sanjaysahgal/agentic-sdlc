@@ -14,20 +14,56 @@ export async function generateDesignPreview(params: {
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 8000,
+    max_tokens: 16000,
     system: `You generate beautiful, self-contained HTML preview files directly from design specs. The output will be opened in a browser to let a designer approve or iterate on the spec before it goes to engineering.
 
 ## Output requirements
 
 Output ONLY the raw HTML — no explanation, no markdown fences, no preamble. Start with <!DOCTYPE html> and end with </html>.
 
+**Critical: always output a complete, valid HTML file.** If the spec is complex, be concise in your implementation — use Tailwind classes aggressively, keep custom CSS minimal. An incomplete file (cut off before </html>) is a total failure — the designer will see a broken, partially-rendered screen. Concise and complete is always better than verbose and truncated.
+
 ## Technical requirements
 
 - Single self-contained file
-- Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script>
-- Alpine.js via CDN: <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+- Tailwind CSS via CDN with inline config for custom colors/animations
+- Alpine.js via CDN for screen switching and state toggles
 - No other external JavaScript dependencies
 - Works when opened directly from disk (no server needed)
+
+## Tailwind custom config — always set BEFORE the Tailwind CDN script
+
+Read the Brand section of the spec for exact hex values. Configure them like this:
+\`\`\`html
+<script>
+  window.tailwind = {
+    theme: {
+      extend: {
+        colors: {
+          "bg-primary": "#0A0A0F",
+          "surface": "#13131A",
+          "text-primary": "#F8F8F7",
+          "accent": "#7C3AED"
+          // etc — use the actual values from the spec
+        },
+        keyframes: {
+          "glow-pulse": {
+            "0%, 100%": { opacity: "0.10" },
+            "50%": { opacity: "0.15" }
+          }
+          // etc — include all animations from the spec
+        },
+        animation: {
+          "glow-pulse": "glow-pulse 2.5s ease-in-out infinite"
+        }
+      }
+    }
+  }
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+\`\`\`
+
+**This is how to get custom colors and animations into Tailwind — never skip this step.** If you define colors in the config, you can use them as Tailwind classes (bg-bg-primary, text-text-primary, etc). If you skip this, all custom colors will fail to render — the designer will see a broken black screen instead of the designed palette.
 
 ## Structure
 
@@ -46,18 +82,25 @@ For each screen:
 This is NOT a wireframe — it should look close to the real product. Apply:
 - The exact colors, fonts, and spacing from the Brand and Design Direction sections
 - If a Google Font is specified, load it via a <link> tag
-- If custom colors are specified, configure them via Tailwind's inline config (window.tailwind = { theme: { extend: { colors: {...} } } }) before the Tailwind script
 - Generous whitespace, careful typography, real-looking content (not Lorem Ipsum — use the feature domain)
-- Realistic component states: loading spinners use actual animated CSS, empty states have an icon and helpful message, error states are visually distinct (red accent, clear message)
+- Realistic component states: loading spinners use animated CSS, empty states have an icon and message, error states are visually distinct
 
-## Interactions
-- Screen navigation tabs: clicking switches the visible screen
-- State pills: clicking switches that screen's visible state
-- Any key interactions from the spec (e.g. button clicks that reveal a next screen): wire them up so the designer can feel the flow
-- Smooth transitions between states (CSS transition on opacity)
+## Interactions and animations
+
+Read the spec's Interactions sections carefully. Implement:
+- Screen navigation tabs
+- State pills per screen
+- Any animations described (glow pulses, fade choreography, transitions) — these MUST be implemented, not omitted. Use CSS keyframe animations via the Tailwind config above.
+- Smooth transitions between states
+
+## Input fields — always legible
+
+For any text input or textarea:
+- Set explicit text color that contrasts with the input background
+- On dark backgrounds: text-text-primary or text-white. NEVER leave input color as browser default on a dark-bg page — the default is black, which produces black-on-black text.
 
 ## Mobile-first
-Default width should be a mobile frame (max-w-sm centered) with a toggle to expand to full-width desktop. Show which breakpoint is active.`,
+Default width should be a mobile frame (max-w-sm centered) with a toggle to expand to full-width desktop.`,
     messages: [
       {
         role: "user",
@@ -70,10 +113,18 @@ ${specContent}`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
 
-  // Strip any accidental markdown fences the model may have added
-  return text
+  const html = text
     .replace(/^```html\n?/, "")
     .replace(/^```\n?/, "")
     .replace(/\n?```$/, "")
     .trim()
+
+  // Validate completeness — a truncated HTML file renders as a broken screen.
+  // Throw so the caller's non-fatal error handler surfaces a useful message instead
+  // of uploading broken HTML to the designer.
+  if (!html.includes("</html>")) {
+    throw new Error("HTML preview was truncated before </html> — spec may be too large for a single render pass")
+  }
+
+  return html
 }

@@ -71,10 +71,29 @@ describe("generateDesignPreview", () => {
     )
   })
 
-  it("returns empty string when first content block is not text", async () => {
+  it("throws when first content block is not text (treated as truncation)", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "tool_use", id: "x", name: "y", input: {} }] })
 
-    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
-    expect(result).toBe("")
+    await expect(generateDesignPreview({ specContent: "spec", featureName: "test" }))
+      .rejects.toThrow("truncated")
+  })
+
+  it("throws when HTML is missing closing </html> tag (truncated response)", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "<!DOCTYPE html><html><body><p>Truncated..." }],
+    })
+
+    await expect(generateDesignPreview({ specContent: "spec", featureName: "test" }))
+      .rejects.toThrow("truncated before </html>")
+  })
+
+  it("uses max_tokens 16000 for complex spec rendering", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 16000 })
+    )
   })
 })
