@@ -5,6 +5,8 @@ import {
   hasDraftEngineeringSpec,
   extractDraftEngineeringSpec,
   extractEngineeringSpecContent,
+  hasArchitectPatch,
+  extractArchitectPatch,
 } from "../../agents/architect"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -192,5 +194,74 @@ describe("extractEngineeringSpecContent", () => {
   it("falls back to stripping marker when no code block", () => {
     const response = "INTENT: CREATE_ENGINEERING_SPEC\n# Engineering Spec\n## Data Model"
     expect(extractEngineeringSpecContent(response)).toBe("# Engineering Spec\n## Data Model")
+  })
+})
+
+describe("hasArchitectPatch", () => {
+  it("returns true when both patch markers are present", () => {
+    expect(hasArchitectPatch("ENGINEERING_PATCH_START\n## Data Model\nUpdated.\nENGINEERING_PATCH_END")).toBe(true)
+  })
+
+  it("returns false when only start marker is present", () => {
+    expect(hasArchitectPatch("ENGINEERING_PATCH_START\n## Data Model\nUpdated.")).toBe(false)
+  })
+
+  it("returns false when neither marker is present", () => {
+    expect(hasArchitectPatch("Just a regular architect response.")).toBe(false)
+  })
+
+  it("returns false when DRAFT markers are present but not PATCH markers", () => {
+    expect(hasArchitectPatch("DRAFT_ENGINEERING_SPEC_START\ncontent\nDRAFT_ENGINEERING_SPEC_END")).toBe(false)
+  })
+})
+
+describe("extractArchitectPatch", () => {
+  it("extracts content between patch markers", () => {
+    const response = "Updating API.\nENGINEERING_PATCH_START\n## API Design\nPOST /api/v1/users\nENGINEERING_PATCH_END\nMore text."
+    expect(extractArchitectPatch(response)).toBe("## API Design\nPOST /api/v1/users")
+  })
+
+  it("returns empty string when markers are absent", () => {
+    expect(extractArchitectPatch("No markers here.")).toBe("")
+  })
+
+  it("extracts multi-section patch correctly", () => {
+    const response = [
+      "ENGINEERING_PATCH_START",
+      "## Data Model",
+      "User table updated.",
+      "",
+      "## API Design",
+      "New endpoint added.",
+      "ENGINEERING_PATCH_END",
+    ].join("\n")
+    const extracted = extractArchitectPatch(response)
+    expect(extracted).toContain("## Data Model")
+    expect(extracted).toContain("User table updated.")
+    expect(extracted).toContain("## API Design")
+  })
+})
+
+describe("buildArchitectSystemPrompt — PATCH enforcement rules", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const draftContext: AgentContext = {
+    ...baseContext,
+    currentDraft: "## Approved Product Spec\nSpec.\n\n## Approved Design Spec\nDesign.\n\n## Current Engineering Draft\n# Onboarding — Engineering Spec\n\n## Data Model\nUser table.",
+  }
+
+  it("PATCH is absolute — no exceptions phrase is present", () => {
+    const prompt = buildArchitectSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("No exceptions")
+  })
+
+  it("prompt warns that DRAFT blocks are cut off on long specs", () => {
+    const prompt = buildArchitectSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("cut off mid-spec")
   })
 })

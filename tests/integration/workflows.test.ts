@@ -690,3 +690,93 @@ describe("Scenario 9 — Design patch flow", () => {
     expect(text).toContain("approved")
   })
 })
+
+// ─── Scenario 10: PM patch flow ───────────────────────────────────────────────
+//
+// When the PM agent emits a PRODUCT_PATCH_START block instead of a full
+// DRAFT_SPEC_START block, the handler applies the patch and saves the merged draft.
+
+describe("Scenario 10 — PM patch flow", () => {
+  const THREAD = "workflow-s10"
+
+  beforeEach(() => { clearHistory(THREAD) })
+  afterEach(() => { clearHistory(THREAD) })
+
+  it("PRODUCT_PATCH block is merged into existing draft and saved to GitHub", async () => {
+    setConfirmedAgent(THREAD, "pm")
+
+    const patchResponse = [
+      "Updated the Goals section based on your feedback.",
+      "PRODUCT_PATCH_START",
+      "## Goals",
+      "1. Reduce onboarding time from 10 min to 3 min.",
+      "2. Achieve 80% day-1 activation.",
+      "PRODUCT_PATCH_END",
+    ].join("\n")
+
+    // PM Anthropic call sequence: classifyMessageScope → runAgent
+    // (no extractLockedDecisions — short history; no audit API call — empty productVision/architecture)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
+      .mockResolvedValueOnce({ content: [{ type: "text", text: patchResponse }] })       // runAgent
+
+    const params = makeParams(THREAD, "feature-onboarding", "tighten up the goals section")
+    await handleFeatureChannelMessage(params)
+
+    // Draft was saved to GitHub
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    // The saved content contains the patched Goals section
+    const savedContent = Buffer.from(
+      mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+        c[0]?.path?.includes("onboarding.product.md")
+      )?.[0]?.content ?? "",
+      "base64"
+    ).toString()
+    expect(savedContent).toContain("Reduce onboarding time")
+  })
+})
+
+// ─── Scenario 11: Architect patch flow ────────────────────────────────────────
+//
+// When the architect agent emits an ENGINEERING_PATCH_START block, the handler
+// applies the patch and saves the merged draft.
+
+describe("Scenario 11 — Architect patch flow", () => {
+  const THREAD = "workflow-s11"
+
+  beforeEach(() => { clearHistory(THREAD) })
+  afterEach(() => { clearHistory(THREAD) })
+
+  it("ENGINEERING_PATCH block is merged into existing draft and saved to GitHub", async () => {
+    setConfirmedAgent(THREAD, "architect")
+
+    const patchResponse = [
+      "Updated the API Design section based on the agreed pagination strategy.",
+      "ENGINEERING_PATCH_START",
+      "## API Design",
+      "GET /api/v1/onboarding — cursor-based pagination, max 50 items.",
+      "ENGINEERING_PATCH_END",
+    ].join("\n")
+
+    // Architect Anthropic call sequence: isOffTopicForAgent → isSpecStateQuery → runAgent
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: patchResponse }] }) // runAgent
+
+    const params = makeParams(THREAD, "feature-onboarding", "lock in cursor-based pagination for the API")
+    await handleFeatureChannelMessage(params)
+
+    // Draft was saved to GitHub
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    const savedContent = Buffer.from(
+      mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+        c[0]?.path?.includes("onboarding.engineering.md")
+      )?.[0]?.content ?? "",
+      "base64"
+    ).toString()
+    expect(savedContent).toContain("cursor-based pagination")
+  })
+})

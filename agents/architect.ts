@@ -81,11 +81,25 @@ Save a draft after EVERY response where any decision has been made or agreed —
 
 **Conversation history is capped. If you agree a decision and do not save it, it will be lost when the conversation grows long. There is no recovery. Save every decision the moment it is agreed.**
 
-Output the current state of all agreed decisions wrapped in a DRAFT block:
+**RULE: DRAFT vs PATCH — this is absolute and has no exceptions.**
+
+**If no current draft exists yet** (first save for this feature — "No approved specs found" shown below): output the complete spec in a DRAFT block:
 DRAFT_ENGINEERING_SPEC_START
-<full spec content here — include all agreed decisions, even partial ones>
+<complete spec — all sections>
 DRAFT_ENGINEERING_SPEC_END
-This saves the draft to the repo automatically. The architect never needs to ask for it.
+
+**If a current draft already exists** (you can see it below as "## Current Engineering Draft"): you MUST use a PATCH block. No exceptions — not even if every section changes, not even if the user says "rewrite it" or "rebuild the spec". PATCH blocks are always the right mechanism for updates:
+ENGINEERING_PATCH_START
+## [Changed Section Name]
+[updated content for this section only — repeat for every section that changed]
+ENGINEERING_PATCH_END
+
+**Critical constraints on PATCH blocks:**
+- Multiple changed sections go inside a SINGLE ENGINEERING_PATCH_START/END block — do not emit multiple patch blocks
+- Unchanged sections are NEVER included in the patch — only what changed
+- A full spec re-output (DRAFT block) when a draft exists will always be cut off mid-spec and lost — PATCH is the only mechanism that works on long specs
+
+The platform merges PATCH blocks into the existing draft automatically. The architect never needs to ask for it.
 
 ## When to save the final spec (approval detection)
 Trigger on any clear signal that the architect is satisfied and ready to move forward:
@@ -289,6 +303,17 @@ export function hasDraftEngineeringSpec(response: string): boolean {
 // Extracts the draft spec content from a DRAFT block.
 export function extractDraftEngineeringSpec(response: string): string {
   const match = response.match(/DRAFT_ENGINEERING_SPEC_START\n([\s\S]*?)\nDRAFT_ENGINEERING_SPEC_END/)
+  return match ? match[1].trim() : ""
+}
+
+// Detects a patch block (partial update to an existing engineering spec draft).
+export function hasArchitectPatch(response: string): boolean {
+  return response.includes("ENGINEERING_PATCH_START") && response.includes("ENGINEERING_PATCH_END")
+}
+
+// Extracts the patch content from an ENGINEERING_PATCH block.
+export function extractArchitectPatch(response: string): string {
+  const match = response.match(/ENGINEERING_PATCH_START\n([\s\S]*?)\nENGINEERING_PATCH_END/)
   return match ? match[1].trim() : ""
 }
 

@@ -5,6 +5,8 @@ import {
   extractDraftSpec,
   extractSpecContent,
   buildPmSystemPrompt,
+  hasPmPatch,
+  extractPmPatch,
 } from "../../agents/pm"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -122,5 +124,74 @@ describe("buildPmSystemPrompt — spec link on approval-ready", () => {
   it("states first feature message when no approved specs available", () => {
     const prompt = buildPmSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("No other approved product specs yet")
+  })
+})
+
+describe("hasPmPatch", () => {
+  it("returns true when both patch markers are present", () => {
+    expect(hasPmPatch("PRODUCT_PATCH_START\n## Problem\nUpdated.\nPRODUCT_PATCH_END")).toBe(true)
+  })
+
+  it("returns false when only start marker is present", () => {
+    expect(hasPmPatch("PRODUCT_PATCH_START\n## Problem\nUpdated.")).toBe(false)
+  })
+
+  it("returns false when neither marker is present", () => {
+    expect(hasPmPatch("Just a regular PM response.")).toBe(false)
+  })
+
+  it("returns false when DRAFT markers are present but not PATCH markers", () => {
+    expect(hasPmPatch("DRAFT_SPEC_START\ncontent\nDRAFT_SPEC_END")).toBe(false)
+  })
+})
+
+describe("extractPmPatch", () => {
+  it("extracts content between patch markers", () => {
+    const response = "Updating goals.\nPRODUCT_PATCH_START\n## Goals\nNew goals here.\nPRODUCT_PATCH_END\nMore text."
+    expect(extractPmPatch(response)).toBe("## Goals\nNew goals here.")
+  })
+
+  it("returns empty string when markers are absent", () => {
+    expect(extractPmPatch("No markers here.")).toBe("")
+  })
+
+  it("extracts multi-section patch correctly", () => {
+    const response = [
+      "PRODUCT_PATCH_START",
+      "## Goals",
+      "Updated goals.",
+      "",
+      "## Non-Goals",
+      "Updated non-goals.",
+      "PRODUCT_PATCH_END",
+    ].join("\n")
+    const extracted = extractPmPatch(response)
+    expect(extracted).toContain("## Goals")
+    expect(extracted).toContain("Updated goals.")
+    expect(extracted).toContain("## Non-Goals")
+  })
+})
+
+describe("buildPmSystemPrompt — PATCH enforcement rules", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const draftContext: AgentContext = {
+    ...baseContext,
+    currentDraft: "## Problem\nHelp users onboard faster.",
+  }
+
+  it("PATCH is absolute — no exceptions phrase is present", () => {
+    const prompt = buildPmSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("No exceptions")
+  })
+
+  it("prompt warns that DRAFT blocks are cut off on long specs", () => {
+    const prompt = buildPmSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("cut off mid-spec")
   })
 })

@@ -41,11 +41,26 @@ You are in the #feature-${featureName} Slack channel. A human PM has started a c
 5. Save the final spec and hand it off to the design phase
 
 ## Auto-saving drafts
-After every substantive response where the spec has evolved, output the current draft spec wrapped in a DRAFT block:
+
+**RULE: DRAFT vs PATCH — this is absolute and has no exceptions.**
+
+**If no current draft exists yet** (first save for this feature — "No draft saved yet" shown below): output the complete spec in a DRAFT block:
 DRAFT_SPEC_START
-<full spec content here>
+<complete spec — all sections>
 DRAFT_SPEC_END
-This saves the draft to the repo automatically. The PM never needs to ask for it.
+
+**If a current draft already exists** (you can see it below as "## Current draft spec"): you MUST use a PATCH block. No exceptions — not even if every section changes, not even if the PM says "rewrite it" or "redo the spec". PATCH blocks are always the right mechanism for updates:
+PRODUCT_PATCH_START
+## [Changed Section Name]
+[updated content for this section only — repeat for every section that changed]
+PRODUCT_PATCH_END
+
+**Critical constraints on PATCH blocks:**
+- Multiple changed sections go inside a SINGLE PRODUCT_PATCH_START/END block — do not emit multiple patch blocks
+- Unchanged sections are NEVER included in the patch — only what changed
+- A full spec re-output (DRAFT block) when a draft exists will always be cut off mid-spec and lost — PATCH is the only mechanism that works on long specs
+
+The platform merges PATCH blocks into the existing draft automatically. The PM never needs to ask for it.
 
 ## When to save the final spec (approval detection)
 Trigger on any clear signal that the PM is satisfied and ready to move forward. This includes:
@@ -224,6 +239,17 @@ export function hasDraftSpec(response: string): boolean {
 // Extracts the draft spec content from a DRAFT block.
 export function extractDraftSpec(response: string): string {
   const match = response.match(/DRAFT_SPEC_START\n([\s\S]*?)\nDRAFT_SPEC_END/)
+  return match ? match[1].trim() : ""
+}
+
+// Detects a patch block (partial update to an existing product spec draft).
+export function hasPmPatch(response: string): boolean {
+  return response.includes("PRODUCT_PATCH_START") && response.includes("PRODUCT_PATCH_END")
+}
+
+// Extracts the patch content from a PRODUCT_PATCH block.
+export function extractPmPatch(response: string): string {
+  const match = response.match(/PRODUCT_PATCH_START\n([\s\S]*?)\nPRODUCT_PATCH_END/)
   return match ? match[1].trim() : ""
 }
 

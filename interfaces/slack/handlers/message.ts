@@ -1,9 +1,9 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
-import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec } from "../../../agents/pm"
+import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec, hasPmPatch, extractPmPatch } from "../../../agents/pm"
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch } from "../../../agents/design"
-import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent } from "../../../agents/architect"
+import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent, hasArchitectPatch, extractArchitectPatch } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
@@ -311,6 +311,64 @@ async function runPmAgent(params: {
     const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").replace(/INTENT: CREATE_SPEC/g, "").trim()
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
+    return
+  }
+
+  // Detect truncated DRAFT block for PM — same failure mode as design agent.
+  if (response.includes("DRAFT_SPEC_START") && !response.includes("DRAFT_SPEC_END")) {
+    const existingDraftCheck = await readFile(filePath, `spec/${featureName}-product`)
+    const warn = existingDraftCheck
+      ? `The spec is too long for a full rewrite — the response was cut off before it could be saved. Say *"apply the changes as patches"* and I'll update only the sections that changed. (Nothing was saved this time.)`
+      : `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Problem and Goals sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
+    appendMessage(threadTs, { role: "assistant", content: warn })
+    await update(`${prefix}${warn}`)
+    return
+  }
+
+  // Detect truncated patch block for PM.
+  if (response.includes("PRODUCT_PATCH_START") && !response.includes("PRODUCT_PATCH_END")) {
+    const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
+    appendMessage(threadTs, { role: "assistant", content: warn })
+    await update(`${prefix}${warn}`)
+    return
+  }
+
+  if (hasPmPatch(response)) {
+    const patchContent = extractPmPatch(response)
+    const branchName = `spec/${featureName}-product`
+    const existingDraft = await readFile(filePath, branchName)
+    const mergedDraft = applySpecPatch(existingDraft ?? "", patchContent)
+
+    await update("_Auditing patch against product vision and architecture..._")
+    const audit = await auditSpecDraft({
+      draft: mergedDraft,
+      productVision: context.productVision,
+      systemArchitecture: context.systemArchitecture,
+      featureName,
+    })
+
+    if (audit.status === "conflict") {
+      const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
+      const conflictQuestion = `Resolve this before we continue. Do you want to adjust the spec, or update the product vision/architecture?`
+      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — patch not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
+      await update(`${prefix}${cleanResponse}\n\n:warning: *Conflict detected — patch not saved.*\n\n${audit.message}\n\n${conflictQuestion}`)
+      return
+    }
+
+    if (audit.status === "gap") {
+      const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
+      const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension?`
+      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
+      await update(`${prefix}${cleanResponse}\n\n:thinking_face: *Gap detected — patch saved, but a decision is needed.*\n\n${audit.message}\n\n${gapQuestion}`)
+      await saveDraftSpec({ featureName, filePath, content: mergedDraft })
+      return
+    }
+
+    await update("_Saving updated draft to GitHub..._")
+    await saveDraftSpec({ featureName, filePath, content: mergedDraft })
+    const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    await update(`${prefix}${cleanResponse}\n\n_Draft updated and saved to \`${filePath}\`._`)
     return
   }
 
@@ -890,6 +948,39 @@ async function runArchitectAgent(params: {
       .trim()
     appendMessage(threadTs, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
+    return
+  }
+
+  // Detect truncated DRAFT block for architect — same failure mode as other agents.
+  if (response.includes("DRAFT_ENGINEERING_SPEC_START") && !response.includes("DRAFT_ENGINEERING_SPEC_END")) {
+    const existingDraftCheck = await readFile(filePath, `spec/${featureName}-engineering`)
+    const warn = existingDraftCheck
+      ? `The spec is too long for a full rewrite — the response was cut off before it could be saved. Say *"apply the changes as patches"* and I'll update only the sections that changed. (Nothing was saved this time.)`
+      : `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Data Model and API sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
+    appendMessage(threadTs, { role: "assistant", content: warn })
+    await update(`${prefix}${warn}`)
+    return
+  }
+
+  // Detect truncated patch block for architect.
+  if (response.includes("ENGINEERING_PATCH_START") && !response.includes("ENGINEERING_PATCH_END")) {
+    const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
+    appendMessage(threadTs, { role: "assistant", content: warn })
+    await update(`${prefix}${warn}`)
+    return
+  }
+
+  if (hasArchitectPatch(response)) {
+    const patchContent = extractArchitectPatch(response)
+    const branchName = `spec/${featureName}-engineering`
+    const existingDraft = await readFile(filePath, branchName)
+    const mergedDraft = applySpecPatch(existingDraft ?? "", patchContent)
+
+    await update("_Saving updated engineering spec to GitHub..._")
+    await saveDraftEngineeringSpec({ featureName, filePath, content: mergedDraft })
+    const cleanResponse = response.replace(/ENGINEERING_PATCH_START[\s\S]*?ENGINEERING_PATCH_END/g, "").trim()
+    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    await update(`${prefix}${cleanResponse}\n\n_Engineering spec updated and saved to \`${filePath}\`._`)
     return
   }
 
