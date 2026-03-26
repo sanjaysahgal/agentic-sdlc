@@ -601,7 +601,12 @@ async function runDesignAgent(params: {
     : forceApplyAndRender
       ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
       : baseEnrichedMessage
-  const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
+  const systemPromptOverride = forcePreviewOnly
+    ? `Output a PREVIEW_ONLY_START block containing the full current design spec. Incorporate any decisions agreed in this conversation that have not yet been committed to GitHub — mark each one "[pending approval]" inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform handles rendering automatically. Output the block now.`
+    : forceApplyAndRender
+      ? `Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
+      : undefined
+  const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, systemPromptOverride)
 
   await update("_UX Designer is thinking..._")
   // Design agent has a much larger context (system prompt + product vision + full draft spec)

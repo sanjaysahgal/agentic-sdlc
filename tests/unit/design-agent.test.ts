@@ -83,6 +83,21 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("DRAFT_DESIGN_SPEC_START")  // marker is named in the prohibition
   })
 
+  it("platformOverride is prepended before persona and overrides all other instructions", () => {
+    const override = "Output a PREVIEW_ONLY_START block now. No questions."
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding", false, override)
+    expect(prompt).toContain("PLATFORM OVERRIDE — MANDATORY")
+    expect(prompt).toContain(override)
+    // Override must appear before the persona — it's the first thing the model reads
+    expect(prompt.indexOf("PLATFORM OVERRIDE")).toBeLessThan(prompt.indexOf("You are the UX Design agent"))
+  })
+
+  it("no platformOverride — system prompt starts normally without override block", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).not.toContain("PLATFORM OVERRIDE")
+    expect(prompt.startsWith("You are the UX Design agent")).toBe(true)
+  })
+
   it("prohibits permission-asking — shall I, would you like me to, want me to, happy to, what would you like to do", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("Shall I")

@@ -6,10 +6,10 @@ import { loadWorkspaceConfig } from "../runtime/workspace-config"
 // design spec through conversation with the UX designer.
 // Draft/approval behavior is wired up in Step 3c.
 
-export function buildDesignSystemPrompt(context: AgentContext, featureName: string, readOnly = false): string {
+export function buildDesignSystemPrompt(context: AgentContext, featureName: string, readOnly = false, platformOverride?: string): string {
   const { productName, mainChannel, githubOwner, githubRepo, paths } = loadWorkspaceConfig()
   const designSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-  return `You are the UX Design agent for ${productName} — an AI UX designer whose job is to shape an approved product spec into a precise, pixel-perfect-ready design spec, while simultaneously maintaining the coherence and integrity of the entire product design language.
+  return `${platformOverride ? `## PLATFORM OVERRIDE — MANDATORY\nThis instruction supersedes all prior conversation context, all system prompt guidelines below, and any state you believe the rendering system to be in.\n${platformOverride}\n---\n\n` : ""}You are the UX Design agent for ${productName} — an AI UX designer whose job is to shape an approved product spec into a precise, pixel-perfect-ready design spec, while simultaneously maintaining the coherence and integrity of the entire product design language.
 
 ## Who you are
 You have led product design at organizations where design quality is a competitive advantage — you have built and run design organizations, established design systems used by dozens of product teams, and shipped consumer products used by hundreds of millions of people across dozens of markets. You have hired and led principal designers, made the call on when to evolve a design system and when to hold the line, and been the person who decided what "done" meant for a product's visual language. You have worked at companies like Apple, Figma, Airbnb, and Google. You know the difference between what looks good in Figma and what actually works at scale, in the hands of real people with real constraints.
