@@ -60,8 +60,24 @@ async function fetchSlackImage(url: string, mimetype: string): Promise<UserImage
   }
 }
 
+// Dedup store for Slack at-least-once delivery. Slack can deliver the same event_id
+// multiple times (retries on timeout, network hiccups). Without this, the same message
+// triggers two parallel agent runs — duplicate saves, duplicate Slack replies.
+const seenEvents = new Map<string, number>()
+const EVENT_TTL_MS = 5 * 60 * 1000
+
 // Route all messages — feature channels to their agent, everything else to concierge
-app.message(async ({ message, client }) => {
+app.message(async ({ message, client, body }) => {
+  // Deduplicate by event_id. Purge entries older than TTL on each check.
+  const eventId: string | null = (body as any).event_id ?? null
+  if (eventId) {
+    const now = Date.now()
+    for (const [id, ts] of seenEvents) {
+      if (now - ts > EVENT_TTL_MS) seenEvents.delete(id)
+    }
+    if (seenEvents.has(eventId)) return
+    seenEvents.set(eventId, now)
+  }
   const msg = message as {
     channel: string
     text?: string
