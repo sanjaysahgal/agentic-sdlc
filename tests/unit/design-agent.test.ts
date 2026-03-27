@@ -15,7 +15,6 @@ import {
   extractDesignPatch,
   hasPreviewOnly,
   extractPreviewOnly,
-  isAgentStalling,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -727,93 +726,3 @@ describe("extractDesignPatch", () => {
   })
 })
 
-describe("isAgentStalling", () => {
-  // Brand context blindness — brandLoaded: true, has "?", no structural marker → stalling
-  it("returns true when brand is loaded and response asks a question without a structural marker", () => {
-    const response = "I need to confirm — do you have the official design tokens or a Figma file for the brand?"
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  it("returns true for the exact brand-stall pattern seen in production", () => {
-    const response = `I cannot extract exact design tokens from a live website with certainty.
-
-**Do you have the official brand tokens file?**
-
-**If yes:** Share the link.
-**If no:** I'll reverse-engineer the brand.
-
-Which is it?`
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  it("returns true when brand is loaded and response asks about reverse-engineering the site", () => {
-    const response = "Should I reverse-engineer the site to get the brand tokens?"
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  // Option-offering — brandLoaded: true, has "?", no structural marker → stalling
-  it("returns true for the exact option-offering pattern seen in production", () => {
-    const response = `I see the full context now. But now you're asking me to match the site "exactly" — which implies potentially different values.
-
-**I need to confirm one thing:**
-
-Are you asking me to:
-
-**Option 1:** Keep the spec exactly as locked, but just rebuild the HTML preview so it finally renders correctly?
-
-**Option 2:** Extract new color/animation/typography values and override what's currently locked?
-
-Which is it — **1 or 2?**`
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  it("returns true when brand is loaded and response offers numbered options without structural marker", () => {
-    const response = "Which approach would you prefer? Option 1: update the spec. Option 2: keep it as-is."
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  it("returns true when brand is loaded and response uses if yes / if no framing", () => {
-    const response = "Before I proceed — if yes: share the file. If no: I'll reverse-engineer it. Which is it?"
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  it("returns true for the exact clarification-seeking pattern seen in production", () => {
-    const response = `You're right — I need to look at what's actually rendering vs what I put in the spec.
-
-Before I rebuild, I need you to tell me what's wrong:
-
-**What specifically does not match in the HTML preview?**
-
-- Background color too light/dark?
-- Glow invisible, wrong color, wrong animation timing?
-
-Tell me what you see that's off-brand, and I'll patch the spec to fix it.`
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  it("returns true when brand is loaded and response asks what specifically is wrong", () => {
-    const response = "What specifically is wrong with the preview? Tell me what you see and I'll fix it."
-    expect(isAgentStalling(response, true)).toBe(true)
-  })
-
-  // Pass-throughs — should NOT trigger retry
-  it("returns false when response contains a structural marker — agent is acting, not stalling", () => {
-    const response = "Applying the brand tokens now.\nDESIGN_PATCH_START\n## Brand\n--bg: #0A0A0F\nDESIGN_PATCH_END\nIs the glow correct?"
-    expect(isAgentStalling(response, true)).toBe(false)
-  })
-
-  it("returns false when brand is not loaded — stall detection requires brand context to be present", () => {
-    const response = "I've applied the violet glow. Should the teal glow use the same blur radius, or a slightly tighter spread?"
-    expect(isAgentStalling(response, false)).toBe(false)
-  })
-
-  it("returns false when response has no question mark at all", () => {
-    const response = "I cannot extract design tokens from a live website without certainty — please provide the official file."
-    expect(isAgentStalling(response, true)).toBe(false)
-  })
-
-  it("returns false when response offers options but has a structural marker", () => {
-    const response = "Here's the draft:\nDRAFT_DESIGN_SPEC_START\n# Spec\ncontent\nDRAFT_DESIGN_SPEC_END\nDo you prefer option 1 or option 2 for the glow?"
-    expect(isAgentStalling(response, true)).toBe(false)
-  })
-})

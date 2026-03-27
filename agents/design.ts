@@ -540,24 +540,3 @@ export function extractPreviewOnly(response: string): string {
   return match ? match[1].trim() : ""
 }
 
-// Detects whether the design agent stalled instead of acting.
-// Platform rule: if brand is loaded AND the response has a question AND no structural marker,
-// the agent is stalling — it should have acted using the brand context it already has.
-// This is a clean platform rule, not phrase matching.
-export function isAgentStalling(response: string, brandLoaded: boolean): boolean {
-  const hasStructuralMarker =
-    response.includes("DRAFT_DESIGN_SPEC_START") ||
-    response.includes("DESIGN_PATCH_START") ||
-    response.includes("PREVIEW_ONLY_START") ||
-    response.includes("OFFER_PM_ESCALATION_START") ||
-    response.includes("INTENT: CREATE_DESIGN_SPEC") ||
-    response.includes("PRODUCT_SPEC_UPDATE_START")
-  if (hasStructuralMarker) return false
-  if (brandLoaded && response.includes("?")) return true
-  return false
-}
-
-/** @deprecated use isAgentStalling */
-export function isBrandContextBlind(response: string): boolean {
-  return isAgentStalling(response, true)
-}

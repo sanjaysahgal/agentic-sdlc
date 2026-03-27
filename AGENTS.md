@@ -48,9 +48,11 @@ Reads the approved product spec fully before asking a single question. Works wit
 **HTML preview:** On every draft save, the design agent generates a self-contained HTML preview (`<feature>.preview.html`) saved to the design branch alongside the spec. Uses Tailwind CDN + Alpine.js — all screens navigable via tabs, all states (default/loading/empty/error) toggleable per screen, faithful to brand colors and typography. Preview link posted in Slack after every draft save. Non-fatal — draft save succeeds even if preview generation fails.
 
 **Platform-enforced render/preview behavior (Trust Step 0.5):** When a user requests a render or preview, the platform detects the intent via Haiku classification before the agent runs:
-- **render-only** ("give a new render", "show me the preview"): the platform reads the current draft directly from GitHub and generates HTML — the design agent is bypassed entirely. Deterministic: the agent cannot refuse, diagnose the renderer, or offer A/B choices because it is never called.
-- **apply-and-render** ("rebuild with recommendations and render"): the platform injects a mandatory PLATFORM OVERRIDE into the agent's context that forces a PATCH block output. The agent cannot ask permission or offer alternatives. HTML renders automatically on every patch save.
+- **render-only** ("give a new render", "show me the preview"): the platform injects a mandatory PLATFORM OVERRIDE that forces a PREVIEW_ONLY block. The agent must list uncommitted decisions first, then output the block. Cannot refuse or offer alternatives.
+- **apply-and-render** ("rebuild with recommendations and render"): the platform injects a mandatory PLATFORM OVERRIDE that forces a PATCH block output. The agent cannot ask permission or offer alternatives. HTML renders automatically on every patch save.
 This replaces the previous prompt-rule-only approach, which was probabilistic. Render behavior is now platform-enforced.
+
+**Brand enforcement is prompt-layer only.** Brand tokens are injected at the top of the design agent's system prompt. The agent is instructed to use them exactly and never ask for Figma files or external URLs when BRAND.md is present. There is no platform-layer stall detection or retry — any design conversation can legitimately have questions, so stall detection cannot be reliably automated at the platform layer.
 
 ---
 

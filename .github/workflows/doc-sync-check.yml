@@ -80,5 +80,36 @@ jobs:
             fi
           fi
 
+      - name: Scan for hardcoded client strings in platform code
+        run: |
+          # These strings must never appear in agents/ or runtime/ source files.
+          # Every product-specific coordinate belongs in WorkspaceConfig (env vars), not source code.
+          # Pattern: grep changed files in agents/ or runtime/ only.
+          PLATFORM_FILES=$(grep -E "^(agents|runtime)/" /tmp/changed.txt | grep -v '\.d\.ts$' || true)
+          if [ -z "$PLATFORM_FILES" ]; then
+            echo "No platform files changed — skipping client string scan."
+            exit 0
+          fi
+          # Check out changed files and scan them
+          VIOLATIONS=""
+          for f in $PLATFORM_FILES; do
+            if [ -f "$f" ]; then
+              # Scan for known client-specific strings that must not appear in platform code
+              MATCHES=$(grep -nE "(health360|agentic-health|getarchon|sanjaysahgal)" "$f" || true)
+              if [ -n "$MATCHES" ]; then
+                VIOLATIONS="$VIOLATIONS\n$f:\n$MATCHES"
+              fi
+            fi
+          done
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ Hardcoded client strings found in platform code:"
+            printf "$VIOLATIONS"
+            echo ""
+            echo "These values must live in WorkspaceConfig (env vars), never in platform source files."
+            echo "Move them to .env and read them via loadWorkspaceConfig()."
+            exit 1
+          fi
+          echo "✅ No hardcoded client strings found in platform code."
+
       - name: All doc checks passed
         run: echo "✅ All documentation is in sync with code changes."

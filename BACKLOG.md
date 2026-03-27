@@ -33,6 +33,36 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Trust Step 0.6 — Authoritative doc auto-commit on spec approval
+
+**The problem today:** All three spec-producing agents draft proposed changes to their authoritative docs inline in every approved spec (e.g. `[PROPOSED ADDITION TO DESIGN_SYSTEM.md]`). But applying those changes to the actual doc — `DESIGN_SYSTEM.md`, `PRODUCT_VISION.md`, `SYSTEM_ARCHITECTURE.md` — requires a human to open GitHub, find the inline block, and manually paste it into the doc file. This is a non-technical operation with a high friction cost and frequent skip rate.
+
+**What this adds:**
+
+On Slack "approved" for any spec type, the platform:
+1. Reads the approved spec content
+2. Searches for `[PROPOSED ADDITION TO <doc>.md]` ... `[END PROPOSED ADDITION]` blocks
+3. Reads the current authoritative doc from GitHub (e.g. `DESIGN_SYSTEM.md`)
+4. Appends the proposed addition to the appropriate section
+5. Commits both the approved spec AND the updated authoritative doc to main in a single atomic operation
+
+**Why this is the right approach:**
+- The human already approved the spec, which includes the proposed doc update
+- The agent writes the proposed text as ready-to-apply content — not a diff, not a to-do list
+- Committing both atomically means the spec chain and authoritative docs are always in sync
+- Non-technical users never need to touch GitHub
+
+**Limitations:**
+- Platform appends the proposed text to the doc; it does not attempt structural reorganization. If the proposed addition needs to go in a specific section rather than at the end, the human can edit after the fact.
+- If the doc doesn't exist yet (first feature), platform creates it with the proposed content.
+- One proposed addition per spec type (if the agent drafts multiple blocks, platform applies all of them in order).
+
+**Implementation:** `interfaces/slack/handlers/message.ts` (all three approval paths), `runtime/github-client.ts` (new `appendToAuthoritativeDoc()` function). No new agent work — the agents already produce the proposed text.
+
+**Why before Trust Step 1:** This closes the human-in-the-loop gap for doc updates before we add platform monitoring. The monitoring in Trust Step 1 will surface doc/spec inconsistencies — those inconsistencies are only meaningful once docs are being updated reliably.
+
+---
+
 ### Trust Step 1 — Thread health: proactive degradation before context limit
 
 **The problem today:** When a thread gets too long, the Anthropic API call silently fails and the user sees "Something went wrong." They have no warning it was coming, no idea what context was lost, and no clear path forward. This is the single biggest trust destroyer in the current system.
