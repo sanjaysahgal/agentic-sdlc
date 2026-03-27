@@ -224,3 +224,71 @@ describe("locked decisions — architect agent", () => {
     expect(lastText).not.toContain("Something went wrong")
   })
 })
+
+// ─── featureName keying — cross-thread history sharing ─────────────────────
+//
+// Two different Slack threads in the same feature channel must share one
+// conversation history keyed by featureName, not threadTs.
+// This is the core onboarding-safety guarantee: a new team member starting
+// a fresh thread in #feature-onboarding loads all prior context immediately.
+
+import { getHistory } from "../../../runtime/conversation-store"
+
+describe("featureName keying — two threads in the same feature channel share history", () => {
+  const THREAD_A = "thread-first-session"
+  const THREAD_B = "thread-new-member"
+
+  beforeEach(() => { clearHistory(FEATURE) })
+  afterEach(() => { clearHistory(FEATURE) })
+
+  it("messages appended via thread A are visible when the agent runs in thread B", async () => {
+    // Seed history as if prior conversation happened in thread A
+    appendMessage(FEATURE, { role: "user", content: "I want dark mode as the default" })
+    appendMessage(FEATURE, { role: "assistant", content: "Locked: dark mode default." })
+    appendMessage(FEATURE, { role: "user", content: "Use the Archon palette" })
+    appendMessage(FEATURE, { role: "assistant", content: "Locked: Archon palette." })
+    appendMessage(FEATURE, { role: "user", content: "Chips above the prompt bar" })
+    appendMessage(FEATURE, { role: "assistant", content: "Locked: chips above prompt bar." })
+    appendMessage(FEATURE, { role: "user", content: "One more thing" })
+
+    // New team member sends their first message in thread B (different threadTs, same channel)
+    setConfirmedAgent(FEATURE, "ux-design")
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectConfirmationOfDecision
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark mode default\n• Archon palette\n• Chips above prompt bar" }] }) // extractLockedDecisions (history ≥ 6)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Welcome! Here is what we have decided so far." }] }) // runAgent
+
+    const params = {
+      channelName: "feature-onboarding",
+      threadTs: THREAD_B,  // different thread
+      channelId: "C123",
+      client: makeClient(),
+      channelState: {
+        productSpecApproved: false,
+        engineeringSpecApproved: false,
+        pendingAgent: null,
+        pendingMessage: null,
+        pendingThreadTs: null,
+      },
+      userMessage: "hi, I'm new here — what have we decided so far?",
+    }
+
+    await handleFeatureChannelMessage(params)
+
+    // extractLockedDecisions fired (6th call) — agent received prior decisions
+    const runAgentCall = mockAnthropicCreate.mock.calls[5][0]
+    const lastUserMsg = (runAgentCall.messages as Array<{ role: string; content: string }>)
+      .filter(m => m.role === "user").at(-1)?.content ?? ""
+    expect(lastUserMsg).toContain("Decisions locked in this conversation")
+    expect(lastUserMsg).toContain("Dark mode default")
+
+    // Both threads' messages are now in shared history
+    const history = getHistory(FEATURE)
+    expect(history.some(m => m.content.includes("dark mode"))).toBe(true)
+    expect(history.some(m => m.content.includes("new here"))).toBe(true)
+  })
+})
