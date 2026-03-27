@@ -648,7 +648,7 @@ async function runDesignAgent(params: {
 
   // Detect agent stall — either asking for context already in the system prompt (brand tokens,
   // Figma files) or offering numbered options instead of acting. One retry with PLATFORM OVERRIDE.
-  if (isAgentStalling(response)) {
+  if (isAgentStalling(response, !!context.brand)) {
     await update("_UX Designer is re-reading the context..._")
     const brandSection = context.brand
       ? `The brand tokens are already in your system prompt. Use them exactly as written — do not approximate, reverse-engineer, or ask the user to tell you what's wrong.`
