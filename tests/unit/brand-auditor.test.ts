@@ -40,6 +40,22 @@ Color tokens:
 Font: system-ui
 `
 
+// Real format produced by the design agent — token name and hex in separate backtick spans
+const SPEC_DRIFTED_BACKTICK_FORMAT = `
+## Brand
+
+**Color Palette**
+- \`--bg:\` \`#0A0E27\` // Page background
+- \`--surface:\` \`#151B38\` // Card surfaces
+- \`--text:\` \`#F8F8F7\` // Primary text
+- \`--violet:\` \`#8B7FE8\` // Accent violet
+- \`--teal:\` \`#4FADA8\` // Accent teal
+- \`--error:\` \`#e06c75\` // Error
+
+**Typography**
+Font family: system-ui
+`
+
 const SPEC_NO_BRAND_SECTION = `
 ## Design Direction
 Dark mode, minimal.
@@ -74,6 +90,24 @@ describe("auditBrandTokens", () => {
     const tokens = drifts.map(d => d.token)
     expect(tokens).not.toContain("--text")
     expect(tokens).not.toContain("--error")
+  })
+
+  it("detects drift when spec uses backtick-span format — the real format the agent produces", () => {
+    const drifts = auditBrandTokens(SPEC_DRIFTED_BACKTICK_FORMAT, BRAND_MD)
+    const tokens = drifts.map(d => d.token)
+    expect(tokens).toContain("--bg")
+    expect(tokens).toContain("--surface")
+    expect(tokens).toContain("--violet")
+    expect(tokens).toContain("--teal")
+    expect(tokens).not.toContain("--text")
+    expect(tokens).not.toContain("--error")
+  })
+
+  it("backtick format — includes correct specValue and brandValue", () => {
+    const drifts = auditBrandTokens(SPEC_DRIFTED_BACKTICK_FORMAT, BRAND_MD)
+    const violet = drifts.find(d => d.token === "--violet")
+    expect(violet?.specValue).toBe("#8B7FE8")
+    expect(violet?.brandValue).toBe("#7C6FCD")
   })
 
   it("includes specValue and brandValue in each drift entry", () => {

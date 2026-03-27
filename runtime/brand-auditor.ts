@@ -13,14 +13,18 @@ export interface BrandDrift {
 
 /**
  * Parses CSS-variable color tokens from a markdown document.
- * Matches `--token-name: #RRGGBB` (with optional whitespace and inline comments).
+ * Handles both standard CSS format (`--token: #RRGGBB`) and the spec's
+ * backtick-span format (`` `--token:` `#RRGGBB` ``).
+ * Matches token name and hex value anywhere on the same line.
  */
 function extractTokenMap(text: string): Map<string, string> {
   const tokens = new Map<string, string>()
-  const regex = /--(\w[\w-]*):\s*(#[0-9A-Fa-f]{6})\b/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(text)) !== null) {
-    tokens.set(`--${match[1]}`, match[2].toUpperCase())
+  for (const line of text.split("\n")) {
+    const tokenMatch = line.match(/--(\w[\w-]*):/)
+    if (!tokenMatch) continue
+    const hexMatch = line.match(/#([0-9A-Fa-f]{6})\b/)
+    if (!hexMatch) continue
+    tokens.set(`--${tokenMatch[1]}`, `#${hexMatch[1].toUpperCase()}`)
   }
   return tokens
 }
