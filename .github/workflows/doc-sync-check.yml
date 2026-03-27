@@ -60,5 +60,25 @@ jobs:
             fi
           fi
 
+      - name: Check PRESENTATIONS.md changes require HTML presentation updates
+        run: |
+          if grep -q "^PRESENTATIONS.md" /tmp/changed.txt; then
+            MISSING=""
+            if ! grep -q "platform-engineering-deep-dive.html" /tmp/changed.txt; then
+              MISSING="$MISSING platform-engineering-deep-dive.html"
+            fi
+            if ! grep -q "investor-pitch.html" /tmp/changed.txt; then
+              MISSING="$MISSING investor-pitch.html"
+            fi
+            if ! grep -q "ai-engineering-practices.html" /tmp/changed.txt; then
+              MISSING="$MISSING ai-engineering-practices.html"
+            fi
+            if [ -n "$MISSING" ]; then
+              echo "❌ PRESENTATIONS.md was modified but these presentation files were not updated:$MISSING"
+              echo "Every change to PRESENTATIONS.md must be reflected in the affected HTML decks."
+              exit 1
+            fi
+          fi
+
       - name: All doc checks passed
         run: echo "✅ All documentation is in sync with code changes."

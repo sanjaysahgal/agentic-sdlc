@@ -240,8 +240,23 @@ describe("PREVIEW_ONLY truncation recovery", () => {
 
 // ─── stall retry ──────────────────────────────────────────────────────────────
 
+// Helper: mock Octokit to return brand tokens for the brand file path.
+// Stall detection requires brand to be loaded (isAgentStalling(response, !!context.brand)).
+const BRAND_TOKENS = "--bg: #0A0A0F\n--violet: #7C6FCD\n--teal: #4ECDC4"
+const BRAND_B64 = Buffer.from(BRAND_TOKENS).toString("base64")
+
+function withBrandLoaded(): void {
+  mockOctokitGetContent.mockImplementation(async ({ path }: { path: string }) => {
+    if (path?.includes("BRAND.md") || path?.includes("brand")) {
+      return { data: { content: BRAND_B64, encoding: "base64", type: "file" } }
+    }
+    throw new Error("Not Found")
+  })
+}
+
 describe("stall retry — isAgentStalling", () => {
   it("retries when first response offers options without a structural marker", async () => {
+    withBrandLoaded()
     setConfirmedAgent(THREAD, "ux-design")
 
     const stallingResponse = `I need to confirm one thing before I touch the spec:
@@ -250,7 +265,7 @@ Are you asking me to:
 
 **Option 1:** Keep the spec as-is and just rebuild the HTML preview?
 
-**Option 2:** Extract new values from getarchon.dev and override what's locked?
+**Option 2:** Extract new values from the brand repo and override what's locked?
 
 Which is it — **1 or 2?**`
 
@@ -263,7 +278,7 @@ Which is it — **1 or 2?**`
       .mockResolvedValueOnce({ content: [{ type: "text", text: stallingResponse }] }) // [3] runAgent — stall
       .mockResolvedValueOnce({ content: [{ type: "text", text: actionResponse }] })   // [4] retry runAgent
 
-    await handleFeatureChannelMessage(makeParams("match getarchon.dev exactly"))
+    await handleFeatureChannelMessage(makeParams("match the brand exactly"))
 
     // Retry fired — 5th call (index 4) is the retry, its system prompt has PLATFORM OVERRIDE
     const retrySystemPrompt = getSystemPrompt(4)
@@ -271,6 +286,7 @@ Which is it — **1 or 2?**`
   })
 
   it("retry system prompt tells agent to use brand tokens from system prompt, not training data", async () => {
+    withBrandLoaded()
     setConfirmedAgent(THREAD, "ux-design")
 
     const stallingResponse = "Do you have the official brand tokens or a Figma file? Which is it?"
@@ -292,6 +308,7 @@ Which is it — **1 or 2?**`
   })
 
   it("does not retry when first response contains a structural marker", async () => {
+    withBrandLoaded()
     setConfirmedAgent(THREAD, "ux-design")
 
     // Response with structural marker and a question — isAgentStalling returns false
