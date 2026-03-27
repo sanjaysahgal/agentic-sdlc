@@ -191,7 +191,8 @@
      1 — TITLE
 ════════════════════════════════════════ -->
 <section>
-  <div class="eyebrow">Engineering · Claude Code</div>
+  <div class="eyebrow">Engineering · Claude Code · <span id="date-ai"></span></div>
+  <script>document.getElementById('date-ai').textContent = new Date().toLocaleDateString('en-US', {month:'long', year:'numeric'});</script>
   <h1>Working with<br><span class="accent">AI</span> at scale</h1>
   <div class="sub">Three structures that make AI collaboration<br>consistent, documented, and self-improving.</div>
   <div class="pills">

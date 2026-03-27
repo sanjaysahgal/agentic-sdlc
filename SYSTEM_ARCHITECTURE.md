@@ -25,7 +25,7 @@ A customer can license archcon alone (SDLC only — specs through to code review
 PRODUCT_NAME      GITHUB_OWNER      GITHUB_REPO
 SLACK_BOT_TOKEN   SLACK_MAIN_CHANNEL
 PATH_PRODUCT_VISION   PATH_SYSTEM_ARCHITECTURE   PATH_DESIGN_SYSTEM
-PATH_FEATURE_CONVENTIONS   PATH_FEATURES_ROOT
+PATH_BRAND   PATH_FEATURE_CONVENTIONS   PATH_FEATURES_ROOT
 ```
 
 ---
@@ -155,7 +155,7 @@ The design agent's render behavior is enforced at the platform layer (`message.t
 
 | Intent | Platform action |
 |---|---|
-| `render-only` ("give a new render", "show me the preview") | Platform reads the current draft from GitHub directly and calls `generateDesignPreview()`. The design agent is **bypassed entirely** — it cannot refuse, diagnose the renderer, or offer A/B choices. |
+| `render-only` ("give a new render", "show me the preview") | Platform injects a mandatory PLATFORM OVERRIDE into the agent's system prompt instructing it to output a `PREVIEW_ONLY_START` block. The agent is always in the loop — the platform only enforces what block it must output; the agent decides the content. The override prevents refusing, diagnosing the renderer, or offering A/B choices. |
 | `apply-and-render` ("rebuild with recommendations and render") | Platform injects a mandatory PLATFORM OVERRIDE into the agent's context that forces a PATCH block output. The HTML preview renders automatically on every patch save. |
 | `other` | Normal agent flow, no injection. |
 
