@@ -75,6 +75,9 @@ export async function runAgent(params: {
     messages,
   })
 
+  const { input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens } = response.usage
+  console.log(`[tokens] model=${AGENT_MODEL} in=${input_tokens} out=${output_tokens} cache_hit=${cache_read_input_tokens ?? 0} cache_write=${cache_creation_input_tokens ?? 0} history_msgs=${messages.length - 1}`)
+
   const block = response.content[0]
   return block.type === "text" ? block.text : ""
 }
