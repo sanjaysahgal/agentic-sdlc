@@ -58,6 +58,8 @@ This replaces the previous prompt-rule-only approach, which was probabilistic. R
 
 **Brand enforcement is prompt-layer only.** Brand tokens are injected at the top of the design agent's system prompt. The agent is instructed to use them exactly and never ask for Figma files or external URLs when BRAND.md is present. There is no platform-layer stall detection or retry — any design conversation can legitimately have questions, so stall detection cannot be reliably automated at the platform layer.
 
+**Brand token drift detection.** When a user reports that a preview doesn't match the brand or production site, the agent cross-references every color token and animation value in the spec's Brand section against BRAND.md. It surfaces each discrepancy explicitly (spec value → BRAND.md value), states whether BRAND.md itself needs updating (it usually doesn't — it is extracted from the production site), generates a corrected preview using BRAND.md as the authority, and waits for approval before patching the spec. Never silently corrects values without surfacing the drift first.
+
 ---
 
 ## architect agent

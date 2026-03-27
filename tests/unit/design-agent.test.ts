@@ -626,6 +626,19 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("You are a designer, not a platform engineer")
   })
 
+  it("brand drift protocol — instructs agent to cross-reference spec tokens against BRAND.md when user says preview doesn't match brand", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("brand token drift")
+    expect(prompt).toContain("Cross-reference every color token")
+    expect(prompt).toContain("BRAND.md is extracted from the production site")
+  })
+
+  it("brand drift protocol — requires transparency about what drifted before patching", () => {
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("Never silently fix the preview without surfacing the drift")
+    expect(prompt).toContain("Approve and I'll patch the spec to align with BRAND.md")
+  })
+
   it("distinguishes preview-before-agreeing (PREVIEW_ONLY) from agreed render (DRAFT)", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
     expect(prompt).toContain("PREVIEW_ONLY_START")
