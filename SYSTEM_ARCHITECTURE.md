@@ -139,7 +139,7 @@ Cross-feature spec loading (`loadApprovedSpecs`) races against a 10-second timeo
 
 Conversation history per Slack thread is capped. When history exceeds the limit, older messages are not discarded — they are summarized by Haiku before being injected into the next request. This preserves conversational continuity across long feature threads without inflating the context window.
 
-The summary is cached in-memory, keyed by `(threadTs, olderMessageCount)`. Because conversation history is append-only (older messages never change), the cache entry for any given `(thread, count)` is valid forever. A cache hit on a long thread avoids a Haiku call on every subsequent message.
+The summary is cached in-memory, keyed by `(featureName, olderMessageCount)`. Because conversation history is append-only (older messages never change), the cache entry for any given `(feature, count)` is valid forever. A cache hit on a long thread avoids a Haiku call on every subsequent message.
 
 Implemented in `runtime/conversation-summarizer.ts`.
 
@@ -186,9 +186,13 @@ This model is intentional: it makes state auditable, version-controlled, and hum
 
 ### Secondary state: conversation store
 
-In-memory per Slack thread, keyed by `thread_ts`:
+In-memory per **feature**, keyed by `featureName` (derived from `channelName` — e.g. `"feature-onboarding"` → `"onboarding"`):
 - Conversation history (capped at 40 messages — Sonnet context window management)
-- Confirmed agent per thread (which agent is handling this thread)
+- Confirmed agent per feature (which agent is handling this feature)
+
+All Slack threads in the same feature channel share one history entry. A new team member or a new thread in `#feature-onboarding` loads the full accumulated context immediately — no cold-start, no lost decisions from prior threads.
+
+`threadTs` is still passed to Slack API calls (replies post in the correct thread) but is no longer used as the store key.
 
 **Dev persistence:** `.confirmed-agents.json` on disk — survives bot restarts
 **Prod target:** Redis — survives multi-instance deployment, configurable TTL per workspace

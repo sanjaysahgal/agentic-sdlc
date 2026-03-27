@@ -131,12 +131,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 const makeParams = (userMessage: string) => ({
@@ -169,14 +169,14 @@ describe("bug #6 — premature spec approval: single decision confirmation must 
         content: [{ type: "text", text: "INTENT: CREATE_SPEC\n## Problem\nHelp users onboard.\n\n## Open Questions\n- [type: engineering] [blocking: no] Which framework?" }],
       }) // runAgent returns approval intent
 
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
     await handleFeatureChannelMessage(makeParams("lets lock option A"))
 
     // Must NOT have saved
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
 
     // Must have shown a confirmation prompt
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
     expect(lastAssistant?.content).toContain("Looks like you're approving")
   })
@@ -190,13 +190,13 @@ describe("bug #6 — premature spec approval: single decision confirmation must 
     })
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
-    setConfirmedAgent("thread-123", "ux-design" as any)
+    setConfirmedAgent("onboarding", "ux-design" as any)
 
     // Step 1: approval intent → confirmation prompt, no save
     await handleFeatureChannelMessage(makeParams("approved"))
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
 
-    const confirmPrompt = getHistory("thread-123").filter(m => m.role === "assistant").at(-1)
+    const confirmPrompt = getHistory("onboarding").filter(m => m.role === "assistant").at(-1)
     expect(confirmPrompt?.content).toContain("Looks like you're approving")
 
     // Step 2: user confirms → spec is saved

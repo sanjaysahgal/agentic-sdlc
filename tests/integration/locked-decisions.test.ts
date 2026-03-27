@@ -42,6 +42,7 @@ import { clearHistory, setConfirmedAgent, appendMessage } from "../../../runtime
 
 const originalEnv = process.env
 const THREAD = "thread-locked"
+const FEATURE = "onboarding" // featureName derived from channelName "feature-onboarding" — now the store key
 
 function makeClient() {
   return {
@@ -73,7 +74,7 @@ function makeParams(userMessage: string, client = makeClient()) {
 // Seed enough history for extractLockedDecisions to fire (threshold = 6 messages)
 function seedHistory(count = 7) {
   for (let i = 0; i < count; i++) {
-    appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    appendMessage(FEATURE, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
   }
 }
 
@@ -99,12 +100,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory(THREAD)
+  clearHistory(FEATURE)
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory(THREAD)
+  clearHistory(FEATURE)
 })
 
 // ─── PM agent ─────────────────────────────────────────────────────────────────
@@ -113,7 +114,7 @@ afterEach(() => {
 describe("locked decisions — PM agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "pm")
+    setConfirmedAgent(FEATURE, "pm")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary color\n• Mobile-first layout" }] }) // [0] extractLockedDecisions
@@ -132,7 +133,7 @@ describe("locked decisions — PM agent", () => {
 
   it("runner does NOT crash when extractLockedDecisions throws — agent still responds", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "pm")
+    setConfirmedAgent(FEATURE, "pm")
 
     mockAnthropicCreate
       .mockRejectedValueOnce(new Error("Haiku API failure"))                                                       // [0] extractLockedDecisions → caught by .catch(() => "")
@@ -152,24 +153,26 @@ describe("locked decisions — PM agent", () => {
 })
 
 // ─── Design agent ─────────────────────────────────────────────────────────────
-// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] detectRenderIntent, [3] extractLockedDecisions, [4] runAgent
+// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] detectRenderIntent,
+//             [3] detectConfirmationOfDecision, [4] extractLockedDecisions, [5] runAgent
 
 describe("locked decisions — design agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [1] isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                                      // [2] detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [3] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [4] runAgent (Sonnet)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                                      // [3] detectConfirmationOfDecision
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [4] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [5] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("rebuild the spec", client))
 
-    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[4])
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[5])
     expect(lastUserContent).toContain("Decisions locked in this conversation")
     expect(lastUserContent).toContain("Dark primary")
     expect(lastUserContent).toContain("Archon Labs aesthetic")
@@ -178,14 +181,15 @@ describe("locked decisions — design agent", () => {
 
   it("runner does NOT crash when extractLockedDecisions throws — design agent still responds", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // [2] detectRenderIntent
-      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [3] extractLockedDecisions → caught
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [4] runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // [3] detectConfirmationOfDecision
+      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [4] extractLockedDecisions → caught
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [5] runAgent
 
     const client = makeClient()
     await expect(handleFeatureChannelMessage(makeParams("rebuild the spec", client))).resolves.toBeUndefined()
@@ -203,7 +207,7 @@ describe("locked decisions — design agent", () => {
 describe("locked decisions — architect agent", () => {
   it("runner does NOT crash when extractLockedDecisions throws — architect still responds", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "architect")
+    setConfirmedAgent(FEATURE, "architect")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent

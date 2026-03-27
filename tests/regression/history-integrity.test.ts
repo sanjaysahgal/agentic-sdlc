@@ -62,12 +62,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
@@ -96,12 +96,12 @@ const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
 
 describe("bug #1 — fast-path off-topic appends user then assistant (never assistant-only)", () => {
   it("off-topic redirect appends user then assistant in correct order", async () => {
-    setConfirmedAgent("thread-123", "ux-design" as any)
+    setConfirmedAgent("onboarding", "ux-design" as any)
     mockAnthropicCreate.mockResolvedValue({ content: [{ type: "text", text: "off-topic" }] })
 
     await handleFeatureChannelMessage(makeParams({ userMessage: "what features are in progress globally?" }))
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     expect(history.length).toBe(2)
     expect(history[0].role).toBe("user")
     expect(history[1].role).toBe("assistant")
@@ -115,7 +115,7 @@ describe("bug #1 — fast-path off-topic appends user then assistant (never assi
 
 describe("bug #2 — failed agent call leaves no user message in history", () => {
   it("user message is not stored when the agent call fails", async () => {
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockRejectedValueOnce(new Error("API overloaded"))
@@ -123,7 +123,7 @@ describe("bug #2 — failed agent call leaves no user message in history", () =>
     // withThinking re-throws after logging — catch it so the test can assert history
     await handleFeatureChannelMessage(makeParams({ userMessage: "let's refine the scope" })).catch(() => {})
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     expect(history.filter(m => m.role === "user")).toHaveLength(0)
   })
 })
@@ -137,10 +137,10 @@ describe("bug #2 — failed agent call leaves no user message in history", () =>
 
 describe("bug #3 — corrupted history (leading assistant) is sanitized", () => {
   it("subsequent call succeeds even when history starts with assistant", async () => {
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
 
     // Inject corrupted state: history starts with assistant (as happens after bug #1)
-    appendMessage("thread-123", { role: "assistant", content: "Fast-path response with no preceding user message." })
+    appendMessage("onboarding", { role: "assistant", content: "Fast-path response with no preceding user message." })
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
@@ -149,7 +149,7 @@ describe("bug #3 — corrupted history (leading assistant) is sanitized", () => 
     // This must NOT throw — sanitization makes the API call valid
     await handleFeatureChannelMessage(makeParams({ userMessage: "what are the open questions?" }))
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     const last2 = history.slice(-2)
     expect(last2[0].role).toBe("user")
     expect(last2[1].role).toBe("assistant")
@@ -161,14 +161,14 @@ describe("bug #3 — corrupted history (leading assistant) is sanitized", () => 
 
 describe("invariant — no consecutive same-role messages after a normal turn", () => {
   it("history alternates user/assistant after each successful turn", async () => {
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my answer." }] })
 
     await handleFeatureChannelMessage(makeParams({ userMessage: "tell me about the feature" }))
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     for (let i = 1; i < history.length; i++) {
       expect(history[i].role).not.toBe(history[i - 1].role)
     }

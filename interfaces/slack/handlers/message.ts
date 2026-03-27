@@ -5,7 +5,7 @@ import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSp
 import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch, hasPreviewOnly, extractPreviewOnly } from "../../../agents/design"
 import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent, hasArchitectPatch, extractArchitectPatch } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, detectConfirmationOfDecision, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
@@ -135,16 +135,17 @@ export async function handleFeatureChannelMessage(params: {
   channelState: ChannelState
 }): Promise<void> {
   const { channelName, threadTs, userMessage, userImages, channelId, client, channelState } = params
+  const featureName = getFeatureName(channelName)
 
-  const confirmedAgent = getConfirmedAgent(threadTs)
+  const confirmedAgent = getConfirmedAgent(featureName)
 
   // Confirmed agent — check phase first, then run
   if (confirmedAgent === "ux-design") {
     // If the design agent offered a PM escalation last turn and the user is confirming it,
     // run the PM agent with the blocking question as its opening brief.
-    const pendingEscalation = getPendingEscalation(threadTs)
+    const pendingEscalation = getPendingEscalation(featureName)
     if (pendingEscalation && isAffirmative(userMessage)) {
-      clearPendingEscalation(threadTs)
+      clearPendingEscalation(featureName)
       const { roles } = loadWorkspaceConfig()
       const mention = roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`
       const escalationMsg =
@@ -152,17 +153,17 @@ export async function handleFeatureChannelMessage(params: {
         `*"${pendingEscalation.question}"*\n\n` +
         `_Reply here to unblock design._`
       await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: escalationMsg })
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: `Escalated to PM: "${pendingEscalation.question}". Design is paused until they respond.` })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: `Escalated to PM: "${pendingEscalation.question}". Design is paused until they respond.` })
       return
     }
     // User declined escalation or sent a new message — clear pending and continue normally
-    if (pendingEscalation) clearPendingEscalation(threadTs)
+    if (pendingEscalation) clearPendingEscalation(featureName)
 
     // If the design spec is now approved, route to the architect.
     const currentPhaseForDesign = await getFeaturePhase(getFeatureName(channelName))
     if (currentPhaseForDesign === "design-approved-awaiting-engineering" || currentPhaseForDesign === "engineering-in-progress") {
-      setConfirmedAgent(threadTs, "architect")
+      setConfirmedAgent(featureName, "architect")
       await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
         await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       }})
@@ -186,7 +187,7 @@ export async function handleFeatureChannelMessage(params: {
     // If the product spec is already approved, route to the design phase.
     const currentPhase = await getFeaturePhase(getFeatureName(channelName))
     if (currentPhase === "product-spec-approved-awaiting-design") {
-      setConfirmedAgent(threadTs, "ux-design")
+      setConfirmedAgent(featureName, "ux-design")
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       }})
@@ -215,13 +216,13 @@ export async function handleFeatureChannelMessage(params: {
     undefined
   await withThinking({ client, channelId, threadTs, agent: thinkingLabel, run: async (update) => {
     if (currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress") {
-      setConfirmedAgent(threadTs, "ux-design")
+      setConfirmedAgent(featureName, "ux-design")
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
     }
 
     if (currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress") {
-      setConfirmedAgent(threadTs, "architect")
+      setConfirmedAgent(featureName, "architect")
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
     }
@@ -230,10 +231,10 @@ export async function handleFeatureChannelMessage(params: {
       productSpecApproved: channelState.productSpecApproved,
       engineeringSpecApproved: channelState.engineeringSpecApproved,
     })
-    const history = getHistory(threadTs)
+    const history = getHistory(featureName)
     const suggestedAgent = await classifyIntent({ message: userMessage, history, phase })
 
-    setConfirmedAgent(threadTs, suggestedAgent)
+    setConfirmedAgent(featureName, suggestedAgent)
 
     const routingNote = await buildRoutingNote(getFeatureName(channelName), suggestedAgent)
 
@@ -262,10 +263,10 @@ async function runPmAgent(params: {
   const featureName = getFeatureName(channelName)
 
   // Pending spec approval — check before anything else
-  const pendingApproval = getPendingApproval(threadTs)
+  const pendingApproval = getPendingApproval(featureName)
   if (pendingApproval && pendingApproval.specType === "product") {
     if (isAffirmative(userMessage)) {
-      clearPendingApproval(threadTs)
+      clearPendingApproval(featureName)
       await update("_Saving the final product spec..._")
       await saveApprovedSpec({ featureName, filePath: pendingApproval.filePath, content: pendingApproval.specContent })
       const approvalMessage =
@@ -274,23 +275,23 @@ async function runPmAgent(params: {
         `A UX designer produces the screens and user flows before any engineering begins. ` +
         `If you're wearing the designer hat on this one, just say so right here and the design phase will begin.\n\n` +
         `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: approvalMessage })
       await update(approvalMessage)
       return
     } else {
-      clearPendingApproval(threadTs)
+      clearPendingApproval(featureName)
       // Not confirming — fall through to normal agent flow
     }
   }
 
   await update("_Product Manager is reading the spec..._")
-  const historyPm = getHistory(threadTs)
+  const historyPm = getHistory(featureName)
   const PM_HISTORY_LIMIT = 40
   const [context, lockedDecisionsPm, priorContextPm] = await Promise.all([
     loadAgentContext(featureName),
     extractLockedDecisions(historyPm).catch(() => ""),
-    getPriorContext(threadTs, historyPm, PM_HISTORY_LIMIT),
+    getPriorContext(featureName, historyPm, PM_HISTORY_LIMIT),
   ])
   const enrichedUserMessagePm = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsPm, priorContext: priorContextPm })
 
@@ -319,7 +320,7 @@ async function runPmAgent(params: {
 
   await update("_Product Manager is thinking..._")
   let response = await runAgent({ systemPrompt, history: historyPm, userMessage: enrichedUserMessagePm, userImages })
-  appendMessage(threadTs, { role: "user", content: userMessage })
+  appendMessage(featureName, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
@@ -327,7 +328,7 @@ async function runPmAgent(params: {
   // In read-only mode (approved spec), skip all writes — just answer the question
   if (readOnly) {
     const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").replace(/INTENT: CREATE_SPEC/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
     return
   }
@@ -341,14 +342,14 @@ async function runPmAgent(params: {
       response = await runAgent({ systemPrompt, history: historyPm, userMessage: retryInstruction })
       if (!hasPmPatch(response)) {
         const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
-        appendMessage(threadTs, { role: "assistant", content: warn })
+        appendMessage(featureName, { role: "assistant", content: warn })
         await update(`${prefix}${warn}`)
         return
       }
       // Fall through to hasPmPatch handler below.
     } else {
       const warn = `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Problem and Goals sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-      appendMessage(threadTs, { role: "assistant", content: warn })
+      appendMessage(featureName, { role: "assistant", content: warn })
       await update(`${prefix}${warn}`)
       return
     }
@@ -357,7 +358,7 @@ async function runPmAgent(params: {
   // Detect truncated patch block for PM.
   if (response.includes("PRODUCT_PATCH_START") && !response.includes("PRODUCT_PATCH_END")) {
     const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
-    appendMessage(threadTs, { role: "assistant", content: warn })
+    appendMessage(featureName, { role: "assistant", content: warn })
     await update(`${prefix}${warn}`)
     return
   }
@@ -379,7 +380,7 @@ async function runPmAgent(params: {
     if (audit.status === "conflict") {
       const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
       const conflictQuestion = `Resolve this before we continue. Do you want to adjust the spec, or update the product vision/architecture?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — patch not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — patch not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
       await update(`${prefix}${cleanResponse}\n\n:warning: *Conflict detected — patch not saved.*\n\n${audit.message}\n\n${conflictQuestion}`)
       return
     }
@@ -387,7 +388,7 @@ async function runPmAgent(params: {
     if (audit.status === "gap") {
       const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
       const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
       await update(`${prefix}${cleanResponse}\n\n:thinking_face: *Gap detected — patch saved, but a decision is needed.*\n\n${audit.message}\n\n${gapQuestion}`)
       await saveDraftSpec({ featureName, filePath, content: mergedDraft })
       return
@@ -396,7 +397,7 @@ async function runPmAgent(params: {
     await update("_Saving updated draft to GitHub..._")
     await saveDraftSpec({ featureName, filePath, content: mergedDraft })
     const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}\n\n_Draft updated and saved to \`${filePath}\`._`)
     return
   }
@@ -414,7 +415,7 @@ async function runPmAgent(params: {
     if (audit.status === "conflict") {
       const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
       const conflictQuestion = `Resolve this before we continue. Do you want to adjust the spec, or update the product vision/architecture?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
       await update(
         `${prefix}${cleanResponse}\n\n` +
         `:warning: *Conflict detected — draft not saved.*\n\n${audit.message}\n\n` +
@@ -426,7 +427,7 @@ async function runPmAgent(params: {
     if (audit.status === "gap") {
       const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
       const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension (note it in the spec and move on)?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
       await update(
         `${prefix}${cleanResponse}\n\n` +
         `:thinking_face: *Gap detected — draft saved, but a decision is needed.*\n\n${audit.message}\n\n` +
@@ -439,7 +440,7 @@ async function runPmAgent(params: {
     await update("_Saving draft to GitHub..._")
     await saveDraftSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
     return
   }
@@ -448,7 +449,7 @@ async function runPmAgent(params: {
     const specContent = extractSpecContent(response)
     const blockingQuestions = extractBlockingQuestions(specContent)
     if (blockingQuestions.length > 0) {
-      appendMessage(threadTs, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
+      appendMessage(featureName, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
@@ -456,7 +457,7 @@ async function runPmAgent(params: {
     await update("_Checking spec against locked decisions..._")
     let finalSpecContent = specContent
     let correctionNote = ""
-    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(threadTs) })
+    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(featureName) })
     if (decisionAudit.status === "corrections") {
       const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
       if (applied.length > 0) {
@@ -465,14 +466,14 @@ async function runPmAgent(params: {
       }
     }
     // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(threadTs, { specType: "product", specContent: finalSpecContent, filePath, featureName })
+    setPendingApproval(featureName, { specType: "product", specContent: finalSpecContent, filePath, featureName })
     const confirmMsg = `Looks like you're approving the product spec. Just to be certain before I save it — reply *confirmed* to lock it in and move to design, or let me know if there's anything left to review.${correctionNote}`
-    appendMessage(threadTs, { role: "assistant", content: confirmMsg })
+    appendMessage(featureName, { role: "assistant", content: confirmMsg })
     await update(`${prefix}${confirmMsg}`)
     return
   }
 
-  appendMessage(threadTs, { role: "assistant", content: response })
+  appendMessage(featureName, { role: "assistant", content: response })
   await update(`${prefix}${response}`)
 }
 
@@ -491,10 +492,10 @@ async function runDesignAgent(params: {
   const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly } = params
 
   // Pending spec approval — check before fast paths
-  const pendingDesignApproval = getPendingApproval(threadTs)
+  const pendingDesignApproval = getPendingApproval(featureName)
   if (pendingDesignApproval && pendingDesignApproval.specType === "design") {
     if (isAffirmative(userMessage)) {
-      clearPendingApproval(threadTs)
+      clearPendingApproval(featureName)
       await update("_Saving the final design spec..._")
       await saveApprovedDesignSpec({ featureName, filePath: pendingDesignApproval.filePath, content: pendingDesignApproval.specContent })
       const approvalMessage =
@@ -503,20 +504,21 @@ async function runDesignAgent(params: {
         `A software architect produces the engineering plan before any code is written. ` +
         `If you're wearing the architect hat on this one, just say so right here and the engineering phase will begin.\n\n` +
         `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: approvalMessage })
       await update(approvalMessage)
       return
     } else {
-      clearPendingApproval(threadTs)
+      clearPendingApproval(featureName)
       // Not confirming — fall through to normal agent flow
     }
   }
 
-  // Platform enforcement flags — set inside the !readOnly block when render intent is detected.
-  // Both inject a mandatory override after context loading. The agent is always in the loop.
+  // Platform enforcement flags — set inside the !readOnly block when render or confirmation intent is detected.
+  // All three inject a mandatory override after context loading. The agent is always in the loop.
   let forcePreviewOnly = false
   let forceApplyAndRender = false
+  let forceCommitDecision = false
 
   // Short-circuit status/general queries before loading expensive design context.
   // A "give me the latest spec" question in a design thread doesn't need the full
@@ -530,8 +532,8 @@ async function runDesignAgent(params: {
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the UX Designer — I'm here when you're ready to work on screens, flows, or design decisions for this feature.`
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: msg })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)
       return
     }
@@ -569,11 +571,11 @@ async function runDesignAgent(params: {
           }
         }
       }
-      const threadHistory = getHistory(threadTs)
+      const threadHistory = getHistory(featureName)
       let uncommittedNote = ""
       if (threadHistory.length > 6) {
         await update("_Reviewing conversation for uncommitted decisions..._")
-        const cacheKey = `${threadTs}:${threadHistory.length}`
+        const cacheKey = `${featureName}:${threadHistory.length}`
         const uncommitted = await identifyUncommittedDecisions(threadHistory, draftContent ?? "", cacheKey).catch(() => "")
         const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
         if (uncommitted && !isAllCommitted) {
@@ -581,8 +583,8 @@ async function runDesignAgent(params: {
         }
       }
       const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote })
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: msg })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)
       return
     }
@@ -603,29 +605,44 @@ async function runDesignAgent(params: {
     if (renderIntent === "apply-and-render") {
       forceApplyAndRender = true
     }
+
+    // Confirmation detection — only fires when render intent did not (render takes precedence).
+    // When the user confirms a design decision, the platform forces a DESIGN_PATCH_START block
+    // so every confirmation lands in the spec immediately rather than staying only in history.
+    if (renderIntent === "other") {
+      const confirmationIntent = await detectConfirmationOfDecision(userMessage)
+      if (confirmationIntent === "confirmed") {
+        forceCommitDecision = true
+      }
+    }
   }
 
   await update("_UX Designer is reading the spec and design context..._")
-  const historyDesign = getHistory(threadTs)
+  const historyDesign = getHistory(featureName)
   const DESIGN_HISTORY_LIMIT = 20
   const [context, lockedDecisionsDesign, priorContextDesign] = await Promise.all([
     loadDesignAgentContext(featureName),
     extractLockedDecisions(historyDesign).catch(() => ""),
-    getPriorContext(threadTs, historyDesign, DESIGN_HISTORY_LIMIT),
+    getPriorContext(featureName, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
   const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
   const previewOnlyOverride = `First, briefly list any specific design decisions from this conversation that have NOT yet been saved to GitHub — name them concisely (e.g. "Dark mode (#0A0A0F)", "Glow 10→15→10% at 2.5s"). If everything is already in the spec, say so in one line. Then output a PREVIEW_ONLY_START block containing the full current design spec with those uncommitted decisions incorporated and marked [pending approval] inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform renders automatically.`
   const applyAndRenderOverride = `Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
+  const commitDecisionOverride = `The human just confirmed a design decision. You MUST output a DESIGN_PATCH_START block in this response that commits the confirmed decision(s) to the spec. Steps: (1) State in one sentence what decision was just confirmed. (2) Output a DESIGN_PATCH_START / DESIGN_PATCH_END block with the exact spec section(s) that need updating. Do not ask for permission. Do not offer to patch later. Do not just acknowledge verbally without the block. If multiple decisions were confirmed (e.g. "agree with all 6"), patch all of them in a single block.`
   const enrichedUserMessageDesign = forcePreviewOnly
     ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${previewOnlyOverride}`
     : forceApplyAndRender
       ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${applyAndRenderOverride}`
-      : baseEnrichedMessage
+      : forceCommitDecision
+        ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${commitDecisionOverride}`
+        : baseEnrichedMessage
   const systemPromptOverride = forcePreviewOnly
     ? previewOnlyOverride
     : forceApplyAndRender
       ? applyAndRenderOverride
-      : undefined
+      : forceCommitDecision
+        ? commitDecisionOverride
+        : undefined
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, systemPromptOverride)
 
   await update("_UX Designer is thinking..._")
@@ -634,14 +651,14 @@ async function runDesignAgent(params: {
   // under the token limit. Prior conversation context beyond the limit is summarized and
   // injected into the user message — no work is lost on long threads.
   let response = await runAgent({ systemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
-  appendMessage(threadTs, { role: "user", content: userMessage })
+  appendMessage(featureName, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
 
   if (readOnly) {
     const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/INTENT: CREATE_DESIGN_SPEC/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
     return
   }
@@ -665,7 +682,7 @@ async function runDesignAgent(params: {
   if (hasPreviewOnly(response)) {
     const previewContent = extractPreviewOnly(response)
     const cleanResponse = response.replace(/PREVIEW_ONLY_START[\s\S]*?PREVIEW_ONLY_END/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     if (previewContent) {
       try {
         await update("_Generating preview (not saved yet)..._")
@@ -718,14 +735,14 @@ async function runDesignAgent(params: {
       // If the retry didn't produce a PATCH block, fall through to the error below.
       if (!hasDesignPatch(response)) {
         const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update (e.g. "update just the Design Direction section") and I'll patch it directly.`
-        appendMessage(threadTs, { role: "assistant", content: warn })
+        appendMessage(featureName, { role: "assistant", content: warn })
         await update(`${prefix}${warn}`)
         return
       }
       // Retry produced a PATCH — fall through to the hasDesignPatch handler below.
     } else {
       const warn = `The spec was too long to save in one response — the draft was cut off. Please try breaking it into two saves: first the Design Direction and Screens, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-      appendMessage(threadTs, { role: "assistant", content: warn })
+      appendMessage(featureName, { role: "assistant", content: warn })
       await update(`${prefix}${warn}`)
       return
     }
@@ -734,7 +751,7 @@ async function runDesignAgent(params: {
   // Detect truncated patch block — same failure mode as above but for PATCH blocks.
   if (response.includes("DESIGN_PATCH_START") && !response.includes("DESIGN_PATCH_END")) {
     const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
-    appendMessage(threadTs, { role: "assistant", content: warn })
+    appendMessage(featureName, { role: "assistant", content: warn })
     await update(`${prefix}${warn}`)
     return
   }
@@ -760,7 +777,7 @@ async function runDesignAgent(params: {
     if (audit.status === "conflict") {
       const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
       const conflictQuestion = `Resolve this before we continue. Do you want to adjust the design, or update the product vision/architecture?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\n${audit.message}\n\n${conflictQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\n${audit.message}\n\n${conflictQuestion}` })
       await update(`${prefix}${cleanResponse}\n\n:no_entry: *Conflict detected:*\n\n${audit.message}\n\n${conflictQuestion}`)
       return
     }
@@ -768,7 +785,7 @@ async function runDesignAgent(params: {
     if (audit.status === "gap") {
       const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
       const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
       await update(`${prefix}${cleanResponse}\n\n:thinking_face: *Gap detected:*\n\n${audit.message}\n\n${gapQuestion}`)
       await saveDraftDesignSpec({ featureName, filePath: designDraftPath, content: mergedDraft })
       return
@@ -819,7 +836,7 @@ async function runDesignAgent(params: {
     const truncatedClean = cleanResponse.length > maxCleanLength
       ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full patch details saved to GitHub — spec is updated.]_"
       : cleanResponse
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${truncatedClean}${suffix}`)
     return
   }
@@ -838,7 +855,7 @@ async function runDesignAgent(params: {
     if (audit.status === "conflict") {
       const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
       const conflictQuestion = `Resolve this before we continue. Do you want to adjust the design, or update the product vision/architecture?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
       await update(
         `${prefix}${cleanResponse}\n\n` +
         `:warning: *Conflict detected — draft not saved.*\n\n${audit.message}\n\n` +
@@ -850,7 +867,7 @@ async function runDesignAgent(params: {
     if (audit.status === "gap") {
       const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
       const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension (note it in the spec and move on)?`
-      appendMessage(threadTs, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
+      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
       await update(
         `${prefix}${cleanResponse}\n\n` +
         `:thinking_face: *Gap detected — draft saved, but a decision is needed.*\n\n${audit.message}\n\n` +
@@ -908,7 +925,7 @@ async function runDesignAgent(params: {
     const truncatedClean = cleanResponse.length > maxCleanLength
       ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full spec details saved to GitHub — draft is complete.]_"
       : cleanResponse
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${truncatedClean}${suffix}`)
     return
   }
@@ -917,7 +934,7 @@ async function runDesignAgent(params: {
     const specContent = extractDesignSpecContent(response)
     const blockingQuestions = extractBlockingQuestions(specContent)
     if (blockingQuestions.length > 0) {
-      appendMessage(threadTs, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
+      appendMessage(featureName, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
@@ -925,7 +942,7 @@ async function runDesignAgent(params: {
     await update("_Checking spec against locked decisions..._")
     let finalSpecContent = specContent
     let correctionNote = ""
-    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(threadTs) })
+    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(featureName) })
     if (decisionAudit.status === "corrections") {
       const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
       if (applied.length > 0) {
@@ -934,9 +951,9 @@ async function runDesignAgent(params: {
       }
     }
     // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(threadTs, { specType: "design", specContent: finalSpecContent, filePath, featureName })
+    setPendingApproval(featureName, { specType: "design", specContent: finalSpecContent, filePath, featureName })
     const confirmMsg = `Looks like you're approving the design spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to engineering, or let me know if there's anything left to review.${correctionNote}`
-    appendMessage(threadTs, { role: "assistant", content: confirmMsg })
+    appendMessage(featureName, { role: "assistant", content: confirmMsg })
     await update(`${prefix}${confirmMsg}`)
     return
   }
@@ -944,15 +961,15 @@ async function runDesignAgent(params: {
   // Check for PM escalation offer — strip marker, store pending state, display clean response
   if (hasEscalationOffer(response)) {
     const question = extractEscalationQuestion(response)
-    setPendingEscalation(threadTs, { targetAgent: "pm", question, designContext: context.currentDraft ?? "" })
+    setPendingEscalation(featureName, { targetAgent: "pm", question, designContext: context.currentDraft ?? "" })
     const cleanResponse = stripEscalationMarker(response)
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
     return
   }
 
   const finalResponse = response.replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-  appendMessage(threadTs, { role: "assistant", content: finalResponse })
+  appendMessage(featureName, { role: "assistant", content: finalResponse })
   await update(`${prefix}${finalResponse}`)
 }
 
@@ -971,10 +988,10 @@ async function runArchitectAgent(params: {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly } = params
 
   // Pending spec approval — check before fast paths
-  const pendingEngineeringApproval = getPendingApproval(threadTs)
+  const pendingEngineeringApproval = getPendingApproval(featureName)
   if (pendingEngineeringApproval && pendingEngineeringApproval.specType === "engineering") {
     if (isAffirmative(userMessage)) {
-      clearPendingApproval(threadTs)
+      clearPendingApproval(featureName)
       await update("_Saving the final engineering spec..._")
       await saveApprovedEngineeringSpec({ featureName, filePath: pendingEngineeringApproval.filePath, content: pendingEngineeringApproval.specContent })
       const approvalMessage =
@@ -982,12 +999,12 @@ async function runArchitectAgent(params: {
         `*What happens next:*\n` +
         `The engineer agents will use this spec to implement the feature — data model, APIs, and UI components.\n\n` +
         `To confirm the approved state or check where any feature stands, go to *#${loadWorkspaceConfig().mainChannel}* and ask.`
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: approvalMessage })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: approvalMessage })
       await update(approvalMessage)
       return
     } else {
-      clearPendingApproval(threadTs)
+      clearPendingApproval(featureName)
       // Not confirming — fall through to normal agent flow
     }
   }
@@ -999,8 +1016,8 @@ async function runArchitectAgent(params: {
     if (offTopic) {
       const mainChannel = loadWorkspaceConfig().mainChannel
       const msg = `For status and progress updates, ask in *#${mainChannel}* — the concierge has the full picture across all features.\n\nI'm the Architect — I'm here when you're ready to work on data models, APIs, or engineering decisions for this feature.`
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: msg })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)
       return
     }
@@ -1053,27 +1070,27 @@ async function runArchitectAgent(params: {
         lines.push(`No engineering draft yet for *${featureName}*. What would you like to spec out first?`)
       }
       const msg = lines.join("\n")
-      appendMessage(threadTs, { role: "user", content: userMessage })
-      appendMessage(threadTs, { role: "assistant", content: msg })
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)
       return
     }
   }
 
   await update("_Architect is reading the spec chain..._")
-  const historyArch = getHistory(threadTs)
+  const historyArch = getHistory(featureName)
   const ARCH_HISTORY_LIMIT = 40
   const [context, lockedDecisionsArch, priorContextArch] = await Promise.all([
     loadArchitectAgentContext(featureName),
     extractLockedDecisions(historyArch).catch(() => ""),
-    getPriorContext(threadTs, historyArch, ARCH_HISTORY_LIMIT),
+    getPriorContext(featureName, historyArch, ARCH_HISTORY_LIMIT),
   ])
   const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch })
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
   let response = await runAgent({ systemPrompt, history: historyArch, userMessage: enrichedUserMessageArch, userImages, historyLimit: ARCH_HISTORY_LIMIT })
-  appendMessage(threadTs, { role: "user", content: userMessage })
+  appendMessage(featureName, { role: "user", content: userMessage })
 
   const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
@@ -1083,7 +1100,7 @@ async function runArchitectAgent(params: {
       .replace(/DRAFT_ENGINEERING_SPEC_START[\s\S]*?DRAFT_ENGINEERING_SPEC_END/g, "")
       .replace(/INTENT: CREATE_ENGINEERING_SPEC/g, "")
       .trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}`)
     return
   }
@@ -1097,14 +1114,14 @@ async function runArchitectAgent(params: {
       response = await runAgent({ systemPrompt, history: historyArch, userMessage: retryInstruction, historyLimit: ARCH_HISTORY_LIMIT })
       if (!hasArchitectPatch(response)) {
         const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
-        appendMessage(threadTs, { role: "assistant", content: warn })
+        appendMessage(featureName, { role: "assistant", content: warn })
         await update(`${prefix}${warn}`)
         return
       }
       // Fall through to hasArchitectPatch handler below.
     } else {
       const warn = `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Data Model and API sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-      appendMessage(threadTs, { role: "assistant", content: warn })
+      appendMessage(featureName, { role: "assistant", content: warn })
       await update(`${prefix}${warn}`)
       return
     }
@@ -1113,7 +1130,7 @@ async function runArchitectAgent(params: {
   // Detect truncated patch block for architect.
   if (response.includes("ENGINEERING_PATCH_START") && !response.includes("ENGINEERING_PATCH_END")) {
     const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
-    appendMessage(threadTs, { role: "assistant", content: warn })
+    appendMessage(featureName, { role: "assistant", content: warn })
     await update(`${prefix}${warn}`)
     return
   }
@@ -1127,7 +1144,7 @@ async function runArchitectAgent(params: {
     await update("_Saving updated engineering spec to GitHub..._")
     await saveDraftEngineeringSpec({ featureName, filePath, content: mergedDraft })
     const cleanResponse = response.replace(/ENGINEERING_PATCH_START[\s\S]*?ENGINEERING_PATCH_END/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}\n\n_Engineering spec updated and saved to \`${filePath}\`._`)
     return
   }
@@ -1137,7 +1154,7 @@ async function runArchitectAgent(params: {
     await update("_Saving draft engineering spec to GitHub..._")
     await saveDraftEngineeringSpec({ featureName, filePath, content: draftContent })
     const cleanResponse = response.replace(/DRAFT_ENGINEERING_SPEC_START[\s\S]*?DRAFT_ENGINEERING_SPEC_END/g, "").trim()
-    appendMessage(threadTs, { role: "assistant", content: cleanResponse })
+    appendMessage(featureName, { role: "assistant", content: cleanResponse })
     await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
     return
   }
@@ -1146,7 +1163,7 @@ async function runArchitectAgent(params: {
     const specContent = extractEngineeringSpecContent(response)
     const blockingQuestions = extractBlockingQuestions(specContent)
     if (blockingQuestions.length > 0) {
-      appendMessage(threadTs, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
+      appendMessage(featureName, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
       await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
       return
     }
@@ -1154,7 +1171,7 @@ async function runArchitectAgent(params: {
     await update("_Checking spec against locked decisions..._")
     let finalSpecContent = specContent
     let correctionNote = ""
-    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(threadTs) })
+    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(featureName) })
     if (decisionAudit.status === "corrections") {
       const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
       if (applied.length > 0) {
@@ -1163,13 +1180,13 @@ async function runArchitectAgent(params: {
       }
     }
     // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(threadTs, { specType: "engineering", specContent: finalSpecContent, filePath, featureName })
+    setPendingApproval(featureName, { specType: "engineering", specContent: finalSpecContent, filePath, featureName })
     const confirmMsg = `Looks like you're approving the engineering spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to the engineering agents, or let me know if there's anything left to review.${correctionNote}`
-    appendMessage(threadTs, { role: "assistant", content: confirmMsg })
+    appendMessage(featureName, { role: "assistant", content: confirmMsg })
     await update(`${prefix}${confirmMsg}`)
     return
   }
 
-  appendMessage(threadTs, { role: "assistant", content: response })
+  appendMessage(featureName, { role: "assistant", content: response })
   await update(`${prefix}${response}`)
 }

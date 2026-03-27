@@ -171,6 +171,39 @@ Respond with exactly one: render-only, apply-and-render, or other`,
   return valid.includes(text as (typeof valid)[number]) ? (text as (typeof valid)[number]) : "other"
 }
 
+// Detects whether a user message is confirming or locking in a design decision that was
+// previously proposed or discussed by the agent.
+// Returns:
+//   "confirmed" — user is picking an option, locking something, or agreeing with a recommendation
+//   "other"     — question, feedback, status request, greeting, or ambiguous message
+export async function detectConfirmationOfDecision(message: string): Promise<"confirmed" | "other"> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 20,
+    system: `Classify whether this message is confirming or locking in a design decision that was previously proposed or discussed.
+
+Answer "confirmed" if:
+- User picks an option ("2", "option B", "the second one")
+- User explicitly locks something ("lock all 3", "go with that", "yes to all")
+- User agrees with a recommendation ("agree with all 6", "yes please", "that works")
+- User confirms a direction change ("yes that's what I want")
+
+Answer "other" if:
+- User is asking a question
+- User is describing a problem or giving feedback ("the glow is invisible")
+- User is requesting something new ("give me a render", "rebuild the spec")
+- User is greeting or checking status ("hi", "current state?", "are you there")
+- User is approving the spec for final save ("approved", "confirmed") — this is handled by the spec approval flow
+- The message is ambiguous or not clearly a confirmation of a design decision
+
+Respond with exactly one word: confirmed or other`,
+    messages: [{ role: "user", content: message }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "other"
+  return text === "confirmed" ? "confirmed" : "other"
+}
+
 export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean

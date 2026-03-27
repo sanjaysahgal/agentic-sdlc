@@ -52,6 +52,10 @@ Reads the approved product spec fully before asking a single question. Works wit
 - **apply-and-render** ("rebuild with recommendations and render"): the platform injects a mandatory PLATFORM OVERRIDE that forces a PATCH block output. The agent cannot ask permission or offer alternatives. HTML renders automatically on every patch save.
 This replaces the previous prompt-rule-only approach, which was probabilistic. Render behavior is now platform-enforced.
 
+**Platform-enforced confirmation commits (Trust Step 0.5b):** When a user confirms a design decision (picks an option, locks something, agrees with a recommendation), the platform detects the confirmation via Haiku classification before the agent runs. If confirmed, a PLATFORM OVERRIDE is injected forcing the agent to output a `DESIGN_PATCH_START` block committing the decision to the spec in that same response. The agent cannot acknowledge verbally without patching. Render intent takes precedence — if the message is classified as a render request, confirmation detection is skipped. This prevents confirmed decisions from living only in conversation history and never reaching the spec.
+
+**Conversation store keyed by featureName, not threadTs.** All messages in `#feature-onboarding` (any Slack thread) share one conversation history keyed by the feature name (`"onboarding"`). A new team member starting a fresh thread in the same channel immediately has access to all prior context — no lost decisions, no cold-start. The `threadTs` is still used for Slack thread routing (replies post in the correct thread), but has no effect on what history the agent loads.
+
 **Brand enforcement is prompt-layer only.** Brand tokens are injected at the top of the design agent's system prompt. The agent is instructed to use them exactly and never ask for Figma files or external URLs when BRAND.md is present. There is no platform-layer stall detection or retry — any design conversation can legitimately have questions, so stall detection cannot be reliably automated at the platform layer.
 
 ---

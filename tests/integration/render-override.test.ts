@@ -46,6 +46,7 @@ import { clearHistory, setConfirmedAgent, appendMessage } from "../../../runtime
 
 const originalEnv = process.env
 const THREAD = "thread-render-override"
+const FEATURE = "onboarding" // featureName derived from channelName "feature-onboarding" — now the store key
 
 function makeClient() {
   return {
@@ -76,7 +77,7 @@ function makeParams(userMessage: string, client = makeClient()) {
 
 function seedHistory(count = 7) {
   for (let i = 0; i < count; i++) {
-    appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    appendMessage(FEATURE, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
   }
 }
 
@@ -109,12 +110,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory(THREAD)
+  clearHistory(FEATURE)
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory(THREAD)
+  clearHistory(FEATURE)
 })
 
 // ─── render-only override content ─────────────────────────────────────────────
@@ -122,7 +123,7 @@ afterEach(() => {
 describe("render-only PLATFORM OVERRIDE content", () => {
   it("system prompt override tells agent to list uncommitted decisions BEFORE outputting the block", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [0] isOffTopicForAgent
@@ -152,7 +153,7 @@ describe("render-only PLATFORM OVERRIDE content", () => {
 
   it("user message also receives the override — belt-and-suspenders", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
@@ -170,18 +171,19 @@ describe("render-only PLATFORM OVERRIDE content", () => {
 
   it("no override injected when detectRenderIntent returns other", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Normal response." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // [2] detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // [3] detectConfirmationOfDecision
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                  // [4] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Normal response." }] })  // [5] runAgent
 
     await handleFeatureChannelMessage(makeParams("should we use a dark background?"))
 
-    const systemPrompt = getSystemPrompt(4)
+    const systemPrompt = getSystemPrompt(5)
     // No override when it's a normal design question
     expect(systemPrompt).not.toContain("PLATFORM OVERRIDE")
   })
@@ -192,7 +194,7 @@ describe("render-only PLATFORM OVERRIDE content", () => {
 describe("PREVIEW_ONLY truncation recovery", () => {
   it("retries when PREVIEW_ONLY_START is present but PREVIEW_ONLY_END is absent", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     const truncatedPreview = "Some preamble.\nPREVIEW_ONLY_START\n# Spec\n## Direction\nDark mode.\n[truncated]"
     const fullPreview = "PREVIEW_ONLY_START\n# Spec\n## Direction\nDark mode.\nPREVIEW_ONLY_END"
@@ -220,7 +222,7 @@ describe("PREVIEW_ONLY truncation recovery", () => {
 
   it("shows graceful fallback message when retry also fails to produce PREVIEW_ONLY_END", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
     const client = makeClient()
 
     mockAnthropicCreate
@@ -243,7 +245,7 @@ describe("PREVIEW_ONLY truncation recovery", () => {
 describe("apply-and-render PLATFORM OVERRIDE content", () => {
   it("system prompt override forces PATCH block output with no permission-asking", async () => {
     seedHistory()
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent(FEATURE, "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })

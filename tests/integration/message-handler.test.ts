@@ -57,12 +57,12 @@ beforeEach(() => {
   // Default: context docs empty
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
@@ -88,7 +88,7 @@ const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
 
 // Helper: set the confirmed agent for the test thread
 async function withConfirmedAgent(agent: string, fn: () => Promise<void>) {
-  setConfirmedAgent("thread-123", agent as any)
+  setConfirmedAgent("onboarding", agent as any)
   await fn()
 }
 
@@ -125,7 +125,7 @@ describe("blocking gate — PM agent", () => {
       await handleFeatureChannelMessage(makeParams())
     })
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
-    const confirmPrompt = getHistory("thread-123").filter(m => m.role === "assistant").at(-1)
+    const confirmPrompt = getHistory("onboarding").filter(m => m.role === "assistant").at(-1)
     expect(confirmPrompt?.content).toContain("Looks like you're approving")
 
     // Step 2: user confirms → spec is saved
@@ -147,7 +147,7 @@ describe("blocking gate — PM agent", () => {
       await handleFeatureChannelMessage(makeParams())
     })
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
     expect(lastAssistant?.content).toContain("Approval blocked")
     expect(lastAssistant?.content).toContain("Who is the primary user")
@@ -182,7 +182,7 @@ describe("blocking gate — design agent", () => {
       await handleFeatureChannelMessage(makeParams())
     })
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
-    const confirmPrompt = getHistory("thread-123").filter(m => m.role === "assistant").at(-1)
+    const confirmPrompt = getHistory("onboarding").filter(m => m.role === "assistant").at(-1)
     expect(confirmPrompt?.content).toContain("Looks like you're approving")
 
     // Step 2: user confirms → spec is saved
@@ -240,7 +240,7 @@ describe("gap detection", () => {
 
     // The gap question must be in history so the agent knows what a short reply
     // like "Deliberate extension" refers to on the next turn
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     const assistantMessages = history.filter(m => m.role === "assistant")
     expect(assistantMessages.length).toBeGreaterThan(0)
     const allAssistantContent = assistantMessages.map(m => m.content).join("\n")

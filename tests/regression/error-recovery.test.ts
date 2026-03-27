@@ -65,12 +65,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("thread-123")
+  clearHistory("onboarding")
 })
 
 const makeParams = (userMessage = "approved") => ({
@@ -140,12 +140,12 @@ describe("bug #8 — blocking gate: spec with [blocking: yes] questions is never
         }],
       })
 
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
     await handleFeatureChannelMessage(makeParams())
 
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
     expect(lastAssistant?.content).toContain("Approval blocked")
     expect(lastAssistant?.content).toContain("Who is the primary user")
@@ -163,7 +163,7 @@ describe("bug #8 — blocking gate: spec with [blocking: yes] questions is never
       }],
     })
 
-    setConfirmedAgent("thread-123", "ux-design" as any)
+    setConfirmedAgent("onboarding", "ux-design" as any)
     await handleFeatureChannelMessage(makeParams())
 
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
@@ -192,10 +192,10 @@ describe("bug #9 — gap detection: gap question is stored in history", () => {
   it("gap message appears in conversation history so agent can interpret next reply", async () => {
     setupGapScenario()
 
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
     await handleFeatureChannelMessage(makeParams("let's keep going"))
 
-    const history = getHistory("thread-123")
+    const history = getHistory("onboarding")
     const assistantMessages = history.filter(m => m.role === "assistant")
     expect(assistantMessages.length).toBeGreaterThan(0)
 
@@ -207,7 +207,7 @@ describe("bug #9 — gap detection: gap question is stored in history", () => {
   it("draft is saved even when a gap is detected", async () => {
     setupGapScenario()
 
-    setConfirmedAgent("thread-123", "pm" as any)
+    setConfirmedAgent("onboarding", "pm" as any)
     await handleFeatureChannelMessage(makeParams("let's keep going"))
 
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()

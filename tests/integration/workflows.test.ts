@@ -11,6 +11,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 //
 // Strategy: mock only @octokit/rest and @anthropic-ai/sdk (external boundaries).
 // All internal state (conversation-store, workspace-config, agent helpers) runs real.
+//
+// NOTE: conversation store is now keyed by featureName (not threadTs).
+//   channelName "feature-onboarding" → featureName "onboarding"
+//   channelName "feature-dashboard"  → featureName "dashboard"
+// THREAD constants are retained as threadTs values for Slack API calls only.
 
 const mockGetContent    = vi.hoisted(() => vi.fn())
 const mockGetRef        = vi.hoisted(() => vi.fn())
@@ -132,9 +137,9 @@ function thinkingPlaceholder(client: ReturnType<typeof makeClient>): string {
 }
 
 // Seed N messages so extractLockedDecisions fires (threshold = 6)
-function seedHistory(threadTs: string, count = 7) {
+function seedHistory(featureName: string, count = 7) {
   for (let i = 0; i < count; i++) {
-    appendMessage(threadTs, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    appendMessage(featureName, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
   }
 }
 
@@ -175,17 +180,17 @@ afterEach(() => {
 describe("Scenario 1 — PM spec approval → design agent routing", () => {
   const THREAD = "workflow-s1"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("Turn 1: approval confirmation shows approval message and preserves pm as confirmedAgent", async () => {
-    setPendingApproval(THREAD, {
+    setPendingApproval("onboarding", {
       specType: "product",
       specContent: "# Onboarding Product Spec\n\n## Problem\nHelp users onboard.",
       filePath: "specs/features/onboarding/onboarding.product.md",
       featureName: "onboarding",
     })
-    setConfirmedAgent(THREAD, "pm")
+    setConfirmedAgent("onboarding", "pm")
 
     const params = makeParams(THREAD, "feature-onboarding", "confirmed")
     await handleFeatureChannelMessage(params)
@@ -195,7 +200,7 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
     expect(text).toContain("UX designer")
 
     // confirmedAgent stays "pm" — phase check happens on next message, not during approval
-    expect(getConfirmedAgent(THREAD)).toBe("pm")
+    expect(getConfirmedAgent("onboarding")).toBe("pm")
 
     // saveApprovedSpec was called — createOrUpdateFileContents or getContent reached
     expect(mockGetContent).toHaveBeenCalled()
@@ -203,26 +208,28 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
 
   it("Turn 2: next message after approval routes to UX Designer based on GitHub phase", async () => {
     // State after approval: confirmedAgent = "pm", product spec on main
-    setConfirmedAgent(THREAD, "pm")
-    appendMessage(THREAD, { role: "user", content: "confirmed" })
-    appendMessage(THREAD, { role: "assistant", content: "Product spec approved." })
+    setConfirmedAgent("onboarding", "pm")
+    appendMessage("onboarding", { role: "user", content: "confirmed" })
+    appendMessage("onboarding", { role: "assistant", content: "Product spec approved." })
 
     // GitHub: product spec on main, no design spec, no design branch → product-spec-approved-awaiting-design
     mockProductApprovedState()
 
-    // Design agent calls: isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, runAgent
+    // Design agent calls: isOffTopicForAgent, isSpecStateQuery, detectRenderIntent,
+    // detectConfirmationOfDecision, runAgent
     // history.length = 2 → extractLockedDecisions short-circuits (< 6), no Haiku call
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                           // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                           // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                           // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with flows." }] })         // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "let's start the design phase")
     await handleFeatureChannelMessage(params)
 
     // confirmedAgent must switch to ux-design
-    expect(getConfirmedAgent(THREAD)).toBe("ux-design")
+    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
 
     // Response contains UX Designer label (prepended by withThinking)
     const text = lastUpdateText(params.client)
@@ -240,17 +247,17 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
 describe("Scenario 2 — Design spec approval → architect routing", () => {
   const THREAD = "workflow-s2"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("Turn 1: design approval confirmation shows approval message", async () => {
-    setPendingApproval(THREAD, {
+    setPendingApproval("onboarding", {
       specType: "design",
       specContent: "# Onboarding Design Spec\n\n## Screens\nScreen 1.",
       filePath: "specs/features/onboarding/onboarding.design.md",
       featureName: "onboarding",
     })
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     const params = makeParams(THREAD, "feature-onboarding", "confirmed")
     await handleFeatureChannelMessage(params)
@@ -258,13 +265,13 @@ describe("Scenario 2 — Design spec approval → architect routing", () => {
     const text = lastUpdateText(params.client)
     expect(text).toContain("design spec is saved and approved")
     expect(text).toContain("architect")
-    expect(getConfirmedAgent(THREAD)).toBe("ux-design")
+    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
   })
 
   it("Turn 2: next message after design approval routes to Architect", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
-    appendMessage(THREAD, { role: "user", content: "confirmed" })
-    appendMessage(THREAD, { role: "assistant", content: "Design spec approved." })
+    setConfirmedAgent("onboarding", "ux-design")
+    appendMessage("onboarding", { role: "user", content: "confirmed" })
+    appendMessage("onboarding", { role: "assistant", content: "Design spec approved." })
 
     // GitHub: product + design specs on main → design-approved-awaiting-engineering
     mockDesignApprovedState()
@@ -278,7 +285,7 @@ describe("Scenario 2 — Design spec approval → architect routing", () => {
     const params = makeParams(THREAD, "feature-onboarding", "let's plan the engineering")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent(THREAD)).toBe("architect")
+    expect(getConfirmedAgent("onboarding")).toBe("architect")
     expect(thinkingPlaceholder(params.client)).toBe("_Architect is thinking..._")
 
     const text = lastUpdateText(params.client)
@@ -295,8 +302,8 @@ describe("Scenario 2 — Design spec approval → architect routing", () => {
 describe("Scenario 3 — Phase-aware routing on new thread", () => {
   const THREAD = "workflow-s3"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("new thread in design-in-progress feature routes straight to UX Designer", async () => {
     // No confirmedAgent — fresh thread
@@ -306,12 +313,13 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })              // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })              // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here are the flows." }] }) // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "what are we designing?")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent(THREAD)).toBe("ux-design")
+    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
     expect(lastUpdateText(params.client)).toContain("Here are the flows.")
   })
@@ -327,7 +335,7 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     const params = makeParams(THREAD, "feature-onboarding", "let's start the arch")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent(THREAD)).toBe("architect")
+    expect(getConfirmedAgent("onboarding")).toBe("architect")
     expect(thinkingPlaceholder(params.client)).toBe("_Architect is thinking..._")
   })
 
@@ -343,7 +351,7 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     const params = makeParams(THREAD, "feature-onboarding", "I want to build onboarding")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent(THREAD)).toBe("pm")
+    expect(getConfirmedAgent("onboarding")).toBe("pm")
     // New-thread PM routing: the label is "_Thinking..._" because the agent isn't
     // known until classifyIntent completes. The PM label appears in the final update.
     expect(thinkingPlaceholder(params.client)).toBe("_Thinking..._")
@@ -360,16 +368,17 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
 describe("Scenario 4 — PM escalation round-trip from design agent", () => {
   const THREAD = "workflow-s4"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("Turn 1: design agent response with escalation offer stores pending escalation", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: [
         "This is a product decision — want me to pull the PM in?",
         "",
@@ -388,13 +397,13 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
   })
 
   it("Turn 2: user says yes → PM is @mentioned in thread, design paused", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
-    appendMessage(THREAD, { role: "user", content: "should we support social login?" })
-    appendMessage(THREAD, { role: "assistant", content: "This is a product decision — want me to pull the PM in?" })
+    setConfirmedAgent("onboarding", "ux-design")
+    appendMessage("onboarding", { role: "user", content: "should we support social login?" })
+    appendMessage("onboarding", { role: "assistant", content: "This is a product decision — want me to pull the PM in?" })
 
     // Set up the pending escalation as if Turn 1 already ran
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation(THREAD, {
+    setPendingEscalation("onboarding", {
       targetAgent: "pm",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
@@ -418,25 +427,26 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
 // ─── Scenario 5: Thread isolation — concurrent features ──────────────────────
 //
-// Two features in flight simultaneously. Messages in each thread route to the
-// agent confirmed for THAT thread. State does not leak between threads.
+// Two features in flight simultaneously. Messages in each feature channel route to the
+// agent confirmed for THAT feature. State does not leak between features.
+// Now keyed by featureName: "feature-onboarding" → "onboarding", "feature-dashboard" → "dashboard"
 
 describe("Scenario 5 — Thread isolation across concurrent features", () => {
   const THREAD_A = "workflow-s5-onboarding"
   const THREAD_B = "workflow-s5-dashboard"
 
   beforeEach(() => {
-    clearHistory(THREAD_A)
-    clearHistory(THREAD_B)
+    clearHistory("onboarding")
+    clearHistory("dashboard")
   })
   afterEach(() => {
-    clearHistory(THREAD_A)
-    clearHistory(THREAD_B)
+    clearHistory("onboarding")
+    clearHistory("dashboard")
   })
 
   it("PM message in Thread A does not affect UX Designer routing in Thread B", async () => {
-    setConfirmedAgent(THREAD_A, "pm")
-    setConfirmedAgent(THREAD_B, "ux-design")
+    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent("dashboard", "ux-design")
 
     // Thread A: PM agent call
     // confirmedAgent = "pm" → getFeaturePhase check → still product-in-progress → run PM
@@ -450,10 +460,10 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
     await handleFeatureChannelMessage(paramsA)
 
     expect(thinkingPlaceholder(paramsA.client)).toBe("_Product Manager is thinking..._")
-    expect(getConfirmedAgent(THREAD_A)).toBe("pm")
+    expect(getConfirmedAgent("onboarding")).toBe("pm")
 
     // Thread B: design agent — confirmedAgent should still be ux-design (not contaminated by A)
-    expect(getConfirmedAgent(THREAD_B)).toBe("ux-design")
+    expect(getConfirmedAgent("dashboard")).toBe("ux-design")
 
     vi.clearAllMocks()
 
@@ -461,14 +471,15 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })          // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })          // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] }) // design runAgent
 
     const paramsB = makeParams(THREAD_B, "feature-dashboard", "update the flows")
     await handleFeatureChannelMessage(paramsB)
 
     expect(thinkingPlaceholder(paramsB.client)).toBe("_UX Designer is thinking..._")
-    expect(getConfirmedAgent(THREAD_B)).toBe("ux-design")
-    expect(getConfirmedAgent(THREAD_A)).toBe("pm") // Thread A unaffected
+    expect(getConfirmedAgent("dashboard")).toBe("ux-design")
+    expect(getConfirmedAgent("onboarding")).toBe("pm") // Thread A unaffected
   })
 })
 
@@ -480,13 +491,13 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
 describe("Scenario 6 — confirmedAgent sticky routing", () => {
   const THREAD = "workflow-s6"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("second message in PM thread skips classifyIntent and goes straight to PM", async () => {
-    setConfirmedAgent(THREAD, "pm")
-    appendMessage(THREAD, { role: "user", content: "first message" })
-    appendMessage(THREAD, { role: "assistant", content: "PM response." })
+    setConfirmedAgent("onboarding", "pm")
+    appendMessage("onboarding", { role: "user", content: "first message" })
+    appendMessage("onboarding", { role: "assistant", content: "PM response." })
 
     // Phase is still product-spec-in-progress (no branches)
     mockPaginate.mockResolvedValueOnce([])
@@ -504,21 +515,22 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
   })
 
   it("confirmed design agent thread skips classifyIntent — goes straight to UX Designer", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
-    appendMessage(THREAD, { role: "user", content: "first design message" })
-    appendMessage(THREAD, { role: "assistant", content: "Design response." })
+    setConfirmedAgent("onboarding", "ux-design")
+    appendMessage("onboarding", { role: "user", content: "first design message" })
+    appendMessage("onboarding", { role: "assistant", content: "Design response." })
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] })  // design runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "another design question")
     await handleFeatureChannelMessage(params)
 
-    // 4 calls: isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, runAgent — no classifyIntent
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // 5 calls: isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, detectConfirmationOfDecision, runAgent
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
   })
 })
@@ -533,30 +545,31 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
 describe("Scenario 7 — Design agent caps history at 20 messages", () => {
   const THREAD = "workflow-s7"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("sends at most 21 messages to Anthropic (20 history + current) even when store has 40+", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     // Seed 40 alternating messages in the conversation store
     for (let i = 0; i < 40; i++) {
-      appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })           // detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // extractLockedDecisions (Haiku, fires at >6 msgs)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "- Glow timing pending" }] }) // summarizeUnlockedDiscussion (Haiku, fires when history > 20)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // design runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })           // [2] detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })           // [3] detectConfirmationOfDecision
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // [4] extractLockedDecisions (Haiku, fires at >6 msgs)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "- Glow timing pending" }] }) // [5] summarizeUnlockedDiscussion (Haiku, fires when history > 20)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // [6] design runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "latest message")
     await handleFeatureChannelMessage(params)
 
-    // The 6th Anthropic call is the runAgent call — inspect its messages array
-    const runAgentCall = mockAnthropicCreate.mock.calls[5][0]
+    // The 7th Anthropic call (index 6) is the runAgent call — inspect its messages array
+    const runAgentCall = mockAnthropicCreate.mock.calls[6][0]
     expect(runAgentCall.messages.length).toBeLessThanOrEqual(21)
 
     // The most recent history message should be present; the oldest (msg 0) should be gone
@@ -575,14 +588,14 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
 describe("Scenario 8 — State query on long thread surfaces uncommitted-context note", () => {
   const THREAD = "workflow-s8"
 
-  beforeEach(() => { clearHistory(THREAD); clearSummaryCache(THREAD) })
-  afterEach(() => { clearHistory(THREAD); clearSummaryCache(THREAD) })
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
 
   it("state response shows specific uncommitted decisions when thread has prior history", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     for (let i = 0; i < 10; i++) {
-      appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
@@ -607,10 +620,10 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
   })
 
   it("state response skips uncommitted section when all decisions are in the spec", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     for (let i = 0; i < 10; i++) {
-      appendMessage(THREAD, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
@@ -625,7 +638,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
   })
 
   it("state response has no uncommitted section when thread is short (fresh start)", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
     // Thread history is empty (length <= 6), so identifyUncommittedDecisions is also skipped.
@@ -651,11 +664,11 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
 describe("Scenario 9 — Design patch flow", () => {
   const THREAD = "workflow-s9"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("patch block is applied to existing draft and merged draft is saved to GitHub", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     const patchResponse = [
       "Updated the accessibility section based on your feedback.",
@@ -666,15 +679,17 @@ describe("Scenario 9 — Design patch flow", () => {
     ].join("\n")
 
     // Anthropic call sequence (short history → no extractLockedDecisions call):
-    //   1. isOffTopicForAgent   → false
-    //   2. isSpecStateQuery     → false
-    //   3. detectRenderIntent   → other
-    //   4. runAgent             → patch response
-    //   5. generateDesignPreview → HTML (productVision + systemArchitecture are empty → auditSpecDraft skips API call)
+    //   [0] isOffTopicForAgent   → false
+    //   [1] isSpecStateQuery     → false
+    //   [2] detectRenderIntent   → other
+    //   [3] detectConfirmationOfDecision → other
+    //   [4] runAgent             → patch response
+    //   [5] generateDesignPreview → HTML (productVision + systemArchitecture are empty → auditSpecDraft skips API call)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })       // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })       // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: patchResponse }] }) // runAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
 
@@ -707,11 +722,11 @@ describe("Scenario 9 — Design patch flow", () => {
 describe("Scenario 10 — PM patch flow", () => {
   const THREAD = "workflow-s10"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("PRODUCT_PATCH block is merged into existing draft and saved to GitHub", async () => {
-    setConfirmedAgent(THREAD, "pm")
+    setConfirmedAgent("onboarding", "pm")
 
     const patchResponse = [
       "Updated the Goals section based on your feedback.",
@@ -753,11 +768,11 @@ describe("Scenario 10 — PM patch flow", () => {
 describe("Scenario 11 — Architect patch flow", () => {
   const THREAD = "workflow-s11"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("ENGINEERING_PATCH block is merged into existing draft and saved to GitHub", async () => {
-    setConfirmedAgent(THREAD, "architect")
+    setConfirmedAgent("onboarding", "architect")
 
     const patchResponse = [
       "Updated the API Design section based on the agreed pagination strategy.",
@@ -798,11 +813,11 @@ describe("Scenario 11 — Architect patch flow", () => {
 describe("Scenario 12 — Auto-retry on truncated DRAFT (design agent)", () => {
   const THREAD = "workflow-s12"
 
-  beforeEach(() => { clearHistory(THREAD) })
-  afterEach(() => { clearHistory(THREAD) })
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
 
   it("retries with forced PATCH when DRAFT block is truncated and existing draft exists", async () => {
-    setConfirmedAgent(THREAD, "ux-design")
+    setConfirmedAgent("onboarding", "ux-design")
 
     // Use a path-aware mock so any getContent call for the design spec path returns
     // the existing draft — regardless of which call number it is in the sequence.
@@ -828,17 +843,19 @@ describe("Scenario 12 — Auto-retry on truncated DRAFT (design agent)", () => {
     ].join("\n")
 
     // Anthropic call sequence:
-    //   1. isOffTopicForAgent  → false
-    //   2. isSpecStateQuery    → false
-    //   3. detectRenderIntent  → other
-    //   4. runAgent (main)     → truncated DRAFT (no DRAFT_DESIGN_SPEC_END)
-    //   5. runAgent (retry)    → PATCH block (auto-retry transparently)
-    //   6. generateDesignPreview → HTML
+    //   [0] isOffTopicForAgent  → false
+    //   [1] isSpecStateQuery    → false
+    //   [2] detectRenderIntent  → other
+    //   [3] detectConfirmationOfDecision → other
+    //   [4] runAgent (main)     → truncated DRAFT (no DRAFT_DESIGN_SPEC_END)
+    //   [5] runAgent (retry)    → PATCH block (auto-retry transparently)
+    //   [6] generateDesignPreview → HTML
     //   (auditSpecDraft skipped — empty productVision/systemArchitecture)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })            // detectRenderIntent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })            // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedResponse }] })  // runAgent (truncated)
       .mockResolvedValueOnce({ content: [{ type: "text", text: patchRetryResponse }] }) // runAgent (retry)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
