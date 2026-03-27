@@ -9,6 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
+import { auditBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
@@ -571,6 +572,11 @@ async function runDesignAgent(params: {
           }
         }
       }
+      // Brand token drift audit — pure string diff, no API call.
+      // Runs on every state query so the human always sees drift without having to ask.
+      const brandContent = paths.brand ? await readFile(paths.brand, "main").catch(() => null) : null
+      const brandDrifts = brandContent && draftContent ? auditBrandTokens(draftContent, brandContent) : []
+
       const threadHistory = getHistory(featureName)
       let uncommittedNote = ""
       if (threadHistory.length > 6) {
@@ -582,7 +588,7 @@ async function runDesignAgent(params: {
           uncommittedNote = `*Decisions from our conversation not yet committed to GitHub — my recommendations:*\n${uncommitted}\n\n_Reply with the numbers you want to lock in (e.g. "1 and 3") and I'll update the spec._`
         }
       }
-      const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote })
+      const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)
@@ -625,7 +631,15 @@ async function runDesignAgent(params: {
     extractLockedDecisions(historyDesign).catch(() => ""),
     getPriorContext(featureName, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
-  const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign })
+
+  // Brand token drift audit — pure string diff, always runs, never requires the human to ask.
+  // The specialist surfaces constraint violations proactively. This is non-negotiable platform behavior.
+  const brandDriftsDesign = context.brand ? auditBrandTokens(context.currentDraft, context.brand) : []
+  const brandDriftNotice = brandDriftsDesign.length > 0
+    ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${brandDriftsDesign.length} spec Brand section value${brandDriftsDesign.length === 1 ? "" : "s"} don't match BRAND.md: ${brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`).join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
+    : ""
+
+  const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice
   const previewOnlyOverride = `First, briefly list any specific design decisions from this conversation that have NOT yet been saved to GitHub — name them concisely (e.g. "Dark mode (#0A0A0F)", "Glow 10→15→10% at 2.5s"). If everything is already in the spec, say so in one line. Then output a PREVIEW_ONLY_START block containing the full current design spec with those uncommitted decisions incorporated and marked [pending approval] inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform renders automatically.`
   const applyAndRenderOverride = `Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
   const commitDecisionOverride = `The human just confirmed a design decision. You MUST output a DESIGN_PATCH_START block in this response that commits the confirmed decision(s) to the spec. Steps: (1) State in one sentence what decision was just confirmed. (2) Output a DESIGN_PATCH_START / DESIGN_PATCH_END block with the exact spec section(s) that need updating. Do not ask for permission. Do not offer to patch later. Do not just acknowledge verbally without the block. If multiple decisions were confirmed (e.g. "agree with all 6"), patch all of them in a single block.`

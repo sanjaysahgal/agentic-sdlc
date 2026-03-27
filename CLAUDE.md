@@ -41,6 +41,32 @@ The reason is correctness, not performance: agents hold conversation context tha
 ### 5. Extensibility by default
 Every agent, function, and data structure should be built assuming more agents and more teams are coming. The pattern established for the pm agent is the pattern for all future agents. Build it right the first time.
 
+### 7. Zero human errors of omission — the specialist always surfaces violations proactively
+
+**This is the founding premise of Archon. It is not a feature. It cannot be added later.**
+
+The human cannot be expected to know what to ask. They don't know what they don't know. It is the agent's job — not the human's — to detect and surface every constraint violation, gap, conflict, and drift on every response. No check should be trigger-phrase-dependent. No audit should wait for the human to notice a problem and ask the right question.
+
+**What this means in practice:**
+- If a spec has blocking questions, the agent surfaces them — without being asked
+- If brand tokens have drifted from BRAND.md, the agent flags it — without being asked
+- If a design decision contradicts the product spec, the agent stops — without being asked
+- If committed decisions exist that aren't in the spec, the agent surfaces them — without being asked
+
+**Every agent must implement a proactive audit for its domain:**
+- PM agent → `spec-auditor.ts` runs on every draft save (conflict + gap detection)
+- Design agent → `brand-auditor.ts` runs on every response (brand token drift), spec-auditor on every draft save
+- Architect agent → `spec-auditor.ts` runs on every draft save (conflict + gap detection)
+- Every future agent → must define and wire its equivalent proactive audit before the agent is considered complete
+
+**The test for compliance:** Could a human approve a spec with a known violation without being told? If yes, the audit is missing or mis-wired.
+
+**Violation examples to avoid:**
+- Implementing a check that only fires when the user says a specific phrase ("the preview looks wrong")
+- Adding a constraint check to the system prompt as an instruction ("if you see drift, surface it") — prompt rules are probabilistic, not deterministic
+- Writing an audit that runs on some response paths but not others
+- Deferring a constraint check to "when we have more time"
+
 ---
 
 ## Architecture

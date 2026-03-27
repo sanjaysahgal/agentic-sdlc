@@ -560,6 +560,30 @@ None.
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoDirection, specUrl: SPEC_URL })
     expect(result).not.toContain("Committed decisions")
   })
+
+  it("shows brand token drift section when brandDrifts are provided", () => {
+    const drifts = [
+      { token: "--violet", specValue: "#8B7FE8", brandValue: "#7C6FCD" },
+      { token: "--bg", specValue: "#0A0E27", brandValue: "#0A0A0F" },
+    ]
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drifts })
+    expect(result).toContain("Brand token drift")
+    expect(result).toContain("--violet")
+    expect(result).toContain("#8B7FE8")
+    expect(result).toContain("#7C6FCD")
+    expect(result).toContain("fix brand tokens")
+  })
+
+  it("shows no brand drift section when brandDrifts is empty", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: [] })
+    expect(result).not.toContain("Brand token drift")
+    expect(result).not.toContain("fix brand tokens")
+  })
+
+  it("shows no brand drift section when brandDrifts is omitted", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).not.toContain("Brand token drift")
+  })
 })
 
 describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {

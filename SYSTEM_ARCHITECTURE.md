@@ -161,6 +161,21 @@ The design agent's render behavior is enforced at the platform layer (`message.t
 
 **Why this matters:** Any behavior critical to user trust (no refusing a render, no asking permission on a known action) must be enforced by the platform, not by asking the LLM to follow a rule. This replaces the previous prompt-rule-only approach.
 
+### Proactive constraint audit pattern
+
+Every agent in the platform runs a deterministic audit for its domain-specific constraints on every response. This is not prompt-based — it is platform-enforced, pure code, no API call.
+
+The principle: **the specialist surfaces all violations proactively**. The human cannot be expected to know what constraint to check or what question to ask. If a violation must be reported, it must be reported on every response, unconditionally.
+
+| Audit | File | What it checks | Model |
+|---|---|---|---|
+| Spec conflict + gap | `runtime/spec-auditor.ts` | Vision conflicts, architecture gaps | Haiku (runs post-draft-save) |
+| Brand token drift | `runtime/brand-auditor.ts` | Spec Brand section vs BRAND.md hex values | None (pure string diff) |
+
+`brand-auditor.ts` is a pure string diff — zero API cost, zero latency. It runs on every design agent response: state query path (in `buildDesignStateResponse`) and full agent run path (injected as PLATFORM NOTICE into the enriched user message). If brand tokens have drifted, the human always sees it — in the state summary and in every agent response — without ever having to ask.
+
+Every new agent added to the platform must wire its equivalent audit before the agent is considered complete.
+
 ### Known efficiency gaps (from DECISIONS.md)
 
 | Gap | Current | Target |

@@ -1,5 +1,6 @@
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
+import { BrandDrift } from "../runtime/brand-auditor"
 
 // Builds the UX Design agent system prompt from the loaded context.
 // The design agent's job: shape the approved product spec into a structured
@@ -415,8 +416,9 @@ export function buildDesignStateResponse(params: {
   draftContent: string
   specUrl: string
   previewNote?: string | null
+  brandDrifts?: BrandDrift[]
 }): string {
-  const { featureName, draftContent, specUrl, previewNote } = params
+  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [] } = params
 
   if (!draftContent) {
     return `No design draft yet for *${featureName}*. What would you like to design first?`
@@ -458,6 +460,13 @@ export function buildDesignStateResponse(params: {
     keyDecisions.forEach(d => lines.push(d))
   }
   lines.push("")
+
+  if (brandDrifts.length > 0) {
+    lines.push(`:warning: *Brand token drift — spec values don't match BRAND.md:*`)
+    brandDrifts.forEach((d, i) => lines.push(`${i + 1}. ${d.token}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``))
+    lines.push(`Say *fix brand tokens* and I'll patch the spec. This also corrects the HTML preview colors.`)
+    lines.push("")
+  }
 
   if (blocking.length > 0) {
     lines.push(`:warning: *Blocking — must resolve before approval:*`)

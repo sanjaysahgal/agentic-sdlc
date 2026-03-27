@@ -174,6 +174,25 @@ Reads the approved engineering spec and breaks it into discrete, assignable GitH
 
 These behaviours are non-negotiable for every spec-producing agent. They are documented here so they are not reinvented per agent.
 
+### Proactive constraint audit (non-negotiable)
+
+Every agent must surface all known constraint violations on every response — without waiting for the human to ask or notice. The human doesn't know what they don't know. The specialist does.
+
+**Required for every agent:**
+- A domain-specific audit that runs deterministically at the platform layer (not as a prompt instruction)
+- The audit must run on ALL response paths: state query, draft save, approval-ready, full agent run
+- The audit result must appear in the response output — never silently swallowed
+
+**Current implementations:**
+| Agent | Audit | What it checks | When it runs |
+|---|---|---|---|
+| PM agent | `spec-auditor.ts` | Vision conflicts, spec gaps | Every draft save |
+| Design agent | `brand-auditor.ts` | Brand token drift vs BRAND.md | Every response (state query + agent run) |
+| Design agent | `spec-auditor.ts` | Vision conflicts, spec gaps | Every draft save |
+| Architect agent | `spec-auditor.ts` | Architecture conflicts, spec gaps | Every draft save |
+
+**Every new agent added to the platform must define and wire its proactive audit before the agent is considered complete.** A new agent without an audit is not done — it is dangerous. The spec will accumulate violations the human cannot see.
+
 ### Spec link on approval-ready
 When an agent determines the spec is ready for approval, it must share a direct GitHub link to the current draft so the human can read the full spec before committing. The URL is constructed from `WorkspaceConfig` — no hardcoding. Format:
 
