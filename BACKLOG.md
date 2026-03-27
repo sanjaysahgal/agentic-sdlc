@@ -289,7 +289,7 @@ Phase detection latency is invisible to users today because it runs in parallel 
 
 ### Step 2.5b — Remaining API cost optimizations (minor)
 
-Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps.
+Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps. **Do not prioritise until onboarding a second workspace** — the savings only compound at multi-user, multi-feature volume.
 
 **Structured prompt caching (static/dynamic split):**
 - The `cache_control` marker on the system prompt busts the cache on every new feature because `featureName` and live spec context are embedded throughout the prompt
