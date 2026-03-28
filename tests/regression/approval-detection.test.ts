@@ -159,48 +159,37 @@ const makeParams = (userMessage: string) => ({
   userMessage,
 })
 
-describe("bug #6 — premature spec approval: single decision confirmation must not save spec", () => {
-  it("PM agent: 'lets lock option A' after agent proposes a structural option does NOT save the spec", async () => {
-    // Agent fires INTENT: CREATE_SPEC — this used to save immediately.
-    // With two-step flow, it must show a confirmation prompt and NOT call createOrUpdateFileContents.
+describe("bug #6 — premature spec approval: text-only agent responses must never save the spec", () => {
+  it("PM agent: text-only response never calls createOrUpdateFileContents (tools required for saves)", async () => {
+    // In the tool-based system, the PM agent can only save specs by calling
+    // save_product_spec_draft, apply_product_spec_patch, or finalize_product_spec tools.
+    // A text-only response (no tool calls) must never trigger a save.
     mockCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
-        content: [{ type: "text", text: "INTENT: CREATE_SPEC\n## Problem\nHelp users onboard.\n\n## Open Questions\n- [type: engineering] [blocking: no] Which framework?" }],
-      }) // runAgent returns approval intent
+        content: [{ type: "text", text: "I recommend option A for the data model. Here's why..." }],
+      }) // runAgent — text-only, no tool calls
 
     setConfirmedAgent("onboarding", "pm" as any)
     await handleFeatureChannelMessage(makeParams("lets lock option A"))
 
-    // Must NOT have saved
+    // Text-only response → no save of any kind
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
-
-    // Must have shown a confirmation prompt
-    const history = getHistory("onboarding")
-    const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
-    expect(lastAssistant?.content).toContain("Looks like you're approving")
   })
 
-  it("Design agent: approval intent shows confirm prompt; 'confirmed' saves the spec", async () => {
+  it("Design agent: text-only response never saves spec", async () => {
     // Design agent makes 3 Anthropic calls: isOffTopicForAgent, isSpecStateQuery, runAgent.
-    // Use mockResolvedValue (persistent): the INTENT string is not "off-topic" or "yes",
-    // so the first two classifiers return false and runAgent gets the INTENT.
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: "INTENT: CREATE_DESIGN_SPEC\n## Screens\n\n## Open Questions\n- [type: engineering] [blocking: no] Glow: CSS vs canvas?" }],
-    })
+    // A text-only response from runAgent (no tool calls) must not save anything.
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "I recommend dark mode as the default. Want me to lock this in?" }] }) // runAgent — text-only
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
     setConfirmedAgent("onboarding", "ux-design" as any)
 
-    // Step 1: approval intent → confirmation prompt, no save
     await handleFeatureChannelMessage(makeParams("approved"))
+    // Text response — no save triggered
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
-
-    const confirmPrompt = getHistory("onboarding").filter(m => m.role === "assistant").at(-1)
-    expect(confirmPrompt?.content).toContain("Looks like you're approving")
-
-    // Step 2: user confirms → spec is saved
-    await handleFeatureChannelMessage(makeParams("confirmed"))
-    expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
   })
 })

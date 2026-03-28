@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
-// Regression suite for render/preview override behavior.
+// Integration tests for the post-response uncommitted decisions audit.
 //
-// These tests protect the exact content of PLATFORM OVERRIDE text injected
-// into the design agent's system prompt and user message for render-only and
-// apply-and-render intents. A prompt change that changes agent behavior without
-// changing mechanics (routing, block parsing) would previously pass CI silently.
+// After every design agent response, the platform checks whether any save tool
+// was called (save_design_spec_draft, apply_design_spec_patch, finalize_design_spec).
+// If no save tool was called AND history > 6 messages, the platform calls
+// identifyUncommittedDecisions and, if uncommitted decisions exist, appends a
+// note to the response pointing the user to "save those".
 //
-// Call order for design agent render-only path:
+// Design agent call order (no save tool invoked):
 //   [0] isOffTopicForAgent
 //   [1] isSpecStateQuery
-//   [2] detectRenderIntent → "render-only"
-//   [3] extractLockedDecisions (fires when history ≥ 6)
-//   [4] runAgent — receives system prompt with PLATFORM OVERRIDE prepended
+//   [2] extractLockedDecisions (fires when history ≥ 6)
+//   [3] runAgent — text-only response (no tool calls)
+//   [4] identifyUncommittedDecisions (post-response audit, fires when history > 6)
 
 const mockOctokitGetContent = vi.hoisted(() => vi.fn())
 const mockOctokitGetRef = vi.hoisted(() => vi.fn())
@@ -46,7 +47,7 @@ import { clearHistory, setConfirmedAgent, appendMessage } from "../../../runtime
 
 const originalEnv = process.env
 const THREAD = "thread-render-override"
-const FEATURE = "onboarding" // featureName derived from channelName "feature-onboarding" — now the store key
+const FEATURE = "onboarding"
 
 function makeClient() {
   return {
@@ -81,18 +82,9 @@ function seedHistory(count = 7) {
   }
 }
 
-// Gets the system prompt passed to the Sonnet runAgent call.
-// system is an array of {type, text, cache_control} blocks in claude-client.ts.
-function getSystemPrompt(callIndex: number): string {
-  const sys = mockAnthropicCreate.mock.calls[callIndex]?.[0]?.system
-  if (Array.isArray(sys)) return sys.map((s: any) => s.text ?? "").join("")
-  return sys ?? ""
-}
-
-// Gets the last user message content in a Sonnet call
-function getLastUserContent(callIndex: number): string {
-  const msgs = mockAnthropicCreate.mock.calls[callIndex]?.[0]?.messages as Array<{ role: string; content: string }> ?? []
-  return msgs.filter(m => m.role === "user").at(-1)?.content ?? ""
+function lastUpdateText(client: ReturnType<typeof makeClient>): string {
+  const calls = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+  return calls.at(-1)?.[0]?.text ?? ""
 }
 
 beforeEach(() => {
@@ -118,147 +110,77 @@ afterEach(() => {
   clearHistory(FEATURE)
 })
 
-// ─── render-only override content ─────────────────────────────────────────────
+// ─── Post-response uncommitted decisions audit ─────────────────────────────────
 
-describe("render-only PLATFORM OVERRIDE content", () => {
-  it("system prompt override tells agent to list uncommitted decisions BEFORE outputting the block", async () => {
-    seedHistory()
+describe("post-response uncommitted decisions audit", () => {
+  it("appends uncommitted note when no save tool called and history > 6", async () => {
+    seedHistory(7)
     setConfirmedAgent(FEATURE, "ux-design")
 
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions,
+    // [3] runAgent (text-only, no tool calls), [4] identifyUncommittedDecisions
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [0] isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [1] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "render-only" }] })     // [2] detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // [3] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Preview response." }] }) // [4] runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })               // extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "I recommend dark mode as the default." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode default: I recommend dark mode — discussed in thread\n2. Chip positioning: I recommend above prompt bar — agreed" }] }) // identifyUncommittedDecisions
 
-    await handleFeatureChannelMessage(makeParams("give a new render that is true to the updated spec"))
-
-    const systemPrompt = getSystemPrompt(4)
-
-    // Override is present and at the top
-    expect(systemPrompt).toContain("PLATFORM OVERRIDE — MANDATORY")
-
-    // Critical regression guard: agent must list uncommitted decisions FIRST,
-    // before outputting the PREVIEW_ONLY block. If this is missing, the user
-    // sees a render with no context about what's pending vs committed.
-    expect(systemPrompt).toMatch(/list.*uncommitted|uncommitted.*decisions|not yet.*saved/i)
-
-    // Render block must still be required
-    expect(systemPrompt).toContain("PREVIEW_ONLY_START")
-
-    // Agent must not be allowed to refuse or offer choices
-    expect(systemPrompt).toMatch(/do not.*ask permission|do not.*offer choices/i)
-  })
-
-  it("user message also receives the override — belt-and-suspenders", async () => {
-    seedHistory()
-    setConfirmedAgent(FEATURE, "ux-design")
-
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "render-only" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Preview response." }] })
-
-    await handleFeatureChannelMessage(makeParams("show me the preview"))
-
-    const lastUserMsg = getLastUserContent(4)
-    expect(lastUserMsg).toContain("PLATFORM OVERRIDE")
-    expect(lastUserMsg).toContain("PREVIEW_ONLY_START")
-  })
-
-  it("no override injected when detectRenderIntent returns other", async () => {
-    seedHistory()
-    setConfirmedAgent(FEATURE, "ux-design")
-
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // [0] isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // [1] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // [2] detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })             // [3] detectConfirmationOfDecision
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                  // [4] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Normal response." }] })  // [5] runAgent
-
-    await handleFeatureChannelMessage(makeParams("should we use a dark background?"))
-
-    const systemPrompt = getSystemPrompt(5)
-    // No override when it's a normal design question
-    expect(systemPrompt).not.toContain("PLATFORM OVERRIDE")
-  })
-})
-
-// ─── PREVIEW_ONLY truncation recovery ─────────────────────────────────────────
-
-describe("PREVIEW_ONLY truncation recovery", () => {
-  it("retries when PREVIEW_ONLY_START is present but PREVIEW_ONLY_END is absent", async () => {
-    seedHistory()
-    setConfirmedAgent(FEATURE, "ux-design")
-
-    const truncatedPreview = "Some preamble.\nPREVIEW_ONLY_START\n# Spec\n## Direction\nDark mode.\n[truncated]"
-    const fullPreview = "PREVIEW_ONLY_START\n# Spec\n## Direction\nDark mode.\nPREVIEW_ONLY_END"
-
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // [0] isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // [1] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "render-only" }] })  // [2] detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })             // [3] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: truncatedPreview }] }) // [4] runAgent — truncated
-      .mockResolvedValueOnce({ content: [{ type: "text", text: fullPreview }] })    // [5] retry runAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // [6] generateDesignPreview
-
-    await handleFeatureChannelMessage(makeParams("give a new render"))
-
-    // Retry must have been called (7 total Anthropic calls including HTML renderer)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
-
-    // Retry instruction must contain SYSTEM OVERRIDE and PREVIEW_ONLY
-    const retryMsg = mockAnthropicCreate.mock.calls[5]?.[0]?.messages?.at(-1)?.content
-    expect(retryMsg).toContain("SYSTEM OVERRIDE")
-    expect(retryMsg).toContain("PREVIEW_ONLY_START")
-    expect(retryMsg).toContain("PREVIEW_ONLY_END")
-  })
-
-  it("shows graceful fallback message when retry also fails to produce PREVIEW_ONLY_END", async () => {
-    seedHistory()
-    setConfirmedAgent(FEATURE, "ux-design")
     const client = makeClient()
+    await handleFeatureChannelMessage(makeParams("let's keep refining", client))
 
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "render-only" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PREVIEW_ONLY_START\ntruncated again" }] }) // truncated
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PREVIEW_ONLY_START\nstill truncated" }] }) // retry also truncated
-
-    await handleFeatureChannelMessage(makeParams("give a new render", client))
-
-    const lastUpdate = client.chat.update.mock.calls.at(-1)?.[0]?.text ?? ""
-    expect(lastUpdate).toMatch(/too large|specific section|approved/i)
+    const text = lastUpdateText(client)
+    // Post-response audit note must be appended
+    expect(text).toContain("save those")
+    // Original agent response is also present
+    expect(text).toContain("I recommend dark mode")
   })
-})
 
-// ─── apply-and-render override content ────────────────────────────────────────
-
-describe("apply-and-render PLATFORM OVERRIDE content", () => {
-  it("system prompt override forces PATCH block output with no permission-asking", async () => {
-    seedHistory()
+  it("skips uncommitted note when history is short (fresh conversation)", async () => {
+    // No seedHistory — historyDesign.length = 0 ≤ 6 → audit never fires
     setConfirmedAgent(FEATURE, "ux-design")
 
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent (no extractLockedDecisions — short history)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "apply-and-render" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Applied." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with the layout direction." }] }) // runAgent
 
-    await handleFeatureChannelMessage(makeParams("apply the changes we discussed and show me"))
+    const client = makeClient()
+    await handleFeatureChannelMessage(makeParams("what should we design first?", client))
 
-    const systemPrompt = getSystemPrompt(4)
-    expect(systemPrompt).toContain("PLATFORM OVERRIDE — MANDATORY")
-    expect(systemPrompt).toContain("DESIGN_PATCH_START")
-    expect(systemPrompt).toMatch(/do not.*ask permission|do not.*offer/i)
+    const text = lastUpdateText(client)
+    // No post-response note on fresh threads
+    expect(text).not.toContain("save those")
+    // identifyUncommittedDecisions was never called
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+  })
+
+  it("skips uncommitted note when save tool was called", async () => {
+    seedHistory(7)
+    setConfirmedAgent(FEATURE, "ux-design")
+
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions,
+    // [3] runAgent (tool_use: apply_design_spec_patch), [4] generateDesignPreview (in tool handler),
+    // [5] runAgent (end_turn text) — no identifyUncommittedDecisions since didSave = true
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })               // extractLockedDecisions
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Design Direction\nDark mode." } }],
+      })                                                                               // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Saved the dark mode decision to the spec." }] }) // runAgent: end_turn
+
+    const client = makeClient()
+    await handleFeatureChannelMessage(makeParams("lock in dark mode", client))
+
+    const text = lastUpdateText(client)
+    // Save tool was called → no uncommitted note appended
+    expect(text).not.toContain("save those")
+    // Draft was saved to GitHub
+    expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
   })
 })

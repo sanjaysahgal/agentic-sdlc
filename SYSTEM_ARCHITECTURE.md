@@ -149,19 +149,23 @@ Implemented in `runtime/conversation-summarizer.ts`.
 
 `runtime/request-tracker.ts` tracks all in-flight Claude API requests. On `SIGTERM`, the process waits for all in-flight requests to drain before exiting — with a 6-minute maximum (must exceed Anthropic's 5-minute API timeout). This prevents a deployment or restart from cutting off a user mid-response. Any request still in-flight after the deadline is abandoned and the process exits with a warning.
 
-### Platform-enforced render/preview behavior
+### Agent tool-use loop (Step 13)
 
-The design agent's render behavior is enforced at the platform layer (`message.ts`), not by prompt rules. Prompt rules are probabilistic — an agent in a confused state can still refuse to render, ask permission, or offer choices. Platform enforcement is deterministic.
+All spec-producing agents (PM, design, architect) use the Anthropic native tool-use API instead of the former hand-rolled text-block protocol. `runAgent()` in `runtime/claude-client.ts` is a tool-use loop:
 
-**Before the agent runs**, the platform calls `detectRenderIntent(userMessage)` (Haiku) to classify the message:
+1. Call `messages.create` with the agent's declared tool schemas
+2. If `stop_reason === "tool_use"`: execute the platform `toolHandler` for each `tool_use` content block, inject `tool_result` messages, loop
+3. If `stop_reason === "end_turn"`: return the final text response
 
-| Intent | Platform action |
-|---|---|
-| `render-only` ("give a new render", "show me the preview") | Platform injects a mandatory PLATFORM OVERRIDE into the agent's system prompt instructing it to output a `PREVIEW_ONLY_START` block. The agent is always in the loop — the platform only enforces what block it must output; the agent decides the content. The override prevents refusing, diagnosing the renderer, or offering A/B choices. |
-| `apply-and-render` ("rebuild with recommendations and render") | Platform injects a mandatory PLATFORM OVERRIDE into the agent's context that forces a PATCH block output. The HTML preview renders automatically on every patch save. |
-| `other` | Normal agent flow, no injection. |
+Tool results carry structured data (spec URL, audit findings, preview URL) back to the agent. The agent interprets results and either calls another tool or produces a final text response. No regex parsing, no PLATFORM OVERRIDE injection.
 
-**Why this matters:** Any behavior critical to user trust (no refusing a render, no asking permission on a known action) must be enforced by the platform, not by asking the LLM to follow a rule. This replaces the previous prompt-rule-only approach.
+**Removed by this migration:**
+- Text-block output parsers: `DRAFT_SPEC_START/END`, `DESIGN_PATCH_START/END`, `ENGINEERING_PATCH_START/END`, `PREVIEW_ONLY_START/END`, `INTENT: *`
+- Haiku classifiers: `detectRenderIntent`, `detectConfirmationOfDecision`
+- PLATFORM OVERRIDE injection in `message.ts`
+- Truncation retry loops
+
+**Post-response uncommitted decisions audit (design agent only):** After every design agent turn, if no save tool was called in that turn AND conversation history > 6 messages, the platform calls `identifyUncommittedDecisions`. If uncommitted decisions are found, the platform appends a "save those" note to the Slack response. This replaces the PLATFORM OVERRIDE safety net.
 
 ### Proactive constraint audit pattern
 

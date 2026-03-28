@@ -19,14 +19,26 @@ const HISTORY_LIMIT = 40
 
 export type UserImage = { data: string; mediaType: string }
 
+export type ToolHandler = (
+  name: string,
+  input: Record<string, unknown>
+) => Promise<{ result?: unknown; error?: string }>
+
+// Tracks which tools were called during a single runAgent() invocation.
+// Callers can inspect this after the call to detect unsaved decisions.
+export type ToolCallRecord = { name: string; input: Record<string, unknown> }
+
 export async function runAgent(params: {
   systemPrompt: string
   history: Message[]
   userMessage: string
   userImages?: UserImage[]
   historyLimit?: number
+  tools?: Anthropic.Tool[]
+  toolHandler?: ToolHandler
+  toolCallsOut?: ToolCallRecord[]  // Optional output — caller passes [] to collect records
 }): Promise<string> {
-  const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT } = params
+  const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT, tools, toolHandler, toolCallsOut } = params
 
   const userContent: Anthropic.ContentBlockParam[] | string =
     userImages && userImages.length > 0
@@ -68,18 +80,85 @@ export async function runAgent(params: {
     }
   }
 
-  const response = await client.messages.create({
-    model: AGENT_MODEL,
-    max_tokens: 64000, // Sonnet 4.6 ceiling — never an arbitrary limit we manage
-    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
-    messages,
-  })
+  // Tool-use loop. When no tools are provided, this executes exactly once (single API call,
+  // same behaviour as before). When tools are provided, the loop continues until the model
+  // stops with "end_turn" (no more tool calls to make).
+  while (true) {
+    const requestParams: Anthropic.MessageCreateParamsNonStreaming = {
+      model: AGENT_MODEL,
+      max_tokens: 64000,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      messages,
+      ...(tools && tools.length > 0 ? { tools } : {}),
+    }
 
-  if (response.usage) {
-    const { input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens } = response.usage
-    console.log(`[tokens] model=${AGENT_MODEL} in=${input_tokens} out=${output_tokens} cache_hit=${cache_read_input_tokens ?? 0} cache_write=${cache_creation_input_tokens ?? 0} history_msgs=${messages.length - 1}`)
+    const response: Anthropic.Message = await client.messages.create(requestParams)
+
+    if (response.usage) {
+      const { input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens } = response.usage
+      console.log(`[tokens] model=${AGENT_MODEL} in=${input_tokens} out=${output_tokens} cache_hit=${cache_read_input_tokens ?? 0} cache_write=${cache_creation_input_tokens ?? 0} history_msgs=${messages.length - 1}`)
+    }
+
+    // If the model finished with no tool calls, extract and return the final text.
+    if (response.stop_reason === "end_turn" || !tools || tools.length === 0) {
+      const block = response.content.find(b => b.type === "text")
+      return block?.type === "text" ? block.text : ""
+    }
+
+    // stop_reason === "tool_use" — execute all tool calls and feed results back.
+    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
+
+    if (toolUseBlocks.length === 0) {
+      // No tool_use blocks despite stop_reason — treat as end_turn
+      const block = response.content.find(b => b.type === "text")
+      return block?.type === "text" ? block.text : ""
+    }
+
+    // Execute all tool calls (in parallel — tools are independent within a single turn).
+    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+      toolUseBlocks.map(async (toolUse) => {
+        if (toolCallsOut) {
+          toolCallsOut.push({ name: toolUse.name, input: toolUse.input as Record<string, unknown> })
+        }
+
+        if (!toolHandler) {
+          console.error(`[tool] No toolHandler provided but agent called tool: ${toolUse.name}`)
+          return {
+            type: "tool_result" as const,
+            tool_use_id: toolUse.id,
+            is_error: true,
+            content: `Error: No tool handler registered for "${toolUse.name}"`,
+          }
+        }
+
+        try {
+          console.log(`[tool] calling ${toolUse.name}`, JSON.stringify(toolUse.input).slice(0, 120))
+          const outcome = await toolHandler(toolUse.name, toolUse.input as Record<string, unknown>)
+          const content = outcome.error
+            ? `Error: ${outcome.error}`
+            : JSON.stringify(outcome.result ?? {})
+          return {
+            type: "tool_result" as const,
+            tool_use_id: toolUse.id,
+            is_error: outcome.error !== undefined,
+            content,
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`[tool] ${toolUse.name} threw: ${msg}`)
+          return {
+            type: "tool_result" as const,
+            tool_use_id: toolUse.id,
+            is_error: true,
+            content: `Error: ${msg}`,
+          }
+        }
+      })
+    )
+
+    // Append the assistant turn (with its tool_use blocks) + the tool results turn,
+    // then loop for the next API call.
+    messages.push({ role: "assistant", content: response.content })
+    messages.push({ role: "user", content: toolResults })
   }
-
-  const block = response.content[0]
-  return block.type === "text" ? block.text : ""
 }

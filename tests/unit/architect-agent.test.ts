@@ -1,12 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import {
   buildArchitectSystemPrompt,
-  isCreateEngineeringSpecIntent,
-  hasDraftEngineeringSpec,
-  extractDraftEngineeringSpec,
-  extractEngineeringSpecContent,
-  hasArchitectPatch,
-  extractArchitectPatch,
+  ARCHITECT_TOOLS,
 } from "../../agents/architect"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -64,18 +59,22 @@ describe("buildArchitectSystemPrompt", () => {
 
   it("mandates auto-save after every agreed decision", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("Save a draft after EVERY response")
+    expect(prompt).toContain("Save after every agreed decision")
   })
 
-  it("names the DRAFT block markers", () => {
+  it("names the tool for saving the engineering spec draft", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("DRAFT_ENGINEERING_SPEC_START")
-    expect(prompt).toContain("DRAFT_ENGINEERING_SPEC_END")
+    expect(prompt).toContain("save_engineering_spec_draft")
   })
 
-  it("names the approval marker", () => {
+  it("names the tool for applying patches", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("INTENT: CREATE_ENGINEERING_SPEC")
+    expect(prompt).toContain("apply_engineering_spec_patch")
+  })
+
+  it("names the tool for finalizing the spec", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("finalize_engineering_spec")
   })
 
   it("redirects out-of-scope questions to main channel", () => {
@@ -115,10 +114,9 @@ describe("buildArchitectSystemPrompt", () => {
     expect(prompt).toContain("READ-ONLY MODE")
   })
 
-  it("read-only mode prohibits DRAFT and INTENT markers", () => {
+  it("read-only mode prohibits save and finalize tools", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding", true)
-    expect(prompt).toContain("DRAFT_ENGINEERING_SPEC_START")
-    expect(prompt).toContain("INTENT: CREATE_ENGINEERING_SPEC")
+    expect(prompt).toContain("Do not call any save tools or finalize tools")
   })
 
   it("includes a direct link to the engineering spec on GitHub", () => {
@@ -128,117 +126,45 @@ describe("buildArchitectSystemPrompt", () => {
   })
 })
 
-describe("isCreateEngineeringSpecIntent", () => {
-  it("returns true when response contains INTENT: CREATE_ENGINEERING_SPEC", () => {
-    expect(isCreateEngineeringSpecIntent("INTENT: CREATE_ENGINEERING_SPEC\n# Onboarding — Engineering Spec")).toBe(true)
+describe("ARCHITECT_TOOLS structure", () => {
+  it("exports 4 tools", () => {
+    expect(ARCHITECT_TOOLS).toHaveLength(4)
   })
 
-  it("returns false when marker is absent", () => {
-    expect(isCreateEngineeringSpecIntent("Looks good, let's move forward.")).toBe(false)
+  it("includes save_engineering_spec_draft as first tool", () => {
+    expect(ARCHITECT_TOOLS[0].name).toBe("save_engineering_spec_draft")
   })
 
-  it("returns false for product spec marker", () => {
-    expect(isCreateEngineeringSpecIntent("INTENT: CREATE_SPEC")).toBe(false)
+  it("includes apply_engineering_spec_patch as second tool", () => {
+    expect(ARCHITECT_TOOLS[1].name).toBe("apply_engineering_spec_patch")
   })
 
-  it("returns false for design spec marker", () => {
-    expect(isCreateEngineeringSpecIntent("INTENT: CREATE_DESIGN_SPEC")).toBe(false)
-  })
-})
-
-describe("hasDraftEngineeringSpec", () => {
-  it("returns true when both markers present", () => {
-    const response = "Here is the draft:\nDRAFT_ENGINEERING_SPEC_START\ncontent\nDRAFT_ENGINEERING_SPEC_END"
-    expect(hasDraftEngineeringSpec(response)).toBe(true)
+  it("includes read_approved_specs as third tool", () => {
+    expect(ARCHITECT_TOOLS[2].name).toBe("read_approved_specs")
   })
 
-  it("returns false when only start marker present", () => {
-    expect(hasDraftEngineeringSpec("DRAFT_ENGINEERING_SPEC_START\ncontent")).toBe(false)
+  it("includes finalize_engineering_spec as fourth tool", () => {
+    expect(ARCHITECT_TOOLS[3].name).toBe("finalize_engineering_spec")
   })
 
-  it("returns false when neither marker present", () => {
-    expect(hasDraftEngineeringSpec("Just a regular response.")).toBe(false)
+  it("save_engineering_spec_draft requires content parameter", () => {
+    const tool = ARCHITECT_TOOLS.find(t => t.name === "save_engineering_spec_draft")!
+    expect(tool.input_schema.required).toContain("content")
   })
 
-  it("returns false for product spec markers", () => {
-    expect(hasDraftEngineeringSpec("DRAFT_SPEC_START\ncontent\nDRAFT_SPEC_END")).toBe(false)
+  it("apply_engineering_spec_patch requires patch parameter", () => {
+    const tool = ARCHITECT_TOOLS.find(t => t.name === "apply_engineering_spec_patch")!
+    expect(tool.input_schema.required).toContain("patch")
   })
 
-  it("returns false for design spec markers", () => {
-    expect(hasDraftEngineeringSpec("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
-  })
-})
-
-describe("extractDraftEngineeringSpec", () => {
-  it("extracts content between markers", () => {
-    const response = "Some text\nDRAFT_ENGINEERING_SPEC_START\n# Engineering Spec\ncontent here\nDRAFT_ENGINEERING_SPEC_END\nMore text"
-    expect(extractDraftEngineeringSpec(response)).toBe("# Engineering Spec\ncontent here")
+  it("read_approved_specs has no required parameters — featureNames is optional", () => {
+    const tool = ARCHITECT_TOOLS.find(t => t.name === "read_approved_specs")!
+    expect(tool.input_schema.required).toHaveLength(0)
   })
 
-  it("returns empty string when markers not found", () => {
-    expect(extractDraftEngineeringSpec("no markers here")).toBe("")
-  })
-
-  it("trims whitespace from extracted content", () => {
-    const response = "DRAFT_ENGINEERING_SPEC_START\n  content  \nDRAFT_ENGINEERING_SPEC_END"
-    expect(extractDraftEngineeringSpec(response)).toBe("content")
-  })
-})
-
-describe("extractEngineeringSpecContent", () => {
-  it("extracts content from code block", () => {
-    const response = "INTENT: CREATE_ENGINEERING_SPEC\n```\n# Engineering Spec\n## Data Model\n```"
-    expect(extractEngineeringSpecContent(response)).toBe("# Engineering Spec\n## Data Model")
-  })
-
-  it("falls back to stripping marker when no code block", () => {
-    const response = "INTENT: CREATE_ENGINEERING_SPEC\n# Engineering Spec\n## Data Model"
-    expect(extractEngineeringSpecContent(response)).toBe("# Engineering Spec\n## Data Model")
-  })
-})
-
-describe("hasArchitectPatch", () => {
-  it("returns true when both patch markers are present", () => {
-    expect(hasArchitectPatch("ENGINEERING_PATCH_START\n## Data Model\nUpdated.\nENGINEERING_PATCH_END")).toBe(true)
-  })
-
-  it("returns false when only start marker is present", () => {
-    expect(hasArchitectPatch("ENGINEERING_PATCH_START\n## Data Model\nUpdated.")).toBe(false)
-  })
-
-  it("returns false when neither marker is present", () => {
-    expect(hasArchitectPatch("Just a regular architect response.")).toBe(false)
-  })
-
-  it("returns false when DRAFT markers are present but not PATCH markers", () => {
-    expect(hasArchitectPatch("DRAFT_ENGINEERING_SPEC_START\ncontent\nDRAFT_ENGINEERING_SPEC_END")).toBe(false)
-  })
-})
-
-describe("extractArchitectPatch", () => {
-  it("extracts content between patch markers", () => {
-    const response = "Updating API.\nENGINEERING_PATCH_START\n## API Design\nPOST /api/v1/users\nENGINEERING_PATCH_END\nMore text."
-    expect(extractArchitectPatch(response)).toBe("## API Design\nPOST /api/v1/users")
-  })
-
-  it("returns empty string when markers are absent", () => {
-    expect(extractArchitectPatch("No markers here.")).toBe("")
-  })
-
-  it("extracts multi-section patch correctly", () => {
-    const response = [
-      "ENGINEERING_PATCH_START",
-      "## Data Model",
-      "User table updated.",
-      "",
-      "## API Design",
-      "New endpoint added.",
-      "ENGINEERING_PATCH_END",
-    ].join("\n")
-    const extracted = extractArchitectPatch(response)
-    expect(extracted).toContain("## Data Model")
-    expect(extracted).toContain("User table updated.")
-    expect(extracted).toContain("## API Design")
+  it("finalize_engineering_spec requires no parameters", () => {
+    const tool = ARCHITECT_TOOLS.find(t => t.name === "finalize_engineering_spec")!
+    expect(tool.input_schema.required).toHaveLength(0)
   })
 })
 
@@ -256,24 +182,18 @@ describe("buildArchitectSystemPrompt — PATCH enforcement rules", () => {
   }
 
   it("PATCH is absolute — no exceptions phrase is present", () => {
-    const prompt = buildArchitectSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("No exceptions")
-  })
-
-  it("prompt warns that DRAFT blocks are cut off on long specs", () => {
-    const prompt = buildArchitectSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("cut off mid-spec")
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("no exceptions")
   })
 
   it("prohibits confirm-then-ask pattern — agreement is the permission", () => {
-    const prompt = buildArchitectSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("agreement is the permission")
-    expect(prompt).toContain("Output PATCH blocks immediately")
   })
 
   it("enforces batch PATCH limit of 3 sections per response", () => {
-    const prompt = buildArchitectSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("3 most significant sections")
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("3 most significant")
     expect(prompt).toContain("more than 3 sections")
   })
 })

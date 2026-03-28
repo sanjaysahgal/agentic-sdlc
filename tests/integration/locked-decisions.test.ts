@@ -86,7 +86,7 @@ function getLastUserContent(call: any): string {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   process.env = {
     ...originalEnv,
     PRODUCT_NAME: "TestApp",
@@ -153,8 +153,7 @@ describe("locked decisions — PM agent", () => {
 })
 
 // ─── Design agent ─────────────────────────────────────────────────────────────
-// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] detectRenderIntent,
-//             [3] detectConfirmationOfDecision, [4] extractLockedDecisions, [5] runAgent
+// Call order: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions, [3] runAgent
 
 describe("locked decisions — design agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
@@ -164,15 +163,13 @@ describe("locked decisions — design agent", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [1] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                                      // [2] detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })                                      // [3] detectConfirmationOfDecision
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [4] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [5] runAgent (Sonnet)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [2] extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [3] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("rebuild the spec", client))
 
-    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[5])
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[3])
     expect(lastUserContent).toContain("Decisions locked in this conversation")
     expect(lastUserContent).toContain("Dark primary")
     expect(lastUserContent).toContain("Archon Labs aesthetic")
@@ -186,10 +183,8 @@ describe("locked decisions — design agent", () => {
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // [2] detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // [3] detectConfirmationOfDecision
-      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [4] extractLockedDecisions → caught
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [5] runAgent
+      .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [2] extractLockedDecisions → caught
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [3] runAgent
 
     const client = makeClient()
     await expect(handleFeatureChannelMessage(makeParams("rebuild the spec", client))).resolves.toBeUndefined()
@@ -257,8 +252,6 @@ describe("featureName keying — two threads in the same feature channel share h
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectRenderIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "other" }] })   // detectConfirmationOfDecision
       .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark mode default\n• Archon palette\n• Chips above prompt bar" }] }) // extractLockedDecisions (history ≥ 6)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Welcome! Here is what we have decided so far." }] }) // runAgent
 
@@ -279,8 +272,8 @@ describe("featureName keying — two threads in the same feature channel share h
 
     await handleFeatureChannelMessage(params)
 
-    // extractLockedDecisions fired (6th call) — agent received prior decisions
-    const runAgentCall = mockAnthropicCreate.mock.calls[5][0]
+    // extractLockedDecisions fired (4th call) — agent received prior decisions
+    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
     const lastUserMsg = (runAgentCall.messages as Array<{ role: string; content: string }>)
       .filter(m => m.role === "user").at(-1)?.content ?? ""
     expect(lastUserMsg).toContain("Decisions locked in this conversation")

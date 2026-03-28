@@ -129,39 +129,51 @@ describe("bug #7 — withThinking posts fallback message when chat.update fails"
 // Regression: spec was saved regardless of [blocking: yes] questions.
 // A spec with unresolved blocking questions must never write to GitHub.
 
-describe("bug #8 — blocking gate: spec with [blocking: yes] questions is never saved", () => {
-  it("PM agent does not save when blocking questions remain", async () => {
+describe("bug #8 — blocking gate: finalize tool returns error when [blocking: yes] questions exist", () => {
+  it("PM agent: finalize_product_spec returns blocking error and spec is not saved", async () => {
+    // Mock GitHub to return a draft WITH blocking questions for the product spec path
+    const draftWithBlocking = "## Problem\nHelp users.\n\n## Open Questions\n- [type: product] [blocking: yes] Who is the primary user?"
+    mockAnthropicCreate.mockOctokitGetContent = undefined  // clear any stale reference
+    mockOctokitGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(draftWithBlocking).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // [0] classifyMessageScope, [1] runAgent (tool_use: finalize_product_spec → blocking error),
+    // [2] runAgent (end_turn: agent surfaces the error)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockResolvedValueOnce({
-        content: [{
-          type: "text",
-          text: "INTENT: CREATE_SPEC\n## Problem\nHelp users.\n\n## Open Questions\n- [type: product] [blocking: yes] Who is the primary user?",
-        }],
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Approval blocked — 1 blocking question must be resolved first:\n• Who is the primary user?" }],
       })
 
     setConfirmedAgent("onboarding", "pm" as any)
     await handleFeatureChannelMessage(makeParams())
 
+    // saveApprovedSpec must NOT have been called
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
 
+    // Blocking error must be surfaced in the agent's response (stored in history)
     const history = getHistory("onboarding")
     const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
     expect(lastAssistant?.content).toContain("Approval blocked")
     expect(lastAssistant?.content).toContain("Who is the primary user")
   })
 
-  it("Design agent does not save when blocking questions remain", async () => {
-    // Design agent makes 3 Anthropic calls: isOffTopicForAgent, isSpecStateQuery, runAgent.
-    // Use mockResolvedValue (persistent) so all 3 calls return the intent, which is fine:
-    // "INTENT: CREATE_DESIGN_SPEC" is not "off-topic" and not "yes", so the first two
-    // classifiers return false and the flow proceeds to runAgent which gets the INTENT.
-    mockAnthropicCreate.mockResolvedValue({
-      content: [{
-        type: "text",
-        text: "INTENT: CREATE_DESIGN_SPEC\n## Screens\n\n## Open Questions\n- [type: product] [blocking: yes] What is the session TTL?",
-      }],
-    })
+  it("Design agent: text-only response never saves spec (no finalize tool called)", async () => {
+    // If the agent doesn't call finalize_design_spec, nothing is saved — regardless of
+    // what it says in the text. This is a stronger guarantee than the old INTENT-based gate.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "There's a blocking question about session TTL. Resolve it before finalizing." }] }) // runAgent — text-only
 
     setConfirmedAgent("onboarding", "ux-design" as any)
     await handleFeatureChannelMessage(makeParams())
@@ -176,14 +188,28 @@ describe("bug #8 — blocking gate: spec with [blocking: yes] questions is never
 // a short reply like "Deliberate extension" was uninterpretable.
 // Fix: gap message is appended to history as an assistant message.
 
+// Bug #9: gap detection must surface gap in agent response and store it in history.
+// In the tool-based system: save_product_spec_draft tool runs auditSpecDraft; if a
+// gap is found, the tool result includes { audit: { status: "gap", message: "..." } }.
+// The agent then sees this and must reference it in its text response, which gets
+// stored in history. The fix ensures the gap info flows through the tool result
+// rather than being appended externally (the old DRAFT_SPEC text-block approach).
+
 function setupGapScenario() {
   const encodedVision = Buffer.from("The product vision: health tracking for everyday users.").toString("base64")
   mockOctokitGetContent.mockResolvedValue({ data: { content: encodedVision, type: "file" } })
 
   mockAnthropicCreate
     .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
-    .mockResolvedValueOnce({ content: [{ type: "text", text: "DRAFT_SPEC_START\n## Problem\nHelp users.\n## Open Questions\n- [type: product] [blocking: no] Define power user.\nDRAFT_SPEC_END" }] }) // runAgent
+    .mockResolvedValueOnce({                                                            // runAgent: tool_use
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "t1", name: "save_product_spec_draft", input: { content: "## Problem\nHelp users.\n## Open Questions\n- [type: product] [blocking: no] Define power user.\n" } }],
+    })
     .mockResolvedValueOnce({ content: [{ type: "text", text: "GAP: Power user persona is not defined in the product vision." }] }) // auditSpecDraft
+    .mockResolvedValueOnce({                                                            // runAgent: end_turn
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Draft saved!\n\nGap detected: Power user persona is not defined in the product vision. Is this a deliberate extension or something you want to resolve?" }],
+    })
 
   mockOctokitCreateOrUpdate.mockResolvedValue({})
 }

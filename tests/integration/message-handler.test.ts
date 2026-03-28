@@ -39,7 +39,7 @@ import { clearHistory, setConfirmedAgent, getHistory } from "../../../runtime/co
 const originalEnv = process.env
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   process.env = {
     ...originalEnv,
     PRODUCT_NAME: "TestApp",
@@ -114,34 +114,52 @@ describe("blocking gate — PM agent", () => {
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
   })
 
-  it("saves approved spec after two-step confirmation — approval intent shows confirm prompt, 'confirmed' saves", async () => {
-    mockAgentResponse(
-      `INTENT: CREATE_SPEC\n## Problem\nHelp users.\n\n## Open Questions\n- [type: engineering] [blocking: no] Which auth provider?`
-    )
+  it("PM agent saves approved spec when finalize_product_spec tool is called with valid draft", async () => {
+    // Mock GitHub to return a draft without blocking questions for the product spec path
+    const draftContent = "## Problem\nHelp users onboard.\n\n## Open Questions\n- [type: engineering] [blocking: no] Which auth provider?"
+    mockOctokitGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(draftContent).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
-    // Step 1: agent fires approval intent → shows confirmation prompt, does NOT save
+    // [0] classifyMessageScope, [1] runAgent (tool_use: finalize_product_spec),
+    // [2] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
+      })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Product spec approved and saved!" }] }) // runAgent: end_turn
+
     await withConfirmedAgent("pm", async () => {
       await handleFeatureChannelMessage(makeParams())
-    })
-    expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
-    const confirmPrompt = getHistory("onboarding").filter(m => m.role === "assistant").at(-1)
-    expect(confirmPrompt?.content).toContain("Looks like you're approving")
-
-    // Step 2: user confirms → spec is saved
-    await withConfirmedAgent("pm", async () => {
-      await handleFeatureChannelMessage(makeParams({ userMessage: "confirmed" }))
     })
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
   })
 
-  it("reports blocking count in history when multiple blocking questions exist", async () => {
-    mockAgentResponse([
-      "INTENT: CREATE_SPEC",
-      "## Open Questions",
-      "- [type: product] [blocking: yes] Who is the primary user?",
-      "- [type: design] [blocking: yes] Which nav pattern?",
-    ].join("\n"))
+  it("finalize_product_spec returns blocking error when [blocking: yes] questions exist", async () => {
+    // Mock GitHub to return a draft WITH blocking questions
+    const draftWithBlocking = "## Problem\nHelp users.\n\n## Open Questions\n- [type: product] [blocking: yes] Who is the primary user?\n- [type: design] [blocking: yes] Which nav pattern?"
+    mockOctokitGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(draftWithBlocking).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // [0] classifyMessageScope, [1] runAgent (tool_use: finalize_product_spec → blocking error),
+    // [2] runAgent (end_turn: agent surfaces blocking error to user)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
+      })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Approval blocked — 2 blocking questions must be resolved first:\n• Who is the primary user?\n• Which nav pattern?" }] }) // runAgent: end_turn
 
     await withConfirmedAgent("pm", async () => {
       await handleFeatureChannelMessage(makeParams())
@@ -171,23 +189,30 @@ describe("blocking gate — design agent", () => {
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
   })
 
-  it("saves approved design spec after two-step confirmation — approval intent shows confirm prompt, 'confirmed' saves", async () => {
-    mockAgentResponse(
-      `INTENT: CREATE_DESIGN_SPEC\n## Screens\n\n## Open Questions\n- [type: engineering] [blocking: no] Glow: CSS vs canvas?`
-    )
+  it("Design agent saves approved spec when finalize_design_spec tool is called with valid draft", async () => {
+    // Mock GitHub to return a design draft without blocking questions
+    const draftContent = "## Screens\nLogin screen.\n\n## Open Questions\n- [type: engineering] [blocking: no] Glow: CSS vs canvas?"
+    mockOctokitGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.design.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(draftContent).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
-    // Step 1: agent fires approval intent → shows confirmation prompt, does NOT save
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent (tool_use: finalize_design_spec),
+    // [3] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
+      })                                                                                   // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Design spec approved and saved!" }] }) // runAgent: end_turn
+
     await withConfirmedAgent("ux-design", async () => {
       await handleFeatureChannelMessage(makeParams())
-    })
-    expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
-    const confirmPrompt = getHistory("onboarding").filter(m => m.role === "assistant").at(-1)
-    expect(confirmPrompt?.content).toContain("Looks like you're approving")
-
-    // Step 2: user confirms → spec is saved
-    await withConfirmedAgent("ux-design", async () => {
-      await handleFeatureChannelMessage(makeParams({ userMessage: "confirmed" }))
     })
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
   })
@@ -195,19 +220,27 @@ describe("blocking gate — design agent", () => {
 
 // ─── Gap detection — history persistence ────────────────────────────────────
 
-// Helpers for gap tests: the real spec-auditor needs non-empty productVision
-// to make an Anthropic call. We provide it via getContent and sequence 3 calls:
+// Helpers for gap tests: the spec-auditor needs non-empty productVision to make
+// an Anthropic call. We provide it via getContent and sequence 4 API calls:
 // 1. classifyMessageScope → "feature-specific"
-// 2. runAgent → DRAFT spec body
-// 3. auditSpecDraft → GAP response
+// 2. runAgent first call → tool_use: save_product_spec_draft
+// 3. auditSpecDraft (triggered by productVision being non-empty) → GAP response
+// 4. runAgent second call → agent's text response mentioning the gap
 function setupGapScenario() {
   const encodedVision = Buffer.from("The product vision: health tracking for everyday users.").toString("base64")
   mockOctokitGetContent.mockResolvedValue({ data: { content: encodedVision, type: "file" } })
 
   mockAnthropicCreate
     .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
-    .mockResolvedValueOnce({ content: [{ type: "text", text: "DRAFT_SPEC_START\n## Problem\nHelp users.\n## Open Questions\n- [type: product] [blocking: no] Define power user.\nDRAFT_SPEC_END" }] }) // runAgent
+    .mockResolvedValueOnce({                                                            // runAgent: tool_use
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "t1", name: "save_product_spec_draft", input: { content: "## Problem\nHelp users.\n## Open Questions\n- [type: product] [blocking: no] Define power user.\n" } }],
+    })
     .mockResolvedValueOnce({ content: [{ type: "text", text: "GAP: Power user persona is not defined in the product vision." }] }) // auditSpecDraft
+    .mockResolvedValueOnce({                                                            // runAgent: end_turn
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Draft saved!\n\nGap detected: Power user persona is not defined in the product vision. Is this a deliberate extension or something you want to resolve?" }],
+    })
 
   mockOctokitCreateOrUpdate.mockResolvedValue({})
 }
@@ -224,7 +257,7 @@ describe("gap detection", () => {
     // Draft IS saved even when a gap is detected
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()
 
-    // Gap message and resolution options surfaced in Slack
+    // Gap message and resolution options surfaced in Slack (agent's text response)
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const lastUpdate = updateCalls.at(-1)?.[0]?.text ?? ""
     expect(lastUpdate).toContain("Gap detected")

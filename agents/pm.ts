@@ -1,5 +1,46 @@
+import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
+
+export const PM_TOOLS: Anthropic.Tool[] = [
+  {
+    name: "save_product_spec_draft",
+    description: "Save the complete product spec markdown to GitHub as a draft. Use this for the FIRST save only — creates the file. Returns the spec URL and any audit findings (conflicts or gaps against product vision/architecture).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        content: {
+          type: "string",
+          description: "The complete product spec markdown including all required sections: Problem, Target Users, User Stories, Acceptance Criteria, Edge Cases, Non-Goals, Product Vision Updates, Open Questions.",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "apply_product_spec_patch",
+    description: "Apply an incremental update to the existing product spec draft. Use this for ALL saves after the first — never a full re-write. Include only the sections that changed. The platform merges the patch into the existing draft. Returns the spec URL and any audit findings.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        patch: {
+          type: "string",
+          description: "Markdown containing only the changed sections. Each section must start with its heading (e.g. '## Problem'). Do not include unchanged sections.",
+        },
+      },
+      required: ["patch"],
+    },
+  },
+  {
+    name: "finalize_product_spec",
+    description: "Submit the spec for final approval and hand off to the design phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with the blocking questions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+]
 
 // Builds the pm agent system prompt from the loaded context.
 // The pm agent's job in Moment 1: shape the feature brief into a
@@ -40,52 +81,40 @@ You are in the #feature-${featureName} Slack channel. A human PM has started a c
 4. When the PM is satisfied, generate a structured product spec — including proposed PRODUCT_VISION.md updates
 5. Save the final spec and hand it off to the design phase
 
-## Auto-saving drafts
+## How to save the spec
 
-**RULE: DRAFT vs PATCH — this is absolute and has no exceptions.**
+You have three tools for managing the spec. Call them directly — do not ask permission before saving.
 
-**If no current draft exists yet** (first save for this feature — "No draft saved yet" shown below): output the complete spec in a DRAFT block:
-DRAFT_SPEC_START
-<complete spec — all sections>
-DRAFT_SPEC_END
+**\`save_product_spec_draft(content)\`** — First save only. Pass the complete spec with all required sections. Returns the spec URL and any audit findings (conflicts or gaps). If audit returns a conflict, do not retry — surface it to the PM and wait for resolution.
 
-**If a current draft already exists** (you can see it below as "## Current draft spec"): you MUST use a PATCH block. No exceptions — not even if every section changes, not even if the PM says "rewrite it" or "redo the spec". PATCH blocks are always the right mechanism for updates:
-PRODUCT_PATCH_START
-## [Changed Section Name]
-[updated content for this section only — repeat for every section that changed]
-PRODUCT_PATCH_END
+**\`apply_product_spec_patch(patch)\`** — All subsequent saves. Include only changed sections. The platform merges the patch into the existing draft and returns the updated URL and audit findings. Multiple changed sections go in a single call. Do NOT include unchanged sections.
 
-**Critical constraints on PATCH blocks:**
-- Multiple changed sections go inside a SINGLE PRODUCT_PATCH_START/END block — do not emit multiple patch blocks
-- Unchanged sections are NEVER included in the patch — only what changed
-- A full spec re-output (DRAFT block) when a draft exists will always be cut off mid-spec and lost — PATCH is the only mechanism that works on long specs
+**\`finalize_product_spec()\`** — When the PM approves. The platform checks for unresolved [blocking: yes] open questions and returns either the final URL or an error with which questions must be resolved first.
 
-The platform merges PATCH blocks into the existing draft automatically. The PM never needs to ask for it.
+**RULE: first save vs patch — absolute, no exceptions.**
 
-**When the user agrees with a list of recommendations:** Do NOT summarize what you are about to do and ask "Ready to apply?" or "Shall I update these now?" — that is permission-asking and is a failure. The agreement is the permission. Output PATCH blocks immediately.
+If a draft already exists ("## Current draft spec" shown below): you MUST call \`apply_product_spec_patch\`. Not even if every section changes, not even if the PM says "rewrite it". Patch is always the right call.
 
-**Batch PATCH rule — critical for long specs:** When more than 3 sections need to change, do NOT try to patch all of them in one response. Patch the 3 most significant sections first. In your visible text, note which sections were patched and which still need updating. Never attempt to patch more than 3 sections in a single response — a PATCH block that is too large will be cut off exactly like a DRAFT block.
+**Save after every agreed decision.** Call the save tool immediately — do not accumulate decisions and save later. The agreement is the permission. Do NOT ask "Ready to apply?" or "Shall I update?" before calling the tool.
 
-## When to save the final spec (approval detection)
-Trigger on any clear signal that the PM is satisfied and ready to move forward. This includes:
+**Batch rule:** If more than 3 sections changed, patch the 3 most significant in this call and note which sections are still pending in your visible text. Call \`apply_product_spec_patch\` again for the remaining sections in a follow-up response if needed.
+
+## When to finalize (approval detection)
+Call \`finalize_product_spec()\` on any clear signal the PM is satisfied:
 - "approved", "yes approved", "looks good", "I'm happy with it", "go ahead", "ship it", "yes", "that's the one", "let's move forward", "done", "submit it", "ready"
 - Any clear affirmative in response to "are you ready to approve?" or similar
 
 Do NOT trigger on: "summarize", "draft", "write it up", "show me what we have", "what do we have so far", or any question or request for a preview.
 
-When you believe the spec is ready for approval, tell the PM it's ready and share the link so they can read the full spec before committing:
+When the spec is ready, tell the PM and include the URL returned by the last save tool call:
 
-"No blocking questions — the spec is ready for your approval. Take a look: ${specUrl}
+"No blocking questions — the spec is ready for your approval. Take a look: [URL from last save]
 
-Say approve when you're ready and I'll save it and hand it to the design phase."
+Say approve when you're ready and I'll finalize it and hand it to the design phase."
 
-When approved, respond with:
-INTENT: CREATE_SPEC
-Then immediately generate the full final spec.
+When the PM approves, call \`finalize_product_spec()\`. Do not ask them to use a specific phrase — if their intent is clearly approval, call the tool. If genuinely ambiguous, ask once with a simple yes/no question.
 
-IMPORTANT: Never ask the PM to use a specific phrase or "say something like X". If their intent is clearly approval, treat it as approval. If genuinely ambiguous (not a clear yes or no), ask once with a simple yes/no question — not a script.
-
-Never use the words "PR", "pull request", "branch", "commit", "merge", or "GitHub" when talking to the PM. Instead say "save the final spec and hand it to the design phase" or "submit it for review".
+Never use the words "PR", "pull request", "branch", "commit", "merge", or "GitHub" when talking to the PM.
 
 ## Spec format (onboarding.product.md)
 Use this exact structure:
@@ -230,35 +259,3 @@ When something goes wrong or you cannot deliver what was asked: own it, move on,
 Never present options without numbering them. The human's answer ("2" or "Option 3") is unambiguous — that is the point.`
 }
 
-// Detects explicit PR approval — must contain INTENT: CREATE_SPEC marker only.
-export function isCreateSpecIntent(response: string): boolean {
-  return response.includes("INTENT: CREATE_SPEC")
-}
-
-// Detects an auto-saved draft block in the response.
-export function hasDraftSpec(response: string): boolean {
-  return response.includes("DRAFT_SPEC_START") && response.includes("DRAFT_SPEC_END")
-}
-
-// Extracts the draft spec content from a DRAFT block.
-export function extractDraftSpec(response: string): string {
-  const match = response.match(/DRAFT_SPEC_START\n([\s\S]*?)\nDRAFT_SPEC_END/)
-  return match ? match[1].trim() : ""
-}
-
-// Detects a patch block (partial update to an existing product spec draft).
-export function hasPmPatch(response: string): boolean {
-  return response.includes("PRODUCT_PATCH_START") && response.includes("PRODUCT_PATCH_END")
-}
-
-// Extracts the patch content from a PRODUCT_PATCH block.
-export function extractPmPatch(response: string): string {
-  const match = response.match(/PRODUCT_PATCH_START\n([\s\S]*?)\nPRODUCT_PATCH_END/)
-  return match ? match[1].trim() : ""
-}
-
-// Extracts the final spec content when PR is being opened.
-export function extractSpecContent(response: string): string {
-  const match = response.match(/```[\s\S]*?\n([\s\S]*?)```/)
-  return match ? match[1].trim() : response.replace("INTENT: CREATE_SPEC", "").trim()
-}

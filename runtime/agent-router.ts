@@ -146,64 +146,6 @@ Respond with exactly one word: yes or no`,
   return text === "yes"
 }
 
-// Detects whether a message is requesting an HTML render or visual preview of the design.
-// Returns:
-//   "render-only"      — render the current spec as-is, no new changes needed
-//   "apply-and-render" — apply requested changes first, then render the result
-//   "other"            — not a render/preview request
-export async function detectRenderIntent(message: string): Promise<"render-only" | "apply-and-render" | "other"> {
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 20,
-    system: `Classify whether this message is requesting an HTML render or visual preview of a design.
-
-- render-only: the user wants to see the current spec rendered as HTML — no new changes requested. Key signals: "render", "preview", "show me", "new render", "regenerate", "what does it look like". Qualifiers like "true to the spec", "based on the spec", "accurate to what we have", "that reflects the spec" describe render faithfulness — NOT spec changes. "I will review and let you know if I approve" is a strong render-only signal.
-- apply-and-render: the user explicitly wants changes applied AND rendered — both must be present in the same message ("rebuild with the recommendations and show me", "apply the changes we discussed and render it")
-- other: not a render/preview request at all
-
-When in doubt between render-only and apply-and-render, choose render-only.
-Respond with exactly one: render-only, apply-and-render, or other`,
-    messages: [{ role: "user", content: message }],
-  })
-
-  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "other"
-  const valid = ["render-only", "apply-and-render", "other"] as const
-  return valid.includes(text as (typeof valid)[number]) ? (text as (typeof valid)[number]) : "other"
-}
-
-// Detects whether a user message is confirming or locking in a design decision that was
-// previously proposed or discussed by the agent.
-// Returns:
-//   "confirmed" — user is picking an option, locking something, or agreeing with a recommendation
-//   "other"     — question, feedback, status request, greeting, or ambiguous message
-export async function detectConfirmationOfDecision(message: string): Promise<"confirmed" | "other"> {
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 20,
-    system: `Classify whether this message is confirming or locking in a design decision that was previously proposed or discussed.
-
-Answer "confirmed" if:
-- User picks an option ("2", "option B", "the second one")
-- User explicitly locks something ("lock all 3", "go with that", "yes to all")
-- User agrees with a recommendation ("agree with all 6", "yes please", "that works")
-- User confirms a direction change ("yes that's what I want")
-
-Answer "other" if:
-- User is asking a question
-- User is describing a problem or giving feedback ("the glow is invisible")
-- User is requesting something new ("give me a render", "rebuild the spec")
-- User is greeting or checking status ("hi", "current state?", "are you there")
-- User is approving the spec for final save ("approved", "confirmed") — this is handled by the spec approval flow
-- The message is ambiguous or not clearly a confirmation of a design decision
-
-Respond with exactly one word: confirmed or other`,
-    messages: [{ role: "user", content: message }],
-  })
-
-  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "other"
-  return text === "confirmed" ? "confirmed" : "other"
-}
-
 export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean

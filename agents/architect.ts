@@ -1,5 +1,61 @@
+import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
+
+export const ARCHITECT_TOOLS: Anthropic.Tool[] = [
+  {
+    name: "save_engineering_spec_draft",
+    description: "Save the complete engineering spec markdown to GitHub as a draft. Use this for the FIRST save only — creates the file. Returns the spec URL and any audit findings (conflicts or gaps against vision/architecture and other approved engineering specs).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        content: {
+          type: "string",
+          description: "The complete engineering spec markdown including all required sections: Overview, Data Model, API Contracts, Frontend Components, State Management, Integration Points, Non-Functional Requirements, System Architecture Updates Required, Open Questions.",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "apply_engineering_spec_patch",
+    description: "Apply an incremental update to the existing engineering spec draft. Use this for ALL saves after the first. Include only the sections that changed. The platform merges the patch into the existing draft. Returns the spec URL and any audit findings.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        patch: {
+          type: "string",
+          description: "Markdown containing only the changed sections. Each section must start with its heading. Do not include unchanged sections.",
+        },
+      },
+      required: ["patch"],
+    },
+  },
+  {
+    name: "read_approved_specs",
+    description: "Read approved engineering specs from GitHub for cross-feature coherence. Call this before writing any data model or API surface to check for conflicts with already-approved features. Returns the spec content keyed by feature name.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        featureNames: {
+          type: "array",
+          items: { type: "string" },
+          description: "Specific feature names to read. Omit to read all approved engineering specs.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "finalize_engineering_spec",
+    description: "Submit the engineering spec for final approval and hand off to the build phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with blocking questions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+]
 
 // Builds the Architect agent system prompt from the loaded spec chain.
 // The architect's job: translate an approved design spec into a precise,
@@ -69,54 +125,32 @@ Otherwise, open with a concrete structural proposal:
 
 Invite pressure-testing as part of presenting the proposal — not as a closing line after the question. The question is the last thing in your response, full stop.
 
-## Auto-saving drafts — save early and often
-Save a draft after EVERY response where any decision has been made or agreed — not just when the spec is substantially complete. This includes:
-- A data model entity is proposed and not pushed back on
-- An API endpoint is agreed
-- A state management approach is locked in
-- An integration point is defined
-- A non-functional requirement is set (latency target, cache TTL, rate limit)
-- Any tradeoff is explicitly accepted
-- Any answer to a question you asked — if the architect answered it, that is a decision, save it
+## How to save the spec
 
-**Conversation history is capped. If you agree a decision and do not save it, it will be lost when the conversation grows long. There is no recovery. Save every decision the moment it is agreed.**
+You have four tools for managing the engineering spec. Call them directly — do not ask permission before saving.
 
-**RULE: DRAFT vs PATCH — this is absolute and has no exceptions.**
+**\`save_engineering_spec_draft(content)\`** — First save only. Pass the complete spec with all required sections. Returns the spec URL and any audit findings. If audit returns a conflict, surface it and wait for resolution before retrying.
 
-**If no current draft exists yet** (first save for this feature — "No approved specs found" shown below): output the complete spec in a DRAFT block:
-DRAFT_ENGINEERING_SPEC_START
-<complete spec — all sections>
-DRAFT_ENGINEERING_SPEC_END
+**\`apply_engineering_spec_patch(patch)\`** — All subsequent saves. Include only changed sections. The platform merges the patch and returns the updated URL and audit findings. Multiple changed sections go in a single call.
 
-**If a current draft already exists** (you can see it below as "## Current Engineering Draft"): you MUST use a PATCH block. No exceptions — not even if every section changes, not even if the user says "rewrite it" or "rebuild the spec". PATCH blocks are always the right mechanism for updates:
-ENGINEERING_PATCH_START
-## [Changed Section Name]
-[updated content for this section only — repeat for every section that changed]
-ENGINEERING_PATCH_END
+**\`read_approved_specs(featureNames?)\`** — Call this before writing any data model or API contract to check for conflicts with already-approved features. Returns spec content keyed by feature name.
 
-**Critical constraints on PATCH blocks:**
-- Multiple changed sections go inside a SINGLE ENGINEERING_PATCH_START/END block — do not emit multiple patch blocks
-- Unchanged sections are NEVER included in the patch — only what changed
-- A full spec re-output (DRAFT block) when a draft exists will always be cut off mid-spec and lost — PATCH is the only mechanism that works on long specs
+**\`finalize_engineering_spec()\`** — When the architect approves. The platform checks for unresolved [blocking: yes] questions and returns either the final URL or an error listing what must be resolved first.
 
-The platform merges PATCH blocks into the existing draft automatically. The architect never needs to ask for it.
+**RULE: first save vs patch — absolute, no exceptions.**
 
-**When the user agrees with a list of recommendations:** Do NOT summarize what you are about to do and ask "Ready to apply?" or "Shall I update these now?" — that is permission-asking and is a failure. The agreement is the permission. Output PATCH blocks immediately.
+If a draft already exists ("## Current Engineering Draft" shown below): you MUST call \`apply_engineering_spec_patch\`. Not even if every section changes.
 
-**Batch PATCH rule — critical for long specs:** When more than 3 sections need to change, do NOT try to patch all of them in one response. Patch the 3 most significant sections first. In your visible text, note which sections were patched and which still need updating. Never attempt to patch more than 3 sections in a single response — a PATCH block that is too large will be cut off exactly like a DRAFT block.
+**Save after every agreed decision.** Call the save tool immediately — the agreement is the permission. Do NOT ask "Ready to apply?" before calling.
 
-## When to save the final spec (approval detection)
-Trigger on any clear signal that the architect is satisfied and ready to move forward:
+**Batch rule:** If more than 3 sections changed, patch the 3 most significant in this call. Note which sections are still pending. Call \`apply_engineering_spec_patch\` again for the remaining sections in a follow-up.
+
+## When to finalize (approval detection)
+Call \`finalize_engineering_spec()\` on any clear signal the architect is satisfied:
 - "approved", "looks good", "I'm happy with it", "go ahead", "ship it", "yes", "that's the one", "let's move forward", "done", "submit it", "ready"
 - Any clear affirmative in response to "are you ready to approve?" or similar
 
 Do NOT trigger on: "summarize", "draft", "show me what we have", "what do we have so far", or any question or request for a preview.
-
-When approved, respond with:
-INTENT: CREATE_ENGINEERING_SPEC
-Then immediately generate the full final spec.
-
-IMPORTANT: Never ask the architect to use a specific phrase. If their intent is clearly approval, treat it as approval. If genuinely ambiguous, ask once with a simple yes/no question.
 
 Never use the words "PR", "pull request", "branch", "commit", "merge", or "GitHub" when talking to the architect. Say "save the final spec and hand it to the engineer agents."
 
@@ -266,7 +300,7 @@ ${context.systemArchitecture}
 
 ${readOnly ? `## READ-ONLY MODE — CRITICAL
 The engineering spec is approved and frozen. You are answering questions about it, not editing it.
-- Do not output DRAFT_ENGINEERING_SPEC_START blocks or INTENT: CREATE_ENGINEERING_SPEC under any circumstances
+- Do not call any save tools or finalize tools under any circumstances
 - Do not suggest edits or improvements to the spec
 - Answer the question directly from what is written` : ""}
 
@@ -294,35 +328,3 @@ Do not hand the initiative back with an open question beyond this.
 You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, code blocks. Never use ASCII tables for data models or API shapes in conversational responses — save the table format for the spec itself. When summarising spec state, use sections with bold headers and bullet points.`
 }
 
-// Detects approval intent — must contain INTENT: CREATE_ENGINEERING_SPEC marker only.
-export function isCreateEngineeringSpecIntent(response: string): boolean {
-  return response.includes("INTENT: CREATE_ENGINEERING_SPEC")
-}
-
-// Detects an auto-saved draft block in the response.
-export function hasDraftEngineeringSpec(response: string): boolean {
-  return response.includes("DRAFT_ENGINEERING_SPEC_START") && response.includes("DRAFT_ENGINEERING_SPEC_END")
-}
-
-// Extracts the draft spec content from a DRAFT block.
-export function extractDraftEngineeringSpec(response: string): string {
-  const match = response.match(/DRAFT_ENGINEERING_SPEC_START\n([\s\S]*?)\nDRAFT_ENGINEERING_SPEC_END/)
-  return match ? match[1].trim() : ""
-}
-
-// Detects a patch block (partial update to an existing engineering spec draft).
-export function hasArchitectPatch(response: string): boolean {
-  return response.includes("ENGINEERING_PATCH_START") && response.includes("ENGINEERING_PATCH_END")
-}
-
-// Extracts the patch content from an ENGINEERING_PATCH block.
-export function extractArchitectPatch(response: string): string {
-  const match = response.match(/ENGINEERING_PATCH_START\n([\s\S]*?)\nENGINEERING_PATCH_END/)
-  return match ? match[1].trim() : ""
-}
-
-// Extracts the final spec content when approval is triggered.
-export function extractEngineeringSpecContent(response: string): string {
-  const match = response.match(/```[\s\S]*?\n([\s\S]*?)```/)
-  return match ? match[1].trim() : response.replace("INTENT: CREATE_ENGINEERING_SPEC", "").trim()
-}

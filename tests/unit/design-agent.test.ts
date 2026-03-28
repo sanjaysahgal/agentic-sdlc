@@ -1,20 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import {
   buildDesignSystemPrompt,
-  isCreateDesignSpecIntent,
-  hasDraftDesignSpec,
-  extractDraftDesignSpec,
-  extractDesignSpecContent,
-  hasEscalationOffer,
-  extractEscalationQuestion,
-  stripEscalationMarker,
   buildDesignStateResponse,
-  hasProductSpecUpdate,
-  extractProductSpecUpdate,
-  hasDesignPatch,
-  extractDesignPatch,
-  hasPreviewOnly,
-  extractPreviewOnly,
+  DESIGN_TOOLS,
 } from "../../agents/design"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -113,25 +101,10 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("No approved product spec found")
   })
 
-  it("read-only mode suppresses draft and approval markers", () => {
+  it("read-only mode activates READ-ONLY MODE block", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding", true)
     expect(prompt).toContain("READ-ONLY MODE")
-    expect(prompt).toContain("DRAFT_DESIGN_SPEC_START")  // marker is named in the prohibition
-  })
-
-  it("platformOverride is prepended before persona and overrides all other instructions", () => {
-    const override = "Output a PREVIEW_ONLY_START block now. No questions."
-    const prompt = buildDesignSystemPrompt(baseContext, "onboarding", false, override)
-    expect(prompt).toContain("PLATFORM OVERRIDE — MANDATORY")
-    expect(prompt).toContain(override)
-    // Override must appear before the persona — it's the first thing the model reads
-    expect(prompt.indexOf("PLATFORM OVERRIDE")).toBeLessThan(prompt.indexOf("You are the UX Design agent"))
-  })
-
-  it("no platformOverride — system prompt starts normally without override block", () => {
-    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-    expect(prompt).not.toContain("PLATFORM OVERRIDE")
-    expect(prompt.startsWith("You are the UX Design agent")).toBe(true)
+    expect(prompt).toContain("Do not call any save tools or finalize tools")
   })
 
   it("prohibits permission-asking — shall I, would you like me to, want me to, happy to, what would you like to do", () => {
@@ -149,9 +122,9 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("Never use ASCII tables")
   })
 
-  it("auto-save rule triggers after every agreed decision, not just when spec is substantial", () => {
+  it("auto-save rule triggers after every agreed decision", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("Save a draft after EVERY response")
+    expect(prompt).toContain("Save after every agreed decision")
   })
 
   it("short reply re-read rule — re-read last question before interpreting a short reply", () => {
@@ -171,12 +144,6 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("Every approved feature spec must include the \"Design System Updates\" section")
   })
 
-  it("PRODUCT_SPEC_UPDATE instruction present — design agent can propose product spec changes when PM authorizes direction change", () => {
-    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("PRODUCT_SPEC_UPDATE_START")
-    expect(prompt).toContain("PRODUCT_SPEC_UPDATE_END")
-  })
-
   it("post-draft sign-off — prompt instructs agent to end with 'Draft saved to GitHub. Review it and say approved'", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("Draft saved to GitHub")
@@ -184,229 +151,54 @@ describe("buildDesignSystemPrompt", () => {
   })
 })
 
-describe("isCreateDesignSpecIntent", () => {
-  it("returns true when response contains INTENT: CREATE_DESIGN_SPEC", () => {
-    expect(isCreateDesignSpecIntent("INTENT: CREATE_DESIGN_SPEC\n# Onboarding — Design Spec")).toBe(true)
+describe("DESIGN_TOOLS structure", () => {
+  it("exports 5 tools", () => {
+    expect(DESIGN_TOOLS).toHaveLength(5)
   })
 
-  it("returns false when marker is absent", () => {
-    expect(isCreateDesignSpecIntent("Looks good, let's move forward.")).toBe(false)
+  it("includes save_design_spec_draft as first tool", () => {
+    expect(DESIGN_TOOLS[0].name).toBe("save_design_spec_draft")
   })
 
-  it("returns false for product spec marker", () => {
-    expect(isCreateDesignSpecIntent("INTENT: CREATE_SPEC")).toBe(false)
-  })
-})
-
-describe("hasProductSpecUpdate", () => {
-  it("returns true when both markers are present", () => {
-    const response = "PM authorized a change.\nPRODUCT_SPEC_UPDATE_START\n# Spec\ncontent\nPRODUCT_SPEC_UPDATE_END"
-    expect(hasProductSpecUpdate(response)).toBe(true)
+  it("includes apply_design_spec_patch as second tool", () => {
+    expect(DESIGN_TOOLS[1].name).toBe("apply_design_spec_patch")
   })
 
-  it("returns false when only start marker present", () => {
-    expect(hasProductSpecUpdate("PRODUCT_SPEC_UPDATE_START\ncontent")).toBe(false)
+  it("includes generate_design_preview as third tool", () => {
+    expect(DESIGN_TOOLS[2].name).toBe("generate_design_preview")
   })
 
-  it("returns false when neither marker present", () => {
-    expect(hasProductSpecUpdate("Just a regular response.")).toBe(false)
+  it("includes fetch_url as fourth tool", () => {
+    expect(DESIGN_TOOLS[3].name).toBe("fetch_url")
   })
 
-  it("returns false when design draft markers are present but not product spec markers", () => {
-    expect(hasProductSpecUpdate("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
-  })
-})
-
-describe("extractProductSpecUpdate", () => {
-  it("extracts content between product spec update markers", () => {
-    const response = "Authorized.\nPRODUCT_SPEC_UPDATE_START\n# Onboarding — Product Spec\nDark mode primary.\nPRODUCT_SPEC_UPDATE_END"
-    expect(extractProductSpecUpdate(response)).toBe("# Onboarding — Product Spec\nDark mode primary.")
+  it("includes finalize_design_spec as fifth tool", () => {
+    expect(DESIGN_TOOLS[4].name).toBe("finalize_design_spec")
   })
 
-  it("trims whitespace from extracted content", () => {
-    const response = "PRODUCT_SPEC_UPDATE_START\n\n  # Spec  \n\nPRODUCT_SPEC_UPDATE_END"
-    expect(extractProductSpecUpdate(response).trim()).toBe("# Spec")
+  it("save_design_spec_draft requires content parameter", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "save_design_spec_draft")!
+    expect(tool.input_schema.required).toContain("content")
   })
 
-  it("returns empty string when markers are absent", () => {
-    expect(extractProductSpecUpdate("No markers here.")).toBe("")
-  })
-})
-
-describe("hasDraftDesignSpec", () => {
-  it("returns true when both markers present", () => {
-    const response = "Here is the draft:\nDRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END"
-    expect(hasDraftDesignSpec(response)).toBe(true)
+  it("apply_design_spec_patch requires patch parameter", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "apply_design_spec_patch")!
+    expect(tool.input_schema.required).toContain("patch")
   })
 
-  it("returns false when only start marker present", () => {
-    expect(hasDraftDesignSpec("DRAFT_DESIGN_SPEC_START\ncontent")).toBe(false)
+  it("generate_design_preview requires specContent parameter", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "generate_design_preview")!
+    expect(tool.input_schema.required).toContain("specContent")
   })
 
-  it("returns false when neither marker present", () => {
-    expect(hasDraftDesignSpec("Just a regular response.")).toBe(false)
+  it("fetch_url requires url parameter", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "fetch_url")!
+    expect(tool.input_schema.required).toContain("url")
   })
 
-  it("returns false for product spec markers", () => {
-    expect(hasDraftDesignSpec("DRAFT_SPEC_START\ncontent\nDRAFT_SPEC_END")).toBe(false)
-  })
-})
-
-describe("extractDraftDesignSpec", () => {
-  it("extracts content between markers", () => {
-    const response = "Some text\nDRAFT_DESIGN_SPEC_START\n# Design Spec\ncontent here\nDRAFT_DESIGN_SPEC_END\nMore text"
-    expect(extractDraftDesignSpec(response)).toBe("# Design Spec\ncontent here")
-  })
-
-  it("returns empty string when markers not found", () => {
-    expect(extractDraftDesignSpec("no markers here")).toBe("")
-  })
-
-  it("trims whitespace from extracted content", () => {
-    const response = "DRAFT_DESIGN_SPEC_START\n  content  \nDRAFT_DESIGN_SPEC_END"
-    expect(extractDraftDesignSpec(response)).toBe("content")
-  })
-})
-
-describe("extractDesignSpecContent", () => {
-  it("extracts content from code block", () => {
-    const response = "INTENT: CREATE_DESIGN_SPEC\n```\n# Design Spec\nFigma: TBD\n```"
-    expect(extractDesignSpecContent(response)).toBe("# Design Spec\nFigma: TBD")
-  })
-
-  it("falls back to stripping marker when no code block", () => {
-    const response = "INTENT: CREATE_DESIGN_SPEC\n# Design Spec\nFigma: TBD"
-    expect(extractDesignSpecContent(response)).toBe("# Design Spec\nFigma: TBD")
-  })
-})
-
-describe("cross-phase escalation helpers", () => {
-  const withOffer = (q: string) =>
-    `The design decision depends on a product call.\n\nThis is a product decision — want me to pull the PM in?\n\nOFFER_PM_ESCALATION_START\n${q}\nOFFER_PM_ESCALATION_END`
-
-  describe("hasEscalationOffer", () => {
-    it("returns true when both escalation markers are present", () => {
-      expect(hasEscalationOffer(withOffer("Should social login be supported?"))).toBe(true)
-    })
-
-    it("returns false when markers are absent", () => {
-      expect(hasEscalationOffer("This is a product decision — let's discuss.")).toBe(false)
-    })
-
-    it("returns false when only start marker is present", () => {
-      expect(hasEscalationOffer("OFFER_PM_ESCALATION_START\nsome question")).toBe(false)
-    })
-  })
-
-  describe("extractEscalationQuestion", () => {
-    it("extracts the question between markers", () => {
-      const response = withOffer("Should social login be supported?")
-      expect(extractEscalationQuestion(response)).toBe("Should social login be supported?")
-    })
-
-    it("returns empty string when markers not present", () => {
-      expect(extractEscalationQuestion("no markers here")).toBe("")
-    })
-
-    it("trims whitespace from extracted question", () => {
-      const response = "text\nOFFER_PM_ESCALATION_START\n  question  \nOFFER_PM_ESCALATION_END"
-      expect(extractEscalationQuestion(response)).toBe("question")
-    })
-  })
-
-  describe("stripEscalationMarker", () => {
-    it("removes the escalation marker block from the response", () => {
-      const response = withOffer("Should social login be supported?")
-      const stripped = stripEscalationMarker(response)
-      expect(stripped).not.toContain("OFFER_PM_ESCALATION_START")
-      expect(stripped).not.toContain("OFFER_PM_ESCALATION_END")
-      expect(stripped).not.toContain("Should social login be supported?")
-    })
-
-    it("preserves the user-visible offer text", () => {
-      const response = withOffer("Should social login be supported?")
-      const stripped = stripEscalationMarker(response)
-      expect(stripped).toContain("want me to pull the PM in")
-    })
-
-    it("returns unchanged string when no marker present", () => {
-      const response = "Just a normal response."
-      expect(stripEscalationMarker(response)).toBe(response)
-    })
-  })
-
-  describe("buildDesignSystemPrompt — escalation instruction", () => {
-    const originalEnv = process.env
-    beforeEach(() => { process.env = { ...originalEnv, PRODUCT_NAME: "T", GITHUB_OWNER: "o", GITHUB_REPO: "r" } })
-    afterEach(() => { process.env = originalEnv })
-
-    it("instructs the agent to emit OFFER_PM_ESCALATION marker for blocking product questions", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("OFFER_PM_ESCALATION_START")
-      expect(prompt).toContain("OFFER_PM_ESCALATION_END")
-    })
-
-    it("tells agent to offer escalation only for product decisions, not engineering or design calls", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("Only emit this marker when you are genuinely blocked on a product decision")
-    })
-  })
-
-  describe("buildDesignSystemPrompt — product spec update instruction", () => {
-    const originalEnv = process.env
-    beforeEach(() => { process.env = { ...originalEnv, PRODUCT_NAME: "T", GITHUB_OWNER: "o", GITHUB_REPO: "r" } })
-    afterEach(() => { process.env = originalEnv })
-
-    it("instructs agent to emit PRODUCT_SPEC_UPDATE markers when PM authorizes direction change", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("PRODUCT_SPEC_UPDATE_START")
-      expect(prompt).toContain("PRODUCT_SPEC_UPDATE_END")
-    })
-
-    it("tells agent to include complete updated product spec, not a diff", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("complete updated product spec")
-    })
-
-    it("instructs agent to end post-draft message with 'say *approved*'", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("say *approved*")
-    })
-
-    it("prohibits 'All locked decisions saved' phrasing after draft save", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("Never say \"All locked decisions saved\"")
-    })
-
-    it("no-draft-blocks rule — agent has no internal memory between turns, only GitHub spec", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("You have no draft blocks, internal drafts, or memory between turns")
-    })
-
-    it("no-draft-blocks rule — explicitly names the hallucination to forbid", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("in my draft blocks")
-    })
-
-    it("no-draft-blocks rule — instructs agent to use GitHub spec as the complete record", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("The spec shown above is the complete record")
-    })
-
-    it("no-reconstruct rule — forbids listing specific design values not in the spec", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("Never reconstruct or list specific design decisions that are not in the spec above")
-    })
-
-    it("no-reconstruct rule — explicitly names the failure pattern (color tokens, timings)", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("color tokens, animation timings")
-    })
-
-    it("no-reconstruct rule — prescribes the honest response when decisions are missing", () => {
-      const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
-      expect(prompt).toContain("Could you tell me what was agreed and I'll build the spec with those decisions now?")
-    })
+  it("finalize_design_spec requires no parameters", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "finalize_design_spec")!
+    expect(tool.input_schema.required).toHaveLength(0)
   })
 })
 
@@ -549,6 +341,30 @@ None.
     expect(result).toContain("Archon Labs")
   })
 
+  it("shows full multi-line color palette in Design Direction — not truncated after header", () => {
+    // Regression: slice(0, 2) previously cut off after the header line, leaving
+    // "**Color palette (extracted from getarchon.dev):**" with no values below it.
+    const draftWithColorPalette = `# Onboarding — Design Spec
+
+## Design Direction
+**Dark mode primary — Archon Labs aesthetic.** Visual language: minimal, high negative space.
+**Color palette (extracted from getarchon.dev):**
+- \`--bg: #0A0A0F\` — deep near-black
+- \`--accent: #7C6FCD\` — violet
+- \`--text: #E8E8F0\` — off-white
+
+### Screen 1: Landing
+
+## Open Questions
+None.
+`
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithColorPalette, specUrl: SPEC_URL })
+    expect(result).toContain("Color palette")
+    expect(result).toContain("--bg: #0A0A0F")
+    expect(result).toContain("--accent: #7C6FCD")
+    expect(result).toContain("--text: #E8E8F0")
+  })
+
   it("omits committed decisions block when no Design Direction section in spec", () => {
     const draftNoDirection = `# Onboarding — Design Spec
 
@@ -618,65 +434,53 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
   }
 
   it("PATCH is absolute — no exceptions phrase is present", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("No exceptions")
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("no exceptions")
   })
 
   it("'new html' and 'full rewrite' map to PATCH not DRAFT", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("new html")
     expect(prompt).toContain("full rewrite")
-    // Both must appear in the PATCH section (not in the DRAFT section)
-    const patchSectionIdx = prompt.indexOf("DESIGN_PATCH_START")
-    const draftSectionIdx = prompt.indexOf("DRAFT_DESIGN_SPEC_START")
-    expect(patchSectionIdx).toBeGreaterThan(-1)
-    expect(draftSectionIdx).toBeGreaterThan(-1)
   })
 
-  it("prompt states HTML preview is regenerated automatically on PATCH saves", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+  it("prompt states HTML preview is regenerated on patch saves", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("HTML preview")
-    expect(prompt).toContain("regenerated automatically")
-    expect(prompt).toContain("PATCH save")
-  })
-
-  it("prompt warns that DRAFT blocks are cut off on long specs", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("cut off mid-spec")
+    expect(prompt).toContain("regenerates the HTML preview")
   })
 
   it("prohibits confirm-then-ask pattern — agreement is the permission", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("agreement is the permission")
-    expect(prompt).toContain("Output PATCH blocks immediately")
   })
 
-  it("enforces batch PATCH limit of 3 sections per response", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("3 most significant sections")
+  it("enforces batch patch limit of 3 sections per response", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("3 most significant")
     expect(prompt).toContain("more than 3 sections")
   })
 
   it("handles HTML rendering feedback by patching spec — not suggesting to skip preview", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("No options. No asking permission.")
     expect(prompt).toContain("Fix the spec")
   })
 
   it("prohibits platform diagnosis — designer must not call renderer fundamentally broken", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("You are a designer, not a platform engineer")
   })
 
   it("brand drift protocol — instructs agent to cross-reference spec tokens against BRAND.md when user says preview doesn't match brand", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("brand token drift")
     expect(prompt).toContain("Cross-reference every color token")
     expect(prompt).toContain("BRAND.md is extracted from the production site")
   })
 
   it("brand drift protocol — requires transparency about what drifted before patching", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("Never silently fix the preview without surfacing the drift")
     expect(prompt).toContain("Approve and I'll patch the spec to align with BRAND.md")
   })
@@ -685,7 +489,7 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     // Root cause: agent asked user to "open getarchon.dev and screenshot" when
     // it couldn't see the live site. BRAND.md is the authority. The agent must
     // never fall back to asking for external references.
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("BRAND.md is the authority. Always.")
     expect(prompt).toContain("Do NOT ask the user to")
     expect(prompt).toContain("screenshot")
@@ -696,110 +500,22 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     // The user cannot be expected to know hex values — that is the agent's job.
     // When the spec matches BRAND.md but the preview still looks wrong, the agent
     // should ask the user to describe what looks off, then infer and propose values.
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("The user cannot be expected to know hex values")
     expect(prompt).toContain("Describe what looks off")
     expect(prompt).toContain("infer what BRAND.md might have wrong")
     expect(prompt).toContain("Never ask the user to give you the hex code")
   })
 
-  it("distinguishes preview-before-agreeing (PREVIEW_ONLY) from agreed render (DRAFT)", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("PREVIEW_ONLY_START")
-    expect(prompt).toContain("PREVIEW_ONLY_END")
-    expect(prompt).toContain("does NOT save it to GitHub")
+  it("distinguishes preview-before-agreeing from agreed render — uses generate_design_preview for pre-decision previews", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("generate_design_preview")
+    expect(prompt).toContain("nothing is saved to GitHub")
   })
 
-  it("instructs agent to use PREVIEW_ONLY when user is still deciding", () => {
-    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
-    expect(prompt).toContain("When uncertain, use PREVIEW_ONLY")
-  })
-})
-
-describe("hasPreviewOnly", () => {
-  it("returns true when both PREVIEW_ONLY markers are present", () => {
-    expect(hasPreviewOnly("PREVIEW_ONLY_START\n# Spec\ncontent\nPREVIEW_ONLY_END")).toBe(true)
-  })
-
-  it("returns false when only start marker is present", () => {
-    expect(hasPreviewOnly("PREVIEW_ONLY_START\ncontent")).toBe(false)
-  })
-
-  it("returns false when neither marker is present", () => {
-    expect(hasPreviewOnly("Just a regular response.")).toBe(false)
-  })
-
-  it("returns false for DRAFT markers", () => {
-    expect(hasPreviewOnly("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
+  it("instructs agent to use generate_design_preview when uncertain — always safe to preview without committing", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("When uncertain, use")
+    expect(prompt).toContain("generate_design_preview")
   })
 })
-
-describe("extractPreviewOnly", () => {
-  it("extracts content between PREVIEW_ONLY markers", () => {
-    const response = "Here's the preview:\nPREVIEW_ONLY_START\n# Design Spec\ncontent\nPREVIEW_ONLY_END\nNot saved yet."
-    expect(extractPreviewOnly(response)).toBe("# Design Spec\ncontent")
-  })
-
-  it("returns empty string when markers not found", () => {
-    expect(extractPreviewOnly("no markers here")).toBe("")
-  })
-
-  it("trims whitespace from extracted content", () => {
-    expect(extractPreviewOnly("PREVIEW_ONLY_START\n  content  \nPREVIEW_ONLY_END")).toBe("content")
-  })
-})
-
-describe("hasDesignPatch", () => {
-  it("returns true when both patch markers are present", () => {
-    const response = "Updating design direction.\nDESIGN_PATCH_START\n## Design Direction\ndark mode\nDESIGN_PATCH_END"
-    expect(hasDesignPatch(response)).toBe(true)
-  })
-
-  it("returns false when only start marker is present", () => {
-    expect(hasDesignPatch("DESIGN_PATCH_START\n## Design Direction\ndark mode")).toBe(false)
-  })
-
-  it("returns false when neither marker is present", () => {
-    expect(hasDesignPatch("Just a regular response.")).toBe(false)
-  })
-
-  it("returns false when draft markers are present but not patch markers", () => {
-    expect(hasDesignPatch("DRAFT_DESIGN_SPEC_START\ncontent\nDRAFT_DESIGN_SPEC_END")).toBe(false)
-  })
-})
-
-describe("extractDesignPatch", () => {
-  it("extracts content between patch markers", () => {
-    const response = "Applying update.\nDESIGN_PATCH_START\n## Design Direction\ndark mode\nDESIGN_PATCH_END\nMore text."
-    expect(extractDesignPatch(response)).toBe("## Design Direction\ndark mode")
-  })
-
-  it("returns empty string when markers are absent", () => {
-    expect(extractDesignPatch("No markers here.")).toBe("")
-  })
-
-  it("trims whitespace from extracted content", () => {
-    const response = "DESIGN_PATCH_START\n  ## Design Direction\ndark mode  \nDESIGN_PATCH_END"
-    expect(extractDesignPatch(response).trim()).toBe("## Design Direction\ndark mode")
-  })
-
-  it("extracts multi-section patch correctly", () => {
-    const response = [
-      "Updating screens and open questions.",
-      "DESIGN_PATCH_START",
-      "## Screens",
-      "### Screen 1",
-      "Updated screen 1.",
-      "",
-      "## Open Questions",
-      "- [type: product] [blocking: no] New question.",
-      "DESIGN_PATCH_END",
-    ].join("\n")
-    const extracted = extractDesignPatch(response)
-    expect(extracted).toContain("## Screens")
-    expect(extracted).toContain("Updated screen 1.")
-    expect(extracted).toContain("## Open Questions")
-    expect(extracted).toContain("New question.")
-  })
-})
-

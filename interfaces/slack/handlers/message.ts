@@ -1,11 +1,11 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
-import { runAgent, UserImage } from "../../../runtime/claude-client"
+import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
 import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
-import { buildPmSystemPrompt, isCreateSpecIntent, extractSpecContent, hasDraftSpec, extractDraftSpec, hasPmPatch, extractPmPatch } from "../../../agents/pm"
-import { buildDesignSystemPrompt, isCreateDesignSpecIntent, hasDraftDesignSpec, extractDraftDesignSpec, extractDesignSpecContent, hasEscalationOffer, extractEscalationQuestion, stripEscalationMarker, buildDesignStateResponse, hasProductSpecUpdate, extractProductSpecUpdate, hasDesignPatch, extractDesignPatch, hasPreviewOnly, extractPreviewOnly } from "../../../agents/design"
-import { buildArchitectSystemPrompt, isCreateEngineeringSpecIntent, hasDraftEngineeringSpec, extractDraftEngineeringSpec, extractEngineeringSpecContent, hasArchitectPatch, extractArchitectPatch } from "../../../agents/architect"
+import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
+import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
+import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, detectRenderIntent, detectConfirmationOfDecision, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
@@ -320,160 +320,86 @@ async function runPmAgent(params: {
   const systemPrompt = buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext)
 
   await update("_Product Manager is thinking..._")
-  let response = await runAgent({ systemPrompt, history: historyPm, userMessage: enrichedUserMessagePm, userImages })
-  appendMessage(featureName, { role: "user", content: userMessage })
 
-  const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
+  const pmFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
+  const toolCallsOutPm: ToolCallRecord[] = []
 
-  // In read-only mode (approved spec), skip all writes — just answer the question
-  if (readOnly) {
-    const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").replace(/INTENT: CREATE_SPEC/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}`)
-    return
-  }
-
-  // Detect truncated DRAFT block for PM — auto-retry with forced PATCH if draft exists.
-  if (response.includes("DRAFT_SPEC_START") && !response.includes("DRAFT_SPEC_END")) {
-    const existingDraft = await readFile(filePath, `spec/${featureName}-product`)
-    if (existingDraft) {
-      await update("_Spec is large — switching to section-level update..._")
-      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use PRODUCT_PATCH_START/END instead. Look at the conversation history to identify what changes were requested or agreed. Output a PATCH block covering the 2-3 most important changed sections only — do not try to patch all sections at once. Remaining sections can be patched in a follow-up response.`
-      response = await runAgent({ systemPrompt, history: historyPm, userMessage: retryInstruction })
-      if (!hasPmPatch(response)) {
-        const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
-        appendMessage(featureName, { role: "assistant", content: warn })
-        await update(`${prefix}${warn}`)
-        return
+  const response = await runAgent({
+    systemPrompt,
+    history: historyPm,
+    userMessage: enrichedUserMessagePm,
+    userImages,
+    tools: readOnly ? undefined : PM_TOOLS,
+    toolHandler: readOnly ? undefined : async (name, input) => {
+      if (name === "save_product_spec_draft") {
+        const content = input.content as string
+        await update("_Auditing spec against product vision and architecture..._")
+        const audit = await auditSpecDraft({
+          draft: content,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+          featureName,
+        })
+        if (audit.status === "conflict") {
+          return { error: `Conflict detected — spec not saved: ${audit.message}` }
+        }
+        await update("_Saving draft to GitHub..._")
+        await saveDraftSpec({ featureName, filePath: pmFilePath, content })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${pmFilePath}`
+        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
+        return { result: { url, audit: auditOut } }
       }
-      // Fall through to hasPmPatch handler below.
-    } else {
-      const warn = `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Problem and Goals sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-      appendMessage(featureName, { role: "assistant", content: warn })
-      await update(`${prefix}${warn}`)
-      return
-    }
-  }
-
-  // Detect truncated patch block for PM.
-  if (response.includes("PRODUCT_PATCH_START") && !response.includes("PRODUCT_PATCH_END")) {
-    const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
-    appendMessage(featureName, { role: "assistant", content: warn })
-    await update(`${prefix}${warn}`)
-    return
-  }
-
-  if (hasPmPatch(response)) {
-    const patchContent = extractPmPatch(response)
-    const branchName = `spec/${featureName}-product`
-    const existingDraft = await readFile(filePath, branchName)
-    const mergedDraft = applySpecPatch(existingDraft ?? "", patchContent)
-
-    await update("_Auditing patch against product vision and architecture..._")
-    const audit = await auditSpecDraft({
-      draft: mergedDraft,
-      productVision: context.productVision,
-      systemArchitecture: context.systemArchitecture,
-      featureName,
-    })
-
-    if (audit.status === "conflict") {
-      const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
-      const conflictQuestion = `Resolve this before we continue. Do you want to adjust the spec, or update the product vision/architecture?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — patch not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
-      await update(`${prefix}${cleanResponse}\n\n:warning: *Conflict detected — patch not saved.*\n\n${audit.message}\n\n${conflictQuestion}`)
-      return
-    }
-
-    if (audit.status === "gap") {
-      const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
-      const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
-      await update(`${prefix}${cleanResponse}\n\n:thinking_face: *Gap detected — patch saved, but a decision is needed.*\n\n${audit.message}\n\n${gapQuestion}`)
-      await saveDraftSpec({ featureName, filePath, content: mergedDraft })
-      return
-    }
-
-    await update("_Saving updated draft to GitHub..._")
-    await saveDraftSpec({ featureName, filePath, content: mergedDraft })
-    const cleanResponse = response.replace(/PRODUCT_PATCH_START[\s\S]*?PRODUCT_PATCH_END/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}\n\n_Draft updated and saved to \`${filePath}\`._`)
-    return
-  }
-
-  if (hasDraftSpec(response)) {
-    const draftContent = extractDraftSpec(response)
-    await update("_Auditing draft against product vision and architecture..._")
-    const audit = await auditSpecDraft({
-      draft: draftContent,
-      productVision: context.productVision,
-      systemArchitecture: context.systemArchitecture,
-      featureName,
-    })
-
-    if (audit.status === "conflict") {
-      const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
-      const conflictQuestion = `Resolve this before we continue. Do you want to adjust the spec, or update the product vision/architecture?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
-      await update(
-        `${prefix}${cleanResponse}\n\n` +
-        `:warning: *Conflict detected — draft not saved.*\n\n${audit.message}\n\n` +
-        conflictQuestion
-      )
-      return
-    }
-
-    if (audit.status === "gap") {
-      const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
-      const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension (note it in the spec and move on)?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
-      await update(
-        `${prefix}${cleanResponse}\n\n` +
-        `:thinking_face: *Gap detected — draft saved, but a decision is needed.*\n\n${audit.message}\n\n` +
-        gapQuestion
-      )
-      await saveDraftSpec({ featureName, filePath, content: draftContent })
-      return
-    }
-
-    await update("_Saving draft to GitHub..._")
-    await saveDraftSpec({ featureName, filePath, content: draftContent })
-    const cleanResponse = response.replace(/DRAFT_SPEC_START[\s\S]*?DRAFT_SPEC_END/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
-    return
-  }
-
-  if (isCreateSpecIntent(response)) {
-    const specContent = extractSpecContent(response)
-    const blockingQuestions = extractBlockingQuestions(specContent)
-    if (blockingQuestions.length > 0) {
-      appendMessage(featureName, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
-      await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
-      return
-    }
-    // Audit spec against locked conversation decisions before caching for approval
-    await update("_Checking spec against locked decisions..._")
-    let finalSpecContent = specContent
-    let correctionNote = ""
-    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(featureName) })
-    if (decisionAudit.status === "corrections") {
-      const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
-      if (applied.length > 0) {
-        finalSpecContent = corrected
-        correctionNote = `\n\n_Found ${applied.length} value${applied.length > 1 ? "s" : ""} in the spec that differed from what we locked in conversation — corrected before saving:_\n${applied.map(c => `• *${c.description}:* ${c.found} → ${c.correct}`).join("\n")}`
+      if (name === "apply_product_spec_patch") {
+        const patch = input.patch as string
+        const branchName = `spec/${featureName}-product`
+        const existingDraft = await readFile(pmFilePath, branchName)
+        const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
+        await update("_Auditing patch against product vision and architecture..._")
+        const audit = await auditSpecDraft({
+          draft: mergedDraft,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+          featureName,
+        })
+        if (audit.status === "conflict") {
+          return { error: `Conflict detected — patch not saved: ${audit.message}` }
+        }
+        await update("_Saving updated draft to GitHub..._")
+        await saveDraftSpec({ featureName, filePath: pmFilePath, content: mergedDraft })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${pmFilePath}`
+        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
+        return { result: { url, audit: auditOut } }
       }
-    }
-    // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(featureName, { specType: "product", specContent: finalSpecContent, filePath, featureName })
-    const confirmMsg = `Looks like you're approving the product spec. Just to be certain before I save it — reply *confirmed* to lock it in and move to design, or let me know if there's anything left to review.${correctionNote}`
-    appendMessage(featureName, { role: "assistant", content: confirmMsg })
-    await update(`${prefix}${confirmMsg}`)
-    return
-  }
+      if (name === "finalize_product_spec") {
+        const existingDraft = await readFile(pmFilePath, `spec/${featureName}-product`)
+        if (!existingDraft) {
+          return { error: "No draft saved yet — save a draft first before finalizing." }
+        }
+        const blockingQuestions = extractBlockingQuestions(existingDraft)
+        if (blockingQuestions.length > 0) {
+          return { error: `Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` }
+        }
+        let finalContent = existingDraft
+        const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
+        if (decisionAudit.status === "corrections") {
+          const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
+          finalContent = corrected
+        }
+        await update("_Saving final product spec..._")
+        await saveApprovedSpec({ featureName, filePath: pmFilePath, content: finalContent })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${pmFilePath}`
+        return { result: { url, nextPhase: "design" } }
+      }
+      return { error: `Unknown tool: ${name}` }
+    },
+    toolCallsOut: toolCallsOutPm,
+  })
 
+  appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
   await update(`${prefix}${response}`)
 }
@@ -514,12 +440,6 @@ async function runDesignAgent(params: {
       // Not confirming — fall through to normal agent flow
     }
   }
-
-  // Platform enforcement flags — set inside the !readOnly block when render or confirmation intent is detected.
-  // All three inject a mandatory override after context loading. The agent is always in the loop.
-  let forcePreviewOnly = false
-  let forceApplyAndRender = false
-  let forceCommitDecision = false
 
   // Short-circuit status/general queries before loading expensive design context.
   // A "give me the latest spec" question in a design thread doesn't need the full
@@ -618,32 +538,6 @@ async function runDesignAgent(params: {
       return
     }
 
-    // PLATFORM ENFORCEMENT (Trust Step 0.5): detect render/preview intent before the agent runs.
-    // The agent is ALWAYS in the loop — it has conversation context the platform does not.
-    // The platform only enforces what block the agent must output; the agent decides the content.
-    //
-    // render intent → force PREVIEW_ONLY: agent outputs a preview block incorporating any
-    //   uncommitted decisions from the conversation. Nothing saved until user approves.
-    // apply-and-render → force PATCH: agent applies changes and saves. HTML renders on every save.
-    const renderIntent = await detectRenderIntent(userMessage)
-
-    if (renderIntent === "render-only") {
-      forcePreviewOnly = true
-    }
-
-    if (renderIntent === "apply-and-render") {
-      forceApplyAndRender = true
-    }
-
-    // Confirmation detection — only fires when render intent did not (render takes precedence).
-    // When the user confirms a design decision, the platform forces a DESIGN_PATCH_START block
-    // so every confirmation lands in the spec immediately rather than staying only in history.
-    if (renderIntent === "other") {
-      const confirmationIntent = await detectConfirmationOfDecision(userMessage)
-      if (confirmationIntent === "confirmed") {
-        forceCommitDecision = true
-      }
-    }
   }
 
   await update("_UX Designer is reading the spec and design context..._")
@@ -662,352 +556,161 @@ async function runDesignAgent(params: {
     ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${brandDriftsDesign.length} spec Brand section value${brandDriftsDesign.length === 1 ? "" : "s"} don't match BRAND.md: ${brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`).join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
     : ""
 
-  const baseEnrichedMessage = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice
-  const previewOnlyOverride = `First, briefly list any specific design decisions from this conversation that have NOT yet been saved to GitHub — name them concisely (e.g. "Dark mode (#0A0A0F)", "Glow 10→15→10% at 2.5s"). If everything is already in the spec, say so in one line. Then output a PREVIEW_ONLY_START block containing the full current design spec with those uncommitted decisions incorporated and marked [pending approval] inline. Do not ask permission. Do not offer choices. Do not discuss the HTML renderer — the platform renders automatically.`
-  const applyAndRenderOverride = `Apply all requested changes and output a DESIGN_PATCH_START block immediately. Do not ask permission. Do not offer options. Do not discuss the HTML renderer — the platform handles rendering automatically on every save. Your only job: output the PATCH block with all agreed changes now.`
-  const commitDecisionOverride = `The human just confirmed a design decision. You MUST output a DESIGN_PATCH_START block in this response that commits the confirmed decision(s) to the spec. Steps: (1) State in one sentence what decision was just confirmed. (2) Output a DESIGN_PATCH_START / DESIGN_PATCH_END block with the exact spec section(s) that need updating. Do not ask for permission. Do not offer to patch later. Do not just acknowledge verbally without the block. If multiple decisions were confirmed (e.g. "agree with all 6"), patch all of them in a single block.`
-  const enrichedUserMessageDesign = forcePreviewOnly
-    ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${previewOnlyOverride}`
-    : forceApplyAndRender
-      ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${applyAndRenderOverride}`
-      : forceCommitDecision
-        ? baseEnrichedMessage + `\n\nPLATFORM OVERRIDE: ${commitDecisionOverride}`
-        : baseEnrichedMessage
-  const systemPromptOverride = forcePreviewOnly
-    ? previewOnlyOverride
-    : forceApplyAndRender
-      ? applyAndRenderOverride
-      : forceCommitDecision
-        ? commitDecisionOverride
-        : undefined
-  const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly, systemPromptOverride)
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice
+  const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
+
+  const designFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
+  const designBranchName = `spec/${featureName}-design`
+  const prefix = routingNote ? `${routingNote}\n\n` : ""
+  const toolCallsOutDesign: ToolCallRecord[] = []
+
+  // Extract the approved product spec from context for use in the audit.
+  const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
+  const auditProductSpec = productSpecMatch ? productSpecMatch[1].trim() : ""
+
+  // Shared save logic: audit + save + preview + checkpoint.
+  // Used by both save_design_spec_draft and apply_design_spec_patch tools.
+  const saveDesignDraft = async (content: string): Promise<{ result?: unknown; error?: string }> => {
+    await update("_Auditing draft against product vision and architecture..._")
+    const audit = await auditSpecDraft({
+      draft: content,
+      productVision: context.productVision,
+      systemArchitecture: context.systemArchitecture,
+      productSpec: auditProductSpec,
+      featureName,
+    })
+    if (audit.status === "conflict") {
+      return { error: `Conflict detected — draft not saved: ${audit.message}` }
+    }
+    await update("_Saving draft to GitHub..._")
+    await saveDraftDesignSpec({ featureName, filePath: designFilePath, content })
+
+    // Generate HTML preview in background — non-fatal.
+    await update("_Generating HTML preview..._")
+    const { paths: dp, githubOwner: dOwner, githubRepo: dRepo } = loadWorkspaceConfig()
+    const designSpecUrl = `https://github.com/${dOwner}/${dRepo}/blob/${designBranchName}/${designFilePath}`
+    let previewUrl = "none"
+    const previewResult = await generateDesignPreview({ specContent: content, featureName }).catch((e: Error) => e)
+    if (!(previewResult instanceof Error)) {
+      const htmlFilePath = `${dp.featuresRoot}/${featureName}/${featureName}.preview.html`
+      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult }).catch(() => {})
+      try {
+        await client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: previewResult,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview`,
+        })
+        previewUrl = "uploaded_to_slack"
+      } catch (uploadErr: any) {
+        console.error(`[preview] Slack upload failed: ${uploadErr?.message}`)
+        previewUrl = "saved_to_github"
+      }
+    } else {
+      console.error(`[preview] HTML generation failed: ${previewResult.message}`)
+    }
+
+    const brandDrifts = context.brand ? auditBrandTokens(content, context.brand) : []
+    const specGap = audit.status === "gap" ? audit.message : null
+    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap } }
+  }
+
   // Design agent has a much larger context (system prompt + product vision + full draft spec)
   // than the PM agent. Cap at 20 messages (10 exchanges) so the combined payload stays well
   // under the token limit. Prior conversation context beyond the limit is summarized and
   // injected into the user message — no work is lost on long threads.
-  let response = await runAgent({ systemPrompt, history: historyDesign, userMessage: enrichedUserMessageDesign, userImages, historyLimit: DESIGN_HISTORY_LIMIT })
+  const response = await runAgent({
+    systemPrompt,
+    history: historyDesign,
+    userMessage: enrichedUserMessageDesign,
+    userImages,
+    historyLimit: DESIGN_HISTORY_LIMIT,
+    tools: readOnly ? undefined : DESIGN_TOOLS,
+    toolHandler: readOnly ? undefined : async (name, input) => {
+      if (name === "save_design_spec_draft") {
+        return saveDesignDraft(input.content as string)
+      }
+      if (name === "apply_design_spec_patch") {
+        const patch = input.patch as string
+        const existingDraft = await readFile(designFilePath, designBranchName)
+        const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
+        return saveDesignDraft(mergedDraft)
+      }
+      if (name === "generate_design_preview") {
+        const specContent = input.specContent as string
+        try {
+          await update("_Generating preview (not saved yet)..._")
+          const htmlContent = await generateDesignPreview({ specContent, featureName })
+          await client.files.uploadV2({
+            channel_id: channelId,
+            thread_ts: threadTs,
+            content: htmlContent,
+            filename: `${featureName}.preview.html`,
+            title: `${featureName} — Design Preview (not saved)`,
+          })
+          return { result: { previewUrl: "uploaded_to_slack" } }
+        } catch (err: any) {
+          return { error: `Preview generation failed: ${err?.message}` }
+        }
+      }
+      if (name === "fetch_url") {
+        const url = input.url as string
+        try {
+          const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+          if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` }
+          const text = await res.text()
+          return { result: { content: text.slice(0, 200_000) } }
+        } catch (err: any) {
+          return { error: `Fetch failed: ${err?.message}` }
+        }
+      }
+      if (name === "finalize_design_spec") {
+        const existingDraft = await readFile(designFilePath, designBranchName)
+        if (!existingDraft) {
+          return { error: "No draft saved yet — save a draft first before finalizing." }
+        }
+        const blockingQuestions = extractBlockingQuestions(existingDraft)
+        if (blockingQuestions.length > 0) {
+          return { error: `Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` }
+        }
+        let finalContent = existingDraft
+        const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
+        if (decisionAudit.status === "corrections") {
+          const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
+          finalContent = corrected
+        }
+        await update("_Saving final design spec..._")
+        await saveApprovedDesignSpec({ featureName, filePath: designFilePath, content: finalContent })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${designFilePath}`
+        return { result: { url, nextPhase: "engineering" } }
+      }
+      return { error: `Unknown tool: ${name}` }
+    },
+    toolCallsOut: toolCallsOutDesign,
+  })
+
   appendMessage(featureName, { role: "user", content: userMessage })
 
-  const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
-  const prefix = routingNote ? `${routingNote}\n\n` : ""
-
-  if (readOnly) {
-    const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/INTENT: CREATE_DESIGN_SPEC/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}`)
-    return
-  }
-
-  // Detect truncated PREVIEW_ONLY block — response hit max_tokens before PREVIEW_ONLY_END.
-  // Retry asking for only the block with no preamble. The uncommitted decisions were already
-  // shown in the previous (truncated) response so the user has seen them.
-  if (response.includes("PREVIEW_ONLY_START") && !response.includes("PREVIEW_ONLY_END")) {
-    await update("_Preview is large — resuming..._")
-    const retryInstruction = `SYSTEM OVERRIDE: Your previous response started a PREVIEW_ONLY_START block but was cut off before PREVIEW_ONLY_END. Output ONLY the PREVIEW_ONLY_START/END block now — no preamble, no commentary, no uncommitted decisions list (you already showed it). Keep section prose concise but include all sections.`
-    response = await runAgent({ systemPrompt, history: historyDesign, userMessage: retryInstruction, historyLimit: DESIGN_HISTORY_LIMIT })
-    if (!hasPreviewOnly(response)) {
-      await update(`${prefix}_The preview was too large to generate in one response. Try asking for a render of a specific section, or say *approved* to save the current spec as-is._`)
-      return
+  // Post-response tool-call audit: if no save tool was called and uncommitted decisions
+  // exist in the conversation, append a note so the user knows what wasn't saved.
+  const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
+  const didSave = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
+  let uncommittedNote = ""
+  if (!didSave && historyDesign.length > 6) {
+    const cacheKey = `${featureName}:${historyDesign.length}:postturn`
+    const uncommitted = await identifyUncommittedDecisions(historyDesign, context.currentDraft ?? "", cacheKey).catch(() => "")
+    const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
+    if (uncommitted && !isAllCommitted) {
+      uncommittedNote = `\n\n⚠️ *Heads up:* decisions were discussed this turn but not saved to the spec. Say *save those* to commit them.`
     }
   }
 
-  // PREVIEW_ONLY block — render HTML from proposed content without saving to GitHub.
-  // Used when the user wants to see a proposal before agreeing to it.
-  // Nothing is committed. If the user approves after seeing it, the next response saves a DRAFT.
-  if (hasPreviewOnly(response)) {
-    const previewContent = extractPreviewOnly(response)
-    const cleanResponse = response.replace(/PREVIEW_ONLY_START[\s\S]*?PREVIEW_ONLY_END/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    if (previewContent) {
-      try {
-        await update("_Generating preview (not saved yet)..._")
-        const htmlContent = await generateDesignPreview({ specContent: previewContent, featureName })
-        await client.files.uploadV2({
-          channel_id: channelId,
-          thread_ts: threadTs,
-          content: htmlContent,
-          filename: `${featureName}.preview.html`,
-          title: `${featureName} — Design Preview (not saved)`,
-        })
-        const msg = `${cleanResponse}\n\n_Preview generated — this has NOT been saved to GitHub. Say *approved* or *looks good* to save and lock it in, or share what needs changing._`
-        await update(`${prefix}${msg}`)
-      } catch (err: any) {
-        console.error(`[preview-only] HTML generation failed: ${err?.message}`)
-        await update(`${prefix}${cleanResponse}\n\n_Preview couldn't be generated — ${err?.message ?? "unknown error"}. Say *approved* to save this to GitHub without a preview._`)
-      }
-    } else {
-      await update(`${prefix}${cleanResponse}`)
-    }
-    return
-  }
-
-  // If the PM authorized a product direction change, commit the updated product spec
-  // to GitHub BEFORE auditing the design draft — so the spec chain stays consistent.
-  let updatedProductSpecContent: string | undefined
-  if (hasProductSpecUpdate(response)) {
-    updatedProductSpecContent = extractProductSpecUpdate(response)
-    if (updatedProductSpecContent) {
-      await update("_Applying PM-authorized product spec update..._")
-      const productSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
-      await saveApprovedSpec({ featureName, filePath: productSpecPath, content: updatedProductSpecContent })
-    }
-  }
-
-  // Extract the approved product spec from context for use in the audit.
-  // The product spec is embedded in currentDraft as "## Approved Product Spec\n..."
-  const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
-  const auditProductSpec = updatedProductSpecContent ?? (productSpecMatch ? productSpecMatch[1].trim() : "")
-
-  // Detect truncated DRAFT block — response hit max_tokens mid-spec.
-  // If a draft exists: auto-retry with a forced PATCH instruction — user never sees the error.
-  // If no draft yet (first save): guide toward a split save.
-  if (response.includes("DRAFT_DESIGN_SPEC_START") && !response.includes("DRAFT_DESIGN_SPEC_END")) {
-    const existingDraft = await readFile(filePath, `spec/${featureName}-design`)
-    if (existingDraft) {
-      await update("_Spec is large — switching to section-level update..._")
-      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_DESIGN_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use DESIGN_PATCH_START/END instead. Look at the conversation history to identify what changes were requested or agreed. Output a PATCH block covering the 2-3 most important changed sections only — do not try to patch all sections at once. Remaining sections can be patched in a follow-up response.`
-      response = await runAgent({ systemPrompt, history: historyDesign, userMessage: retryInstruction, historyLimit: DESIGN_HISTORY_LIMIT })
-      // If the retry didn't produce a PATCH block, fall through to the error below.
-      if (!hasDesignPatch(response)) {
-        const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update (e.g. "update just the Design Direction section") and I'll patch it directly.`
-        appendMessage(featureName, { role: "assistant", content: warn })
-        await update(`${prefix}${warn}`)
-        return
-      }
-      // Retry produced a PATCH — fall through to the hasDesignPatch handler below.
-    } else {
-      const warn = `The spec was too long to save in one response — the draft was cut off. Please try breaking it into two saves: first the Design Direction and Screens, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-      appendMessage(featureName, { role: "assistant", content: warn })
-      await update(`${prefix}${warn}`)
-      return
-    }
-  }
-
-  // Detect truncated patch block — same failure mode as above but for PATCH blocks.
-  if (response.includes("DESIGN_PATCH_START") && !response.includes("DESIGN_PATCH_END")) {
-    const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
-    appendMessage(featureName, { role: "assistant", content: warn })
-    await update(`${prefix}${warn}`)
-    return
-  }
-
-  if (hasDesignPatch(response)) {
-    const patchContent = extractDesignPatch(response)
-    // Read existing draft, apply patch, save merged result
-    const { paths } = loadWorkspaceConfig()
-    const branchName = `spec/${featureName}-design`
-    const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-    const existingDraft = await readFile(designDraftPath, branchName)
-    const mergedDraft = applySpecPatch(existingDraft ?? "", patchContent)
-
-    await update("_Auditing patch against product vision and architecture..._")
-    const audit = await auditSpecDraft({
-      draft: mergedDraft,
-      productVision: context.productVision,
-      systemArchitecture: context.systemArchitecture,
-      productSpec: auditProductSpec,
-      featureName,
-    })
-
-    if (audit.status === "conflict") {
-      const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-      const conflictQuestion = `Resolve this before we continue. Do you want to adjust the design, or update the product vision/architecture?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\n${audit.message}\n\n${conflictQuestion}` })
-      await update(`${prefix}${cleanResponse}\n\n:no_entry: *Conflict detected:*\n\n${audit.message}\n\n${conflictQuestion}`)
-      return
-    }
-
-    if (audit.status === "gap") {
-      const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-      const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — patch saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
-      await update(`${prefix}${cleanResponse}\n\n:thinking_face: *Gap detected:*\n\n${audit.message}\n\n${gapQuestion}`)
-      await saveDraftDesignSpec({ featureName, filePath: designDraftPath, content: mergedDraft })
-      return
-    }
-
-    await update("_Saving updated draft to GitHub..._")
-    await saveDraftDesignSpec({ featureName, filePath: designDraftPath, content: mergedDraft })
-
-    const cleanResponse = response.replace(/DESIGN_PATCH_START[\s\S]*?DESIGN_PATCH_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-
-    // Generate HTML preview and checkpoint in parallel — both non-fatal.
-    const { paths: p, githubOwner: pOwner, githubRepo: pRepo } = loadWorkspaceConfig()
-    const patchSpecUrl = `https://github.com/${pOwner}/${pRepo}/blob/spec/${featureName}-design/${p.featuresRoot}/${featureName}/${featureName}.design.md`
-    let previewNote = ""
-    let checkpoint: { committed: string; notCommitted: string } | null = null
-    await update("_Generating HTML preview and save checkpoint..._")
-    const [previewResult, checkpointResult] = await Promise.allSettled([
-      generateDesignPreview({ specContent: mergedDraft, featureName }),
-      generateSaveCheckpoint(mergedDraft, historyDesign),
-    ])
-    if (previewResult.status === "fulfilled") {
-      const htmlContent = previewResult.value
-      const htmlFilePath = `${p.featuresRoot}/${featureName}/${featureName}.preview.html`
-      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent }).catch(() => {})
-      try {
-        await client.files.uploadV2({
-          channel_id: channelId,
-          thread_ts: threadTs,
-          content: htmlContent,
-          filename: `${featureName}.preview.html`,
-          title: `${featureName} — Design Preview`,
-        })
-        previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-      } catch (uploadErr: any) {
-        console.error(`[preview] Slack upload failed: ${uploadErr?.message}`)
-        previewNote = `\n\n_Preview saved to GitHub. To view it: open the spec branch, download \`${featureName}.preview.html\`, and open in any browser._`
-      }
-    } else {
-      console.error(`[preview] HTML generation failed: ${previewResult.reason?.message}`)
-      previewNote = `\n\n_HTML preview couldn't be generated. Say *"regenerate preview"* to try again._`
-    }
-    if (checkpointResult.status === "fulfilled") checkpoint = checkpointResult.value
-
-    const checkpointFooter = buildCheckpointFooter(checkpoint, patchSpecUrl)
-    const cta = `\n\nReview the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first.`
-    const suffix = previewNote + checkpointFooter + cta
-    const maxCleanLength = 9_000 - prefix.length
-    const truncatedClean = cleanResponse.length > maxCleanLength
-      ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full patch details saved to GitHub — spec is updated.]_"
-      : cleanResponse
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${truncatedClean}${suffix}`)
-    return
-  }
-
-  if (hasDraftDesignSpec(response)) {
-    const draftContent = extractDraftDesignSpec(response)
-    await update("_Auditing draft against product vision and architecture..._")
-    const audit = await auditSpecDraft({
-      draft: draftContent,
-      productVision: context.productVision,
-      systemArchitecture: context.systemArchitecture,
-      productSpec: auditProductSpec,
-      featureName,
-    })
-
-    if (audit.status === "conflict") {
-      const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-      const conflictQuestion = `Resolve this before we continue. Do you want to adjust the design, or update the product vision/architecture?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nConflict detected — draft not saved.\n\n${audit.message}\n\n${conflictQuestion}` })
-      await update(
-        `${prefix}${cleanResponse}\n\n` +
-        `:warning: *Conflict detected — draft not saved.*\n\n${audit.message}\n\n` +
-        conflictQuestion
-      )
-      return
-    }
-
-    if (audit.status === "gap") {
-      const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-      const gapQuestion = `Do you want to update the product vision/architecture to cover this, or treat it as a deliberate extension (note it in the spec and move on)?`
-      appendMessage(featureName, { role: "assistant", content: `${cleanResponse}\n\nGap detected — draft saved, but a decision is needed.\n\n${audit.message}\n\n${gapQuestion}` })
-      await update(
-        `${prefix}${cleanResponse}\n\n` +
-        `:thinking_face: *Gap detected — draft saved, but a decision is needed.*\n\n${audit.message}\n\n` +
-        gapQuestion
-      )
-      await saveDraftDesignSpec({ featureName, filePath, content: draftContent })
-      return
-    }
-
-    await update("_Saving draft to GitHub..._")
-    await saveDraftDesignSpec({ featureName, filePath, content: draftContent })
-    const cleanResponse = response.replace(/DRAFT_DESIGN_SPEC_START[\s\S]*?DRAFT_DESIGN_SPEC_END/g, "").replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-
-    // Generate HTML preview and save checkpoint in parallel — both non-fatal.
-    // The checkpoint shows what key decisions are now committed and flags
-    // anything discussed in this thread that is not yet in the spec.
-    const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
-    const draftSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-    let previewNote = ""
-    let draftCheckpoint: { committed: string; notCommitted: string } | null = null
-    await update("_Generating HTML preview and save checkpoint..._")
-    const [draftPreviewResult, draftCheckpointResult] = await Promise.allSettled([
-      generateDesignPreview({ specContent: draftContent, featureName }),
-      generateSaveCheckpoint(draftContent, historyDesign),
-    ])
-    if (draftPreviewResult.status === "fulfilled") {
-      const htmlContent = draftPreviewResult.value
-      const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
-      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: htmlContent }).catch(() => {})
-      try {
-        await client.files.uploadV2({
-          channel_id: channelId,
-          thread_ts: threadTs,
-          content: htmlContent,
-          filename: `${featureName}.preview.html`,
-          title: `${featureName} — Design Preview`,
-        })
-        previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-      } catch (uploadErr: any) {
-        console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
-        previewNote = `\n\n_Preview saved to GitHub. To view it: open the spec branch, download \`${featureName}.preview.html\`, and open in any browser._`
-      }
-    } else {
-      console.error(`[preview] HTML generation failed: ${draftPreviewResult.reason?.message}`)
-      previewNote = `\n\n_HTML preview couldn't be generated for this draft. Say *"regenerate preview"* to try again._`
-    }
-    if (draftCheckpointResult.status === "fulfilled") draftCheckpoint = draftCheckpointResult.value
-
-    // Build a guaranteed suffix so truncation never swallows the checkpoint or CTA.
-    // Only cleanResponse gets truncated — the suffix always appears.
-    const checkpointFooter = buildCheckpointFooter(draftCheckpoint, draftSpecUrl)
-    const cta = `\n\nReview the preview above, then say *approved* to lock it in and move to engineering — or share feedback and we'll refine first.`
-    const suffix = previewNote + checkpointFooter + cta
-    const maxCleanLength = 9_000 - prefix.length
-    const truncatedClean = cleanResponse.length > maxCleanLength
-      ? cleanResponse.slice(0, cleanResponse.lastIndexOf("\n\n", maxCleanLength) || maxCleanLength) + "\n\n_[Full spec details saved to GitHub — draft is complete.]_"
-      : cleanResponse
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${truncatedClean}${suffix}`)
-    return
-  }
-
-  if (isCreateDesignSpecIntent(response)) {
-    const specContent = extractDesignSpecContent(response)
-    const blockingQuestions = extractBlockingQuestions(specContent)
-    if (blockingQuestions.length > 0) {
-      appendMessage(featureName, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
-      await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
-      return
-    }
-    // Audit spec against locked conversation decisions before caching for approval
-    await update("_Checking spec against locked decisions..._")
-    let finalSpecContent = specContent
-    let correctionNote = ""
-    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(featureName) })
-    if (decisionAudit.status === "corrections") {
-      const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
-      if (applied.length > 0) {
-        finalSpecContent = corrected
-        correctionNote = `\n\n_Found ${applied.length} value${applied.length > 1 ? "s" : ""} in the spec that differed from what we locked in conversation — corrected before saving:_\n${applied.map(c => `• *${c.description}:* ${c.found} → ${c.correct}`).join("\n")}`
-      }
-    }
-    // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(featureName, { specType: "design", specContent: finalSpecContent, filePath, featureName })
-    const confirmMsg = `Looks like you're approving the design spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to engineering, or let me know if there's anything left to review.${correctionNote}`
-    appendMessage(featureName, { role: "assistant", content: confirmMsg })
-    await update(`${prefix}${confirmMsg}`)
-    return
-  }
-
-  // Check for PM escalation offer — strip marker, store pending state, display clean response
-  if (hasEscalationOffer(response)) {
-    const question = extractEscalationQuestion(response)
-    setPendingEscalation(featureName, { targetAgent: "pm", question, designContext: context.currentDraft ?? "" })
-    const cleanResponse = stripEscalationMarker(response)
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}`)
-    return
-  }
-
-  const finalResponse = response.replace(/PRODUCT_SPEC_UPDATE_START[\s\S]*?PRODUCT_SPEC_UPDATE_END/g, "").trim()
-  appendMessage(featureName, { role: "assistant", content: finalResponse })
-  await update(`${prefix}${finalResponse}`)
+  appendMessage(featureName, { role: "assistant", content: response })
+  await update(`${prefix}${response}${uncommittedNote}`)
 }
 
 async function runArchitectAgent(params: {
@@ -1126,104 +829,101 @@ async function runArchitectAgent(params: {
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
-  let response = await runAgent({ systemPrompt, history: historyArch, userMessage: enrichedUserMessageArch, userImages, historyLimit: ARCH_HISTORY_LIMIT })
-  appendMessage(featureName, { role: "user", content: userMessage })
 
-  const filePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+  const archFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+  const archBranchName = `spec/${featureName}-engineering`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
+  const toolCallsOutArch: ToolCallRecord[] = []
 
-  if (readOnly) {
-    const cleanResponse = response
-      .replace(/DRAFT_ENGINEERING_SPEC_START[\s\S]*?DRAFT_ENGINEERING_SPEC_END/g, "")
-      .replace(/INTENT: CREATE_ENGINEERING_SPEC/g, "")
-      .trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}`)
-    return
-  }
-
-  // Detect truncated DRAFT block for architect — auto-retry with forced PATCH if draft exists.
-  if (response.includes("DRAFT_ENGINEERING_SPEC_START") && !response.includes("DRAFT_ENGINEERING_SPEC_END")) {
-    const existingDraft = await readFile(filePath, `spec/${featureName}-engineering`)
-    if (existingDraft) {
-      await update("_Spec is large — switching to section-level update..._")
-      const retryInstruction = `SYSTEM OVERRIDE: Your previous response used DRAFT_ENGINEERING_SPEC_START but was cut off because the spec is too long for a full rewrite. You MUST use ENGINEERING_PATCH_START/END instead. Look at the conversation history to identify what changes were requested or agreed. Output a PATCH block covering the 2-3 most important changed sections only — do not try to patch all sections at once. Remaining sections can be patched in a follow-up response.`
-      response = await runAgent({ systemPrompt, history: historyArch, userMessage: retryInstruction, historyLimit: ARCH_HISTORY_LIMIT })
-      if (!hasArchitectPatch(response)) {
-        const warn = `Unable to apply the changes automatically. Please say which specific section you'd like to update and I'll patch it directly.`
-        appendMessage(featureName, { role: "assistant", content: warn })
-        await update(`${prefix}${warn}`)
-        return
+  const response = await runAgent({
+    systemPrompt,
+    history: historyArch,
+    userMessage: enrichedUserMessageArch,
+    userImages,
+    historyLimit: ARCH_HISTORY_LIMIT,
+    tools: readOnly ? undefined : ARCHITECT_TOOLS,
+    toolHandler: readOnly ? undefined : async (name, input) => {
+      if (name === "save_engineering_spec_draft") {
+        const content = input.content as string
+        await update("_Auditing spec against product vision and architecture..._")
+        const audit = await auditSpecDraft({
+          draft: content,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+          featureName,
+        })
+        if (audit.status === "conflict") {
+          return { error: `Conflict detected — spec not saved: ${audit.message}` }
+        }
+        await update("_Saving draft to GitHub..._")
+        await saveDraftEngineeringSpec({ featureName, filePath: archFilePath, content })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/${archBranchName}/${archFilePath}`
+        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
+        return { result: { url, audit: auditOut } }
       }
-      // Fall through to hasArchitectPatch handler below.
-    } else {
-      const warn = `The spec was too long to save in one response — the draft was cut off. Try breaking it into two saves: first the Data Model and API sections, then say *"continue saving the rest"*. (Nothing was saved this time.)`
-      appendMessage(featureName, { role: "assistant", content: warn })
-      await update(`${prefix}${warn}`)
-      return
-    }
-  }
-
-  // Detect truncated patch block for architect.
-  if (response.includes("ENGINEERING_PATCH_START") && !response.includes("ENGINEERING_PATCH_END")) {
-    const warn = `The spec update was cut off before it could be saved. Please say *"apply the updates"* and I'll try again. (Nothing was changed this time.)`
-    appendMessage(featureName, { role: "assistant", content: warn })
-    await update(`${prefix}${warn}`)
-    return
-  }
-
-  if (hasArchitectPatch(response)) {
-    const patchContent = extractArchitectPatch(response)
-    const branchName = `spec/${featureName}-engineering`
-    const existingDraft = await readFile(filePath, branchName)
-    const mergedDraft = applySpecPatch(existingDraft ?? "", patchContent)
-
-    await update("_Saving updated engineering spec to GitHub..._")
-    await saveDraftEngineeringSpec({ featureName, filePath, content: mergedDraft })
-    const cleanResponse = response.replace(/ENGINEERING_PATCH_START[\s\S]*?ENGINEERING_PATCH_END/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}\n\n_Engineering spec updated and saved to \`${filePath}\`._`)
-    return
-  }
-
-  if (hasDraftEngineeringSpec(response)) {
-    const draftContent = extractDraftEngineeringSpec(response)
-    await update("_Saving draft engineering spec to GitHub..._")
-    await saveDraftEngineeringSpec({ featureName, filePath, content: draftContent })
-    const cleanResponse = response.replace(/DRAFT_ENGINEERING_SPEC_START[\s\S]*?DRAFT_ENGINEERING_SPEC_END/g, "").trim()
-    appendMessage(featureName, { role: "assistant", content: cleanResponse })
-    await update(`${prefix}${cleanResponse}\n\n_Draft saved to \`${filePath}\`._`)
-    return
-  }
-
-  if (isCreateEngineeringSpecIntent(response)) {
-    const specContent = extractEngineeringSpecContent(response)
-    const blockingQuestions = extractBlockingQuestions(specContent)
-    if (blockingQuestions.length > 0) {
-      appendMessage(featureName, { role: "assistant", content: `Approval blocked — the following questions must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` })
-      await update(`${prefix}:no_entry: *Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:*\n${blockingQuestions.map(q => `• ${q}`).join("\n")}`)
-      return
-    }
-    // Audit spec against locked conversation decisions before caching for approval
-    await update("_Checking spec against locked decisions..._")
-    let finalSpecContent = specContent
-    let correctionNote = ""
-    const decisionAudit = await auditSpecDecisions({ specContent, history: getHistory(featureName) })
-    if (decisionAudit.status === "corrections") {
-      const { corrected, applied } = applyDecisionCorrections(specContent, decisionAudit.corrections)
-      if (applied.length > 0) {
-        finalSpecContent = corrected
-        correctionNote = `\n\n_Found ${applied.length} value${applied.length > 1 ? "s" : ""} in the spec that differed from what we locked in conversation — corrected before saving:_\n${applied.map(c => `• *${c.description}:* ${c.found} → ${c.correct}`).join("\n")}`
+      if (name === "apply_engineering_spec_patch") {
+        const patch = input.patch as string
+        const existingDraft = await readFile(archFilePath, archBranchName)
+        const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
+        await update("_Auditing patch against product vision and architecture..._")
+        const audit = await auditSpecDraft({
+          draft: mergedDraft,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+          featureName,
+        })
+        if (audit.status === "conflict") {
+          return { error: `Conflict detected — patch not saved: ${audit.message}` }
+        }
+        await update("_Saving updated draft to GitHub..._")
+        await saveDraftEngineeringSpec({ featureName, filePath: archFilePath, content: mergedDraft })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/${archBranchName}/${archFilePath}`
+        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
+        return { result: { url, audit: auditOut } }
       }
-    }
-    // Cache spec, ask for confirmation — don't save until user explicitly confirms
-    setPendingApproval(featureName, { specType: "engineering", specContent: finalSpecContent, filePath, featureName })
-    const confirmMsg = `Looks like you're approving the engineering spec. Just to be certain before I save it — reply *confirmed* to lock it in and hand off to the engineering agents, or let me know if there's anything left to review.${correctionNote}`
-    appendMessage(featureName, { role: "assistant", content: confirmMsg })
-    await update(`${prefix}${confirmMsg}`)
-    return
-  }
+      if (name === "read_approved_specs") {
+        const featureNames = input.featureNames as string[] | undefined
+        if (!featureNames || featureNames.length === 0) {
+          return { result: { specs: {}, note: "Approved specs are already loaded in your system prompt context." } }
+        }
+        const { paths } = loadWorkspaceConfig()
+        const specs: Record<string, string> = {}
+        await Promise.all(featureNames.map(async (fn) => {
+          const path = `${paths.featuresRoot}/${fn}/${fn}.engineering.md`
+          const content = await readFile(path, "main").catch(() => null)
+          if (content) specs[fn] = content
+        }))
+        return { result: { specs } }
+      }
+      if (name === "finalize_engineering_spec") {
+        const existingDraft = await readFile(archFilePath, archBranchName)
+        if (!existingDraft) {
+          return { error: "No draft saved yet — save a draft first before finalizing." }
+        }
+        const blockingQuestions = extractBlockingQuestions(existingDraft)
+        if (blockingQuestions.length > 0) {
+          return { error: `Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` }
+        }
+        let finalContent = existingDraft
+        const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
+        if (decisionAudit.status === "corrections") {
+          const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
+          finalContent = corrected
+        }
+        await update("_Saving final engineering spec..._")
+        await saveApprovedEngineeringSpec({ featureName, filePath: archFilePath, content: finalContent })
+        const { githubOwner, githubRepo } = loadWorkspaceConfig()
+        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${archFilePath}`
+        return { result: { url, nextPhase: "build" } }
+      }
+      return { error: `Unknown tool: ${name}` }
+    },
+    toolCallsOut: toolCallsOutArch,
+  })
 
+  appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
   await update(`${prefix}${response}`)
 }

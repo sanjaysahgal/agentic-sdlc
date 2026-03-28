@@ -31,6 +31,13 @@ Shapes a feature idea into a structured product spec through conversation. Asks 
 
 **Approved spec mode** — once a spec is approved, the pm agent continues handling all messages in the feature channel (proposals, questions, status) but treats the spec as the current approved baseline. Revisions require explicit re-approval. Open questions are structured: `[type: design|engineering|product] [blocking: yes|no]`.
 
+**Native tool-use (Step 13):** The PM agent uses the Anthropic tool-use API:
+- `save_product_spec_draft` — first save; platform runs spec audit and returns `{ url, audit }` as tool result
+- `apply_product_spec_patch` — incremental update; same audit
+- `finalize_product_spec` — blocked if unresolved `[blocking: yes]` questions exist; triggers phase advance to design
+
+The old text-block protocol (`DRAFT_SPEC_START/END`, `PRODUCT_PATCH_START/END`, `INTENT: CREATE_SPEC`) is fully removed.
+
 ---
 
 ## UX Design agent
@@ -47,12 +54,16 @@ Reads the approved product spec fully before asking a single question. Works wit
 
 **HTML preview:** On every draft save, the design agent generates a self-contained HTML preview (`<feature>.preview.html`) saved to the design branch alongside the spec. Uses Tailwind CDN + Alpine.js — all screens navigable via tabs, all states (default/loading/empty/error) toggleable per screen, faithful to brand colors and typography. Preview link posted in Slack after every draft save. Non-fatal — draft save succeeds even if preview generation fails.
 
-**Platform-enforced render/preview behavior (Trust Step 0.5):** When a user requests a render or preview, the platform detects the intent via Haiku classification before the agent runs:
-- **render-only** ("give a new render", "show me the preview"): the platform injects a mandatory PLATFORM OVERRIDE that forces a PREVIEW_ONLY block. The agent must list uncommitted decisions first, then output the block. Cannot refuse or offer alternatives.
-- **apply-and-render** ("rebuild with recommendations and render"): the platform injects a mandatory PLATFORM OVERRIDE that forces a PATCH block output. The agent cannot ask permission or offer alternatives. HTML renders automatically on every patch save.
-This replaces the previous prompt-rule-only approach, which was probabilistic. Render behavior is now platform-enforced.
+**Native tool-use (Step 13):** The design agent uses the Anthropic tool-use API. All spec saves, patches, previews, and finalizations are done via typed tool calls:
+- `save_design_spec_draft` — first save of the spec; platform runs brand + spec audits and auto-generates HTML preview
+- `apply_design_spec_patch` — incremental update; same audits + preview regeneration
+- `generate_design_preview` — preview-only, no GitHub save
+- `fetch_url` — fetches a reference URL to extract brand tokens
+- `finalize_design_spec` — blocked if unresolved `[blocking: yes]` questions exist
 
-**Platform-enforced confirmation commits (Trust Step 0.5b):** When a user confirms a design decision (picks an option, locks something, agrees with a recommendation), the platform detects the confirmation via Haiku classification before the agent runs. If confirmed, a PLATFORM OVERRIDE is injected forcing the agent to output a `DESIGN_PATCH_START` block committing the decision to the spec in that same response. The agent cannot acknowledge verbally without patching. Render intent takes precedence — if the message is classified as a render request, confirmation detection is skipped. This prevents confirmed decisions from living only in conversation history and never reaching the spec.
+The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/END`, `PREVIEW_ONLY_START/END`, `INTENT: CREATE_DESIGN_SPEC`) is fully removed. The Haiku classifiers `detectRenderIntent` and `detectConfirmationOfDecision` are removed — the agent calls tools directly without platform pre-classification.
+
+**Post-response uncommitted decisions audit:** After every design agent text-only response (no save tool called), if conversation history > 6 messages, the platform runs `identifyUncommittedDecisions`. If uncommitted decisions exist, the platform appends a note to the Slack message prompting the user to "save those".
 
 **Conversation store keyed by featureName, not threadTs.** All messages in `#feature-onboarding` (any Slack thread) share one conversation history keyed by the feature name (`"onboarding"`). A new team member starting a fresh thread in the same channel immediately has access to all prior context — no lost decisions, no cold-start. The `threadTs` is still used for Slack thread routing (replies post in the correct thread), but has no effect on what history the agent loads.
 
@@ -79,8 +90,13 @@ Operates simultaneously at feature level (engineering spec) and product level (o
 
 **Triggered by:** `design-approved-awaiting-engineering` or `engineering-in-progress` phase in `getInProgressFeatures()`
 **Inputs:** Approved product spec + approved design spec + current engineering draft (if any) + all other approved engineering specs + product vision + system architecture
-**Draft mechanics:** Auto-saves after every agreed decision via `DRAFT_ENGINEERING_SPEC_START/END` block → `saveDraftEngineeringSpec()`
-**Approval mechanics:** Detects `INTENT: CREATE_ENGINEERING_SPEC` → blocks on unresolved `[blocking: yes]` questions → `saveApprovedEngineeringSpec()`
+**Native tool-use (Step 13):** The architect agent uses the Anthropic tool-use API:
+- `save_engineering_spec_draft` — first save; platform runs spec audit against vision, architecture, and all other approved engineering specs
+- `apply_engineering_spec_patch` — incremental update; same audit
+- `read_approved_specs` — reads all (or named) approved engineering specs for cross-feature coherence before writing proposals
+- `finalize_engineering_spec` — blocked if unresolved `[blocking: yes]` questions exist
+
+The old text-block protocol (`DRAFT_ENGINEERING_SPEC_START/END`, `ENGINEERING_PATCH_START/END`, `INTENT: CREATE_ENGINEERING_SPEC`) is fully removed.
 
 ---
 

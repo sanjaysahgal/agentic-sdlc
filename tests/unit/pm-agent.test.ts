@@ -1,12 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import {
-  isCreateSpecIntent,
-  hasDraftSpec,
-  extractDraftSpec,
-  extractSpecContent,
   buildPmSystemPrompt,
-  hasPmPatch,
-  extractPmPatch,
+  PM_TOOLS,
 } from "../../agents/pm"
 import type { AgentContext } from "../../runtime/context-loader"
 
@@ -17,67 +12,36 @@ const baseContext: AgentContext = {
   currentDraft: "",
 }
 
-describe("isCreateSpecIntent", () => {
-  it("returns true when response contains INTENT: CREATE_SPEC", () => {
-    expect(isCreateSpecIntent("INTENT: CREATE_SPEC\n\n# Feature — Product Spec")).toBe(true)
+describe("PM_TOOLS structure", () => {
+  it("exports 3 tools", () => {
+    expect(PM_TOOLS).toHaveLength(3)
   })
 
-  it("returns false when marker is absent", () => {
-    expect(isCreateSpecIntent("Looks good! Let me summarize the spec.")).toBe(false)
+  it("includes save_product_spec_draft as first tool", () => {
+    expect(PM_TOOLS[0].name).toBe("save_product_spec_draft")
   })
 
-  it("returns false for partial match (marker must be exact)", () => {
-    expect(isCreateSpecIntent("INTENT: create_spec")).toBe(false)
-    expect(isCreateSpecIntent("CREATE_SPEC")).toBe(false)
-  })
-})
-
-describe("hasDraftSpec", () => {
-  it("returns true when both markers are present", () => {
-    const response = "Here is the draft:\nDRAFT_SPEC_START\n# Spec\nDRAFT_SPEC_END"
-    expect(hasDraftSpec(response)).toBe(true)
+  it("includes apply_product_spec_patch as second tool", () => {
+    expect(PM_TOOLS[1].name).toBe("apply_product_spec_patch")
   })
 
-  it("returns false when only start marker is present", () => {
-    expect(hasDraftSpec("DRAFT_SPEC_START\n# Spec")).toBe(false)
+  it("includes finalize_product_spec as third tool", () => {
+    expect(PM_TOOLS[2].name).toBe("finalize_product_spec")
   })
 
-  it("returns false when only end marker is present", () => {
-    expect(hasDraftSpec("# Spec\nDRAFT_SPEC_END")).toBe(false)
+  it("save_product_spec_draft requires content parameter", () => {
+    const tool = PM_TOOLS.find(t => t.name === "save_product_spec_draft")!
+    expect(tool.input_schema.required).toContain("content")
   })
 
-  it("returns false when neither marker is present", () => {
-    expect(hasDraftSpec("Just a regular response with no draft.")).toBe(false)
-  })
-})
-
-describe("extractDraftSpec", () => {
-  it("extracts spec content between the markers", () => {
-    const response = "Some text\nDRAFT_SPEC_START\n# Onboarding — Product Spec\n\n## Problem\nX\nDRAFT_SPEC_END\nMore text"
-    const result = extractDraftSpec(response)
-    expect(result).toBe("# Onboarding — Product Spec\n\n## Problem\nX")
+  it("apply_product_spec_patch requires patch parameter", () => {
+    const tool = PM_TOOLS.find(t => t.name === "apply_product_spec_patch")!
+    expect(tool.input_schema.required).toContain("patch")
   })
 
-  it("trims whitespace from extracted content", () => {
-    const response = "DRAFT_SPEC_START\n\n  # Spec  \n\nDRAFT_SPEC_END"
-    expect(extractDraftSpec(response)).toBe("# Spec")
-  })
-
-  it("returns empty string when markers are absent", () => {
-    expect(extractDraftSpec("No draft here.")).toBe("")
-  })
-})
-
-describe("extractSpecContent", () => {
-  it("extracts content from first fenced code block", () => {
-    const response = "INTENT: CREATE_SPEC\n```markdown\n# Feature Spec\n\n## Problem\nY\n```"
-    expect(extractSpecContent(response)).toBe("# Feature Spec\n\n## Problem\nY")
-  })
-
-  it("falls back to full response minus INTENT marker when no code block", () => {
-    const response = "INTENT: CREATE_SPEC\n# Feature Spec\n\n## Problem\nZ"
-    expect(extractSpecContent(response)).toContain("# Feature Spec")
-    expect(extractSpecContent(response)).not.toContain("INTENT: CREATE_SPEC")
+  it("finalize_product_spec requires no parameters", () => {
+    const tool = PM_TOOLS.find(t => t.name === "finalize_product_spec")!
+    expect(tool.input_schema.required).toHaveLength(0)
   })
 })
 
@@ -90,12 +54,6 @@ describe("buildPmSystemPrompt — spec link on approval-ready", () => {
 
   afterEach(() => {
     process.env = originalEnv
-  })
-
-  it("includes a GitHub link to the draft spec when the spec is approval-ready", () => {
-    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
-    expect(prompt).toContain("https://github.com/o/r/blob/spec/onboarding-product/")
-    expect(prompt).toContain("onboarding.product.md")
   })
 
   it("requires Product Vision Updates section in every approved spec — non-negotiable enforcement", () => {
@@ -125,50 +83,20 @@ describe("buildPmSystemPrompt — spec link on approval-ready", () => {
     const prompt = buildPmSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("No other approved product specs yet")
   })
-})
 
-describe("hasPmPatch", () => {
-  it("returns true when both patch markers are present", () => {
-    expect(hasPmPatch("PRODUCT_PATCH_START\n## Problem\nUpdated.\nPRODUCT_PATCH_END")).toBe(true)
+  it("names the save_product_spec_draft tool", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("save_product_spec_draft")
   })
 
-  it("returns false when only start marker is present", () => {
-    expect(hasPmPatch("PRODUCT_PATCH_START\n## Problem\nUpdated.")).toBe(false)
+  it("names the apply_product_spec_patch tool", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("apply_product_spec_patch")
   })
 
-  it("returns false when neither marker is present", () => {
-    expect(hasPmPatch("Just a regular PM response.")).toBe(false)
-  })
-
-  it("returns false when DRAFT markers are present but not PATCH markers", () => {
-    expect(hasPmPatch("DRAFT_SPEC_START\ncontent\nDRAFT_SPEC_END")).toBe(false)
-  })
-})
-
-describe("extractPmPatch", () => {
-  it("extracts content between patch markers", () => {
-    const response = "Updating goals.\nPRODUCT_PATCH_START\n## Goals\nNew goals here.\nPRODUCT_PATCH_END\nMore text."
-    expect(extractPmPatch(response)).toBe("## Goals\nNew goals here.")
-  })
-
-  it("returns empty string when markers are absent", () => {
-    expect(extractPmPatch("No markers here.")).toBe("")
-  })
-
-  it("extracts multi-section patch correctly", () => {
-    const response = [
-      "PRODUCT_PATCH_START",
-      "## Goals",
-      "Updated goals.",
-      "",
-      "## Non-Goals",
-      "Updated non-goals.",
-      "PRODUCT_PATCH_END",
-    ].join("\n")
-    const extracted = extractPmPatch(response)
-    expect(extracted).toContain("## Goals")
-    expect(extracted).toContain("Updated goals.")
-    expect(extracted).toContain("## Non-Goals")
+  it("names the finalize_product_spec tool", () => {
+    const prompt = buildPmSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("finalize_product_spec")
   })
 })
 
@@ -187,23 +115,17 @@ describe("buildPmSystemPrompt — PATCH enforcement rules", () => {
 
   it("PATCH is absolute — no exceptions phrase is present", () => {
     const prompt = buildPmSystemPrompt(draftContext, "onboarding")
-    expect(prompt).toContain("No exceptions")
-  })
-
-  it("prompt warns that DRAFT blocks are cut off on long specs", () => {
-    const prompt = buildPmSystemPrompt(draftContext, "onboarding")
-    expect(prompt).toContain("cut off mid-spec")
+    expect(prompt).toContain("no exceptions")
   })
 
   it("prohibits confirm-then-ask pattern — agreement is the permission", () => {
     const prompt = buildPmSystemPrompt(draftContext, "onboarding")
     expect(prompt).toContain("agreement is the permission")
-    expect(prompt).toContain("Output PATCH blocks immediately")
   })
 
   it("enforces batch PATCH limit of 3 sections per response", () => {
     const prompt = buildPmSystemPrompt(draftContext, "onboarding")
-    expect(prompt).toContain("3 most significant sections")
+    expect(prompt).toContain("3 most significant")
     expect(prompt).toContain("more than 3 sections")
   })
 })

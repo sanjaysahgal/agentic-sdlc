@@ -18,7 +18,6 @@ import {
   classifyApprovedPhaseIntent,
   isOffTopicForAgent,
   isSpecStateQuery,
-  detectRenderIntent,
 } from "../../runtime/agent-router"
 
 // ─── detectPhase — pure logic, no mocks needed ────────────────────────────
@@ -253,76 +252,3 @@ describe("isSpecStateQuery", () => {
   })
 })
 
-// ─── detectRenderIntent ────────────────────────────────────────────────────────
-
-describe("detectRenderIntent", () => {
-  beforeEach(() => {
-    mockCreate.mockReset()
-  })
-
-  it("returns render-only for 'give a new render' — pure render request", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "render-only" }] })
-    const result = await detectRenderIntent("give a new render that is true to the updated spec")
-    expect(result).toBe("render-only")
-  })
-
-  it("returns render-only for 'show me the preview'", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "render-only" }] })
-    const result = await detectRenderIntent("show me the preview")
-    expect(result).toBe("render-only")
-  })
-
-  it("returns render-only for 'regenerate preview'", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "render-only" }] })
-    const result = await detectRenderIntent("regenerate preview")
-    expect(result).toBe("render-only")
-  })
-
-  it("returns apply-and-render for 'rebuild with recommendations and render'", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "apply-and-render" }] })
-    const result = await detectRenderIntent("rebuild the spec with all recommendations and give a new render")
-    expect(result).toBe("apply-and-render")
-  })
-
-  it("returns apply-and-render for 'apply the changes and show me'", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "apply-and-render" }] })
-    const result = await detectRenderIntent("apply the changes and show me what it looks like")
-    expect(result).toBe("apply-and-render")
-  })
-
-  it("returns other for a regular design question", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "other" }] })
-    const result = await detectRenderIntent("should the home screen use a dark background?")
-    expect(result).toBe("other")
-  })
-
-  it("returns other for an approval message", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "other" }] })
-    const result = await detectRenderIntent("looks good, approved")
-    expect(result).toBe("other")
-  })
-
-  it("falls back to 'other' on unexpected Claude response — do not force a render on ambiguous input", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "unexpected-value" }] })
-    const result = await detectRenderIntent("something")
-    expect(result).toBe("other")
-  })
-
-  it("prompt classifies render-only vs apply-and-render as distinct cases", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "render-only" }] })
-    await detectRenderIntent("give me a render")
-    const callArgs = mockCreate.mock.calls[0][0]
-    expect(callArgs.system).toContain("render-only")
-    expect(callArgs.system).toContain("apply-and-render")
-  })
-
-  it("prompt disambiguates faithfulness qualifiers from change requests and defaults to render-only on doubt", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "render-only" }] })
-    await detectRenderIntent("give a new render that is true to the updated spec")
-    const callArgs = mockCreate.mock.calls[0][0]
-    // "true to the spec" phrases must be documented as faithfulness qualifiers, not change requests
-    expect(callArgs.system).toContain("true to the spec")
-    // When ambiguous, the classifier must default to render-only (not apply-and-render or other)
-    expect(callArgs.system).toContain("When in doubt")
-  })
-})

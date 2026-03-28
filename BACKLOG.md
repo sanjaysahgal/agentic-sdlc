@@ -701,44 +701,6 @@ Agent creates Figma files directly via the Figma API on design spec approval. Br
 
 ---
 
-### Step 13 — Agent tool access (architectural evolution)
-
-**The problem today:** Every agent is single-turn text-in, text-out. Agents "use tools" by outputting structured text blocks (`DRAFT_DESIGN_SPEC_START`, `DESIGN_PATCH_START`, `PREVIEW_ONLY_START`) which the platform parses and acts on. This is a hand-rolled tool-use protocol. Because it's text-based:
-- The platform needs Haiku classifiers (render intent, confirmation intent) to know which PLATFORM OVERRIDE to inject — 3-4 extra LLM calls per message
-- Output block parsing is brittle (exact marker text must match)
-- Agents can't access external resources (URLs, APIs) without pre-fetching at the platform layer
-
-**What this adds:**
-
-`runAgent()` in `runtime/claude-client.ts` becomes a tool-use loop instead of a single API call. The agent receives a declared tool set, calls tools when needed, gets results injected back, and continues until it produces a final response with no pending tool calls.
-
-**Tool set per agent (design agent as example):**
-
-| Tool | What it does |
-|---|---|
-| `save_draft(spec_content)` | Saves spec to GitHub branch, triggers HTML preview generation, returns preview URL |
-| `apply_patch(patch_content)` | Merges patch into existing spec, saves, triggers preview |
-| `fetch_url(url)` | Fetches a URL and returns text/HTML content (brand comparison, visual reference) |
-| `read_file(path, branch?)` | Reads a file from GitHub |
-| `read_brand_tokens()` | Reads BRAND.md from the repo's configured brand path |
-
-**What this removes:**
-- `DRAFT_DESIGN_SPEC_START` / `DESIGN_PATCH_START` / `PREVIEW_ONLY_START` output blocks — agent calls tools instead
-- Haiku render intent classification (`detectRenderIntent`) — agent decides when to call `save_draft` vs `apply_patch`
-- Haiku confirmation classification (`detectConfirmationOfDecision`) — agent calls `apply_patch` when it decides to commit
-- PLATFORM OVERRIDE injection — no longer needed when the agent has tools
-- Most of the block-parsing logic in `message.ts`
-
-**What stays:**
-- `isOffTopicForAgent` — routing guard, still platform-layer
-- `isSpecStateQuery` — fast path, no agent call needed
-- `brand-auditor.ts` — deterministic audit, runs before agent
-- `spec-auditor.ts` — runs as part of `save_draft` tool implementation
-
-**Migration path:** Implement tool-use loop in `runAgent()`. Port design agent first (most complex, most to gain). PM and architect agents follow the same pattern. The text-block protocol becomes dead code and can be removed once all agents are ported.
-
-**Scale impact:** This is the architecture that makes Trust Step 0.5c (URL brand comparison) trivial — the agent just calls `fetch_url(url)` and decides what to do with the result. No platform-layer classification needed.
-
 ---
 
 ### Step 14 — Vision refinement channel
@@ -757,6 +719,8 @@ Most valuable once several features have shipped and patterns in the vision show
 ---
 
 ## Completed
+
+- **Step 13 — Agent tool access (architectural evolution)** — All three spec-producing agents (PM, design, architect) migrated from hand-rolled text-block protocol to Anthropic native tool-use API. `runAgent()` in `runtime/claude-client.ts` is now a tool-use loop: calls `messages.create` with typed tool schemas, executes the platform `toolHandler` for each `tool_use` block, injects `tool_result`, loops until `stop_reason === "end_turn"`. PM tools: `save_product_spec_draft`, `apply_product_spec_patch`, `finalize_product_spec`. Design tools: `save_design_spec_draft`, `apply_design_spec_patch`, `generate_design_preview`, `fetch_url`, `finalize_design_spec`. Architect tools: `save_engineering_spec_draft`, `apply_engineering_spec_patch`, `read_approved_specs`, `finalize_engineering_spec`. Removed: all text-block output parsers (`DRAFT_SPEC_START/END`, `DESIGN_PATCH_START/END`, `ENGINEERING_PATCH_START/END`, `PREVIEW_ONLY_START/END`, `INTENT: *`), `detectRenderIntent`, `detectConfirmationOfDecision` Haiku classifiers, PLATFORM OVERRIDE injection, truncation retry loops. Added: post-response uncommitted decisions audit (design agent only — if no save tool called and history > 6 messages, appends "save those" note to Slack response). 395 tests pass.
 
 - **Brand token drift detection in design agent** — When user reports preview doesn't match brand or production site, agent diffs every spec color token and animation value against BRAND.md, surfaces each discrepancy explicitly (spec value → BRAND.md value), states whether BRAND.md itself needs updating, generates corrected preview using BRAND.md as authority, and waits for approval before patching. Combined with `detectConfirmationOfDecision`, approval triggers a `DESIGN_PATCH_START` with corrected values. Gap: no integration test verifying the end-to-end flow (agent sees drifted spec + BRAND.md → surfaces discrepancies in response) — prompt unit tests only.
 
