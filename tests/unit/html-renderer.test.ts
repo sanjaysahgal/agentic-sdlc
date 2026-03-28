@@ -164,7 +164,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("returns empty warnings when HTML is structurally complete", async () => {
-    const html = "<!DOCTYPE html><html><head><style>@keyframes glow-pulse {}</style></head><body></body></html>"
+    const html = "<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #F8F8F7; }</style></head><body></body></html>"
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -177,6 +177,23 @@ describe("generateDesignPreview", () => {
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
     expect(result.warnings.some(w => w.toLowerCase().includes("keyframe"))).toBe(true)
+  })
+
+  it("returns warning when body has no explicit CSS background-color (Tailwind-only silently fails on file:// URLs)", async () => {
+    // bg-primary class without explicit background-color in <style> → white page on disk
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {}</style></head><body class="bg-primary"><div>content</div></body></html>`
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings.some(w => w.toLowerCase().includes("background"))).toBe(true)
+  })
+
+  it("no background warning when body has explicit CSS background-color in style tag", async () => {
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #F8F8F7; }</style></head><body><div>content</div></body></html>`
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings.some(w => w.toLowerCase().includes("background"))).toBe(false)
   })
 
   it("system prompt instructs chips to be horizontal row not vertical stack", async () => {

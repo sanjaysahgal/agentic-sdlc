@@ -17,6 +17,10 @@ function validateRenderedHtml(html: string, brandContent?: string): string[] {
   if (!html.trim().endsWith("</html>")) {
     issues.push("HTML appears truncated — missing closing </html>")
   }
+  // Body background must be in explicit CSS — Tailwind custom classes fail on file:// URLs
+  if (!html.match(/body\s*\{[^}]*background(?:-color)?:/s)) {
+    issues.push("Body has no explicit CSS background-color in <style> — dark background will not render when opened from disk. Use background-color in the <style> tag, not just a Tailwind class.")
+  }
 
   if (brandContent) {
     // Extract the canonical background token from BRAND.md to verify it was applied.
@@ -117,20 +121,37 @@ Configure Tailwind with the exact values from AUTHORITATIVE BRAND TOKENS:
 
 **This is how to get custom colors and animations into Tailwind — never skip this step.** If you define colors in the config, you can use them as Tailwind classes. If you skip this, all custom colors will fail to render — the designer will see a broken black screen instead of the designed palette.
 
+## Mandatory <style> block — ALWAYS add this to <head>, no exceptions
+
+This block is required on every page, even if the spec has no glow effect.
+
+**Why:** Tailwind CDN custom classes (\`bg-primary\`, \`text-fg\`, etc.) require CDN JavaScript to load and process \`window.tailwind\` config before they resolve. When HTML is opened from disk (file://) or as a Slack attachment, the CDN may not load before the browser paints — the page renders white. Explicit CSS in \`<style>\` always works.
+
+**The rule: ALL critical visual properties (background, text color) MUST be set in the \`<style>\` tag. Tailwind classes are an enhancement layer for spacing and interactive states only — never rely on them for the primary background or text color.**
+
+\`\`\`html
+<style>
+  @keyframes glow-pulse {
+    0%, 100% { opacity: <glow-opacity-min from BRAND, default 0.55>; }
+    50%       { opacity: <glow-opacity-max from BRAND, default 1.00>; }
+  }
+  body {
+    background-color: <--bg from AUTHORITATIVE BRAND TOKENS>;
+    color: <--text from AUTHORITATIVE BRAND TOKENS>;
+    margin: 0;
+    min-height: 100vh;
+    font-family: system-ui, sans-serif;
+  }
+</style>
+\`\`\`
+
+Use the exact hex values from AUTHORITATIVE BRAND TOKENS for \`background-color\` and \`color\`. Do not use Tailwind class names here — write the actual values.
+
 ## Glow and gradient effects — use this exact pattern, always
 
 When the spec describes a pulsing glow effect, use this EXACT structure. Do not improvise.
 
-**Step 1 — add glow keyframe to \`<head>\`:**
-Use the opacity values from AUTHORITATIVE BRAND TOKENS (glow-opacity-min and glow-opacity-max). These are calibrated for dark backgrounds.
-\`\`\`html
-<style>
-  @keyframes glow-pulse {
-    0%, 100% { opacity: <glow-opacity-min from BRAND>; }
-    50%       { opacity: <glow-opacity-max from BRAND>; }
-  }
-</style>
-\`\`\`
+**The \`@keyframes glow-pulse\` is already in the mandatory \`<style>\` block above — do not repeat it.**
 
 **Step 2 — wrap the target element in a relative container and place the glow div as the FIRST child:**
 Use the --violet and --teal hex values converted to rgba for the gradient. Use blur value from AUTHORITATIVE BRAND TOKENS (glow-blur).
@@ -150,6 +171,7 @@ Use the --violet and --teal hex values converted to rgba for the gradient. Use b
 \`\`\`
 
 **Rules that must not be broken:**
+- **Body background-color and text color MUST be in the \`<style>\` tag** (set above) — not only Tailwind classes. Tailwind-only fails silently on file:// URLs.
 - Always use a \`<style>\` keyframe for glow animation — Tailwind CDN keyframes are unreliable for glow
 - Glow div must be the FIRST child inside the relative wrapper — later siblings stack on top via z-index
 - Content must be in a div with \`position: relative; z-index: 1\` — without this, content sits behind the glow
