@@ -33,6 +33,35 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Trust Step 0.5c — URL-based brand comparison ("compare with this site")
+
+**The problem today:** When a design preview doesn't match a reference site visually, the user has to describe every discrepancy in plain English — which is unreasonable when there are 10+ differences. "Compare with this URL" is the natural, correct interaction. But the design agent can't fetch URLs (it receives a system prompt and user message, no tool access), so the interaction breaks down and the agent either asks for hex codes (wrong) or screenshots (wrong).
+
+**What this adds:**
+
+Platform-layer URL brand extraction, triggered when the user provides a URL in the context of a visual comparison request. Same enforcement pattern as render intent — Haiku classifies the message, platform acts before the agent runs.
+
+**Flow:**
+1. Haiku classifies user message: contains a URL + visual comparison intent ("make it match this", "compare with", "should look like") → `"brand-url-comparison"` | `"other"`
+2. Platform WebFetches the URL
+3. Platform extracts CSS custom properties (`--token: value`) and any inline color values from the fetched HTML/CSS
+4. Platform injects a `[REFERENCE SITE VALUES — extracted from <url>]` block into the agent's enriched user message, alongside the current BRAND.md
+5. Agent compares extracted values vs BRAND.md, surfaces differences, proposes BRAND.md updates, generates corrected preview with proposed values
+
+**Why platform-layer, not agent-layer:**
+The agent cannot call WebFetch — it outputs text only. Any "compare with URL" that reaches the agent unaided will fail. This must be intercepted and resolved before the agent runs, same as render intent.
+
+**CSS extraction requirements:**
+- Extract `--custom-property: value` declarations from `<style>` tags and inline styles
+- Extract color values from computed styles where custom properties aren't used
+- Handle both hex (`#RRGGBB`) and rgb/rgba formats — normalize to hex for comparison
+- Non-fatal: if the URL is unreachable or returns no CSS variables, inject a note and let the agent proceed without reference values
+
+**BRAND.md update flow:**
+Agent proposes specific BRAND.md changes (e.g. "update `--violet` from `#7C6FCD` to `#8B5CF6`"). User approves → platform updates BRAND.md on main branch AND patches the spec Brand section to match. Both committed atomically.
+
+---
+
 ### Trust Step 0.6 — Authoritative doc auto-commit on spec approval
 
 **The problem today:** All three spec-producing agents draft proposed changes to their authoritative docs inline in every approved spec (e.g. `[PROPOSED ADDITION TO DESIGN_SYSTEM.md]`). But applying those changes to the actual doc — `DESIGN_SYSTEM.md`, `PRODUCT_VISION.md`, `SYSTEM_ARCHITECTURE.md` — requires a human to open GitHub, find the inline block, and manually paste it into the doc file. This is a non-technical operation with a high friction cost and frequent skip rate.
