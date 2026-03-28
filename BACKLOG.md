@@ -701,6 +701,38 @@ Agent creates Figma files directly via the Figma API on design spec approval. Br
 
 ---
 
+### Step 13b — Restore PM escalation via `offer_pm_escalation` tool
+
+**The gap:** After Step 13, `setPendingEscalation` is imported in `message.ts` but never called. The design agent's escalation offer is now plain text only — when the user says "yes", the pending escalation is not set, so no PM notification is posted. The S4T2 workflow is silently broken in production.
+
+**Fix:** Add `offer_pm_escalation` to `DESIGN_TOOLS`:
+```typescript
+{
+  name: "offer_pm_escalation",
+  description: "Offer to escalate a blocking product question to the PM. Use when a user's message requires a product decision that is outside the design spec scope. The platform will prompt the user to confirm, then notify the PM.",
+  input_schema: {
+    type: "object",
+    properties: {
+      question: { type: "string", description: "The blocking product question to escalate." },
+    },
+    required: ["question"],
+  },
+}
+```
+
+In `message.ts` design agent `toolHandler`, handle `offer_pm_escalation`:
+```typescript
+case "offer_pm_escalation":
+  setPendingEscalation(featureName, {
+    targetAgent: "pm",
+    question: input.question as string,
+    designContext: "Design in progress.",
+  })
+  return { result: "Escalation offer stored. The user will be asked to confirm." }
+```
+
+Add a test: design agent calls `offer_pm_escalation` → platform sets pending escalation → user says "yes" on next turn → PM notified via `postMessage`.
+
 ---
 
 ### Step 14 — Vision refinement channel
