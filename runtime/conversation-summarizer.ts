@@ -108,7 +108,7 @@ export async function identifyUncommittedDecisions(
 
 COMMITTED SPEC (what is on GitHub):
 ---
-${committedSpec.slice(0, 3000)}
+${committedSpec}
 ---
 
 CONVERSATION HISTORY:

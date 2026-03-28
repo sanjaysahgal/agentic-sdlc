@@ -163,6 +163,19 @@ describe("identifyUncommittedDecisions", () => {
     expect(prompt).toContain("recommendation")
   })
 
+  it("sends the FULL spec to Haiku — no truncation — so Brand section is visible", async () => {
+    // Root cause of false positive: spec was sliced to 3000 chars.
+    // The Brand section of a full design spec is well past position 3000.
+    // Haiku couldn't see committed brand tokens and flagged them as uncommitted.
+    const longSpec = "A".repeat(4000) + "\n## Brand\n--violet: #7C6FCD\n--bg: #0A0A0F\n"
+    mockCreate.mockResolvedValue(haiku("All discussed decisions appear to be in the committed spec."))
+    await identifyUncommittedDecisions([{ role: "user", content: "fix brand tokens" }], longSpec)
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content
+    // Full Brand section must be present in the prompt — not truncated
+    expect(prompt).toContain("--violet: #7C6FCD")
+    expect(prompt).toContain("--bg: #0A0A0F")
+  })
+
   it("caches result under uncommitted: prefix", async () => {
     mockCreate.mockResolvedValue(haiku("1. Dark mode: I recommend Archon palette — discussed in thread"))
     const msgs = [{ role: "user" as const, content: "dark mode please" }]

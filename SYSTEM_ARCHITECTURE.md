@@ -141,6 +141,8 @@ Conversation history per Slack thread is capped. When history exceeds the limit,
 
 The summary is cached in-memory, keyed by `(featureName, olderMessageCount)`. Because conversation history is append-only (older messages never change), the cache entry for any given `(feature, count)` is valid forever. A cache hit on a long thread avoids a Haiku call on every subsequent message.
 
+`identifyUncommittedDecisions` (also in `conversation-summarizer.ts`) compares the full conversation history against the committed spec to surface decisions discussed but not yet saved. The full spec is sent to Haiku — not a truncated slice — so sections past position 3000 (such as the Brand section) are visible. Truncating caused false positives: brand tokens committed after a patch were reported as uncommitted because the Brand section was past the truncation point.
+
 Implemented in `runtime/conversation-summarizer.ts`.
 
 ### Graceful shutdown

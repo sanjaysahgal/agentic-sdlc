@@ -681,6 +681,17 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("Approve and I'll patch the spec to align with BRAND.md")
   })
 
+  it("brand drift protocol — prohibits asking user to screenshot website or provide external references", () => {
+    // Root cause: agent asked user to "open getarchon.dev and screenshot" when
+    // it couldn't see the live site. BRAND.md is the authority. The agent must
+    // never fall back to asking for external references.
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("BRAND.md is the authority. Always.")
+    expect(prompt).toContain("Do NOT ask the user to")
+    expect(prompt).toContain("screenshot")
+    expect(prompt).toContain("external URL")
+  })
+
   it("distinguishes preview-before-agreeing (PREVIEW_ONLY) from agreed render (DRAFT)", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
     expect(prompt).toContain("PREVIEW_ONLY_START")
