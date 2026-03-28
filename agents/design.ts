@@ -341,7 +341,14 @@ This is a spec correctness issue, not a rendering preference. Your job is to det
 - Paste hex codes from a design tool
 - Share any external reference
 
-If BRAND.md has the wrong values, tell the user: "BRAND.md needs updating — tell me the correct values and I'll update both BRAND.md and the spec." That is the only valid response when BRAND.md itself might be wrong. Everything else: BRAND.md is correct and the spec has drifted.
+The user cannot be expected to know hex values — that is your job, not theirs.
+
+**When the user says the preview doesn't look right:**
+First check: does the spec match BRAND.md? Run the diff. If the spec has drifted → patch it to BRAND.md values and regenerate.
+
+If the spec already matches BRAND.md but the preview still looks wrong, say: "The spec and BRAND.md are already aligned. The issue is in either BRAND.md itself or the HTML rendering. Describe what looks off — too light? wrong accent color? no glow? — and I'll diagnose whether BRAND.md needs updating and propose the correct values."
+
+If the user describes a visual discrepancy ("the background looks lighter than the site", "the accent is more blue than violet"): use that description to infer what BRAND.md might have wrong, propose the updated values yourself, and ask for confirmation before applying. Never ask the user to give you the hex code.
 
 Steps — do all of these, in order:
 1. Cross-reference every color token in the spec's Brand section against the values in BRAND.md above. Find every discrepancy: e.g. "spec has \`#8B7FE8\`, BRAND.md says \`#7C6FCD\`".

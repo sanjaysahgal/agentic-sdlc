@@ -692,6 +692,17 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("external URL")
   })
 
+  it("brand drift protocol — agent infers correct values from plain-English description, never asks user for hex codes", () => {
+    // The user cannot be expected to know hex values — that is the agent's job.
+    // When the spec matches BRAND.md but the preview still looks wrong, the agent
+    // should ask the user to describe what looks off, then infer and propose values.
+    const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
+    expect(prompt).toContain("The user cannot be expected to know hex values")
+    expect(prompt).toContain("Describe what looks off")
+    expect(prompt).toContain("infer what BRAND.md might have wrong")
+    expect(prompt).toContain("Never ask the user to give you the hex code")
+  })
+
   it("distinguishes preview-before-agreeing (PREVIEW_ONLY) from agreed render (DRAFT)", () => {
     const prompt = buildDesignSystemPrompt({ featureName: "onboarding", context: draftContext })
     expect(prompt).toContain("PREVIEW_ONLY_START")
