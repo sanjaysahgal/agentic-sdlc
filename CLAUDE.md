@@ -94,6 +94,22 @@ Before building the second piece of any system, a test suite must exist for the 
 
 **Ongoing rule:** Every new agent behavior added must have a corresponding test. A behavior with no test does not count as done.
 
+### Fixture Rule (Non-Negotiable)
+
+**Any component that parses agent output must be tested against real agent output — not hand-crafted strings.**
+
+This is not optional and applies to every parser, every auditor, every block detector, every classifier in the platform.
+
+**The rule:**
+- When adding a parser that reads agent output (spec blocks, patch blocks, brand sections, classification responses), capture a real sample from an actual agent run and commit it to `tests/fixtures/agent-output/`
+- The test must load the fixture via `readFileSync` — not reproduce the format from memory or approximation
+- Hand-crafted inline strings are only acceptable for explicit edge cases (empty string, partial input, boundary conditions) — never for format validation
+
+**Why this rule exists:**
+The brand auditor bug (March 2026) was caused by a regex that matched the assumed format (`--token: #RRGGBB`) but not the real format (`` `--token:` `#RRGGBB` ``). All tests passed because the test fixtures were hand-crafted to match the assumed format. The parser silently produced zero results in production. The tests gave false confidence — they validated an input that never appears.
+
+**Enforcement:** Every new parser that ships without a real-agent-output fixture is considered incomplete. A "behavior with no real fixture" is the same failure class as "a behavior with no test." A PR that adds a parser without a sourced fixture will be flagged.
+
 ---
 
 ## Subagent Strategy

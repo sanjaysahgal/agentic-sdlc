@@ -14,6 +14,29 @@ Mock only the two external boundaries: `@octokit/rest` (GitHub API) and `@anthro
 
 ---
 
+## Fixture Rule
+
+**Any parser that reads agent output must be tested against real agent output sourced from actual agent responses.**
+
+Hand-crafted inline strings are a liability — they encode format assumptions that diverge from what agents actually produce. The brand auditor bug (March 2026) passed all unit tests because fixtures used `--token: #HEX` (assumed format) while the agent actually writes `` `--token:` `#HEX` `` (backtick-span format). The parser produced zero results silently in production.
+
+**Fixtures live in `tests/fixtures/agent-output/`.**
+
+| File | Source | Tests that use it |
+|---|---|---|
+| `brand-md.md` | Real BRAND.md format | `brand-auditor.test.ts` |
+| `design-brand-section-drifted.md` | Real design agent spec Brand section, drifted values | `brand-auditor.test.ts` |
+| `design-brand-section-canonical.md` | Real design agent spec Brand section, canonical values | `brand-auditor.test.ts` |
+| `pm-draft-spec-block.md` | Real PM agent DRAFT_SPEC_START/END response | pending |
+| `design-patch-block.md` | Real design agent DESIGN_PATCH_START/END response | pending |
+| `architect-draft-engineering-spec-block.md` | Real architect DRAFT_ENGINEERING_SPEC_START/END response | pending |
+
+**When adding a new parser:** commit a sourced fixture to `tests/fixtures/agent-output/` before writing the test. If you can't source a real sample yet, mark the test with a `// TODO: replace with sourced fixture` comment and open a backlog item.
+
+---
+
+---
+
 ## Layer 1: Unit Tests
 
 Pure function and module tests. No I/O, no routing, no Anthropic calls.
