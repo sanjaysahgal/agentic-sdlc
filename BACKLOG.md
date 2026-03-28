@@ -701,7 +701,47 @@ Agent creates Figma files directly via the Figma API on design spec approval. Br
 
 ---
 
-### Step 13 — Vision refinement channel
+### Step 13 — Agent tool access (architectural evolution)
+
+**The problem today:** Every agent is single-turn text-in, text-out. Agents "use tools" by outputting structured text blocks (`DRAFT_DESIGN_SPEC_START`, `DESIGN_PATCH_START`, `PREVIEW_ONLY_START`) which the platform parses and acts on. This is a hand-rolled tool-use protocol. Because it's text-based:
+- The platform needs Haiku classifiers (render intent, confirmation intent) to know which PLATFORM OVERRIDE to inject — 3-4 extra LLM calls per message
+- Output block parsing is brittle (exact marker text must match)
+- Agents can't access external resources (URLs, APIs) without pre-fetching at the platform layer
+
+**What this adds:**
+
+`runAgent()` in `runtime/claude-client.ts` becomes a tool-use loop instead of a single API call. The agent receives a declared tool set, calls tools when needed, gets results injected back, and continues until it produces a final response with no pending tool calls.
+
+**Tool set per agent (design agent as example):**
+
+| Tool | What it does |
+|---|---|
+| `save_draft(spec_content)` | Saves spec to GitHub branch, triggers HTML preview generation, returns preview URL |
+| `apply_patch(patch_content)` | Merges patch into existing spec, saves, triggers preview |
+| `fetch_url(url)` | Fetches a URL and returns text/HTML content (brand comparison, visual reference) |
+| `read_file(path, branch?)` | Reads a file from GitHub |
+| `read_brand_tokens()` | Reads BRAND.md from the repo's configured brand path |
+
+**What this removes:**
+- `DRAFT_DESIGN_SPEC_START` / `DESIGN_PATCH_START` / `PREVIEW_ONLY_START` output blocks — agent calls tools instead
+- Haiku render intent classification (`detectRenderIntent`) — agent decides when to call `save_draft` vs `apply_patch`
+- Haiku confirmation classification (`detectConfirmationOfDecision`) — agent calls `apply_patch` when it decides to commit
+- PLATFORM OVERRIDE injection — no longer needed when the agent has tools
+- Most of the block-parsing logic in `message.ts`
+
+**What stays:**
+- `isOffTopicForAgent` — routing guard, still platform-layer
+- `isSpecStateQuery` — fast path, no agent call needed
+- `brand-auditor.ts` — deterministic audit, runs before agent
+- `spec-auditor.ts` — runs as part of `save_draft` tool implementation
+
+**Migration path:** Implement tool-use loop in `runAgent()`. Port design agent first (most complex, most to gain). PM and architect agents follow the same pattern. The text-block protocol becomes dead code and can be removed once all agents are ported.
+
+**Scale impact:** This is the architecture that makes Trust Step 0.5c (URL brand comparison) trivial — the agent just calls `fetch_url(url)` and decides what to do with the result. No platform-layer classification needed.
+
+---
+
+### Step 14 — Vision refinement channel
 
 A dedicated Slack channel where the pm agent interrogates and strengthens the product vision itself — not spec shaping for a feature, but product strategy.
 
