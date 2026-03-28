@@ -176,9 +176,16 @@ The principle: **the specialist surfaces all violations proactively**. The human
 | Audit | File | What it checks | Model |
 |---|---|---|---|
 | Spec conflict + gap | `runtime/spec-auditor.ts` | Vision conflicts, architecture gaps | Haiku (runs post-draft-save) |
-| Brand token drift | `runtime/brand-auditor.ts` | Spec Brand section vs BRAND.md hex values | None (pure string diff) |
+| Brand color drift | `runtime/brand-auditor.ts` → `auditBrandTokens()` | Spec Brand section hex values vs BRAND.md | None (pure string diff) |
+| Brand animation drift | `runtime/brand-auditor.ts` → `auditAnimationTokens()` | Spec glow duration, blur radius vs BRAND.md ## Animation section | None (pure string diff) |
 
-`brand-auditor.ts` is a pure string diff — zero API cost, zero latency. It runs on every design agent response: state query path (in `buildDesignStateResponse`) and full agent run path (injected as PLATFORM NOTICE into the enriched user message). If brand tokens have drifted, the human always sees it — in the state summary and in every agent response — without ever having to ask.
+`brand-auditor.ts` is a pure string diff — zero API cost, zero latency. Both `auditBrandTokens()` and `auditAnimationTokens()` run on every design agent response: state query path (in `buildDesignStateResponse`) and full agent run path (injected as PLATFORM NOTICE into the enriched user message). Color drift and animation drift are merged into a single PLATFORM NOTICE so neither can be silently missed.
+
+**HTML preview renderer (`runtime/html-renderer.ts`):** Uses `claude-sonnet-4-6` (not Haiku) for production-quality rendering. When `context.brand` is available, it is passed as a separate `brandContent` parameter and prepended to the user message as an `AUTHORITATIVE BRAND TOKENS` block — the renderer reads color and animation values from this block, not the spec's Brand section (which may have drifted). Returns `{ html: string, warnings: string[] }` — `warnings` contains structural validation results (missing keyframes, background token not applied, truncation) that are surfaced as a tool result field. **No hex color values are hardcoded** in the renderer; all values come from BRAND.md at runtime.
+
+**Context summarization warning:** When design agent conversation history exceeds `DESIGN_HISTORY_LIMIT` (20 messages), `getPriorContext()` returns a summary. The platform detects this and posts a one-time Slack message informing the user that earlier context was summarized and that the spec on GitHub is the full authoritative record. Posted once per feature (tracked via `summarizationWarnedFeatures` Set) to prevent repeating on every subsequent message.
+
+**Pre-commit purity enforcement (`scripts/install-hooks.sh`):** Rule 4 (hardcoded product names) now covers `interfaces/` in addition to `agents/` and `runtime/`. Rule 5 (hardcoded hex color string literals) is new — blocks any commit that adds `"#RRGGBB"` quoted string literals in source files, enforcing that brand values always come from BRAND.md at runtime.
 
 Every new agent added to the platform must wire its equivalent audit before the agent is considered complete.
 

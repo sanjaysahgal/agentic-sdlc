@@ -9,13 +9,17 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
-import { auditBrandTokens } from "../../../runtime/brand-auditor"
+import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 
 const { paths: workspacePaths } = loadWorkspaceConfig()
+
+// Per-feature flag: tracks which features have already received the context-summarization notice.
+// Prevents spamming the user on every message after the history limit is reached.
+const summarizationWarnedFeatures = new Set<string>()
 
 // Formats a save checkpoint into the Slack footer shown after every DRAFT or PATCH save.
 // Shows what key decisions were just committed and flags anything still only in the thread.
@@ -549,11 +553,24 @@ async function runDesignAgent(params: {
     getPriorContext(featureName, historyDesign, DESIGN_HISTORY_LIMIT),
   ])
 
-  // Brand token drift audit — pure string diff, always runs, never requires the human to ask.
-  // The specialist surfaces constraint violations proactively. This is non-negotiable platform behavior.
+  // Fix 6: When context summarization fires, post a one-time notice so the user knows.
+  // priorContextDesign is non-empty only when history exceeded DESIGN_HISTORY_LIMIT and was summarized.
+  if (priorContextDesign && !summarizationWarnedFeatures.has(featureName)) {
+    summarizationWarnedFeatures.add(featureName)
+    await client.chat.postMessage({
+      channel: channelId,
+      thread_ts: threadTs,
+      text: "_Context from earlier in this thread has been summarized to stay within limits. The spec on GitHub is the full authoritative record._",
+    }).catch(() => {})
+  }
+
+  // Brand token drift audit (color tokens) — pure string diff, always runs.
   const brandDriftsDesign = context.brand ? auditBrandTokens(context.currentDraft, context.brand) : []
-  const brandDriftNotice = brandDriftsDesign.length > 0
-    ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${brandDriftsDesign.length} spec Brand section value${brandDriftsDesign.length === 1 ? "" : "s"} don't match BRAND.md: ${brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`).join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
+  // Animation drift audit — runs alongside color audit on every response.
+  const animDriftsDesign = context.brand ? auditAnimationTokens(context.currentDraft, context.brand) : []
+  const totalDriftCount = brandDriftsDesign.length + animDriftsDesign.length
+  const brandDriftNotice = totalDriftCount > 0
+    ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${totalDriftCount} spec Brand section value${totalDriftCount === 1 ? "" : "s"} don't match BRAND.md: ${[...brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`), ...animDriftsDesign.map(d => `${d.param} spec=${d.specValue} brand=${d.brandValue}`)].join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
     : ""
 
   const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice
@@ -592,15 +609,17 @@ async function runDesignAgent(params: {
     const { paths: dp, githubOwner: dOwner, githubRepo: dRepo } = loadWorkspaceConfig()
     const designSpecUrl = `https://github.com/${dOwner}/${dRepo}/blob/${designBranchName}/${designFilePath}`
     let previewUrl = "none"
-    const previewResult = await generateDesignPreview({ specContent: content, featureName }).catch((e: Error) => e)
+    let renderWarnings: string[] = []
+    const previewResult = await generateDesignPreview({ specContent: content, featureName, brandContent: context.brand }).catch((e: Error) => e)
     if (!(previewResult instanceof Error)) {
+      renderWarnings = previewResult.warnings
       const htmlFilePath = `${dp.featuresRoot}/${featureName}/${featureName}.preview.html`
-      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult }).catch(() => {})
+      await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
       try {
         await client.files.uploadV2({
           channel_id: channelId,
           thread_ts: threadTs,
-          content: previewResult,
+          content: previewResult.html,
           filename: `${featureName}.preview.html`,
           title: `${featureName} — Design Preview`,
         })
@@ -615,7 +634,7 @@ async function runDesignAgent(params: {
 
     const brandDrifts = context.brand ? auditBrandTokens(content, context.brand) : []
     const specGap = audit.status === "gap" ? audit.message : null
-    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap } }
+    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined } }
   }
 
   // Design agent has a much larger context (system prompt + product vision + full draft spec)
@@ -643,15 +662,15 @@ async function runDesignAgent(params: {
         const specContent = input.specContent as string
         try {
           await update("_Generating preview (not saved yet)..._")
-          const htmlContent = await generateDesignPreview({ specContent, featureName })
+          const previewResult = await generateDesignPreview({ specContent, featureName, brandContent: context.brand })
           await client.files.uploadV2({
             channel_id: channelId,
             thread_ts: threadTs,
-            content: htmlContent,
+            content: previewResult.html,
             filename: `${featureName}.preview.html`,
             title: `${featureName} — Design Preview (not saved)`,
           })
-          return { result: { previewUrl: "uploaded_to_slack" } }
+          return { result: { previewUrl: "uploaded_to_slack", renderWarnings: previewResult.warnings.length > 0 ? previewResult.warnings : undefined } }
         } catch (err: any) {
           return { error: `Preview generation failed: ${err?.message}` }
         }

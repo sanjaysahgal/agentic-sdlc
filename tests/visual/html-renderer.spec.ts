@@ -144,3 +144,32 @@ test.describe("HTML preview — glow keyframe is defined", () => {
     expect(hasKeyframe).toBe(true)
   })
 })
+
+test.describe("HTML preview — structural completeness", () => {
+  test("nav bar has more than one screen tab", async ({ page }) => {
+    await page.goto(FIXTURE)
+    const tabCount = await page.locator("#nav-tabs button").count()
+    // A meaningful preview has at least two screens (e.g. Home + Auth Sheet)
+    expect(tabCount).toBeGreaterThan(1)
+  })
+
+  test("suggestion chips container has flex-direction: row (not stacked vertically)", async ({ page }) => {
+    await page.goto(FIXTURE)
+    const flexDir = await page.evaluate(() => {
+      const chips = document.getElementById("suggestion-chips")
+      return chips ? getComputedStyle(chips).flexDirection : ""
+    })
+    // Chips must be in a row — vertical stacking is a mobile layout bug
+    expect(flexDir).toBe("row")
+  })
+
+  test("suggestion chips remain in a row at iPhone viewport (no vertical stacking)", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto(FIXTURE)
+    const flexDir = await page.evaluate(() => {
+      const chips = document.getElementById("suggestion-chips")
+      return chips ? getComputedStyle(chips).flexDirection : ""
+    })
+    expect(flexDir).toBe("row")
+  })
+})

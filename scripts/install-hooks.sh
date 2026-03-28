@@ -9,7 +9,7 @@ cat > "$HOOK_DIR/pre-commit" << 'EOF'
 # Pre-commit checks for agentic-sdlc platform code.
 # Blocks commits that violate platform integrity rules.
 
-CHANGED_SOURCE=$(git diff --cached --name-only | grep -E '^(agents|runtime)/' | grep -v '\.d\.ts$')
+CHANGED_SOURCE=$(git diff --cached --name-only | grep -E '^(agents|runtime|interfaces)/' | grep -v '\.d\.ts$')
 CHANGED_TESTS=$(git diff --cached --name-only | grep -E '^tests/')
 CHANGED_AGENTS=$(git diff --cached --name-only | grep -E '^agents/' | grep -v '\.d\.ts$')
 CHANGED_RUNTIME=$(git diff --cached --name-only | grep -E '^runtime/' | grep -v '\.d\.ts$')
@@ -77,7 +77,36 @@ if [ -n "$CHANGED_SOURCE" ]; then
     echo "$VIOLATIONS"
     echo ""
     echo "  Customer-specific values (product names, repo paths, user names) must live"
-    echo "  in WorkspaceConfig via env vars — never hardcoded in agents/ or runtime/."
+    echo "  in WorkspaceConfig via env vars — never hardcoded in agents/, runtime/, or interfaces/."
+    echo "  To bypass (only if false positive): git commit --no-verify"
+    echo ""
+    exit 1
+  fi
+fi
+
+# ── Rule 5: no hardcoded hex color string literals in platform code ────────────
+# Color values must come from BRAND.md at runtime — never as quoted literals.
+# Matches `"#RRGGBB"` (6-digit hex in quotes) in added lines of source files.
+# Excludes comment-only lines. Test files are already excluded via CHANGED_SOURCE.
+if [ -n "$CHANGED_SOURCE" ]; then
+  HEX_VIOLATIONS=""
+  for f in $CHANGED_SOURCE; do
+    if [ -f "$f" ]; then
+      MATCHES=$(git diff --cached "$f" | grep '^+' | grep -v '^+++' | grep -v '^\+[[:space:]]*//' | grep -E '"#[0-9A-Fa-f]{6}"' || true)
+      if [ -n "$MATCHES" ]; then
+        HEX_VIOLATIONS="$HEX_VIOLATIONS  $f"
+      fi
+    fi
+  done
+  if [ -n "$HEX_VIOLATIONS" ]; then
+    echo ""
+    echo "  Pre-commit check failed: hardcoded hex color string literals in platform code"
+    echo ""
+    echo "  Files with violations:"
+    echo "$HEX_VIOLATIONS"
+    echo ""
+    echo "  Hex color values must come from BRAND.md at runtime — never hardcoded as string literals."
+    echo "  Read brand tokens via readFile() from the workspace brand path, not as constants."
     echo "  To bypass (only if false positive): git commit --no-verify"
     echo ""
     exit 1

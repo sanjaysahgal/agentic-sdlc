@@ -1,8 +1,34 @@
 import Anthropic from "@anthropic-ai/sdk"
 
-// 5 minute timeout — consistent with claude-client.ts. Without this, the default
-// is 10 minutes, which leaves the user staring at "thinking" for far too long.
+// 5 minute timeout — consistent with claude-client.ts.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000 })
+
+/**
+ * Validates structural properties of rendered HTML without hardcoding brand values.
+ * Checks that the renderer produced what the system prompt instructed.
+ * Returns a list of issues to surface to the agent (and thus the user).
+ */
+function validateRenderedHtml(html: string, brandContent?: string): string[] {
+  const issues: string[] = []
+
+  if (!html.includes("@keyframes")) {
+    issues.push("No CSS keyframe animations found — glow animation likely missing")
+  }
+  if (!html.trim().endsWith("</html>")) {
+    issues.push("HTML appears truncated — missing closing </html>")
+  }
+
+  if (brandContent) {
+    // Extract the canonical background token from BRAND.md to verify it was applied.
+    // This is the only brand-specific check — derived from runtime BRAND.md, never hardcoded.
+    const bgMatch = brandContent.match(/--bg:\s*(#[0-9A-Fa-f]{6})/)
+    if (bgMatch && !html.includes(bgMatch[1])) {
+      issues.push(`Background token ${bgMatch[1]} (--bg from BRAND.md) not found in rendered HTML`)
+    }
+  }
+
+  return issues
+}
 
 // Generates a self-contained HTML preview from a design spec.
 // Uses Tailwind CDN + Alpine.js for interactivity — no build step, no external deps.
@@ -11,12 +37,25 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 3
 export async function generateDesignPreview(params: {
   specContent: string
   featureName: string
-}): Promise<string> {
-  const { specContent, featureName } = params
+  brandContent?: string
+}): Promise<{ html: string; warnings: string[] }> {
+  const { specContent, featureName, brandContent } = params
+
+  // Prepend BRAND.md as an authoritative section when available.
+  // The renderer reads color values, animation params, and typography from here —
+  // not from the spec's Brand section (which may have drifted).
+  const brandBlock = brandContent
+    ? `AUTHORITATIVE BRAND TOKENS (from BRAND.md — use these exact values, not the spec's Brand section):
+${brandContent}
+
+---
+
+`
+    : ""
 
   const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 16000,
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
     system: `You generate beautiful, self-contained HTML preview files directly from design specs. The output will be opened in a browser to let a designer approve or iterate on the spec before it goes to engineering.
 
 ## Output requirements
@@ -33,31 +72,39 @@ Output ONLY the raw HTML — no explanation, no markdown fences, no preamble. St
 - No other external JavaScript dependencies
 - Works when opened directly from disk (no server needed)
 
-## Tailwind custom config — always set BEFORE the Tailwind CDN script
+## Brand tokens — use AUTHORITATIVE BRAND TOKENS section above
 
-Read the Brand section of the spec for exact hex values. Configure them like this:
+When the user message begins with "AUTHORITATIVE BRAND TOKENS", those are the production-calibrated values. Use them verbatim — do NOT use values from the spec's Brand section, which may have drifted.
+
+Configure Tailwind with the exact values from AUTHORITATIVE BRAND TOKENS:
 \`\`\`html
 <script>
   window.tailwind = {
     theme: {
       extend: {
         colors: {
-          "primary": "#0A0A0F",
-          "surface": "#13131A",
-          "fg": "#F8F8F7",
-          "accent": "#7C3AED",
-          "accent2": "#0EA5E9"
-          // use the ACTUAL values from the spec — never invent colors
+          // Map token names to exact hex values from AUTHORITATIVE BRAND TOKENS
+          // "primary" → --bg value, "surface" → --surface value, "fg" → --text value
+          // "accent" → --violet value, "accent2" → --teal value
+          "primary": "<--bg hex>",
+          "surface": "<--surface hex>",
+          "fg": "<--text hex>",
+          "accent": "<--violet or primary accent hex>",
+          "accent2": "<--teal or secondary accent hex>"
+          // use the ACTUAL values from AUTHORITATIVE BRAND TOKENS — never invent colors
         },
         keyframes: {
           "glow-pulse": {
-            "0%, 100%": { opacity: "0.35" },
-            "50%": { opacity: "0.65" }
+            // Use opacity values from AUTHORITATIVE BRAND TOKENS (glow-opacity-min / glow-opacity-max)
+            // If not specified, use 0.55 → 1.00 for a prominent visible glow on dark backgrounds
+            "0%, 100%": { opacity: "<glow-opacity-min>" },
+            "50%": { opacity: "<glow-opacity-max>" }
           }
           // include ALL animations from the spec
         },
         animation: {
-          "glow-pulse": "glow-pulse 2.5s ease-in-out infinite"
+          // Use duration from AUTHORITATIVE BRAND TOKENS (glow-duration) if specified
+          "glow-pulse": "glow-pulse <glow-duration> ease-in-out infinite"
         }
       }
     }
@@ -72,26 +119,28 @@ Read the Brand section of the spec for exact hex values. Configure them like thi
 
 ## Glow and gradient effects — use this exact pattern, always
 
-When the spec describes a pulsing glow effect, use this EXACT structure. Do not improvise. Do not use Tailwind keyframes for the glow — use a \`<style>\` tag placed in \`<head>\`.
+When the spec describes a pulsing glow effect, use this EXACT structure. Do not improvise.
 
 **Step 1 — add glow keyframe to \`<head>\`:**
+Use the opacity values from AUTHORITATIVE BRAND TOKENS (glow-opacity-min and glow-opacity-max). These are calibrated for dark backgrounds.
 \`\`\`html
 <style>
   @keyframes glow-pulse {
-    0%, 100% { opacity: 0.45; }
-    50%       { opacity: 0.75; }
+    0%, 100% { opacity: <glow-opacity-min from BRAND>; }
+    50%       { opacity: <glow-opacity-max from BRAND>; }
   }
 </style>
 \`\`\`
 
 **Step 2 — wrap the target element in a relative container and place the glow div as the FIRST child:**
+Use the --violet and --teal hex values converted to rgba for the gradient. Use blur value from AUTHORITATIVE BRAND TOKENS (glow-blur).
 \`\`\`html
 <div class="relative">
-  <!-- glow: first child so it renders behind content; use colors from spec -->
+  <!-- glow: first child so it renders behind content -->
   <div aria-hidden="true" class="absolute inset-0 pointer-events-none"
-       style="background: radial-gradient(ellipse at 50% 85%, rgba(124,111,205,0.65) 0%, rgba(79,175,168,0.35) 45%, transparent 70%);
-              filter: blur(48px);
-              animation: glow-pulse 2.5s ease-in-out infinite;
+       style="background: radial-gradient(ellipse at 50% 85%, rgba(<--violet as rgb>,0.65) 0%, rgba(<--teal as rgb>,0.35) 45%, transparent 70%);
+              filter: blur(<glow-blur from BRAND>);
+              animation: glow-pulse <glow-duration from BRAND> ease-in-out infinite;
               z-index: 0;"></div>
   <!-- content: always sits above the glow -->
   <div class="relative" style="z-index: 1;">
@@ -104,10 +153,20 @@ When the spec describes a pulsing glow effect, use this EXACT structure. Do not 
 - Always use a \`<style>\` keyframe for glow animation — Tailwind CDN keyframes are unreliable for glow
 - Glow div must be the FIRST child inside the relative wrapper — later siblings stack on top via z-index
 - Content must be in a div with \`position: relative; z-index: 1\` — without this, content sits behind the glow
-- Use \`filter: blur(48px)\` or higher on the glow div — this creates the soft-bloom look; without it the gradient has hard edges
-- **ALWAYS use opacity 0.45→0.75 in the glow keyframe — do not copy opacity percentages from the spec.** Spec values like "10%", "20–30%", "opacity 0.2" are design intent for final production code, not CSS preview values. On dark backgrounds (#0A0A0F), CSS opacity below 0.35 is invisible. The keyframe MUST be exactly: \`0%, 100% { opacity: 0.45; } 50% { opacity: 0.75; }\`
+- Use blur value from AUTHORITATIVE BRAND TOKENS for \`filter: blur()\` — this creates the soft-bloom look
+- Use opacity values from AUTHORITATIVE BRAND TOKENS for the glow keyframe
 - Use inline \`style=""\` for radial-gradient and filter — never Tailwind \`from-*/to-*\` classes for arbitrary rgba values
 - If the spec names TWO glow locations (e.g. home prompt bar AND auth sheet), implement BOTH independently with separate glow divs
+
+## Gradient text on headings
+
+Primary headings (h1, wordmark, feature name) should use gradient text where the spec describes a gradient accent. Apply:
+\`\`\`html
+<h1 style="background: linear-gradient(135deg, <--violet hex>, <--teal hex>); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+  Heading Text
+</h1>
+\`\`\`
+Use the actual accent hex values from AUTHORITATIVE BRAND TOKENS.
 
 ## Structure
 
@@ -121,10 +180,12 @@ For each screen:
 - A row of small pill buttons to switch between its states: Default, Loading, Empty, Error, plus any feature-specific states named in the spec
 - The content area renders the correct state
 
+**Suggestion chips and action pills must always be in a horizontal row** — never stacked vertically. Use \`display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px;\` so they wrap at narrow viewports instead of stacking.
+
 ## Visual fidelity
 
 This is NOT a wireframe — it should look close to the real product. Apply:
-- The exact colors, fonts, and spacing from the Brand and Design Direction sections
+- The exact colors, fonts, and spacing from AUTHORITATIVE BRAND TOKENS and Design Direction sections
 - If a Google Font is specified, load it via a <link> tag
 - Generous whitespace, careful typography, real-looking content (not Lorem Ipsum — use the feature domain)
 - Realistic component states: loading spinners use animated CSS, empty states have an icon and message, error states are visually distinct
@@ -157,7 +218,7 @@ Default width should be a mobile frame (max-w-sm centered) with a toggle to expa
     messages: [
       {
         role: "user",
-        content: `Feature: ${featureName}
+        content: `${brandBlock}Feature: ${featureName}
 
 ${specContent}`,
       },
@@ -173,11 +234,10 @@ ${specContent}`,
     .trim()
 
   // Validate completeness — a truncated HTML file renders as a broken screen.
-  // Throw so the caller's non-fatal error handler surfaces a useful message instead
-  // of uploading broken HTML to the designer.
   if (!html.includes("</html>")) {
     throw new Error("HTML preview was truncated before </html> — spec may be too large for a single render pass")
   }
 
-  return html
+  const warnings = validateRenderedHtml(html, brandContent)
+  return { html, warnings }
 }

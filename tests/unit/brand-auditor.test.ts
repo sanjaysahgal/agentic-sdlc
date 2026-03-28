@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "fs"
 import { join } from "path"
-import { auditBrandTokens, BrandDrift } from "../../runtime/brand-auditor"
+import { auditBrandTokens, auditAnimationTokens, BrandDrift, AnimationDrift } from "../../runtime/brand-auditor"
 
 // Real agent output — loaded from fixtures, NOT hand-crafted.
 // These files must be sourced from actual agent responses.
@@ -12,6 +12,13 @@ const FIXTURE_DIR = join(__dirname, "../fixtures/agent-output")
 const REAL_BRAND_MD = readFileSync(join(FIXTURE_DIR, "brand-md.md"), "utf-8")
 const REAL_SPEC_DRIFTED = readFileSync(join(FIXTURE_DIR, "design-brand-section-drifted.md"), "utf-8")
 const REAL_SPEC_CANONICAL = readFileSync(join(FIXTURE_DIR, "design-brand-section-canonical.md"), "utf-8")
+
+// Animation drift fixtures — BRAND.md with animation section + spec Brand section with animation values.
+// The BRAND.md format (glow-duration:, glow-blur:, etc.) is platform-defined, not agent output.
+// The spec animation section IS agent output — fixture sourced from the onboarding design spec discussion.
+const BRAND_MD_WITH_ANIMATION = readFileSync(join(FIXTURE_DIR, "brand-md-with-animation.md"), "utf-8")
+const SPEC_ANIMATION_DRIFTED = readFileSync(join(FIXTURE_DIR, "design-brand-animation-drifted.md"), "utf-8")
+const SPEC_ANIMATION_CANONICAL = readFileSync(join(FIXTURE_DIR, "design-brand-animation-canonical.md"), "utf-8")
 
 // Edge-case fixtures — explicit minimal constructions for testing parser boundary behavior.
 // These are intentionally synthetic; they test logic paths, not format assumptions.
@@ -110,6 +117,54 @@ describe("auditBrandTokens — CSS format (edge-case constructions)", () => {
     const drifts = auditBrandTokens(specWithUpper, REAL_BRAND_MD)
     const tokens = drifts.map(d => d.token)
     expect(tokens).not.toContain("--error")
+  })
+})
+
+describe("auditAnimationTokens — fixture-sourced", () => {
+  it("detects duration drift (2.5s in spec vs 4s in BRAND.md)", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const params = drifts.map(d => d.param)
+    expect(params).toContain("glow-duration")
+  })
+
+  it("detects blur drift (200px in spec vs 80px in BRAND.md)", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const params = drifts.map(d => d.param)
+    expect(params).toContain("glow-blur")
+  })
+
+  it("surfaces correct specValue and brandValue for duration drift", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const dur = drifts.find(d => d.param === "glow-duration")
+    expect(dur?.specValue).toBe("2.5s")
+    expect(dur?.brandValue).toBe("4s")
+  })
+
+  it("surfaces correct specValue and brandValue for blur drift", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const blur = drifts.find(d => d.param === "glow-blur")
+    expect(blur?.specValue).toBe("200px")
+    expect(blur?.brandValue).toBe("80px")
+  })
+
+  it("returns empty when animation params match BRAND.md exactly", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_CANONICAL, BRAND_MD_WITH_ANIMATION)
+    expect(drifts).toHaveLength(0)
+  })
+
+  it("returns empty when BRAND.md has no Animation section", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, REAL_BRAND_MD)
+    expect(drifts).toHaveLength(0)
+  })
+
+  it("returns empty when spec has no Animation section in Brand", () => {
+    const drifts = auditAnimationTokens(REAL_SPEC_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    expect(drifts).toHaveLength(0)
+  })
+
+  it("returns empty when either input is empty", () => {
+    expect(auditAnimationTokens("", BRAND_MD_WITH_ANIMATION)).toHaveLength(0)
+    expect(auditAnimationTokens(SPEC_ANIMATION_DRIFTED, "")).toHaveLength(0)
   })
 })
 

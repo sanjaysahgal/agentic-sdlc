@@ -8,8 +8,8 @@
 <!-- Glow keyframe — must be in <head> as a <style> tag, not Tailwind config -->
 <style>
   @keyframes glow-pulse {
-    0%, 100% { opacity: 0.45; }
-    50%       { opacity: 0.75; }
+    0%, 100% { opacity: 0.55; }
+    50%       { opacity: 1.00; }
   }
   body {
     background-color: #0A0A0F;
@@ -20,6 +20,47 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+  }
+  /* Navigation tabs */
+  #nav-tabs {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(248,248,247,0.1);
+    width: 100%;
+    max-width: 384px;
+    box-sizing: border-box;
+  }
+  .nav-tab {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    background: rgba(248,248,247,0.08);
+    color: #F8F8F7;
+    border: none;
+  }
+  .nav-tab.active {
+    background: #7C6FCD;
+    color: #F8F8F7;
+  }
+  /* Suggestion chips — must always be in a horizontal row */
+  #suggestion-chips {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+  }
+  .chip {
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    background: rgba(248,248,247,0.08);
+    color: #F8F8F7;
+    border: 1px solid rgba(248,248,247,0.15);
+    white-space: nowrap;
   }
 </style>
 
@@ -40,6 +81,12 @@
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-primary text-fg">
+
+  <!-- ── Navigation tabs (screen switcher) ── -->
+  <nav id="nav-tabs">
+    <button class="nav-tab active" id="tab-home">Home</button>
+    <button class="nav-tab" id="tab-auth">Auth Sheet</button>
+  </nav>
 
   <!-- ── Home screen: prompt bar with glow ── -->
   <div id="home-screen" class="w-full max-w-sm mx-auto min-h-screen flex flex-col justify-end pb-8 px-4">
@@ -71,6 +118,13 @@
           style="background: #13131A; border: 1px solid rgba(248,248,247,0.1); color: #F8F8F7;"
         />
       </div>
+    </div>
+
+    <!-- Suggestion chips — always a horizontal row, wraps on narrow viewports -->
+    <div id="suggestion-chips">
+      <button class="chip">Track my sleep</button>
+      <button class="chip">Log a meal</button>
+      <button class="chip">Check vitals</button>
     </div>
 
   </div>

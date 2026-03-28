@@ -15,7 +15,7 @@ beforeEach(() => {
 })
 
 describe("generateDesignPreview", () => {
-  it("returns HTML content from Claude response", async () => {
+  it("returns html and warnings from Claude response", async () => {
     const html = "<!DOCTYPE html><html><body><h1>Preview</h1></body></html>"
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
@@ -24,7 +24,8 @@ describe("generateDesignPreview", () => {
       featureName: "onboarding",
     })
 
-    expect(result).toBe(html)
+    expect(result.html).toBe(html)
+    expect(result.warnings).toBeInstanceOf(Array)
   })
 
   it("strips leading ```html fence if model adds one", async () => {
@@ -33,8 +34,8 @@ describe("generateDesignPreview", () => {
     })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
-    expect(result).not.toContain("```")
-    expect(result).toContain("<!DOCTYPE html>")
+    expect(result.html).not.toContain("```")
+    expect(result.html).toContain("<!DOCTYPE html>")
   })
 
   it("strips leading ``` fence without language tag", async () => {
@@ -43,8 +44,8 @@ describe("generateDesignPreview", () => {
     })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
-    expect(result).not.toContain("```")
-    expect(result).toContain("<!DOCTYPE html>")
+    expect(result.html).not.toContain("```")
+    expect(result.html).toContain("<!DOCTYPE html>")
   })
 
   it("passes featureName and specContent to Claude", async () => {
@@ -61,13 +62,13 @@ describe("generateDesignPreview", () => {
     expect(userMessage).toContain("## Screens")
   })
 
-  it("uses claude-haiku model (fast rendering)", async () => {
+  it("uses claude-sonnet-4-6 model for production-quality rendering", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "claude-haiku-4-5-20251001" })
+      expect.objectContaining({ model: "claude-sonnet-4-6" })
     )
   })
 
@@ -87,24 +88,27 @@ describe("generateDesignPreview", () => {
       .rejects.toThrow("truncated before </html>")
   })
 
-  it("uses max_tokens 16000 for complex spec rendering", async () => {
+  it("uses max_tokens 32000 for complex spec rendering", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ max_tokens: 16000 })
+      expect.objectContaining({ max_tokens: 32000 })
     )
   })
 
-  it("system prompt enforces minimum visible glow opacity", async () => {
+  it("system prompt instructs renderer to read opacity from AUTHORITATIVE BRAND TOKENS", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     const call = mockCreate.mock.calls[0][0]
-    expect(call.system).toContain("0.45")
+    expect(call.system).toContain("AUTHORITATIVE BRAND TOKENS")
     expect(call.system).toContain("glow-pulse")
+    // No hardcoded opacity value — reads from brand
+    expect(call.system).not.toContain('"0.45"')
+    expect(call.system).not.toContain("opacity 0.45\u20130.75")
   })
 
   it("system prompt uses non-prefixed color names to avoid Tailwind class collision", async () => {
@@ -113,7 +117,6 @@ describe("generateDesignPreview", () => {
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
     const call = mockCreate.mock.calls[0][0]
-    // Color naming rule: use unprefixed names like "primary", "fg" so Tailwind classes are bg-primary, text-fg
     expect(call.system).toContain('"primary"')
     expect(call.system).toContain('"fg"')
     expect(call.system).toContain("Color naming rule")
@@ -126,5 +129,62 @@ describe("generateDesignPreview", () => {
 
     const call = mockCreate.mock.calls[0][0]
     expect(call.system).toContain("OWN named tab")
+  })
+
+  it("prepends AUTHORITATIVE BRAND TOKENS block when brandContent is provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    const brandContent = "## Color Palette\n--bg: #0A0A0F\n--violet: #7C6FCD"
+    await generateDesignPreview({ specContent: "spec", featureName: "test", brandContent })
+
+    const call = mockCreate.mock.calls[0][0]
+    const userMessage = call.messages[0].content as string
+    expect(userMessage).toContain("AUTHORITATIVE BRAND TOKENS")
+    expect(userMessage).toContain("## Color Palette")
+  })
+
+  it("does not prepend brand block when brandContent is not provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    const userMessage = call.messages[0].content as string
+    expect(userMessage).not.toContain("AUTHORITATIVE BRAND TOKENS")
+  })
+
+  it("returns warnings when bg token from BRAND.md is absent from rendered HTML", async () => {
+    const brandContent = "## Color Palette\n--bg: #1A1A2E\n"
+    // HTML that does not include the brand bg token
+    const html = "<!DOCTYPE html><html><body style='background: #000'></body></html>"
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test", brandContent })
+    expect(result.warnings.some(w => w.includes("#1A1A2E"))).toBe(true)
+  })
+
+  it("returns empty warnings when HTML is structurally complete", async () => {
+    const html = "<!DOCTYPE html><html><head><style>@keyframes glow-pulse {}</style></head><body></body></html>"
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings).toHaveLength(0)
+  })
+
+  it("returns warning when keyframe animations are missing", async () => {
+    const html = "<!DOCTYPE html><html><body></body></html>"
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings.some(w => w.toLowerCase().includes("keyframe"))).toBe(true)
+  })
+
+  it("system prompt instructs chips to be horizontal row not vertical stack", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("horizontal row")
   })
 })
