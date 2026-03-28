@@ -577,6 +577,22 @@ async function runDesignAgent(params: {
       const brandContent = paths.brand ? await readFile(paths.brand, "main").catch(() => null) : null
       const brandDrifts = brandContent && draftContent ? auditBrandTokens(draftContent, brandContent) : []
 
+      // Spec gap audit — same Haiku check that runs on draft/patch saves.
+      // Runs here so gap detection is consistent: state query surfaces the same gaps as the save path,
+      // using the same mechanism and same framing. Without this, gaps only appear after a save and
+      // show up differently from the non-blocking questions parsed out of the spec text.
+      let specGap: string | null = null
+      if (draftContent) {
+        const [pvContent, saContent] = await Promise.all([
+          readFile(paths.productVision, "main").catch(() => ""),
+          readFile(paths.systemArchitecture, "main").catch(() => ""),
+        ])
+        if (pvContent || saContent) {
+          const specAudit = await auditSpecDraft({ draft: draftContent, productVision: pvContent, systemArchitecture: saContent, featureName }).catch(() => ({ status: "ok" as const, message: "" }))
+          specGap = specAudit.status === "gap" ? specAudit.message : null
+        }
+      }
+
       const threadHistory = getHistory(featureName)
       let uncommittedNote = ""
       if (threadHistory.length > 6) {
@@ -588,7 +604,14 @@ async function runDesignAgent(params: {
           uncommittedNote = `*Decisions from our conversation not yet committed to GitHub — my recommendations:*\n${uncommitted}\n\n_Reply with the numbers you want to lock in (e.g. "1 and 3") and I'll update the spec._`
         }
       }
-      const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts })
+
+      // Make clear whether the preview reflects uncommitted decisions or not.
+      // Without this, the user cannot tell if the HTML shows the old spec or the patched one.
+      if (previewNote && uncommittedNote) {
+        previewNote = previewNote + `\n_:warning: Preview reflects the committed GitHub spec — uncommitted decisions listed above are NOT yet included._`
+      }
+
+      const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, specGap })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)

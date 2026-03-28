@@ -584,6 +584,24 @@ None.
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
     expect(result).not.toContain("Brand token drift")
   })
+
+  it("shows spec gap section when specGap is provided", () => {
+    const gap = "The spec implies session expiry warnings for unauthenticated users, but the Product Vision does not address session management."
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, specGap: gap })
+    expect(result).toContain("Spec gap")
+    expect(result).toContain("session expiry")
+    expect(result).toContain("update the product vision")
+  })
+
+  it("omits spec gap section when specGap is null", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, specGap: null })
+    expect(result).not.toContain("Spec gap")
+  })
+
+  it("omits spec gap section when specGap is omitted", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).not.toContain("Spec gap")
+  })
 })
 
 describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {

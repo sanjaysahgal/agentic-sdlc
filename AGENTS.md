@@ -58,7 +58,11 @@ This replaces the previous prompt-rule-only approach, which was probabilistic. R
 
 **Brand enforcement is prompt-layer only.** Brand tokens are injected at the top of the design agent's system prompt. The agent is instructed to use them exactly and never ask for Figma files or external URLs when BRAND.md is present. There is no platform-layer stall detection or retry — any design conversation can legitimately have questions, so stall detection cannot be reliably automated at the platform layer.
 
-**Brand token drift detection.** When a user reports that a preview doesn't match the brand or production site, the agent cross-references every color token and animation value in the spec's Brand section against BRAND.md. It surfaces each discrepancy explicitly (spec value → BRAND.md value), states whether BRAND.md itself needs updating (it usually doesn't — it is extracted from the production site), generates a corrected preview using BRAND.md as the authority, and waits for approval before patching the spec. Never silently corrects values without surfacing the drift first.
+**Brand token drift detection.** `brand-auditor.ts` runs on every response (state query and agent run). It diffs every CSS variable token in the spec's Brand section against BRAND.md canonical values and surfaces all discrepancies — spec value → BRAND.md value — without waiting for the user to report a visual mismatch. Never silently corrects values without surfacing the drift first.
+
+**Spec gap detection on state query.** `spec-auditor.ts` (Haiku) runs on the state query path in addition to the draft/patch save path. This makes gap detection consistent regardless of which code path the user hits — the same gap surfaces with the same framing whether you just saved a draft or asked "where are we?" Gaps appear under "Spec gap — upstream docs don't cover this yet" in the state response.
+
+**Preview freshness signal.** When a state query returns uncommitted conversation decisions alongside an HTML preview, the preview note explicitly states that the preview reflects the committed GitHub spec only — uncommitted decisions are not included. This removes ambiguity about which version of the spec the preview shows.
 
 ---
 

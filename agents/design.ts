@@ -417,8 +417,9 @@ export function buildDesignStateResponse(params: {
   specUrl: string
   previewNote?: string | null
   brandDrifts?: BrandDrift[]
+  specGap?: string | null
 }): string {
-  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [] } = params
+  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], specGap } = params
 
   if (!draftContent) {
     return `No design draft yet for *${featureName}*. What would you like to design first?`
@@ -487,6 +488,12 @@ export function buildDesignStateResponse(params: {
     if (nonBlocking.length > 0) {
       lines.push(`*Non-blocking questions* (don't need answers before approval):`)
       nonBlocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
+      lines.push("")
+    }
+    if (specGap) {
+      lines.push(`:thinking_face: *Spec gap — upstream docs don't cover this yet:*`)
+      lines.push(specGap)
+      lines.push(`Say *update the product vision* or *remove from spec* and I'll apply the change.`)
       lines.push("")
     }
     lines.push(`Either way, just say *approved* and we'll move to engineering, or share what you see and we can tweak first.`)
