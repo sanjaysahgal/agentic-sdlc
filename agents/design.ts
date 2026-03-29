@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
-import { BrandDrift } from "../runtime/brand-auditor"
+import { BrandDrift, AnimationDrift } from "../runtime/brand-auditor"
 
 // Builds the UX Design agent system prompt from the loaded context.
 // The design agent's job: shape the approved product spec into a structured
@@ -429,11 +429,22 @@ export function buildDesignStateResponse(params: {
   specUrl: string
   previewNote?: string | null
   brandDrifts?: BrandDrift[]
+  animationDrifts?: AnimationDrift[]
   specGap?: string | null
+  uncommittedDecisions?: string
 }): string {
-  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], specGap } = params
+  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], animationDrifts = [], specGap, uncommittedDecisions } = params
 
   if (!draftContent) {
+    if (uncommittedDecisions) {
+      return [
+        `No committed spec yet for *${featureName}*.`,
+        "",
+        "*── PENDING (unsaved from this thread) ──*",
+        uncommittedDecisions,
+        `:warning: These decisions are not in the spec yet. Say *save those* to commit them.`,
+      ].join("\n")
+    }
     return `No design draft yet for *${featureName}*. What would you like to design first?`
   }
 
@@ -452,65 +463,89 @@ export function buildDesignStateResponse(params: {
   const blocking = allQuestions.filter(l => l.includes("[blocking: yes]")).map(cleanQuestion)
   const nonBlocking = allQuestions.filter(l => l.includes("[blocking: no]")).map(cleanQuestion)
 
-  // Extract key committed decisions so user can verify spec state at a glance
-  // without having to click through to GitHub.
-  // Design Direction is the most important section — shows the agreed aesthetic (dark mode,
-  // color palette, visual references). Brand shows color tokens and typography.
   const designDirectionSection = extractSection(draftContent, "Design Direction")
   const keyDecisions: string[] = []
   if (designDirectionSection) {
-    // Show the full Design Direction section — extractSection() already bounds it at the next ##
-    // heading, so no artificial line cap is needed. A cap of 2 silently drops multi-line entries
-    // like the color palette (header on line 2, hex values on lines 3+).
     const decisionLines = designDirectionSection.split("\n").filter(l => l.trim() && !l.startsWith("#"))
     keyDecisions.push(...decisionLines)
   }
 
+  const totalDrift = brandDrifts.length + animationDrifts.length
+  const hasUncommitted = !!uncommittedDecisions
+
   const lines: string[] = []
+
+  // ── Header ──
   lines.push(`*${featureName} design* — ${screenCount} screen${screenCount !== 1 ? "s" : ""}, ${flowCount} flow${flowCount !== 1 ? "s" : ""}`)
   lines.push(`Spec: ${specUrl}`)
-  if (keyDecisions.length > 0) {
+
+  // ── Section 1: PENDING ──
+  // Uncommitted decisions gate approval — surfaced first so nothing gets buried.
+  if (hasUncommitted) {
     lines.push("")
+    lines.push("*── PENDING (unsaved from this thread) ──*")
+    lines.push(uncommittedDecisions!)
+    lines.push(`:warning: These decisions are not in the spec yet. Say *save those* before approving.`)
+  }
+
+  // ── Section 2: DRIFT ──
+  if (totalDrift > 0) {
+    lines.push("")
+    lines.push("*── DRIFT (spec vs BRAND.md) ──*")
+    if (brandDrifts.length > 0) {
+      lines.push("Color:")
+      brandDrifts.forEach((d, i) => lines.push(`  ${i + 1}. ${d.token}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``))
+    }
+    if (animationDrifts.length > 0) {
+      lines.push("Animation:")
+      animationDrifts.forEach((d, i) => lines.push(`  ${i + 1}. ${d.param}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``))
+    }
+    lines.push(`Say *fix drift* and I'll patch the spec to match BRAND.md. This also corrects the HTML preview.`)
+  }
+
+  // ── Section 3: SPEC ──
+  lines.push("")
+  lines.push("*── SPEC ──*")
+  if (keyDecisions.length > 0) {
     lines.push(`_Committed decisions (from GitHub):_`)
     keyDecisions.forEach(d => lines.push(d))
   }
-  lines.push("")
-
-  if (brandDrifts.length > 0) {
-    lines.push(`:warning: *Brand token drift — spec values don't match BRAND.md:*`)
-    brandDrifts.forEach((d, i) => lines.push(`${i + 1}. ${d.token}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``))
-    lines.push(`Say *fix brand tokens* and I'll patch the spec. This also corrects the HTML preview colors.`)
-    lines.push("")
-  }
 
   if (blocking.length > 0) {
+    lines.push("")
     lines.push(`:warning: *Blocking — must resolve before approval:*`)
     blocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
+  }
+
+  if (nonBlocking.length > 0) {
     lines.push("")
-    if (nonBlocking.length > 0) {
-      lines.push(`*Non-blocking questions* (can resolve after approval):`)
-      nonBlocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
-      lines.push("")
-    }
-    lines.push(`Resolve the blocking questions above and reply *approved* to move to engineering.`)
+    lines.push(`*Non-blocking questions:*`)
+    nonBlocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
+  }
+
+  if (specGap) {
+    lines.push("")
+    lines.push(`:thinking_face: *Spec gap — upstream docs don't cover this yet:*`)
+    lines.push(specGap)
+    lines.push(`Say *update the product vision* or *remove from spec* and I'll apply the change.`)
+  }
+
+  if (previewNote) {
+    lines.push(previewNote)
+  }
+
+  // ── Conditional CTA — one clear next step, priority-ordered ──
+  // Uncommitted decisions > drift > blocking questions > all-clear.
+  // Approval is not offered until all three gates are clear.
+  lines.push("")
+  if (hasUncommitted) {
+    lines.push(`Save the pending decisions above first — say *save those*, then come back to approve.`)
+  } else if (totalDrift > 0) {
+    lines.push(`Fix the drift above first — say *fix drift*, then approve.`)
+  } else if (blocking.length > 0) {
+    lines.push(`Resolve the blocking question${blocking.length !== 1 ? "s" : ""} above, then say *approved* to move to engineering.`)
   } else {
-    lines.push(`No blocking questions — ready to approve whenever you are.`)
-    if (previewNote) {
-      lines.push(previewNote)
-    }
-    lines.push("")
-    if (nonBlocking.length > 0) {
-      lines.push(`*Non-blocking questions* (don't need answers before approval):`)
-      nonBlocking.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
-      lines.push("")
-    }
-    if (specGap) {
-      lines.push(`:thinking_face: *Spec gap — upstream docs don't cover this yet:*`)
-      lines.push(specGap)
-      lines.push(`Say *update the product vision* or *remove from spec* and I'll apply the change.`)
-      lines.push("")
-    }
-    lines.push(`Either way, just say *approved* and we'll move to engineering, or share what you see and we can tweak first.`)
+    lines.push(`Say *approved* to move to engineering.`)
   }
 
   return lines.join("\n")

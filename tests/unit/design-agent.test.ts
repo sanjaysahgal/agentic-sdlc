@@ -377,28 +377,70 @@ None.
     expect(result).not.toContain("Committed decisions")
   })
 
-  it("shows brand token drift section when brandDrifts are provided", () => {
+  it("shows DRIFT section with color drifts when brandDrifts are provided", () => {
     const drifts = [
       { token: "--violet", specValue: "#8B7FE8", brandValue: "#7C6FCD" },
       { token: "--bg", specValue: "#0A0E27", brandValue: "#0A0A0F" },
     ]
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drifts })
-    expect(result).toContain("Brand token drift")
+    expect(result).toContain("DRIFT")
     expect(result).toContain("--violet")
     expect(result).toContain("#8B7FE8")
     expect(result).toContain("#7C6FCD")
-    expect(result).toContain("fix brand tokens")
+    expect(result).toContain("fix drift")
   })
 
-  it("shows no brand drift section when brandDrifts is empty", () => {
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: [] })
-    expect(result).not.toContain("Brand token drift")
-    expect(result).not.toContain("fix brand tokens")
+  it("shows animation drifts in DRIFT section when animationDrifts are provided", () => {
+    const animDrifts = [
+      { param: "glow-blur", specValue: "200px", brandValue: "80px" },
+      { param: "glow-duration", specValue: "2.5s", brandValue: "4s" },
+    ]
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, animationDrifts: animDrifts })
+    expect(result).toContain("Animation:")
+    expect(result).toContain("glow-blur")
+    expect(result).toContain("200px")
+    expect(result).toContain("80px")
+    expect(result).toContain("fix drift")
   })
 
-  it("shows no brand drift section when brandDrifts is omitted", () => {
+  it("shows no DRIFT section when both brandDrifts and animationDrifts are empty", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: [], animationDrifts: [] })
+    expect(result).not.toContain("DRIFT")
+    expect(result).not.toContain("fix drift")
+  })
+
+  it("shows no DRIFT section when drift params are omitted", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
-    expect(result).not.toContain("Brand token drift")
+    expect(result).not.toContain("DRIFT")
+  })
+
+  it("shows PENDING section and gates CTA when uncommittedDecisions provided", () => {
+    const decisions = "1. Use system-ui font stack exactly as on getarchon.dev\n2. Nav bar height 52px, not 44px"
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, uncommittedDecisions: decisions })
+    expect(result).toContain("PENDING")
+    expect(result).toContain("system-ui font")
+    expect(result).toContain("save those")
+    // CTA must block approval when uncommitted decisions exist
+    expect(result).toContain("Save the pending decisions above first")
+    expect(result).not.toContain("Say *approved*")
+  })
+
+  it("CTA gates on drift when no uncommitted decisions but drift exists", () => {
+    const drifts = [{ token: "--violet", specValue: "#8B7FE8", brandValue: "#7C6FCD" }]
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drifts })
+    expect(result).toContain("Fix the drift above first")
+    expect(result).not.toContain("Say *approved*")
+  })
+
+  it("CTA gates on blocking questions when no uncommitted and no drift", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithBlocking, specUrl: SPEC_URL })
+    expect(result).toContain("Resolve the blocking question")
+    expect(result).not.toContain("Say *approved*")
+  })
+
+  it("CTA offers approval only when all gates are clear", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoQuestions, specUrl: SPEC_URL })
+    expect(result).toContain("Say *approved* to move to engineering")
   })
 
   it("shows spec gap section when specGap is provided", () => {

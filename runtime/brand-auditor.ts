@@ -79,8 +79,9 @@ function extractSpecAnimationSection(specContent: string): string {
  */
 function extractSpecAnimValue(section: string, keyword: string): string | undefined {
   // Avoid greedy [^\n]* before the capture group — it causes backtracking past the target value.
-  // Instead match: keyword ... : whitespace backtick? captured-value
-  const re = new RegExp(`${keyword}[^:\\n]*:\\s*\`?(-?[\\d.]+(?:px|s|ms))\`?`, "i")
+  // Instead match: keyword ... : whitespace tilde? backtick? captured-value
+  // The tilde prefix (~200px) is common in spec prose and must be stripped before numeric extraction.
+  const re = new RegExp(`${keyword}[^:\\n]*:\\s*~?\`?(-?[\\d.]+(?:px|s|ms))\`?`, "i")
   const match = section.match(re)
   return match?.[1]
 }

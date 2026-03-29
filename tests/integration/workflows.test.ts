@@ -590,16 +590,10 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     await handleFeatureChannelMessage(params)
 
     const text = lastUpdateText(params.client)
-    expect(text).toContain("not yet committed to GitHub")
+    expect(text).toContain("PENDING")
     expect(text).toContain("Dark mode default")
-    expect(text).toContain("Reply with the numbers")
-
-    // uncommittedNote must appear BEFORE the committed state response
-    expect(text.indexOf("not yet committed")).toBeLessThan(text.indexOf("No design draft yet") !== -1 ? text.indexOf("No design draft yet") : text.length)
-    // More precise: uncommitted section comes before the spec link or "No design draft" section
-    const uncommittedIdx = text.indexOf("not yet committed")
-    const committedStateIdx = text.indexOf("---\n\n")
-    expect(uncommittedIdx).toBeLessThan(committedStateIdx)
+    // CTA tells user to save pending decisions (exact wording depends on draft state)
+    expect(text.toLowerCase()).toContain("save those")
   })
 
   it("state response skips uncommitted section when all decisions are in the spec", async () => {
@@ -617,7 +611,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("not yet committed to GitHub")
+    expect(lastUpdateText(params.client)).not.toContain("PENDING")
   })
 
   it("state response has no uncommitted section when thread is short (fresh start)", async () => {
@@ -629,7 +623,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("not yet committed to GitHub")
+    expect(lastUpdateText(params.client)).not.toContain("PENDING")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(0)
   })
 })

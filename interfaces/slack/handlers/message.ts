@@ -496,10 +496,11 @@ async function runDesignAgent(params: {
           }
         }
       }
-      // Brand token drift audit — pure string diff, no API call.
-      // Runs on every state query so the human always sees drift without having to ask.
+      // Brand token and animation drift audits — pure string diffs, no API call.
+      // Both run on every state query so the human always sees all drift without having to ask.
       const brandContent = paths.brand ? await readFile(paths.brand, "main").catch(() => null) : null
       const brandDrifts = brandContent && draftContent ? auditBrandTokens(draftContent, brandContent) : []
+      const animationDrifts = brandContent && draftContent ? auditAnimationTokens(draftContent, brandContent) : []
 
       // Spec gap audit — same Haiku check that runs on draft/patch saves.
       // Runs here so gap detection is consistent: state query surfaces the same gaps as the save path,
@@ -518,24 +519,24 @@ async function runDesignAgent(params: {
       }
 
       const threadHistory = getHistory(featureName)
-      let uncommittedNote = ""
+      let uncommittedDecisions: string | undefined
       if (threadHistory.length > 6) {
         await update("_Reviewing conversation for uncommitted decisions..._")
         const cacheKey = `${featureName}:${threadHistory.length}`
         const uncommitted = await identifyUncommittedDecisions(threadHistory, draftContent ?? "", cacheKey).catch(() => "")
         const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
         if (uncommitted && !isAllCommitted) {
-          uncommittedNote = `*Decisions from our conversation not yet committed to GitHub — my recommendations:*\n${uncommitted}\n\n_Reply with the numbers you want to lock in (e.g. "1 and 3") and I'll update the spec._`
+          uncommittedDecisions = uncommitted
         }
       }
 
       // Make clear whether the preview reflects uncommitted decisions or not.
       // Without this, the user cannot tell if the HTML shows the old spec or the patched one.
-      if (previewNote && uncommittedNote) {
-        previewNote = previewNote + `\n_:warning: Preview reflects the committed GitHub spec — uncommitted decisions listed above are NOT yet included._`
+      if (previewNote && uncommittedDecisions) {
+        previewNote = previewNote + `\n_:warning: Preview reflects the committed GitHub spec — uncommitted decisions above are NOT yet included._`
       }
 
-      const msg = uncommittedNote + (uncommittedNote ? "\n\n---\n\n" : "") + buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, specGap })
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, animationDrifts, specGap, uncommittedDecisions })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)

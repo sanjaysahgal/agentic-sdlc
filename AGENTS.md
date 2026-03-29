@@ -79,6 +79,8 @@ The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/
 
 **Preview freshness signal.** When a state query returns uncommitted conversation decisions alongside an HTML preview, the preview note explicitly states that the preview reflects the committed GitHub spec only — uncommitted decisions are not included. This removes ambiguity about which version of the spec the preview shows.
 
+**State response schema (three ordered sections).** `buildDesignStateResponse()` always returns in the same priority order: (1) `*── PENDING (unsaved from this thread) ──*` — uncommitted conversation decisions surfaced first, gates approval; (2) `*── DRIFT (spec vs BRAND.md) ──*` — color and animation drift, gates approval; (3) `*── SPEC ──*` — committed decisions, blocking/non-blocking questions, spec gap, preview link. The CTA at the bottom is conditional: uncommitted decisions present → "Save the pending decisions above first"; drift present → "Fix the drift above first"; blocking questions present → "Resolve the blocking questions above"; all clear → "Say *approved* to move to engineering." Approval is never offered while any gate is open. If there is no committed spec but there are uncommitted decisions, the PENDING section still renders (no-draft path with the same gating).
+
 ---
 
 ## architect agent
