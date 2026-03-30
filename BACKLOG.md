@@ -33,6 +33,14 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Gap — animation opacity drift detection is blind to spec format
+
+`auditAnimationTokens()` checks for `glow-opacity-min` and `glow-opacity-max` using `extractSpecAnimValue("opacity.min")` and `extractSpecAnimValue("opacity.max")`. These keywords never appear in the design agent's spec output — the agent writes `Opacity cycle: 0.45 → 0.75` not `opacity.min: 0.45`. The regex fails silently and opacity drift is never detected.
+
+**Fix:** update `extractSpecAnimValue` to handle the `X → Y` range format for opacity, or add dedicated parsing for the "Opacity cycle" line in `extractSpecAnimationSection`. Until fixed, only duration and blur drift are detectable. Opacity values in the spec can drift from BRAND.md without being flagged.
+
+---
+
 ### Trust Step 0.5c — URL-based brand comparison ("compare with this site")
 
 **The problem today:** When a design preview doesn't match a reference site visually, the user has to describe every discrepancy in plain English — which is unreasonable when there are 10+ differences. "Compare with this URL" is the natural, correct interaction. But the design agent can't fetch URLs (it receives a system prompt and user message, no tool access), so the interaction breaks down and the agent either asks for hex codes (wrong) or screenshots (wrong).
