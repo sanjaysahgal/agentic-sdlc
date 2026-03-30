@@ -44,21 +44,41 @@ function extractBrandSection(specContent: string): string {
 }
 
 /**
- * Parses animation parameters from BRAND.md's ## Animation section.
- * Expected format (one key-value per line):
- *   glow-duration: 4s
- *   glow-blur: 80px
- *   glow-opacity-min: 0.55
- *   glow-opacity-max: 1.00
- *   glow-delay: -1.8s
+ * Parses animation parameters from BRAND.md's ## Glow section (CSS format).
+ * Reads the canonical CSS that the team actually committed — never a platform-invented
+ * key-value block. Extracts:
+ *   glow-duration  — from `animation: <name> Xs ...`
+ *   glow-blur      — from `filter: blur(Xpx)`
+ *   glow-delay     — from `animation-delay: Xs`
+ *   glow-opacity-min / glow-opacity-max — from the first @keyframes block (violet glow)
  */
 function extractBrandAnimationParams(brandMd: string): Map<string, string> {
   const params = new Map<string, string>()
-  const animSection = brandMd.match(/## Animation\n([\s\S]*?)(?=\n## |\n---|\n# (?!#)|$)/)?.[1] ?? ""
-  for (const line of animSection.split("\n")) {
-    const match = line.match(/^\s*(glow-[\w-]+):\s*(\S+)/)
-    if (match) params.set(match[1], match[2])
+  const glowSection = brandMd.match(/## Glow[^\n]*\n([\s\S]*?)(?=\n## |\n---|$)/)?.[1] ?? ""
+  if (!glowSection) return params
+
+  const durationMatch = glowSection.match(/animation:\s*\S+\s+([\d.]+s)/)
+  if (durationMatch) params.set("glow-duration", durationMatch[1])
+
+  const blurMatch = glowSection.match(/filter:\s*blur\(([\d.]+px)\)/)
+  if (blurMatch) params.set("glow-blur", blurMatch[1])
+
+  const delayMatch = glowSection.match(/animation-delay:\s*([-\d.]+s)/)
+  if (delayMatch) params.set("glow-delay", delayMatch[1])
+
+  // First @keyframes block is the violet glow — canonical source for opacity values.
+  // Matches from @keyframes through the closing } on its own line.
+  const keyframeBlock = glowSection.match(/@keyframes[^{]*\{([\s\S]*?)\n\}/)?.[1]
+  if (keyframeBlock) {
+    const opacityMinMatch = keyframeBlock.match(/0%\s*\{[^}]*opacity:\s*([\d.]+)/)
+    if (opacityMinMatch) params.set("glow-opacity-min", opacityMinMatch[1])
+
+    const allOpacities = [...keyframeBlock.matchAll(/opacity:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
+    if (allOpacities.length > 0) {
+      params.set("glow-opacity-max", Math.max(...allOpacities).toFixed(2))
+    }
   }
+
   return params
 }
 

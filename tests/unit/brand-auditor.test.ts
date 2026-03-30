@@ -13,8 +13,9 @@ const REAL_BRAND_MD = readFileSync(join(FIXTURE_DIR, "brand-md.md"), "utf-8")
 const REAL_SPEC_DRIFTED = readFileSync(join(FIXTURE_DIR, "design-brand-section-drifted.md"), "utf-8")
 const REAL_SPEC_CANONICAL = readFileSync(join(FIXTURE_DIR, "design-brand-section-canonical.md"), "utf-8")
 
-// Animation drift fixtures — BRAND.md with animation section + spec Brand section with animation values.
-// The BRAND.md format (glow-duration:, glow-blur:, etc.) is platform-defined, not agent output.
+// Animation drift fixtures — BRAND.md with Glow CSS section + spec Brand section with animation values.
+// brand-md-with-animation.md mirrors the real BRAND.md's ## Glow (Signature Effect) CSS format —
+// the parser reads from what the team committed, not a platform-invented key-value section.
 // The spec animation section IS agent output — fixture sourced from the onboarding design spec discussion.
 const BRAND_MD_WITH_ANIMATION = readFileSync(join(FIXTURE_DIR, "brand-md-with-animation.md"), "utf-8")
 const SPEC_ANIMATION_DRIFTED = readFileSync(join(FIXTURE_DIR, "design-brand-animation-drifted.md"), "utf-8")
@@ -152,7 +153,7 @@ describe("auditAnimationTokens — fixture-sourced", () => {
     expect(drifts).toHaveLength(0)
   })
 
-  it("returns empty when BRAND.md has no Animation section", () => {
+  it("returns empty when BRAND.md has no Glow section", () => {
     const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, REAL_BRAND_MD)
     expect(drifts).toHaveLength(0)
   })

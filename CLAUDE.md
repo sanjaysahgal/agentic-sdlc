@@ -26,6 +26,13 @@ Every product-specific coordinate lives in `WorkspaceConfig`. This includes: pro
 ### 3. Config is the only coupling point
 A new team onboarding to agentic-sdlc changes only their `.env`. Nothing in the codebase changes. If onboarding a new team would require editing a TypeScript file, that is a bug.
 
+### 3a. Never modify customer repos to serve the platform
+The target repo (`agentic-health360` or any future customer repo) is read-only from the platform's perspective. If a platform parser cannot handle the format of a file in the customer repo, fix the parser — never add, modify, or restructure files in the customer repo to make the parser easier.
+
+**This applies even when the change "just adds a section" or "only adds convenience data."** Any change to a customer repo is a product decision and requires explicit user approval framed as such — not an implementation shortcut made behind the scenes.
+
+**Before touching any file in a customer repo:** stop and ask "Is this a product decision the user has approved, or am I doing this to work around a platform limitation?" If the latter, fix the platform.
+
 ### 4. Durable over fast
 When two approaches solve the problem — one fast/brittle, one slower/durable — always choose durable. Flag the tradeoff explicitly before implementing. Never implement a shortcut without saying so and getting confirmation.
 
