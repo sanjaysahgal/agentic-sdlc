@@ -148,6 +148,20 @@ describe("auditAnimationTokens — fixture-sourced", () => {
     expect(blur?.brandValue).toBe("80px")
   })
 
+  it("detects opacity-min drift (0.45 in spec vs 0.55 in BRAND.md)", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const opMin = drifts.find(d => d.param === "glow-opacity-min")
+    expect(opMin?.specValue).toBe("0.45")
+    expect(opMin?.brandValue).toBe("0.55")
+  })
+
+  it("detects opacity-max drift (0.75 in spec vs 1.00 in BRAND.md)", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const opMax = drifts.find(d => d.param === "glow-opacity-max")
+    expect(opMax?.specValue).toBe("0.75")
+    expect(opMax?.brandValue).toBe("1.00")
+  })
+
   it("returns empty when animation params match BRAND.md exactly", () => {
     const drifts = auditAnimationTokens(SPEC_ANIMATION_CANONICAL, BRAND_MD_WITH_ANIMATION)
     expect(drifts).toHaveLength(0)

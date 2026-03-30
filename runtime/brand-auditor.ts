@@ -95,7 +95,7 @@ function extractSpecAnimationSection(specContent: string): string {
 /**
  * Extracts a numeric value + optional unit from an animation spec line.
  * e.g. "- Duration: `2.5s ease-in-out`" → "2.5s"
- * Uses a non-greedy match before the value to avoid backtracking past the value itself.
+ * Uses a non-greedy match before the value to avoid backtracking past the target value itself.
  */
 function extractSpecAnimValue(section: string, keyword: string): string | undefined {
   // Avoid greedy [^\n]* before the capture group — it causes backtracking past the target value.
@@ -104,6 +104,17 @@ function extractSpecAnimValue(section: string, keyword: string): string | undefi
   const re = new RegExp(`${keyword}[^:\\n]*:\\s*~?\`?(-?[\\d.]+(?:px|s|ms))\`?`, "i")
   const match = section.match(re)
   return match?.[1]
+}
+
+/**
+ * Extracts opacity min and max from the spec's "Opacity cycle: X → Y" line.
+ * The design agent writes opacity as a range, not two separate labelled values.
+ * e.g. "- Opacity cycle: 0.45 → 0.75" → { min: "0.45", max: "0.75" }
+ */
+function extractSpecOpacityRange(section: string): { min: string; max: string } | undefined {
+  const match = section.match(/opacity[^:\n]*:\s*([\d.]+)\s*→\s*([\d.]+)/i)
+  if (!match) return undefined
+  return { min: match[1], max: match[2] }
 }
 
 /**
@@ -125,8 +136,6 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
     { param: "glow-duration", keyword: "duration" },
     { param: "glow-blur", keyword: "blur" },
     { param: "glow-delay", keyword: "delay" },
-    { param: "glow-opacity-min", keyword: "opacity.min" },
-    { param: "glow-opacity-max", keyword: "opacity.max" },
   ]
 
   for (const { param, keyword } of checks) {
@@ -135,6 +144,19 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
     const specValue = extractSpecAnimValue(specAnimSection, keyword)
     if (specValue && specValue !== brandValue) {
       drifts.push({ param, specValue, brandValue })
+    }
+  }
+
+  // Opacity is written as a range ("Opacity cycle: X → Y") — handled separately.
+  const opacityRange = extractSpecOpacityRange(specAnimSection)
+  if (opacityRange) {
+    const minBrand = brandParams.get("glow-opacity-min")
+    if (minBrand && opacityRange.min !== minBrand) {
+      drifts.push({ param: "glow-opacity-min", specValue: opacityRange.min, brandValue: minBrand })
+    }
+    const maxBrand = brandParams.get("glow-opacity-max")
+    if (maxBrand && opacityRange.max !== maxBrand) {
+      drifts.push({ param: "glow-opacity-max", specValue: opacityRange.max, brandValue: maxBrand })
     }
   }
 
