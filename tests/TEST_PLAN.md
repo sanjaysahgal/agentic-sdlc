@@ -1,8 +1,10 @@
 # archcon Test Plan
 
-**376 tests across 22 files — all passing**
+**424 tests across 24 files — all passing**
 
 Run: `npx vitest run`
+
+Smoke tests (real API, not in CI): `npm run test:smoke`
 
 ---
 
@@ -34,6 +36,23 @@ Hand-crafted inline strings are a liability — they encode format assumptions t
 **When adding a new parser:** commit a sourced fixture to `tests/fixtures/agent-output/` before writing the test. If you can't source a real sample yet, mark the test with a `// TODO: replace with sourced fixture` comment and open a backlog item.
 
 ---
+
+## Smoke Tests (`tests/smoke/`)
+
+**What they catch that unit tests cannot:** model format drift. If the Anthropic model changes how it outputs a Brand section, color tokens, or animation values, unit tests pass (they run against static fixtures) but the production parser silently returns empty. Smoke tests catch this.
+
+**How they work:** Send a prompt to the real API instructing the model to output specific drifted values. Assert that `auditBrandTokens` and `auditAnimationTokens` detect those exact drifts. If the model starts formatting its output differently, the parsers will return empty and these tests fail — exposing the format change before it hits production.
+
+**Run:** `npm run test:smoke` (requires real `ANTHROPIC_API_KEY`). Not in CI — incurs API cost and requires live credentials.
+
+**When to run manually:**
+- After any change to `brand-auditor.ts` parsers
+- After a model upgrade (check `ANTHROPIC_API_KEY` model)
+- When a production report suggests drift detection isn't working
+
+| File | What it tests |
+|---|---|
+| `tests/smoke/parser-format.test.ts` | Brand token format + all 5 animation params against real Haiku output |
 
 ---
 

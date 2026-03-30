@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:visual": "playwright test tests/visual/",
     "test:all": "vitest run && playwright test tests/visual/",
+    "test:smoke": "SMOKE_TEST=true vitest run tests/smoke/",
     "test:watch": "vitest",
     "eval": "tsx scripts/run-evals.ts",
     "eval:pm": "tsx scripts/run-evals.ts -- --agent pm",

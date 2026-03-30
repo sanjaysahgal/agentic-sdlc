@@ -16,4 +16,4 @@ Font sizes: text-sm / text-base / text-lg
 - Glow duration: `2.5s` ease-in-out
 - Blur radius: `200px`
 - Opacity cycle: 0.45 → 0.75
-- Animation delay: `-1.8s`
+- Animation delay: `-0.5s`

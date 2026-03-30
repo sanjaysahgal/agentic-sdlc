@@ -177,9 +177,55 @@ describe("auditAnimationTokens — fixture-sourced", () => {
     expect(drifts).toHaveLength(0)
   })
 
+  it("detects delay drift (-0.5s in spec vs -1.8s in BRAND.md)", () => {
+    const drifts = auditAnimationTokens(SPEC_ANIMATION_DRIFTED, BRAND_MD_WITH_ANIMATION)
+    const delay = drifts.find(d => d.param === "glow-delay")
+    expect(delay?.specValue).toBe("-0.5s")
+    expect(delay?.brandValue).toBe("-1.8s")
+  })
+
   it("returns empty when either input is empty", () => {
     expect(auditAnimationTokens("", BRAND_MD_WITH_ANIMATION)).toHaveLength(0)
     expect(auditAnimationTokens(SPEC_ANIMATION_DRIFTED, "")).toHaveLength(0)
+  })
+})
+
+describe("auditAnimationTokens — section header format resilience", () => {
+  // The design agent may write the Animation/Glow header in several ways.
+  // These tests document which formats are handled and catch regressions if the
+  // section extractor breaks on a variant the model starts producing.
+  // Tests run via auditAnimationTokens (public API) — a parse failure means
+  // zero drifts returned when drifts exist.
+
+  const DRIFTED_VALUES = "- Glow duration: `2.5s` ease-in-out\n- Blur radius: `80px`\n- Opacity cycle: 0.55 → 1.00\n- Animation delay: `-0.5s`"
+
+  function specWithHeader(header: string): string {
+    return `## Brand\n\n**Color Palette**\n- \`--violet:\` \`#7C6FCD\`\n\n${header}\n${DRIFTED_VALUES}\n`
+  }
+
+  it("**Animation & Glow** (standard format — must never regress)", () => {
+    const drifts = auditAnimationTokens(specWithHeader("**Animation & Glow**"), BRAND_MD_WITH_ANIMATION)
+    expect(drifts.some(d => d.param === "glow-duration")).toBe(true)
+  })
+
+  it("**Glow & Animation** (reversed order)", () => {
+    const drifts = auditAnimationTokens(specWithHeader("**Glow & Animation**"), BRAND_MD_WITH_ANIMATION)
+    expect(drifts.some(d => d.param === "glow-duration")).toBe(true)
+  })
+
+  it("**Glow** (minimal header, no 'Animation' word)", () => {
+    const drifts = auditAnimationTokens(specWithHeader("**Glow**"), BRAND_MD_WITH_ANIMATION)
+    expect(drifts.some(d => d.param === "glow-duration")).toBe(true)
+  })
+
+  it("**Animation & Glow:** (with colon)", () => {
+    const drifts = auditAnimationTokens(specWithHeader("**Animation & Glow:**"), BRAND_MD_WITH_ANIMATION)
+    expect(drifts.some(d => d.param === "glow-duration")).toBe(true)
+  })
+
+  it("Animation & Glow (no bold)", () => {
+    const drifts = auditAnimationTokens(specWithHeader("Animation & Glow"), BRAND_MD_WITH_ANIMATION)
+    expect(drifts.some(d => d.param === "glow-duration")).toBe(true)
   })
 })
 
