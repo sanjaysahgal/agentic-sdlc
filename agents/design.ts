@@ -436,16 +436,10 @@ export function buildDesignStateResponse(params: {
   const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], animationDrifts = [], specGap, uncommittedDecisions } = params
 
   if (!draftContent) {
-    if (uncommittedDecisions) {
-      return [
-        `No committed spec yet for *${featureName}*.`,
-        "",
-        "*── PENDING (unsaved from this thread) ──*",
-        uncommittedDecisions,
-        `:warning: These decisions are not in the spec yet. Say *save those* to commit them.`,
-      ].join("\n")
-    }
-    return `No design draft yet for *${featureName}*. What would you like to design first?`
+    const pendingSection = uncommittedDecisions
+      ? ["*── PENDING ──*", uncommittedDecisions, `:warning: These decisions are not in the spec yet. Say *save those* to commit them.`].join("\n")
+      : "*── PENDING ──*\nNo open items from prior conversations."
+    return [`No committed spec yet for *${featureName}*.`, "", pendingSection].join("\n")
   }
 
   const extractSection = (content: string, heading: string): string => {
@@ -480,12 +474,14 @@ export function buildDesignStateResponse(params: {
   lines.push(`Spec: ${specUrl}`)
 
   // ── Section 1: PENDING ──
-  // Uncommitted decisions gate approval — surfaced first so nothing gets buried.
+  // Always shown — so the user knows the system checked, not just that there was nothing to report.
+  lines.push("")
+  lines.push("*── PENDING ──*")
   if (hasUncommitted) {
-    lines.push("")
-    lines.push("*── PENDING (unsaved from this thread) ──*")
     lines.push(uncommittedDecisions!)
     lines.push(`:warning: These decisions are not in the spec yet. Say *save those* before approving.`)
+  } else {
+    lines.push("No open items from prior conversations — everything discussed is in the committed spec.")
   }
 
   // ── Section 2: DRIFT ──

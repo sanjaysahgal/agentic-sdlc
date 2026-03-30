@@ -161,3 +161,13 @@ This file tracks decisions that are correct for a small team today but need to c
 **Why it works now (poorly):** Specs are developed over relatively short threads. Health360's early sessions stayed well within limits. The failure mode has appeared (evident from user transcripts) but was survivable.
 
 **At scale:** Long feature threads — especially ones that span multiple sessions or involve many revision cycles — will hit the limit reliably. Trust Step 1 in the backlog: implement a turn counter and proactive degradation warning at ~70% of estimated capacity ("This thread is getting long — I'd recommend opening a new thread for the next phase or continuing from a spec link to preserve full context."). When the limit is actually hit, the error must surface explicitly to the user, not silently produce wrong output.
+
+---
+
+## Legacy conversation history merged across all features (threadTs migration shortcut)
+
+**Now:** Before the featureName-keying migration, history was stored under Slack `threadTs` float strings. On startup, `migrateThreadTsKeys()` in `conversation-store.ts` consolidates all those entries into a single `"_legacy_"` key. `getHistory(featureName)` then merges `_legacy_` into every featureName lookup — meaning all legacy messages appear in every feature's history.
+
+**Why it works now:** Health360 has one active feature (`onboarding`). All pre-migration history belongs to that feature. Merging it into every featureName call has no visible side effects.
+
+**At scale:** With multiple features, `getHistory("feature-B")` would include all messages from `"feature-A"`. This would inject irrelevant context into `identifyUncommittedDecisions` and produce garbage results. The fix requires a `threadTs → featureName` index built from Slack channel metadata — the channel name of each thread's parent message maps to the featureName. This index must be populated when messages are received (the Slack `channel` field on every event) and stored alongside the conversation history. At that point, `migrateThreadTsKeys()` can re-key each legacy entry to its correct featureName.

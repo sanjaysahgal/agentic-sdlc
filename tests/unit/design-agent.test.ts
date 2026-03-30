@@ -318,10 +318,24 @@ describe("buildDesignStateResponse", () => {
     expect(result).toContain("approved")
   })
 
-  it("handles no draft — prompts to start", () => {
+  it("handles no draft — shows 'no committed spec' with PENDING section", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: "", specUrl: SPEC_URL })
-    expect(result).toContain("No design draft yet")
+    expect(result).toContain("No committed spec yet")
+    expect(result).toContain("PENDING")
     expect(result).not.toContain(SPEC_URL)
+  })
+
+  it("no-draft path: shows 'No open items' when no uncommitted decisions", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: "", specUrl: SPEC_URL })
+    expect(result).toContain("No open items from prior conversations")
+  })
+
+  it("no-draft path: shows uncommitted decisions when provided", () => {
+    const decisions = "1. Use system-ui font\n2. Nav 52px"
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: "", specUrl: SPEC_URL, uncommittedDecisions: decisions })
+    expect(result).toContain("PENDING")
+    expect(result).toContain("system-ui font")
+    expect(result).toContain("save those")
   })
 
   it("shows committed Design Direction as key decisions when section is present", () => {
@@ -412,6 +426,12 @@ None.
   it("shows no DRIFT section when drift params are omitted", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
     expect(result).not.toContain("DRIFT")
+  })
+
+  it("PENDING section always present — shows 'No open items' when nothing uncommitted", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
+    expect(result).toContain("PENDING")
+    expect(result).toContain("No open items from prior conversations")
   })
 
   it("shows PENDING section and gates CTA when uncommittedDecisions provided", () => {

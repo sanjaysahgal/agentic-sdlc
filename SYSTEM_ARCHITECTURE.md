@@ -143,6 +143,8 @@ The summary is cached in-memory, keyed by `(featureName, olderMessageCount)`. Be
 
 `identifyUncommittedDecisions` (also in `conversation-summarizer.ts`) compares the full conversation history against the committed spec to surface decisions discussed but not yet saved. The full spec is sent to Haiku — not a truncated slice — so sections past position 3000 (such as the Brand section) are visible. Truncating caused false positives: brand tokens committed after a patch were reported as uncommitted because the Brand section was past the truncation point.
 
+Conversation history is keyed by featureName (not threadTs), so all threads within a feature channel share one accumulated history. On startup, `conversation-store.ts` runs a one-time migration (`migrateThreadTsKeys`) that consolidates any pre-migration threadTs-keyed entries into `"_legacy_"`. `identifyUncommittedDecisions` receives `[...getLegacyMessages(), ...getHistory(featureName)]` so decisions from all prior sessions surface in the PENDING section.
+
 Implemented in `runtime/conversation-summarizer.ts`.
 
 ### Graceful shutdown

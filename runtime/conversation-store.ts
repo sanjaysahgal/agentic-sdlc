@@ -1,8 +1,12 @@
-// Stores conversation history per Slack thread.
-// Keyed by thread_ts (Slack's unique thread identifier).
+// Stores conversation history per feature name (e.g. "onboarding").
+// All threads in a feature channel share one accumulated history under the featureName key.
 // In production this would be Redis — for now in-memory + file persistence is sufficient.
 //
 // Both conversation history and confirmed agents survive bot restarts via disk persistence.
+//
+// Legacy note: before the featureName-keying migration, history was stored under Slack threadTs
+// float strings (e.g. "1774391965.646909"). On startup, migrateThreadTsKeys() consolidates all
+// those entries into a single "_legacy_" key, which getHistory() merges with featureName history.
 
 import fs from "fs"
 import path from "path"
@@ -57,12 +61,34 @@ function loadConversationHistory(): void {
   try {
     const raw = fs.readFileSync(CONVERSATION_HISTORY_FILE, "utf-8")
     const parsed = JSON.parse(raw) as Record<string, Message[]>
-    for (const [threadTs, messages] of Object.entries(parsed)) {
-      store.set(threadTs, messages)
+    for (const [key, messages] of Object.entries(parsed)) {
+      store.set(key, messages)
     }
   } catch {
     // File doesn't exist yet — start fresh
   }
+}
+
+// One-time migration: threadTs-keyed entries (e.g. "1774391965.646909") are pre-migration history.
+// We cannot map them to featureNames without Slack channel metadata, so we consolidate them all
+// into "_legacy_" and getHistory() merges that with featureName-keyed history.
+// SOLO-TEAM SHORTCUT: this merges all legacy into every featureName's history. At scale this must
+// use a threadTs→featureName index built from Slack channel metadata. See DECISIONS.md.
+function migrateThreadTsKeys(): void {
+  const threadTsPattern = /^\d{10,}\.\d+$/
+  const legacyMessages: Message[] = []
+  const toDelete: string[] = []
+  for (const [key, messages] of store.entries()) {
+    if (threadTsPattern.test(key)) {
+      legacyMessages.push(...messages)
+      toDelete.push(key)
+    }
+  }
+  if (legacyMessages.length === 0) return
+  const existing = store.get("_legacy_") ?? []
+  store.set("_legacy_", [...existing, ...legacyMessages])
+  for (const k of toDelete) store.delete(k)
+  persistConversationHistory()
 }
 
 function persistConversationHistory(): void {
@@ -70,12 +96,27 @@ function persistConversationHistory(): void {
   fs.writeFileSync(CONVERSATION_HISTORY_FILE, JSON.stringify(obj, null, 2))
 }
 
-// Load both from disk on startup
+// Load both from disk on startup, then migrate any old threadTs-keyed entries
 loadConfirmedAgents()
 loadConversationHistory()
+migrateThreadTsKeys()
 
-export function getHistory(threadTs: string): Message[] {
-  return store.get(threadTs) ?? []
+export function getHistory(featureName: string): Message[] {
+  return store.get(featureName) ?? []
+}
+
+// Returns pre-migration legacy messages (threadTs-keyed entries consolidated on startup).
+// Used only by identifyUncommittedDecisions so that old conversations surface in the PENDING check.
+// SOLO-TEAM SHORTCUT: all legacy goes to every featureName. See DECISIONS.md.
+export function getLegacyMessages(): Message[] {
+  return store.get("_legacy_") ?? []
+}
+
+// Clears legacy messages — used in test teardown to prevent disk-loaded legacy
+// from leaking into tests that don't expect it.
+export function clearLegacyMessages(): void {
+  store.delete("_legacy_")
+  persistConversationHistory()
 }
 
 export function appendMessage(threadTs: string, message: Message): void {

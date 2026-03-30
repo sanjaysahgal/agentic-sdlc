@@ -43,7 +43,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
-import { clearHistory, setConfirmedAgent, appendMessage } from "../../../runtime/conversation-store"
+import { clearHistory, clearLegacyMessages, setConfirmedAgent, appendMessage } from "../../../runtime/conversation-store"
 
 const originalEnv = process.env
 const THREAD = "thread-render-override"
@@ -103,6 +103,7 @@ beforeEach(() => {
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
   clearHistory(FEATURE)
+  clearLegacyMessages()
 })
 
 afterEach(() => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 // conversation-store calls fs.readFileSync at module load (loadConfirmedAgents).
 // Mock fs so tests never touch disk and module state is isolated per test.
@@ -125,5 +125,85 @@ describe("conversation-store", () => {
     clearPendingEscalation("thread-1")
     expect(getPendingEscalation("thread-1")).toBeNull()
     expect(getPendingEscalation("thread-2")?.question).toBe("Q2")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy threadTs migration
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("legacy threadTs migration", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    fsMocks.readFileSync.mockImplementation(() => {
+      throw new Error("ENOENT: no such file")
+    })
+    fsMocks.writeFileSync.mockReset()
+  })
+
+  it("migrates threadTs-keyed entries to _legacy_ on startup", async () => {
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") }) // confirmed-agents
+      .mockReturnValueOnce(JSON.stringify({
+        "1774391965.646909": [
+          { role: "user", content: "old message 1" },
+          { role: "assistant", content: "old reply 1" },
+        ],
+      }))
+
+    const { getLegacyMessages } = await import("../../runtime/conversation-store")
+    const legacy = getLegacyMessages()
+    expect(legacy).toHaveLength(2)
+    expect(legacy[0].content).toBe("old message 1")
+    expect(legacy[1].content).toBe("old reply 1")
+  })
+
+  it("getLegacyMessages returns empty when no threadTs-keyed entries", async () => {
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") })
+      .mockReturnValueOnce(JSON.stringify({
+        "onboarding": [{ role: "user", content: "only new msg" }],
+      }))
+
+    const { getLegacyMessages } = await import("../../runtime/conversation-store")
+    expect(getLegacyMessages()).toHaveLength(0)
+  })
+
+  it("getHistory returns only featureName messages (no legacy leak)", async () => {
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") })
+      .mockReturnValueOnce(JSON.stringify({
+        "1774391965.646909": [{ role: "user", content: "legacy msg" }],
+        "onboarding": [{ role: "assistant", content: "new msg" }],
+      }))
+
+    const { getHistory } = await import("../../runtime/conversation-store")
+    const history = getHistory("onboarding")
+    // getHistory is pure — no legacy merge; legacy is surfaced only via getLegacyMessages()
+    expect(history).toHaveLength(1)
+    expect(history[0].content).toBe("new msg")
+  })
+
+  it("migration calls persistConversationHistory (writes to disk)", async () => {
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") })
+      .mockReturnValueOnce(JSON.stringify({
+        "1774391965.646909": [{ role: "user", content: "legacy msg" }],
+      }))
+
+    await import("../../runtime/conversation-store")
+    expect(fsMocks.writeFileSync).toHaveBeenCalled()
+  })
+
+  it("migration is a no-op when no threadTs-pattern keys exist", async () => {
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") })
+      .mockReturnValueOnce(JSON.stringify({
+        "onboarding": [{ role: "user", content: "already featureName-keyed" }],
+      }))
+
+    await import("../../runtime/conversation-store")
+    // No threadTs keys → migrateThreadTsKeys does nothing → no writeFileSync
+    expect(fsMocks.writeFileSync).not.toHaveBeenCalled()
   })
 })

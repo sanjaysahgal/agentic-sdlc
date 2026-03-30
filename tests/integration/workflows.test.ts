@@ -52,6 +52,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import {
   clearHistory,
+  clearLegacyMessages,
   setConfirmedAgent,
   getConfirmedAgent,
   appendMessage,
@@ -145,6 +146,10 @@ function seedHistory(featureName: string, count = 7) {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  // Clear legacy messages from disk so pre-migration history doesn't leak into tests.
+  // The bot reads .conversation-history.json on startup; without this, legacy messages
+  // cause extra identifyUncommittedDecisions API calls that tests don't account for.
+  clearLegacyMessages()
   process.env = {
     ...originalEnv,
     PRODUCT_NAME: "TestApp",
@@ -510,12 +515,15 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] })  // design runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] }) // post-turn identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "another design question")
     await handleFeatureChannelMessage(params)
 
-    // 3 calls: isOffTopicForAgent, isSpecStateQuery, runAgent
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+    // 4 calls: isOffTopicForAgent, isSpecStateQuery, runAgent, post-turn identifyUncommittedDecisions
+    // (history grows to 4 messages after this turn: 2 seeded + 1 user + 1 assistant > threshold of 2)
+    // classifyIntent was NOT called — that would add a 5th call
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
   })
 })
@@ -596,7 +604,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     expect(text.toLowerCase()).toContain("save those")
   })
 
-  it("state response skips uncommitted section when all decisions are in the spec", async () => {
+  it("state response shows 'No open items' when all decisions are in the spec", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
     for (let i = 0; i < 10; i++) {
@@ -611,19 +619,24 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("PENDING")
+    // PENDING section always present — shows "No open items" when all committed
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("PENDING")
+    expect(text).toContain("No open items from prior conversations")
   })
 
-  it("state response has no uncommitted section when thread is short (fresh start)", async () => {
+  it("state response shows 'No open items' when thread is short (fresh start)", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
-    // Thread history is empty (length <= 6), so identifyUncommittedDecisions is also skipped.
-    // No Anthropic calls at all.
+    // Thread history is empty (length <= 2), so identifyUncommittedDecisions is also skipped.
+    // No Anthropic calls at all — PENDING section shows "No open items" deterministically.
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
 
-    expect(lastUpdateText(params.client)).not.toContain("PENDING")
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("PENDING")
+    expect(text).toContain("No open items from prior conversations")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(0)
   })
 })

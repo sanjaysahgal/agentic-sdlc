@@ -1,6 +1,6 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
-import { getHistory, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
+import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
@@ -519,11 +519,13 @@ async function runDesignAgent(params: {
       }
 
       const threadHistory = getHistory(featureName)
+      // Merge in pre-migration legacy messages so old conversations surface in PENDING check.
+      const fullHistory = [...getLegacyMessages(), ...threadHistory]
       let uncommittedDecisions: string | undefined
-      if (threadHistory.length > 6) {
+      if (fullHistory.length > 2) {
         await update("_Reviewing conversation for uncommitted decisions..._")
-        const cacheKey = `${featureName}:${threadHistory.length}`
-        const uncommitted = await identifyUncommittedDecisions(threadHistory, draftContent ?? "", cacheKey).catch(() => "")
+        const cacheKey = `${featureName}:${fullHistory.length}`
+        const uncommitted = await identifyUncommittedDecisions(fullHistory, draftContent ?? "", cacheKey).catch(() => "")
         const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
         if (uncommitted && !isAllCommitted) {
           uncommittedDecisions = uncommitted
@@ -720,9 +722,10 @@ async function runDesignAgent(params: {
   const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
   const didSave = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
   let uncommittedNote = ""
-  if (!didSave && historyDesign.length > 6) {
-    const cacheKey = `${featureName}:${historyDesign.length}:postturn`
-    const uncommitted = await identifyUncommittedDecisions(historyDesign, context.currentDraft ?? "", cacheKey).catch(() => "")
+  const fullHistoryDesign = [...getLegacyMessages(), ...historyDesign]
+  if (!didSave && fullHistoryDesign.length > 2) {
+    const cacheKey = `${featureName}:${fullHistoryDesign.length}:postturn`
+    const uncommitted = await identifyUncommittedDecisions(fullHistoryDesign, context.currentDraft ?? "", cacheKey).catch(() => "")
     const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
     if (uncommitted && !isAllCommitted) {
       uncommittedNote = `\n\n⚠️ *Heads up:* decisions were discussed this turn but not saved to the spec. Say *save those* to commit them.`
