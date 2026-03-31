@@ -95,7 +95,7 @@ export async function identifyUncommittedDecisions(
   }
 
   const formatted = history
-    .map((m) => `${m.role === "user" ? "User" : "Agent"}: ${m.content.slice(0, 600)}`)
+    .map((m) => `${m.role === "user" ? "User" : "Agent"}: ${m.content.slice(0, 2500)}`)
     .join("\n\n")
 
   const result = await anthropic.messages.create({

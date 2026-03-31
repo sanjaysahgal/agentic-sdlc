@@ -245,12 +245,48 @@ describe("auditBrandTokens — boundary conditions", () => {
     expect(drifts).toHaveLength(0)
   })
 
-  it("does not flag BRAND.md tokens absent from the spec Brand section — absent is not drifted", () => {
+  it("does not flag BRAND.md tokens absent from the spec — absent is not drifted", () => {
     // Spec only defines --bg (wrong value). --violet is absent — that is not drift.
     const specPartial = `## Brand\n--bg: #0A0E27\n`
     const drifts = auditBrandTokens(specPartial, REAL_BRAND_MD)
     const tokens = drifts.map(d => d.token)
     expect(tokens).toContain("--bg")        // present and wrong — drift
     expect(tokens).not.toContain("--violet") // absent — not drift
+  })
+
+  it("detects drift in Design System Updates section — not just ## Brand", () => {
+    // Brand section is correct; Design System Updates proposes stale values.
+    // The full-spec scan must surface the stale tokens — previously invisible to the auditor.
+    const specWithStaleDSU = `## Brand
+
+**Color Palette**
+- \`--bg:\` \`#0A0A0F\`
+- \`--violet:\` \`#7C6FCD\`
+- \`--teal:\` \`#4FAFA8\`
+
+## Design System Updates
+
+[PROPOSED ADDITION]
+
+\`\`\`
+--bg:     #0A0E27
+--violet: #8B7FE8
+--teal:   #4FADA8
+\`\`\`
+`
+    const drifts = auditBrandTokens(specWithStaleDSU, REAL_BRAND_MD)
+    const tokens = drifts.map(d => d.token)
+    // Stale values in Design System Updates section must be caught
+    expect(tokens).toContain("--bg")
+    expect(tokens).toContain("--violet")
+    expect(tokens).toContain("--teal")
+  })
+
+  it("reports each drifted token once even if it appears multiple times in the spec", () => {
+    const specRepeated = `## Brand\n--violet: #7C6FCD\n\n## Design System Updates\n--violet: #8B7FE8\n--violet: #9999FF\n`
+    const drifts = auditBrandTokens(specRepeated, REAL_BRAND_MD)
+    const violetDrifts = drifts.filter(d => d.token === "--violet")
+    expect(violetDrifts).toHaveLength(1)
+    expect(violetDrifts[0].specValue).toBe("#8B7FE8") // first drifted value wins
   })
 })

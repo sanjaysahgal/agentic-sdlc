@@ -193,16 +193,51 @@ Use the actual accent hex values from AUTHORITATIVE BRAND TOKENS.
 ## Structure
 
 Use Alpine.js x-data on the body to manage:
-- activeScreen: index of the currently visible screen (default 0)
+- screen: index of the currently visible screen (default 0)
 - states: object mapping screen index → current state name (default "default")
+- messages: array of { role: "user"|"agent", text: string } for live conversation
+- draft: string bound to the prompt input
+- authState: "idle" | "loading" | "success" | "error" for the auth sheet
 
 Navigation bar at the top with one tab per screen. Active tab is visually distinct.
 
 For each screen:
-- A row of small pill buttons to switch between its states: Default, Loading, Empty, Error, plus any feature-specific states named in the spec
+- A row of small pill buttons to switch between its named states
 - The content area renders the correct state
 
 **Suggestion chips and action pills must always be in a horizontal row** — never stacked vertically. Use \`display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px;\` so they wrap at narrow viewports instead of stacking.
+
+## Full interactivity — REQUIRED
+
+The preview must be fully interactive. Passive mock-ups are not acceptable. Implement all of the following:
+
+**Prompt bar:**
+- Bind the text input to \`draft\` with x-model
+- Hitting Enter or clicking Send appends \`{ role: "user", text: draft }\` to \`messages\`, clears \`draft\`, then after a 900ms delay appends a plausible AI reply based on the feature domain
+- The input must accept real keyboard input — use \`<input type="text"\` or \`<textarea\`, never a fake div
+- Once a message is sent, starter chips disappear and the conversation thread is shown
+
+**Starter chips (if spec describes them):**
+- Each chip is a real \`<button>\` that, when clicked, fills the prompt with the chip text and immediately sends it (same as pressing Enter)
+- Chips must be in a single horizontal scrollable row — never stacked
+
+**Auth / sign-in flow:**
+- "Sign in" button/chip opens the auth sheet overlay directly — no tab switch required
+- The auth sheet slides up with a CSS animation
+- Clicking a SSO button triggers: \`authState = 'loading'\` (1.2s) → \`authState = 'success'\` (0.8s) → sheet closes, user state becomes logged-in
+- Error state: reachable via an "Error" pill, NOT by default behavior
+- The overlay can be dismissed by clicking the backdrop
+
+**State transitions:**
+- All state changes animate: fade-in for new content, slide-up for sheets, opacity transitions for loading/disabled states
+- Logged-out → conversation state happens automatically when the first message is sent
+- The in-conversation nudge appears after the first AI reply, with a working "Sign in" link that opens the auth sheet
+
+**Live conversation:**
+- The messages array drives a scrollable thread
+- New messages animate in with fade-in
+- The thread auto-scrolls to the latest message
+- Agent "typing" indicator (three pulsing dots) appears during the 900ms delay before the AI reply
 
 ## Visual fidelity
 
@@ -211,14 +246,6 @@ This is NOT a wireframe — it should look close to the real product. Apply:
 - If a Google Font is specified, load it via a <link> tag
 - Generous whitespace, careful typography, real-looking content (not Lorem Ipsum — use the feature domain)
 - Realistic component states: loading spinners use animated CSS, empty states have an icon and message, error states are visually distinct
-
-## Interactions and animations
-
-Read the spec's Interactions sections carefully. Implement:
-- Screen navigation tabs
-- State pills per screen
-- Any animations described (glow pulses, fade choreography, transitions) — these MUST be implemented, not omitted. Use CSS keyframe animations via the Tailwind config above.
-- Smooth transitions between states
 
 ## Input fields — always legible
 
@@ -229,14 +256,15 @@ For any text input or textarea:
 ## Sheets, modals, and auth flows
 
 If the spec describes an auth sheet, login sheet, or bottom sheet that slides up over a screen:
-- Give it its OWN named tab in the navigation bar (e.g. "Auth Sheet", "Login")
-- Do NOT hide it as a conditional overlay that requires clicking through another screen
+- It exists as an OVERLAY on the current screen, triggered by user action (clicking Sign in)
+- ALSO give it its OWN named tab in the nav for direct inspection (e.g. "Auth Sheet", "Login")
 - Render its content fully — SSO buttons, dividers, copy, glow effects — exactly as specified
+- Backdrop click dismisses it
 
-Every named screen and every named state (auth, onboarding, empty, loading, error) must be reachable directly from the nav bar or state pills. Nothing should require navigating through other states to see.
+Every named screen and state must also be reachable directly from nav tabs and state pills — so the designer can jump to any state without clicking through the flow.
 
 ## Mobile-first
-Default width should be a mobile frame (max-w-sm centered) with a toggle to expand to full-width desktop.`,
+Default width should be a mobile frame (390px) centered, with a toggle to expand to full-width desktop.`,
     messages: [
       {
         role: "user",

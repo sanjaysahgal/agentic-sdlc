@@ -164,8 +164,10 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
 }
 
 /**
- * Diffs the design spec's Brand section against BRAND.md canonical token values.
- * Returns any CSS variable tokens that exist in both documents but have different hex values in the spec.
+ * Diffs the design spec against BRAND.md canonical token values.
+ * Scans the entire spec — not just the ## Brand section — so drift in Design System
+ * Updates, proposed additions, or any other section is surfaced. Each drifted token is
+ * reported once regardless of how many times it appears, using the first differing value found.
  *
  * Pure string operation — no API call, no I/O, no side effects.
  * Safe to run on every agent response without latency concern.
@@ -174,15 +176,28 @@ export function auditBrandTokens(specContent: string, brandMd: string): BrandDri
   if (!brandMd || !specContent) return []
   const brandTokens = extractTokenMap(brandMd)
   if (brandTokens.size === 0) return []
-  const brandSection = extractBrandSection(specContent)
-  if (!brandSection) return []
-  const specTokens = extractTokenMap(brandSection)
-  const drifts: BrandDrift[] = []
-  for (const [token, brandValue] of brandTokens) {
-    const specValue = specTokens.get(token)
-    if (specValue && specValue !== brandValue) {
-      drifts.push({ token, specValue, brandValue })
+
+  // Collect all token values seen anywhere in the spec. Scan line by line so we
+  // can detect multiple differing values for the same token (e.g. Brand section is
+  // correct but Design System Updates section uses stale values). Report each drifted
+  // token once — the first non-canonical value found wins so the human sees it clearly.
+  const driftMap = new Map<string, string>() // token → first drifted specValue
+  for (const line of specContent.split("\n")) {
+    const tokenMatch = line.match(/--(\w[\w-]*):/)
+    if (!tokenMatch) continue
+    const hexMatch = line.match(/#([0-9A-Fa-f]{6})\b/)
+    if (!hexMatch) continue
+    const token = `--${tokenMatch[1]}`
+    const specValue = `#${hexMatch[1].toUpperCase()}`
+    const brandValue = brandTokens.get(token)
+    if (brandValue && specValue !== brandValue && !driftMap.has(token)) {
+      driftMap.set(token, specValue)
     }
   }
-  return drifts
+
+  return Array.from(driftMap.entries()).map(([token, specValue]) => ({
+    token,
+    specValue,
+    brandValue: brandTokens.get(token)!,
+  }))
 }
