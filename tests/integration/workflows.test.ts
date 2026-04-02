@@ -778,3 +778,80 @@ describe("Scenario 11 — Architect patch flow", () => {
   })
 })
 
+// ─── Scenario 12: State query preview freshness ───────────────────────────────
+//
+// When a state query surfaces uncommitted decisions, the handler must regenerate
+// the preview from the committed spec (not serve the stale GitHub file) and label
+// it clearly so a new user knows what they're looking at.
+// When everything is committed, the saved GitHub file is served (no Sonnet call).
+
+describe("Scenario 12 — State query preview freshness", () => {
+  const THREAD = "workflow-s12"
+  const DESIGN_DRAFT = "# Onboarding Design\n\n## Screens\nHome screen with prompt bar."
+  const SAVED_HTML   = "<html>@keyframes x{} body{background-color:#000;} </html>"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("regenerates preview from committed spec when uncommitted decisions exist", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    seedHistory("onboarding", 10)
+
+    // GitHub: return design draft on first read; reject everything else
+    mockGetContent
+      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // design draft
+      .mockRejectedValue(new Error("Not Found")) // productVision, systemArchitecture, etc.
+
+    // Anthropic: [0] identifyUncommittedDecisions → pending, [1] generateDesignPreview → HTML
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode: Archon palette agreed\n2. Chip fade timing: 150ms agreed" }] }) // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>fresh-preview</html>" }] })                                            // generateDesignPreview
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+    const params = { ...makeParams(THREAD, "feature-onboarding", "hi"), client }
+    await handleFeatureChannelMessage(params)
+
+    // uploadV2 called with "(committed spec)" title — not the stale saved file
+    const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+    expect(uploadCall?.title).toContain("committed spec")
+    expect(uploadCall?.content).toBe("<html>fresh-preview</html>")
+
+    // generateDesignPreview was called (2nd Anthropic call)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+
+    // Response text tells user the preview reflects the committed spec only
+    const text = lastUpdateText(client)
+    expect(text).toContain("committed spec only")
+  })
+
+  it("serves saved GitHub preview without regenerating when all decisions are committed", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    seedHistory("onboarding", 10)
+
+    // GitHub: design draft on first read, HTML preview on fourth (after productVision + systemArchitecture)
+    mockGetContent
+      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // design draft
+      .mockRejectedValueOnce(new Error("Not Found")) // productVision
+      .mockRejectedValueOnce(new Error("Not Found")) // systemArchitecture
+      .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // saved preview HTML
+
+    // Anthropic: only identifyUncommittedDecisions — no generateDesignPreview call
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+    const params = { ...makeParams(THREAD, "feature-onboarding", "hi"), client }
+    await handleFeatureChannelMessage(params)
+
+    // uploadV2 called with normal title (NOT "(committed spec)")
+    const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+    expect(uploadCall?.title).not.toContain("committed spec")
+    expect(uploadCall?.content).toBe(SAVED_HTML)
+
+    // Only 1 Anthropic call — generateDesignPreview was NOT called
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
+  })
+})
+

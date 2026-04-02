@@ -475,27 +475,6 @@ async function runDesignAgent(params: {
       const draftContent = await readFile(designDraftPath, branchName)
       const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${designDraftPath}`
 
-      // Re-upload the saved preview if it exists — non-fatal.
-      // The preview is generated on every draft save; here we just re-serve it.
-      let previewNote: string | null = null
-      if (draftContent) {
-        const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
-        const previewContent = await readFile(htmlFilePath, branchName)
-        if (previewContent) {
-          try {
-            await client.files.uploadV2({
-              channel_id: channelId,
-              thread_ts: threadTs,
-              content: previewContent,
-              filename: `${featureName}.preview.html`,
-              title: `${featureName} — Design Preview`,
-            })
-            previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
-          } catch (uploadErr: any) {
-            console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
-          }
-        }
-      }
       // Brand token and animation drift audits — pure string diffs, no API call.
       // Both run on every state query so the human always sees all drift without having to ask.
       const brandContent = paths.brand ? await readFile(paths.brand, "main").catch(() => null) : null
@@ -532,10 +511,50 @@ async function runDesignAgent(params: {
         }
       }
 
-      // Make clear whether the preview reflects uncommitted decisions or not.
-      // Without this, the user cannot tell if the HTML shows the old spec or the patched one.
-      if (previewNote && uncommittedDecisions) {
-        previewNote = previewNote + `\n_:warning: Preview reflects the committed GitHub spec — uncommitted decisions above are NOT yet included._`
+      // Upload a preview — behavior depends on whether uncommitted decisions exist:
+      // - Uncommitted decisions present: regenerate fresh from the committed spec so the
+      //   preview is a reliable snapshot of what's saved, not a mid-conversation render.
+      //   Title clearly states "(committed spec)" so a new user knows what they're looking at.
+      // - Everything committed: serve the saved HTML from GitHub (already accurate, no Sonnet call needed).
+      let previewNote: string | null = null
+      if (draftContent) {
+        if (uncommittedDecisions) {
+          // Fresh render from committed spec — pending decisions are NOT included.
+          await update("_Regenerating preview from committed spec..._")
+          const freshPreview = await generateDesignPreview({ specContent: draftContent, featureName, brandContent: brandContent ?? undefined }).catch(() => null)
+          if (freshPreview) {
+            try {
+              await client.files.uploadV2({
+                channel_id: channelId,
+                thread_ts: threadTs,
+                content: freshPreview.html,
+                filename: `${featureName}.preview.html`,
+                title: `${featureName} — Design Preview (committed spec)`,
+              })
+              previewNote = `\n\n_HTML preview attached above — reflects the *committed spec only*. Pending decisions listed above are not included. Say *save those* to commit them, then ask for current state again to see them in the preview._`
+            } catch (uploadErr: any) {
+              console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
+            }
+          }
+        } else {
+          // No uncommitted decisions — serve the saved preview from GitHub (already in sync).
+          const htmlFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.preview.html`
+          const previewContent = await readFile(htmlFilePath, branchName)
+          if (previewContent) {
+            try {
+              await client.files.uploadV2({
+                channel_id: channelId,
+                thread_ts: threadTs,
+                content: previewContent,
+                filename: `${featureName}.preview.html`,
+                title: `${featureName} — Design Preview`,
+              })
+              previewNote = `\n\n_HTML preview attached above — open it in any browser. Use device toolbar (Cmd+Shift+M in Chrome) to check mobile layout._`
+            } catch (uploadErr: any) {
+              console.error(`[preview] Slack upload failed (add files:write scope): ${uploadErr?.message}`)
+            }
+          }
+        }
       }
 
       const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, animationDrifts, specGap, uncommittedDecisions })
