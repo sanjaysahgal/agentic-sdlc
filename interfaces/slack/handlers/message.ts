@@ -492,6 +492,7 @@ async function runDesignAgent(params: {
           readFile(paths.systemArchitecture, "main").catch(() => ""),
         ])
         if (pvContent || saContent) {
+          await update("_Auditing spec for gaps..._")
           const specAudit = await auditSpecDraft({ draft: draftContent, productVision: pvContent, systemArchitecture: saContent, featureName }).catch(() => ({ status: "ok" as const, message: "" }))
           specGap = specAudit.status === "gap" ? specAudit.message : null
         }
@@ -524,6 +525,7 @@ async function runDesignAgent(params: {
           const freshPreview = await generateDesignPreview({ specContent: draftContent, featureName, brandContent: brandContent ?? undefined }).catch(() => null)
           if (freshPreview) {
             try {
+              await update("_Uploading preview..._")
               await client.files.uploadV2({
                 channel_id: channelId,
                 thread_ts: threadTs,
@@ -542,6 +544,7 @@ async function runDesignAgent(params: {
           const previewContent = await readFile(htmlFilePath, branchName)
           if (previewContent) {
             try {
+              await update("_Uploading preview..._")
               await client.files.uploadV2({
                 channel_id: channelId,
                 thread_ts: threadTs,
