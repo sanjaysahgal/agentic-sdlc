@@ -894,3 +894,118 @@ describe("Scenario 12 — State query preview freshness", () => {
   })
 })
 
+// ─── Scenario 13: Post-response uncommitted-decision detection ─────────────────
+//
+// The post-response audit passes only the current turn (userMessage + agentResponse)
+// to identifyUncommittedDecisions — NOT the full history. This prevents false positives
+// from prior-session messages whose wording doesn't perfectly mirror the spec.
+//
+// Tests:
+// 1. Preview regen turn with no new decisions → classifier returns "all committed" → no :warning:
+// 2. Turn with a new design decision not saved → classifier returns decision list → :warning: appended
+// 3. Turn where agent calls a save tool → classifier not called at all (didSave = true skips audit)
+
+describe("Scenario 13 — Post-response uncommitted-decision detection (current turn only)", () => {
+  const THREAD = "workflow-s13"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("no warning when current turn introduces no new decisions (preview regen)", async () => {
+    // Seed history so fullHistoryDesign.length > 2 (guard passes) and extractLockedDecisions fires.
+    seedHistory("onboarding", 3)
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Anthropic call sequence (short history → extractLockedDecisions fires at length ≥ 6; length=3 → skips):
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] runAgent (tool_use)      → generate_design_preview
+    //   [3] generateDesignPreview    → HTML
+    //   [4] runAgent (end_turn)      → "Preview is live."
+    //   [5] identifyUncommittedDecisions (current turn only) → all committed
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
+      })                                                                            // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview is live. Ready to approve." }] }) // runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] }) // identifyUncommittedDecisions
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "yes regenerate a fresh preview"), client })
+
+    const text = lastUpdateText(client)
+    expect(text).toContain("Preview is live")
+    expect(text).not.toContain("⚠️")
+    expect(text).not.toContain("Heads up")
+  })
+
+  it("appends warning when current turn introduces a new decision that wasn't saved", async () => {
+    seedHistory("onboarding", 3)
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Same sequence as above but identifyUncommittedDecisions returns an uncommitted decision.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
+      })                                                                            // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Here's the preview. I also recommend switching the CTA to violet." }] }) // runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "1. CTA button color: violet — discussed this turn, not in spec." }] }) // identifyUncommittedDecisions
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "make the CTA violet"), client })
+
+    const text = lastUpdateText(client)
+    expect(text).toContain("⚠️")
+    expect(text).toContain("Heads up")
+    expect(text).toContain("save those")
+  })
+
+  it("does not call identifyUncommittedDecisions when agent called a save tool", async () => {
+    seedHistory("onboarding", 3)
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // apply_design_spec_patch calls save → didSave = true → no post-response audit call.
+    // Call sequence (history=3, length < 6 → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent  → false
+    //   [1] isSpecStateQuery    → false
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] generateDesignPreview (inside saveDesignDraft)
+    //   [4] runAgent (end_turn) → response text
+    //   NO identifyUncommittedDecisions call
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Colors\nViolet CTA." } }],
+      })                                                                            // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated and saved. Ready to approve?" }] }) // runAgent: end_turn
+    // If identifyUncommittedDecisions were called, it would hit the default mockResolvedValue
+    // fallback which is undefined → would throw. Verifying no throw + call count = 5.
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "make the CTA violet and save"), client })
+
+    // Exactly 5 Anthropic calls — no 6th call for identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+
+    const text = lastUpdateText(client)
+    expect(text).not.toContain("⚠️")
+  })
+})
+

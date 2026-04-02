@@ -1,6 +1,6 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
-import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval } from "../../../runtime/conversation-store"
+import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, Message } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
@@ -739,15 +739,24 @@ async function runDesignAgent(params: {
 
   appendMessage(featureName, { role: "user", content: userMessage })
 
-  // Post-response tool-call audit: if no save tool was called and uncommitted decisions
-  // exist in the conversation, append a note so the user knows what wasn't saved.
+  // Post-response tool-call audit: if no save tool was called and the conversation has
+  // enough history (> 2 messages) to have meaningful decisions, check whether this turn
+  // introduced new decisions that weren't saved.
+  // KEY: pass only the current turn (userMessage + response) — NOT the full history.
+  // Full history produces false positives because prior-session wording rarely maps
+  // perfectly to the spec, causing Haiku to flag already-committed decisions as new.
+  // Full-history audit lives on the state query path where it belongs.
   const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
   const didSave = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
   let uncommittedNote = ""
   const fullHistoryDesign = [...getLegacyMessages(), ...historyDesign]
   if (!didSave && fullHistoryDesign.length > 2) {
-    const cacheKey = `${featureName}:${fullHistoryDesign.length}:postturn`
-    const uncommitted = await identifyUncommittedDecisions(fullHistoryDesign, context.currentDraft ?? "", cacheKey).catch(() => "")
+    const currentTurn: Message[] = [
+      { role: "user", content: userMessage },
+      { role: "assistant", content: response },
+    ]
+    const cacheKey = `${featureName}:postturn:${threadTs}`
+    const uncommitted = await identifyUncommittedDecisions(currentTurn, context.currentDraft ?? "", cacheKey).catch(() => "")
     const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
     if (uncommitted && !isAllCommitted) {
       uncommittedNote = `\n\n⚠️ *Heads up:* decisions were discussed this turn but not saved to the spec. Say *save those* to commit them.`

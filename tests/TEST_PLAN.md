@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**446 tests across 24 files — all passing**
+**449 tests across 24 files — all passing**
 
 Run: `npx vitest run`
 
@@ -546,7 +546,7 @@ Post-response uncommitted decisions audit — platform appends a save reminder w
 - skips uncommitted note when history is short (fresh conversation)
 - skips uncommitted note when save tool was called
 
-### `tests/integration/workflows.test.ts` — 25 tests
+### `tests/integration/workflows.test.ts` — 28 tests
 
 End-to-end multi-turn workflow tests. Each scenario runs multiple `handleFeatureChannelMessage` calls in sequence, asserting state transitions between turns.
 
@@ -601,6 +601,14 @@ When uncommitted decisions exist, the state query regenerates the preview from t
 - regenerates preview from committed spec when uncommitted decisions exist
 - serves saved GitHub preview without regenerating when all decisions are committed
 - state query completes with no preview when generateDesignPreview times out or throws
+
+**Scenario 13 — Post-response uncommitted-decision detection (current turn only)**
+
+The post-response audit passes only the current turn (userMessage + agentResponse) to `identifyUncommittedDecisions` — not the full history. This prevents false positives from prior-session messages whose wording doesn't perfectly mirror the spec.
+
+- no warning when current turn introduces no new decisions (preview regen → classifier returns "all committed")
+- appends ⚠️ warning when current turn introduces a new decision that wasn't saved
+- does not call identifyUncommittedDecisions at all when agent called a save tool (didSave = true)
 
 ---
 
