@@ -37,7 +37,28 @@ export async function withThinking(params: {
   // Agent label is prepended so the user always knows who is responding.
   // If chat.update rejects with msg_too_long, retry with progressively shorter content.
   const agentPrefix = agent ? `*${agent}*\n\n` : ""
+
+  // Heartbeat: cycle trailing dots on the last status text every 8s so the user
+  // can always see that something is happening — even during long silent API calls.
+  let lastStatusText = label
+  let heartbeatStep = 0
+  const heartbeat = setInterval(async () => {
+    heartbeatStep = (heartbeatStep % 3) + 1
+    const dots = ".".repeat(heartbeatStep)
+    // If the status ends with _italic_, cycle dots inside the italic span.
+    // Otherwise append dots after the text.
+    const withDots = lastStatusText.replace(/\.+_$/, `${dots}_`)
+    const animated = withDots !== lastStatusText
+      ? withDots
+      : lastStatusText.endsWith("_")
+        ? lastStatusText.slice(0, -1) + `${dots}_`
+        : `${lastStatusText} ${dots}`
+    await client.chat.update({ channel: channelId, ts: messageTs, text: `${agentPrefix}${animated}` }).catch(() => {})
+  }, 8_000)
+
   const update = async (text: string) => {
+    lastStatusText = text
+    heartbeatStep = 0
     let truncated = truncateForSlack(`${agentPrefix}${text}`)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -103,6 +124,7 @@ export async function withThinking(params: {
     })
     throw err
   } finally {
+    clearInterval(heartbeat)
     decrementActiveRequests()
   }
 }
