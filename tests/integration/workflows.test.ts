@@ -797,10 +797,12 @@ describe("Scenario 12 — State query preview freshness", () => {
     setConfirmedAgent("onboarding", "ux-design")
     seedHistory("onboarding", 10)
 
-    // GitHub: return design draft on first read; reject everything else
+    // GitHub call order in state query path:
+    // 1. design draft (on design branch), 2. brand (main), 3. productVision (main),
+    // 4. systemArchitecture (main) — uncommitted path skips htmlFilePath read (calls generateDesignPreview instead)
     mockGetContent
-      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // design draft
-      .mockRejectedValue(new Error("Not Found")) // productVision, systemArchitecture, etc.
+      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // 1. design draft
+      .mockRejectedValue(new Error("Not Found")) // 2+ brand, productVision, systemArchitecture, etc.
 
     // Anthropic: [0] identifyUncommittedDecisions → pending, [1] generateDesignPreview → HTML
     mockAnthropicCreate
@@ -829,12 +831,15 @@ describe("Scenario 12 — State query preview freshness", () => {
     setConfirmedAgent("onboarding", "ux-design")
     seedHistory("onboarding", 10)
 
-    // GitHub: design draft on first read, HTML preview on fourth (after productVision + systemArchitecture)
+    // GitHub call order in state query path:
+    // 1. design draft (on design branch), 2. brand (main), 3. productVision (main),
+    // 4. systemArchitecture (main), 5. htmlFilePath (on design branch)
     mockGetContent
-      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // design draft
-      .mockRejectedValueOnce(new Error("Not Found")) // productVision
-      .mockRejectedValueOnce(new Error("Not Found")) // systemArchitecture
-      .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // saved preview HTML
+      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // 1. design draft
+      .mockRejectedValueOnce(new Error("Not Found")) // 2. brand
+      .mockRejectedValueOnce(new Error("Not Found")) // 3. productVision
+      .mockRejectedValueOnce(new Error("Not Found")) // 4. systemArchitecture
+      .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // 5. saved preview HTML
 
     // Anthropic: only identifyUncommittedDecisions — no generateDesignPreview call
     mockAnthropicCreate
