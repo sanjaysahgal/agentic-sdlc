@@ -44,6 +44,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import { clearHistory, clearLegacyMessages, setConfirmedAgent, appendMessage } from "../../../runtime/conversation-store"
+import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
 
 const originalEnv = process.env
 const THREAD = "thread-render-override"
@@ -104,11 +105,13 @@ beforeEach(() => {
   mockOctokitCreateRef.mockResolvedValue({})
   clearHistory(FEATURE)
   clearLegacyMessages()
+  clearSummaryCache(FEATURE)
 })
 
 afterEach(() => {
   process.env = originalEnv
   clearHistory(FEATURE)
+  clearSummaryCache(FEATURE)
 })
 
 // ─── Post-response uncommitted decisions audit ─────────────────────────────────
@@ -137,24 +140,23 @@ describe("post-response uncommitted decisions audit", () => {
     expect(text).toContain("I recommend dark mode")
   })
 
-  it("skips uncommitted note when history is short (fresh conversation)", async () => {
-    // No seedHistory — historyDesign.length = 0 ≤ 6 → audit never fires
+  it("skips uncommitted note when no decisions discussed (fresh conversation)", async () => {
+    // No seedHistory — audit now fires on every turn, but classifier returns "all committed"
     setConfirmedAgent(FEATURE, "ux-design")
 
-    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent (no extractLockedDecisions — short history)
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent, [3] identifyUncommittedDecisions
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with the layout direction." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec" }] }) // identifyUncommittedDecisions
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("what should we design first?", client))
 
     const text = lastUpdateText(client)
-    // No post-response note on fresh threads
     expect(text).not.toContain("save those")
-    // identifyUncommittedDecisions was never called
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 
   it("skips uncommitted note when save tool was called", async () => {

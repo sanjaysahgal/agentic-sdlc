@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**451 tests across 24 files — all passing**
+**453 tests across 24 files — all passing**
 
 Run: `npx vitest run`
 
@@ -546,7 +546,7 @@ Post-response uncommitted decisions audit — platform appends a save reminder w
 - skips uncommitted note when history is short (fresh conversation)
 - skips uncommitted note when save tool was called
 
-### `tests/integration/workflows.test.ts` — 30 tests
+### `tests/integration/workflows.test.ts` — 32 tests
 
 End-to-end multi-turn workflow tests. Each scenario runs multiple `handleFeatureChannelMessage` calls in sequence, asserting state transitions between turns.
 
@@ -616,6 +616,17 @@ When `runAgent`'s final end-turn Anthropic call fails AFTER a save tool already 
 
 - shows spec-saved confirmation when end-turn Anthropic call fails after apply_design_spec_patch
 - still propagates error to withThinking (generic error handler) when runAgent fails before any save tool ran
+
+**Scenario 15 — Audit fires on short-history threads; preview uses committed spec**
+
+Two correctness fixes verified:
+
+Fix 1: The `fullHistoryDesign.length > 2` guard is removed from the post-response audit. The audit now fires on every non-save turn regardless of history length — including after Slack thread summarization resets in-memory history, which is when hallucinated saves ("Done. Spec updated." without a tool call) previously went undetected.
+
+Fix 2: `generate_design_preview` uses `context.currentDraft` (loaded from GitHub at turn start) instead of `input.specContent` (agent's in-memory content). After thread summarization the agent's spec memory is stale; using the committed spec prevents preview regressions.
+
+- audit fires and flags uncommitted decision when in-memory history is empty (guard removed)
+- generate_design_preview uses context.currentDraft from GitHub, not agent's stale in-memory specContent; upload title no longer says "(not saved)"
 
 ---
 

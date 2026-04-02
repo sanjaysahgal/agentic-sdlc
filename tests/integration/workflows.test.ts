@@ -1092,3 +1092,89 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
     expect(text).not.toContain("Spec saved")
   })
 })
+
+
+// ─── Scenario 15: Audit fires on short-history threads; preview from committed spec ─
+//
+// Two fixes verified here:
+//
+// Fix 1 (guard removal): The fullHistoryDesign.length > 2 guard is gone. The post-response
+// audit now fires on EVERY design turn (even fresh threads with 0 history messages),
+// which is what catches hallucinated saves after thread summarization.
+//
+// Fix 2 (preview from GitHub): generate_design_preview uses context.currentDraft (loaded
+// from GitHub at turn start) instead of the agent's in-memory specContent. After thread
+// summarization the agent's memory is stale — using the committed spec prevents regressions.
+
+describe("Scenario 15 — Audit fires on short-history threads; preview uses committed spec", () => {
+  const THREAD = "workflow-s15"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("audit fires and flags uncommitted decision when in-memory history is empty (guard removed)", async () => {
+    // No seedHistory — history length = 0. Old guard (fullHistoryDesign.length > 2) would
+    // have blocked the audit. After removing the guard, it always runs on non-save turns.
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Call sequence (0 history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent          → false
+    //   [1] isSpecStateQuery            → false
+    //   [2] runAgent                    → text claiming spec update
+    //   [3] identifyUncommittedDecisions → uncommitted decision found
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "The spec now uses 3 columns with wide margins." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Layout: 3 columns — discussed this turn, not in spec." }] }) // identifyUncommittedDecisions
+
+    const client = makeClient()
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "update the layout to 3 columns"), client })
+
+    const text = lastUpdateText(client)
+    expect(text).toContain("⚠️")
+    expect(text).toContain("Heads up")
+    expect(text).toContain("save those")
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+  })
+
+  it("generate_design_preview uses context.currentDraft from GitHub, not agent's stale in-memory specContent", async () => {
+    // The agent passes "# Stale Agent Memory STALE_MARKER" as specContent to the tool.
+    // After the fix, the tool handler ignores this and passes context.currentDraft (empty
+    // since no design spec exists on the branch) to generateDesignPreview. The html-renderer
+    // Anthropic call must NOT contain the stale agent text.
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Call sequence (0 history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] runAgent (tool_use)      → generate_design_preview with stale specContent
+    //   [3] html-renderer            → receives context.currentDraft (not stale spec)
+    //   [4] runAgent (end_turn)      → "Preview is live."
+    //   [5] identifyUncommittedDecisions → all committed
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Stale Agent Memory STALE_MARKER" } }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // html-renderer
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview is live." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "give me the latest preview"), client })
+
+    // The html-renderer Anthropic call (index 3) must NOT contain the agent's stale spec
+    const htmlRendererCall = mockAnthropicCreate.mock.calls[3][0]
+    const rendererUserMessage = htmlRendererCall.messages[0].content as string
+    expect(rendererUserMessage).not.toContain("STALE_MARKER")
+
+    // Upload title no longer says "(not saved)" — preview is always from committed spec
+    const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(uploadCall.title).not.toContain("not saved")
+  })
+})

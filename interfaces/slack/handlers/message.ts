@@ -690,16 +690,26 @@ async function runDesignAgent(params: {
         return saveDesignDraft(mergedDraft)
       }
       if (name === "generate_design_preview") {
-        const specContent = input.specContent as string
+        // Always render from the committed spec on GitHub — not from the agent's in-memory content.
+        // After thread summarization the agent's memory is stale; context.currentDraft (loaded from
+        // GitHub at turn start) is authoritative. If a save ran earlier this turn, reload from GitHub
+        // so the preview reflects the freshly committed content, not the pre-save snapshot.
+        let specContent: string
+        if (toolCallsOutDesign.some(t => designSaveTools.includes(t.name))) {
+          const freshContext = await loadDesignAgentContext(featureName)
+          specContent = freshContext.currentDraft ?? ""
+        } else {
+          specContent = context.currentDraft ?? ""
+        }
         try {
-          await update("_Generating preview (not saved yet)..._")
+          await update("_Generating preview..._")
           const previewResult = await generateDesignPreview({ specContent, featureName, brandContent: context.brand })
           await client.files.uploadV2({
             channel_id: channelId,
             thread_ts: threadTs,
             content: previewResult.html,
             filename: `${featureName}.preview.html`,
-            title: `${featureName} — Design Preview (not saved)`,
+            title: `${featureName} — Design Preview`,
           })
           return { result: { previewUrl: "uploaded_to_slack", renderWarnings: previewResult.warnings.length > 0 ? previewResult.warnings : undefined } }
         } catch (err: any) {
@@ -762,17 +772,14 @@ async function runDesignAgent(params: {
 
   appendMessage(featureName, { role: "user", content: userMessage })
 
-  // Post-response tool-call audit: if no save tool was called and the conversation has
-  // enough history (> 2 messages) to have meaningful decisions, check whether this turn
-  // introduced new decisions that weren't saved.
-  // KEY: pass only the current turn (userMessage + response) — NOT the full history.
-  // Full history produces false positives because prior-session wording rarely maps
-  // perfectly to the spec, causing Haiku to flag already-committed decisions as new.
-  // Full-history audit lives on the state query path where it belongs.
+  // Post-response tool-call audit: did this turn introduce decisions that weren't saved?
+  // Always run — the history-length guard was needed when we passed full history to the
+  // classifier, but now we only pass the 2-message current turn so it is always valid.
+  // Removing the guard ensures the audit fires even on short-history threads (e.g. after
+  // Slack thread summarization resets in-memory history), catching hallucinated saves.
   const didSave = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
   let uncommittedNote = ""
-  const fullHistoryDesign = [...getLegacyMessages(), ...historyDesign]
-  if (!didSave && fullHistoryDesign.length > 2) {
+  if (!didSave) {
     const currentTurn: Message[] = [
       { role: "user", content: userMessage },
       { role: "assistant", content: response },
