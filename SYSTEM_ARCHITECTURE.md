@@ -151,6 +151,8 @@ Implemented in `runtime/conversation-summarizer.ts`.
 
 `runtime/request-tracker.ts` tracks all in-flight Claude API requests. On `SIGTERM`, the process waits for all in-flight requests to drain before exiting — with a 6-minute maximum (must exceed Anthropic's 5-minute API timeout). This prevents a deployment or restart from cutting off a user mid-response. Any request still in-flight after the deadline is abandoned and the process exits with a warning.
 
+All Anthropic clients (`claude-client.ts`, `html-renderer.ts`) set `maxRetries: 0`. The SDK default of 2 retries turns a 5-minute timeout into an 18-minute hang with no chance of recovery — large-token requests that time out will not succeed on retry.
+
 ### Agent tool-use loop (Step 13)
 
 All spec-producing agents (PM, design, architect) use the Anthropic native tool-use API instead of the former hand-rolled text-block protocol. `runAgent()` in `runtime/claude-client.ts` is a tool-use loop:

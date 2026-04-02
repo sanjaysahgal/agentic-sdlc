@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk"
 
-// 5 minute timeout — consistent with claude-client.ts.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000 })
+// 5 minute timeout, no retries — a timed-out 32k-token render won't succeed on retry,
+// it just triples the user's wait. Fail fast and let the caller handle gracefully.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000, maxRetries: 0 })
 
 /**
  * Validates structural properties of rendered HTML without hardcoding brand values.

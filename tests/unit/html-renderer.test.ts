@@ -8,10 +8,17 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
+import Anthropic from "@anthropic-ai/sdk"
 import { generateDesignPreview } from "../../runtime/html-renderer"
 
 beforeEach(() => {
   mockCreate.mockReset()
+})
+
+describe("Anthropic client config", () => {
+  it("sets maxRetries: 0 — a timed-out 32k-token render won't succeed on retry, fail fast instead", () => {
+    expect(Anthropic).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }))
+  })
 })
 
 describe("generateDesignPreview", () => {

@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { Message } from "./conversation-store"
 
-// 5 minute timeout — design and PM agents generate full spec drafts that can take
-// several minutes. 90s was too short and caused spurious timeouts on complex responses.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000 })
+// 5 minute timeout, no retries — agents generate large drafts that take time, but a
+// timed-out request won't succeed on retry; it just multiplies the user's wait.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000, maxRetries: 0 })
 
 // In dev mode, use Haiku for all agent calls — 5x cheaper, safe for testing routing/formatting/structure.
 const AGENT_MODEL = process.env.SDLC_DEV_MODE === "true"

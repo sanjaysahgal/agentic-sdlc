@@ -8,11 +8,18 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
+import Anthropic from "@anthropic-ai/sdk"
 import { runAgent } from "../../runtime/claude-client"
 import type { Message } from "../../runtime/conversation-store"
 
 beforeEach(() => {
   mockCreate.mockReset()
+})
+
+describe("Anthropic client config", () => {
+  it("sets maxRetries: 0 — a timed-out agent call won't succeed on retry, fail fast instead", () => {
+    expect(Anthropic).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }))
+  })
 })
 
 describe("runAgent", () => {
