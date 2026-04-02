@@ -56,6 +56,7 @@ import {
   setConfirmedAgent,
   getConfirmedAgent,
   appendMessage,
+  getHistory,
   setPendingApproval,
   setPendingEscalation,
 } from "../../../runtime/conversation-store"
@@ -1009,3 +1010,85 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
   })
 })
 
+
+// ─── Scenario 14: Post-save end-turn error surfaces "spec saved" message ────────
+//
+// When runAgent's final end-turn Anthropic call fails AFTER a save tool already
+// ran successfully, the handler must:
+//   (a) NOT propagate the error to withThinking (no generic "Something went wrong")
+//   (b) Show a clear "spec saved" confirmation with the feature name and next step
+//   (c) Store the save message in history (so future turns see it)
+//
+// This matches the real production failure seen at 8:45 AM where the spec was saved
+// but the user saw "Something went wrong" with no indication their change was committed.
+
+describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message", () => {
+  const THREAD = "workflow-s14"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("shows spec-saved confirmation when end-turn Anthropic call fails after apply_design_spec_patch", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Anthropic call sequence (empty history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent  → false
+    //   [1] isSpecStateQuery    → false
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] generateDesignPreview (inside saveDesignDraft)
+    //   [4] runAgent (end_turn) → THROWS (simulates context-limit or transient API error)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Auth Sheet\nEnters from bottom." } }],
+      })                                                                            // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockRejectedValueOnce(new Error("Input too long: request exceeds context window")) // runAgent: end_turn FAILS
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    // Must NOT throw — the save succeeded, only the response text generation failed
+    await expect(
+      handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "yes update the spec for auth sheet from bottom"), client })
+    ).resolves.toBeUndefined()
+
+    // Spec was saved to GitHub
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    // User sees a clear confirmation — not "Something went wrong"
+    const text = lastUpdateText(client)
+    expect(text).toContain("✓")
+    expect(text).toContain("Spec saved")
+    expect(text).not.toContain("Something went wrong")
+
+    // Message was stored in history so future turns have context
+    const history = getHistory("onboarding")
+    const lastMsg = history[history.length - 1]
+    expect(lastMsg.role).toBe("assistant")
+    expect(lastMsg.content).toContain("Spec saved")
+  })
+
+  it("still propagates error to withThinking when runAgent fails before any save tool runs", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // runAgent fails on the first call (no tool was called, no spec was saved)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
+      .mockRejectedValueOnce(new Error("The API is overloaded"))                   // runAgent: first call FAILS
+
+    const client = makeClient()
+
+    // Must throw — withThinking shows the appropriate error message
+    await expect(
+      handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "show me the spec"), client })
+    ).rejects.toThrow()
+
+    const text = lastUpdateText(client)
+    expect(text).toContain("overloaded")
+    expect(text).not.toContain("Spec saved")
+  })
+})

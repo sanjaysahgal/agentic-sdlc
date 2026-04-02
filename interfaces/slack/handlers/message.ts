@@ -666,7 +666,13 @@ async function runDesignAgent(params: {
   // than the PM agent. Cap at 20 messages (10 exchanges) so the combined payload stays well
   // under the token limit. Prior conversation context beyond the limit is summarized and
   // injected into the user message — no work is lost on long threads.
-  const response = await runAgent({
+  // designSaveTools is declared here so both the runAgent try-catch and the post-response
+  // audit below can reference the same constant without duplication.
+  const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
+
+  let response: string
+  try {
+    response = await runAgent({
     systemPrompt,
     history: historyDesign,
     userMessage: enrichedUserMessageDesign,
@@ -736,6 +742,23 @@ async function runDesignAgent(params: {
     },
     toolCallsOut: toolCallsOutDesign,
   })
+  } catch (err: unknown) {
+    // If a save tool already ran successfully, the spec is on GitHub — the error happened
+    // in the final end-turn Anthropic call (generating the summary text), not in the save.
+    // Surface a clear success + partial-failure message so the user knows what was committed.
+    // Re-throw for all other errors (pre-save failures) so withThinking handles them.
+    const savedSuccessfully = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
+    if (savedSuccessfully) {
+      const savedTool = toolCallsOutDesign.find(t => designSaveTools.includes(t.name))!
+      const action = savedTool.name === "finalize_design_spec" ? "approved and merged" : "saved to GitHub"
+      const saveMsg = `✓ *Spec ${action}.* Your changes are committed.\n\nI hit an error generating the summary response — the spec itself is safe. Ask a follow-up question to continue.`
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: saveMsg })
+      await update(saveMsg)
+      return
+    }
+    throw err
+  }
 
   appendMessage(featureName, { role: "user", content: userMessage })
 
@@ -746,7 +769,6 @@ async function runDesignAgent(params: {
   // Full history produces false positives because prior-session wording rarely maps
   // perfectly to the spec, causing Haiku to flag already-committed decisions as new.
   // Full-history audit lives on the state query path where it belongs.
-  const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
   const didSave = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
   let uncommittedNote = ""
   const fullHistoryDesign = [...getLegacyMessages(), ...historyDesign]

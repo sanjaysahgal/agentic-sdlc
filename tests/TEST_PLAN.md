@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**449 tests across 24 files — all passing**
+**451 tests across 24 files — all passing**
 
 Run: `npx vitest run`
 
@@ -546,7 +546,7 @@ Post-response uncommitted decisions audit — platform appends a save reminder w
 - skips uncommitted note when history is short (fresh conversation)
 - skips uncommitted note when save tool was called
 
-### `tests/integration/workflows.test.ts` — 28 tests
+### `tests/integration/workflows.test.ts` — 30 tests
 
 End-to-end multi-turn workflow tests. Each scenario runs multiple `handleFeatureChannelMessage` calls in sequence, asserting state transitions between turns.
 
@@ -609,6 +609,13 @@ The post-response audit passes only the current turn (userMessage + agentRespons
 - no warning when current turn introduces no new decisions (preview regen → classifier returns "all committed")
 - appends ⚠️ warning when current turn introduces a new decision that wasn't saved
 - does not call identifyUncommittedDecisions at all when agent called a save tool (didSave = true)
+
+**Scenario 14 — Post-save end-turn error surfaces spec-saved message**
+
+When `runAgent`'s final end-turn Anthropic call fails AFTER a save tool already ran successfully, the handler surfaces a clear "✓ Spec saved" confirmation rather than "Something went wrong." The user knows their change was committed even when the response text generation fails.
+
+- shows spec-saved confirmation when end-turn Anthropic call fails after apply_design_spec_patch
+- still propagates error to withThinking (generic error handler) when runAgent fails before any save tool ran
 
 ---
 
