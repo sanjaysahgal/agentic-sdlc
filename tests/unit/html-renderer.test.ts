@@ -204,4 +204,40 @@ describe("generateDesignPreview", () => {
     const call = mockCreate.mock.calls[0][0]
     expect(call.system).toContain("horizontal row")
   })
+
+  it("system prompt requires Alpine.js x-data function pattern to prevent $nextTick escaping", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    // The safe pattern: declare methods in <script>, bind by function name
+    expect(call.system).toContain("appData()")
+    expect(call.system).toContain("x-data=\"appData()\"")
+    // Explicitly warn against inline method declarations
+    expect(call.system).toContain("Never write methods inline in the x-data attribute string")
+  })
+
+  it("system prompt specifies phone frame + inspector panel preview layout", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("phone frame")
+    expect(call.system).toContain("inspector panel")
+    expect(call.system).toContain("applyMode")
+  })
+
+  it("system prompt requires empty-state hero to be separate from nav bar", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    // Hero is a separate div below the nav — nav contains app name left-aligned
+    expect(call.system).toContain("SEPARATE div below the nav bar")
+    // Hero is only visible in empty state
+    expect(call.system).toContain("msgs.length === 0")
+  })
 })

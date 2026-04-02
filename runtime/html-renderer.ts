@@ -192,20 +192,74 @@ Use the actual accent hex values from AUTHORITATIVE BRAND TOKENS.
 
 ## Structure
 
-Use Alpine.js x-data on the body to manage:
-- screen: index of the currently visible screen (default 0)
-- states: object mapping screen index → current state name (default "default")
-- messages: array of { role: "user"|"agent", text: string } for live conversation
-- draft: string bound to the prompt input
-- authState: "idle" | "loading" | "success" | "error" for the auth sheet
+**Alpine.js data pattern — REQUIRED:**
 
-Navigation bar at the top with one tab per screen. Active tab is visually distinct.
+Declare ALL state and methods in a \`<script>\` block, NOT inline in the x-data attribute string. Then reference the function by name on the root element:
 
-For each screen:
-- A row of small pill buttons to switch between its named states
-- The content area renders the correct state
+\`\`\`html
+<script>
+  function appData() {
+    return {
+      msgs: [],
+      draft: '',
+      typing: false,
+      loggedIn: false,
+      authOpen: false,
+      authState: 'idle',
+      sendMsg(text) {
+        if (!text.trim()) return
+        this.msgs.push({ role: 'user', text: text.trim() })
+        this.draft = ''
+        this.typing = true
+        setTimeout(() => {
+          this.typing = false
+          this.msgs.push({ role: 'agent', text: '...' })
+          this.$nextTick(() => {
+            const t = document.getElementById('thread')
+            if (t) t.scrollTop = t.scrollHeight
+          })
+        }, 900)
+      }
+    }
+  }
+</script>
+<body x-data="appData()">
+\`\`\`
 
-**Suggestion chips and action pills must always be in a horizontal row** — never stacked vertically. Use \`display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px;\` so they wrap at narrow viewports instead of stacking.
+**Never write methods inline in the x-data attribute string.** Alpine magic properties (\`$nextTick\`, \`$el\`, \`$refs\`, \`$dispatch\`) are safe inside \`<script>\` tags and break when written inside HTML attribute values. A broken \`$nextTick\` means auto-scroll never fires and state transitions fail silently.
+
+The \`appData()\` function manages:
+- \`msgs\`: array of { role: "user"|"agent", text: string } for live conversation
+- \`draft\`: string bound to the prompt input
+- \`typing\`: boolean — true during the 900ms agent "thinking" delay
+- \`loggedIn\`: boolean — true after successful SSO
+- \`authOpen\`: boolean — true when auth sheet overlay is visible
+- \`authState\`: "idle" | "loading" | "success" | "error"
+- \`inspectorMode\`: string — current inspector state selection (for the inspector panel)
+
+**Preview shell: phone frame + inspector panel**
+
+The preview is NOT a full-width wireframe. Structure:
+
+Left panel — Phone frame (390px wide, 844px tall, border-radius 44px, border: 1px solid rgba(255,255,255,0.12), background: --bg color from BRAND tokens):
+- iOS-style status bar at top (time "9:41", signal/wifi/battery SVG icons)
+- The app renders inside this frame exactly as it would on device
+- The phone frame is the PRIMARY interactive experience — users tap chips, type messages, click through flows directly in the frame
+
+Right panel — Inspector panel (280px wide, darker background than --bg, rounded border):
+- Heading row: "Inspector" label
+- Grouped buttons for every named screen and state from the spec
+- Group "Chat Home": Default, In Conversation, Nudge (logged-out)
+- Group "Auth Sheet": Default, Loading, Error, Success
+- "Logged In" state as its own entry
+- Clicking any button calls \`applyMode(mode)\` which resets the phone frame to that exact state
+- Active button is highlighted with an accent border/background
+- The inspector is ADDITIVE — it exists to let the designer jump to any edge state without clicking through the flow
+
+Both panels sit horizontally in a centered viewport with a thin top meta bar showing:
+feature name · BRAND.md ✓ · N screens · N flows
+
+**Suggestion chips and action pills must always be in a horizontal row** — never stacked vertically. Use \`display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto;\` so they scroll horizontally at narrow viewports instead of stacking.
 
 ## Full interactivity — REQUIRED
 
@@ -263,8 +317,18 @@ If the spec describes an auth sheet, login sheet, or bottom sheet that slides up
 
 Every named screen and state must also be reachable directly from nav tabs and state pills — so the designer can jump to any state without clicking through the flow.
 
-## Mobile-first
-Default width should be a mobile frame (390px) centered, with a toggle to expand to full-width desktop.`,
+## Empty-state hero — REQUIRED for chat/assistant screens
+
+When the spec describes a chat home screen, the default (empty) state MUST show a centered hero section:
+- This hero is a SEPARATE div below the nav bar — it is NOT inside the nav
+- The nav bar contains the app name left-aligned (always visible) — the hero heading is CENTERED and only visible when \`msgs.length === 0 && !typing\`
+- Hero content: \`<h1>\` with the app name in gradient text matching the spec, centered
+- Tagline below the h1, centered, in muted text color
+- Glow effect behind the hero (per glow pattern above)
+- Starter chips row below the tagline (horizontal, nowrap, scrollable)
+- The prompt bar is always pinned at the bottom of the phone frame
+
+When the user sends a message: hide the hero, show the conversation thread.`,
     messages: [
       {
         role: "user",
