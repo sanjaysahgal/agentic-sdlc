@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**424 tests across 24 files — all passing**
+**446 tests across 24 files — all passing**
 
 Run: `npx vitest run`
 
@@ -93,7 +93,7 @@ Per-thread state: conversation history, confirmed agent, escalation state.
 - clearPendingEscalation removes the escalation
 - escalation is thread-isolated — clearing thread-1 does not affect thread-2
 
-### `tests/unit/thinking.test.ts` — 7 tests
+### `tests/unit/thinking.test.ts` — 17 tests
 
 `withThinking` — posts a placeholder, runs the agent, updates with the response. Handles all error paths without crashing.
 
@@ -101,10 +101,19 @@ Per-thread state: conversation history, confirmed agent, escalation state.
 - on error: logs structured JSON with all required fields
 - on error: updates placeholder with user-facing error message
 - on context-limit error: shows actionable thread-restart message not generic
+- on context-limit error 'Input too long': shows thread-restart message not generic
+- on context-limit error 'exceeded' + 'token': shows thread-restart message not generic
+- on context-limit error 'reduce the length': shows thread-restart message not generic
 - on overloaded error: shows overloaded message not generic
 - on image error: shows image-specific message
-- truncates responses over 39000 chars at paragraph boundary
+- on msg_too_long from run: shows specific message not generic
+- on msg_too_long from chat.update: retries with shorter content
+- truncates responses over 12000 chars at paragraph boundary
 - always calls decrementActiveRequests in finally — even on error
+- heartbeat cycles dots on status text every 8s during a silent wait
+- heartbeat uses the most recent status text after an explicit update()
+- heartbeat stops after run completes — clearInterval called in finally
+- heartbeat stops after an error — clearInterval called in finally even on throw
 
 ### `tests/unit/agent-router.test.ts` — 30 tests
 
@@ -366,10 +375,14 @@ GitHub API wrapper: file reads, spec saves, branch management, phase detection, 
 - appends to existing content when file already exists
 - does not throw when GitHub API fails — non-fatal
 
-### `tests/unit/claude-client.test.ts` — 8 tests
+### `tests/unit/claude-client.test.ts` — 11 tests
 
 `runAgent` — the core Anthropic API call with history sanitization, image support, and history truncation.
 
+**Anthropic client config**
+- sets maxRetries: 0 — a timed-out agent call won't succeed on retry, fail fast instead
+
+**runAgent**
 - returns text from first content block
 - returns empty string when first content block is not text
 - passes systemPrompt as cached system block
@@ -378,17 +391,39 @@ GitHub API wrapper: file reads, spec saves, branch management, phase detection, 
 - collapses consecutive same-role messages — keeps the later one
 - includes image blocks before text when userImages are provided
 - truncates history to last 40 messages before the new user turn
+- respects historyLimit parameter — design agent passes 20 to cap payload for large-context agents
+- historyLimit: 20 sends last 20 messages — earlier messages are dropped
 
-### `tests/unit/html-renderer.test.ts` — 6 tests
+### `tests/unit/html-renderer.test.ts` — 24 tests
 
-`generateDesignPreview` — generates self-contained HTML from a design spec.
+`generateDesignPreview` — generates self-contained HTML from a design spec using Sonnet 4.6.
 
-- returns HTML content from Claude response
+**Anthropic client config**
+- sets maxRetries: 0 — a timed-out 32k-token render won't succeed on retry, fail fast instead
+
+**generateDesignPreview**
+- returns html and warnings from Claude response
 - strips leading ```html fence if model adds one
 - strips leading ``` fence without language tag
 - passes featureName and specContent to Claude
-- uses claude-sonnet-4-6 model
-- returns empty string when first content block is not text
+- uses claude-sonnet-4-6 model for production-quality rendering
+- throws when first content block is not text (treated as truncation)
+- throws when HTML is missing closing </html> tag (truncated response)
+- uses max_tokens 32000 for complex spec rendering
+- system prompt instructs renderer to read opacity from AUTHORITATIVE BRAND TOKENS
+- system prompt uses non-prefixed color names to avoid Tailwind class collision
+- system prompt instructs sheets and modals to be own nav tabs
+- prepends AUTHORITATIVE BRAND TOKENS block when brandContent is provided
+- does not prepend brand block when brandContent is not provided
+- returns warnings when bg token from BRAND.md is absent from rendered HTML
+- returns empty warnings when HTML is structurally complete
+- returns warning when keyframe animations are missing
+- returns warning when body has no explicit CSS background-color (Tailwind-only silently fails on file:// URLs)
+- no background warning when body has explicit CSS background-color in style tag
+- system prompt instructs chips to be horizontal row not vertical stack
+- system prompt requires Alpine.js x-data function pattern to prevent $nextTick escaping
+- system prompt specifies phone frame + inspector panel preview layout
+- system prompt requires empty-state hero to be separate from nav bar
 
 ### `tests/unit/context-loader.test.ts` — 22 tests
 
@@ -503,7 +538,15 @@ The Anthropic call order differs per runner:
 **Architect agent**
 - runner does NOT crash when extractLockedDecisions throws — architect still responds
 
-### `tests/integration/workflows.test.ts` — 17 tests
+### `tests/integration/render-override.test.ts` — 3 tests
+
+Post-response uncommitted decisions audit — platform appends a save reminder when the agent responds without committing.
+
+- appends uncommitted note when no save tool called and history > 6
+- skips uncommitted note when history is short (fresh conversation)
+- skips uncommitted note when save tool was called
+
+### `tests/integration/workflows.test.ts` — 25 tests
 
 End-to-end multi-turn workflow tests. Each scenario runs multiple `handleFeatureChannelMessage` calls in sequence, asserting state transitions between turns.
 
@@ -525,7 +568,7 @@ A new Slack thread (no `confirmedAgent`) reads GitHub branch state to determine 
 
 **Scenario 4 — PM escalation round-trip from design agent**
 - Turn 1: design agent response with escalation offer stores pending escalation
-- Turn 2: user says yes → PM agent answers the blocking product question
+- Turn 2: user says yes → PM is @mentioned in thread, design paused
 
 **Scenario 5 — Thread isolation across concurrent features**
 - PM message in Thread A does not affect UX Designer routing in Thread B
@@ -534,13 +577,30 @@ A new Slack thread (no `confirmedAgent`) reads GitHub branch state to determine 
 - second message in PM thread skips classifyIntent and goes straight to PM
 - confirmed design agent thread skips classifyIntent — goes straight to UX Designer
 
+**Scenario 7 — Design agent caps history at 20 messages**
+- sends at most 21 messages to Anthropic (20 history + current) even when store has 40+
+
 **Scenario 8 — State query on long thread surfaces uncommitted-context note**
 - state response shows specific uncommitted decisions when thread has prior history
-- state response skips uncommitted section when all decisions are in the spec
-- state response has no uncommitted section when thread is short (fresh start)
+- state response shows 'No open items' when all decisions are in the spec
+- state response shows 'No open items' when thread is short (fresh start)
 
 **Scenario 9 — Design patch flow**
-- patch block is applied to existing draft and merged draft is saved to GitHub
+- apply_design_spec_patch tool saves merged draft to GitHub
+
+**Scenario 10 — PM patch flow**
+- apply_product_spec_patch tool merges patch into existing draft and saves to GitHub
+
+**Scenario 11 — Architect patch flow**
+- apply_engineering_spec_patch tool merges patch into existing draft and saves to GitHub
+
+**Scenario 12 — State query preview freshness**
+
+When uncommitted decisions exist, the state query regenerates the preview from the committed spec rather than serving the stale GitHub file. A brand new user always sees a preview that accurately reflects what's committed.
+
+- regenerates preview from committed spec when uncommitted decisions exist
+- serves saved GitHub preview without regenerating when all decisions are committed
+- state query completes with no preview when generateDesignPreview times out or throws
 
 ---
 

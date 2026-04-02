@@ -858,5 +858,39 @@ describe("Scenario 12 — State query preview freshness", () => {
     // Only 1 Anthropic call — generateDesignPreview was NOT called
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
   })
+
+  it("state query completes with no preview when generateDesignPreview times out or throws", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    seedHistory("onboarding", 10)
+
+    // GitHub: design draft on first read; brand/productVision/systemArchitecture reject
+    mockGetContent
+      .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } })
+      .mockRejectedValue(new Error("Not Found"))
+
+    // Anthropic: [0] identifyUncommittedDecisions → pending, [1] generateDesignPreview → timeout
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode: Archon palette agreed" }] }) // identifyUncommittedDecisions
+      .mockRejectedValueOnce(new Error("Request timeout after 300000ms"))                                   // generateDesignPreview
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    // Suppress expected console.error from the caught preview failure
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "hi"), client }
+    await handleFeatureChannelMessage(params)
+
+    consoleError.mockRestore()
+
+    // State response is still posted — timeout does not crash or hang the handler
+    const text = lastUpdateText(client)
+    expect(text).toContain("PENDING")
+    expect(text).toContain("Dark mode")
+
+    // No preview was uploaded — upload skipped gracefully
+    expect(client.files.uploadV2).not.toHaveBeenCalled()
+  })
 })
 

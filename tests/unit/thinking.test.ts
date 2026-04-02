@@ -213,4 +213,112 @@ describe("withThinking", () => {
 
     expect(mockDecrementActiveRequests).toHaveBeenCalledTimes(1)
   })
+
+  // ── Heartbeat tests ─────────────────────────────────────────────────────────
+
+  it("heartbeat cycles dots on status text every 8s during a silent wait", async () => {
+    vi.useFakeTimers()
+    const client = makeClient()
+
+    let resolveRun!: () => void
+    const runDone = new Promise<void>(resolve => { resolveRun = resolve })
+
+    const thinking = withThinking({
+      client, channelId: "C123", threadTs: "1000.0", agent: "UX Designer",
+      run: async () => { await runDone },
+    })
+
+    // No update yet — just the placeholder post
+    expect(client.chat.update).not.toHaveBeenCalled()
+
+    // 8s — heartbeat fires: "..." → "."
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(client.chat.update).toHaveBeenCalledTimes(1)
+    expect(client.chat.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: "*UX Designer*\n\n_UX Designer is thinking._" })
+    )
+
+    // 16s — heartbeat fires again: "." → ".."
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(client.chat.update).toHaveBeenCalledTimes(2)
+    expect(client.chat.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: "*UX Designer*\n\n_UX Designer is thinking.._" })
+    )
+
+    // 24s — heartbeat fires again: ".." → "..."
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(client.chat.update).toHaveBeenCalledTimes(3)
+    expect(client.chat.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: "*UX Designer*\n\n_UX Designer is thinking..._" })
+    )
+
+    resolveRun()
+    await thinking
+    vi.useRealTimers()
+  })
+
+  it("heartbeat uses the most recent status text after an explicit update()", async () => {
+    vi.useFakeTimers()
+    const client = makeClient()
+
+    let resolveRun!: () => void
+    const runDone = new Promise<void>(resolve => { resolveRun = resolve })
+
+    const thinking = withThinking({
+      client, channelId: "C123", threadTs: "1000.0", agent: "UX Designer",
+      run: async (update) => {
+        await update("_Auditing spec for gaps..._")
+        await runDone
+      },
+    })
+
+    // 8s — heartbeat fires against the updated status text, not the original placeholder
+    await vi.advanceTimersByTimeAsync(8_000)
+
+    const updateCalls = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls.map(c => c[0].text)
+    // Explicit update happened first
+    expect(updateCalls).toContain("*UX Designer*\n\n_Auditing spec for gaps..._")
+    // Heartbeat cycles that text (... → .)
+    expect(updateCalls).toContain("*UX Designer*\n\n_Auditing spec for gaps._")
+
+    resolveRun()
+    await thinking
+    vi.useRealTimers()
+  })
+
+  it("heartbeat stops after run completes — clearInterval called in finally", async () => {
+    vi.useFakeTimers()
+    const client = makeClient()
+
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async (update) => { await update("Done") },
+    })
+
+    const callCountAfterComplete = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // Advance well past the 8s interval — heartbeat must NOT fire
+    await vi.advanceTimersByTimeAsync(24_000)
+    expect(client.chat.update).toHaveBeenCalledTimes(callCountAfterComplete)
+
+    vi.useRealTimers()
+  })
+
+  it("heartbeat stops after an error — clearInterval called in finally even on throw", async () => {
+    vi.useFakeTimers()
+    const client = makeClient()
+
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("fail") },
+    })).rejects.toThrow()
+
+    const callCountAfterError = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // Advance well past the 8s interval — heartbeat must NOT fire
+    await vi.advanceTimersByTimeAsync(24_000)
+    expect(client.chat.update).toHaveBeenCalledTimes(callCountAfterError)
+
+    vi.useRealTimers()
+  })
 })

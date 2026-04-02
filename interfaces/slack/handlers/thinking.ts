@@ -45,14 +45,13 @@ export async function withThinking(params: {
   const heartbeat = setInterval(async () => {
     heartbeatStep = (heartbeatStep % 3) + 1
     const dots = ".".repeat(heartbeatStep)
-    // If the status ends with _italic_, cycle dots inside the italic span.
-    // Otherwise append dots after the text.
-    const withDots = lastStatusText.replace(/\.+_$/, `${dots}_`)
-    const animated = withDots !== lastStatusText
-      ? withDots
-      : lastStatusText.endsWith("_")
-        ? lastStatusText.slice(0, -1) + `${dots}_`
-        : `${lastStatusText} ${dots}`
+    // Strip any trailing dots and the closing italic marker so we can
+    // reattach a fresh dot count — avoids ambiguity when the existing
+    // dot count equals the new count (would produce an identical string).
+    const base = lastStatusText.replace(/\.+_$/, "").replace(/_$/, "")
+    const animated = lastStatusText.includes("_")
+      ? `${base}${dots}_`
+      : `${lastStatusText} ${dots}`
     await client.chat.update({ channel: channelId, ts: messageTs, text: `${agentPrefix}${animated}` }).catch(() => {})
   }, 8_000)
 
