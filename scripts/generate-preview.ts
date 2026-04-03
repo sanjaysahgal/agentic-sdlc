@@ -1,29 +1,34 @@
 // generate-preview.ts — renders a design spec to an interactive HTML preview.
-// Usage: npx tsx scripts/generate-preview.ts [featureName] [outputPath]
+// Usage: npx tsx scripts/generate-preview.ts [featureName] [outputPath] [--push]
 // Example: npx tsx scripts/generate-preview.ts onboarding /tmp/preview.html
+//   --push  also commits the generated HTML to the design branch on GitHub,
+//           replacing the cached preview served by the design agent in Slack.
 //
 // The renderer (generateDesignPreview) is the agent. This script is just the
 // entry point that feeds it the spec + brand content and writes the output.
 // Never hand-write HTML previews — always use this script.
 
 import { config } from "dotenv"
-config({ path: "/Users/ssahgal/Developer/agentic-sdlc/.env" })
+config()
 
 import { writeFileSync } from "fs"
-import { readFile } from "../runtime/github-client"
+import { readFile, saveDraftHtmlPreview } from "../runtime/github-client"
 import { generateDesignPreview } from "../runtime/html-renderer"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
 
 async function main() {
-  const config = loadWorkspaceConfig()
-  const featureName = process.argv[2] ?? "onboarding"
-  const outputPath = process.argv[3] ?? `/tmp/${featureName}-onboarding-preview.html`
+  const cfg = loadWorkspaceConfig()
+  const args = process.argv.slice(2)
+  const pushFlag = args.includes("--push")
+  const positional = args.filter(a => !a.startsWith("--"))
+  const featureName = positional[0] ?? "onboarding"
+  const outputPath = positional[1] ?? `/tmp/${featureName}-preview.html`
 
   console.log(`Rendering preview for: ${featureName}`)
 
   // Read design spec — try committed spec first, then draft branch
   const specBranch = `spec/${featureName}-design`
-  const specPath = `${config.paths.featuresRoot}/${featureName}/${featureName}.design.md`
+  const specPath = `${cfg.paths.featuresRoot}/${featureName}/${featureName}.design.md`
 
   let specContent = await readFile(specPath)
   if (!specContent) {
@@ -35,7 +40,7 @@ async function main() {
   console.log(`Spec loaded: ${specContent.length} chars`)
 
   // Read BRAND.md — authoritative brand tokens
-  const brandContent = await readFile(config.paths.brand)
+  const brandContent = await readFile(cfg.paths.brand)
   if (brandContent) {
     console.log(`BRAND.md loaded: ${brandContent.length} chars`)
   } else {
@@ -58,6 +63,18 @@ async function main() {
   writeFileSync(outputPath, html, "utf-8")
   console.log(`\nPreview written to: ${outputPath}`)
   console.log(`Open in browser: file://${outputPath}`)
+
+  // Optionally push to GitHub to update the design agent's cache.
+  // The design agent serves the cached preview from the design branch directly —
+  // passing --push replaces it so the next Slack "show me the preview" request
+  // serves this renderer-generated version.
+  if (pushFlag) {
+    console.log("\nPushing to GitHub design branch...")
+    const htmlFilePath = `${cfg.paths.featuresRoot}/${featureName}/${featureName}.preview.html`
+    await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: html })
+    console.log(`Pushed: ${htmlFilePath} → spec/${featureName}-design branch`)
+    console.log("Design agent will serve this preview on next request.")
+  }
 }
 
 main().catch(err => {
