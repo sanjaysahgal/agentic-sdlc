@@ -59,6 +59,7 @@ Reads the approved product spec fully before asking a single question. Works wit
 - `apply_design_spec_patch` — incremental update; same audits + preview regeneration
 - `generate_design_preview` — preview-only, no GitHub save
 - `fetch_url` — fetches a reference URL to extract brand tokens
+- `offer_pm_escalation` — stores a blocking product question via `setPendingEscalation()`; platform prompts user to confirm, then posts PM notification. Called immediately when the product spec is silent on something that blocks design progress — no permission-seeking.
 - `finalize_design_spec` — blocked if unresolved `[blocking: yes]` questions exist
 
 The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/END`, `PREVIEW_ONLY_START/END`, `INTENT: CREATE_DESIGN_SPEC`) is fully removed. The Haiku classifiers `detectRenderIntent` and `detectConfirmationOfDecision` are removed — the agent calls tools directly without platform pre-classification.

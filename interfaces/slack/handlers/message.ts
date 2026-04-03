@@ -745,6 +745,16 @@ async function runDesignAgent(params: {
           return { error: `Preview failed: ${err?.message}` }
         }
       }
+      if (name === "offer_pm_escalation") {
+        setPendingEscalation(featureName, {
+          targetAgent: "pm",
+          question: input.question as string,
+          designContext: context.currentDraft ?? "",
+        })
+        return {
+          result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the PM will be notified with your question.",
+        }
+      }
       if (name === "fetch_url") {
         const url = input.url as string
         try {

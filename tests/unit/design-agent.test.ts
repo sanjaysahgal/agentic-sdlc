@@ -149,11 +149,36 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("Draft saved to GitHub")
     expect(prompt).toContain("approved")
   })
+
+  it("system prompt instructs agent to call offer_pm_escalation immediately — not ask permission first", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("offer_pm_escalation")
+    expect(prompt).toContain("immediately")
+    // Old permission-asking patterns must not appear as instructions (they may appear in "do not" clauses)
+    expect(prompt).not.toContain("want me to pull the PM")
+    // The phrase "want me to flag it for the PM" appears only in a prohibition ("Do not ask...")
+    expect(prompt).toContain('Do not ask "want me to flag it for the PM?"')
+  })
+
+  it("system prompt only references tools that exist in DESIGN_TOOLS", () => {
+    // Catches the Step 13 regression class: tool mentioned in prompt but dropped from the array.
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    const toolNames = new Set(DESIGN_TOOLS.map(t => t.name))
+    const promptToolRefs = [...prompt.matchAll(/`([a-z_]+)`/g)]
+      .map(m => m[1])
+      .filter(name => name.includes("_") && (
+        name.endsWith("_spec") || name.endsWith("_draft") || name.endsWith("_patch") ||
+        name.endsWith("_preview") || name.endsWith("_url") || name.endsWith("_escalation")
+      ))
+    for (const ref of promptToolRefs) {
+      expect(toolNames, `System prompt references \`${ref}\` but it is not in DESIGN_TOOLS`).toContain(ref)
+    }
+  })
 })
 
 describe("DESIGN_TOOLS structure", () => {
-  it("exports 5 tools", () => {
-    expect(DESIGN_TOOLS).toHaveLength(5)
+  it("exports 6 tools", () => {
+    expect(DESIGN_TOOLS).toHaveLength(6)
   })
 
   it("includes save_design_spec_draft as first tool", () => {
@@ -172,8 +197,12 @@ describe("DESIGN_TOOLS structure", () => {
     expect(DESIGN_TOOLS[3].name).toBe("fetch_url")
   })
 
-  it("includes finalize_design_spec as fifth tool", () => {
-    expect(DESIGN_TOOLS[4].name).toBe("finalize_design_spec")
+  it("includes offer_pm_escalation as fifth tool", () => {
+    expect(DESIGN_TOOLS[4].name).toBe("offer_pm_escalation")
+  })
+
+  it("includes finalize_design_spec as sixth tool", () => {
+    expect(DESIGN_TOOLS[5].name).toBe("finalize_design_spec")
   })
 
   it("save_design_spec_draft requires content parameter", () => {
@@ -194,6 +223,11 @@ describe("DESIGN_TOOLS structure", () => {
   it("fetch_url requires url parameter", () => {
     const tool = DESIGN_TOOLS.find(t => t.name === "fetch_url")!
     expect(tool.input_schema.required).toContain("url")
+  })
+
+  it("offer_pm_escalation requires question parameter", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "offer_pm_escalation")!
+    expect(tool.input_schema.required).toContain("question")
   })
 
   it("finalize_design_spec requires no parameters", () => {
