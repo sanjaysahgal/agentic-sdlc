@@ -35,6 +35,25 @@ function validateRenderedHtml(html: string, brandContent?: string): string[] {
   return issues
 }
 
+/**
+ * Checks that spec-defined text literals appear verbatim in the rendered HTML.
+ * Deterministic string matching — no LLM needed. Catches renderer hallucination where
+ * the renderer substitutes its own text ("Your AI health coach") for spec-defined text
+ * ("Health360"). Matches patterns like: Heading: "..." / Tagline: "..." / Header: "..."
+ */
+function validateTextFidelity(html: string, specContent: string): string[] {
+  const issues: string[] = []
+  // Match labeled text literals: Heading: "...", Tagline: "...", Header: "...", Description: "..."
+  const pattern = /(?:Heading|Tagline|Header|Description|placeholder):\s*"([^"]{4,})"/gi
+  for (const match of specContent.matchAll(pattern)) {
+    const specText = match[1].trim()
+    if (!html.includes(specText)) {
+      issues.push(`Spec text "${specText}" not found in rendered HTML — renderer substituted different content`)
+    }
+  }
+  return issues
+}
+
 // Generates a self-contained HTML preview from a design spec.
 // Uses Tailwind CDN + Alpine.js for interactivity — no build step, no external deps.
 // Each screen gets a tab. Each screen state (default/loading/empty/error) gets a toggle.
@@ -68,6 +87,18 @@ ${brandContent}
 Output ONLY the raw HTML — no explanation, no markdown fences, no preamble. Start with <!DOCTYPE html> and end with </html>.
 
 **Critical: always output a complete, valid HTML file.** If the spec is complex, be concise in your implementation — use Tailwind classes aggressively, keep custom CSS minimal. An incomplete file (cut off before </html>) is a total failure — the designer will see a broken, partially-rendered screen. Concise and complete is always better than verbose and truncated.
+
+## TEXT FIDELITY — NON-NEGOTIABLE
+
+Use ONLY the exact text content from the spec. Do not paraphrase, improve, or substitute.
+
+- If the spec defines a heading: use that exact string. Spec says \`Heading: "Health360"\` → render "Health360", never "Your AI Health Coach" or any variation.
+- If the spec defines chip labels: use those exact labels, in that exact order.
+- If the spec defines button text, placeholder text, or descriptions: use those exact strings.
+- If a text element has NO value in the spec: leave it absent. Do not invent plausible-sounding copy.
+- If the spec says "bottom sheet": the element enters from the bottom with a translate-Y animation. If "centered modal": it is a centered overlay. Respect layout direction exactly as written.
+
+Any text visible in the rendered HTML that does not appear verbatim in the spec is a renderer error.
 
 ## Technical requirements
 
@@ -353,7 +384,7 @@ ${specContent}`,
     throw new Error("HTML preview was truncated before </html> — spec may be too large for a single render pass")
   }
 
-  const warnings = validateRenderedHtml(html, brandContent)
+  const warnings = [...validateRenderedHtml(html, brandContent), ...validateTextFidelity(html, specContent)]
   return { html, warnings }
 }
 
@@ -390,6 +421,7 @@ CRITICAL RULES:
 3. Do NOT add or remove inspector states unless the patch explicitly defines new screens.
 4. Do NOT change animation keyframe names, timing values, or color values unless the patch specifies new values.
 5. Output ONLY the complete updated HTML — no explanation, no markdown fences.
+6. TEXT FIDELITY: Use ONLY the exact text from the patch. Do not paraphrase or substitute. If the patch defines Heading "X", render "X" not any variation. If layout direction changes (e.g. "bottom sheet"), apply it exactly.
 
 The output must be a complete valid HTML file starting with <!DOCTYPE html>.`,
     messages: [
@@ -419,6 +451,6 @@ Apply the patch to the HTML. Return the complete HTML file.`,
     throw new Error("HTML preview was truncated before </html>")
   }
 
-  const warnings = validateRenderedHtml(html, brandContent)
+  const warnings = [...validateRenderedHtml(html, brandContent), ...validateTextFidelity(html, specPatch)]
   return { html, warnings }
 }

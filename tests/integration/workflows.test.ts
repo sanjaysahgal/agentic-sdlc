@@ -665,7 +665,8 @@ describe("Scenario 9 — Design patch flow", () => {
     //   [1] isSpecStateQuery          → false
     //   [2] runAgent (tool_use call)  → tool_use: apply_design_spec_patch
     //   [3] generateDesignPreview     → HTML (from tool handler; auditSpecDraft skips — empty context)
-    //   [4] runAgent (end_turn call)  → text response after tool result
+    //   [4] auditSpecRenderAmbiguity  → [] (no ambiguities)
+    //   [5] runAgent (end_turn call)  → text response after tool result
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
@@ -674,6 +675,7 @@ describe("Scenario 9 — Design patch flow", () => {
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Accessibility\nWCAG AA required. Focus rings on all interactive elements. Min tap target 44px." } }],
       })                                                                               // runAgent: tool_use
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview (inside tool handler)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })             // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated the accessibility section. Ready to approve?" }] }) // runAgent: end_turn
 
     const params = makeParams(THREAD, "feature-onboarding", "can you tighten up the accessibility section?")
@@ -983,7 +985,8 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     //   [1] isSpecStateQuery    → false
     //   [2] runAgent (tool_use) → apply_design_spec_patch
     //   [3] generateDesignPreview (inside saveDesignDraft)
-    //   [4] runAgent (end_turn) → response text
+    //   [4] auditSpecRenderAmbiguity → [] (no ambiguities)
+    //   [5] runAgent (end_turn) → response text
     //   NO identifyUncommittedDecisions call
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
@@ -993,17 +996,18 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Colors\nViolet CTA." } }],
       })                                                                            // runAgent: tool_use
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })          // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated and saved. Ready to approve?" }] }) // runAgent: end_turn
     // If identifyUncommittedDecisions were called, it would hit the default mockResolvedValue
-    // fallback which is undefined → would throw. Verifying no throw + call count = 5.
+    // fallback which is undefined → would throw. Verifying no throw + call count = 6.
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "make the CTA violet and save"), client })
 
-    // Exactly 5 Anthropic calls — no 6th call for identifyUncommittedDecisions
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // Exactly 6 Anthropic calls — no 7th call for identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
 
     const text = lastUpdateText(client)
     expect(text).not.toContain("⚠️")
@@ -1192,6 +1196,102 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
 // updateDesignPreview instead of the full merged spec. The renderer receives existing HTML
 // + only the changed sections, so approved inspector states and animations are preserved.
 
+// ─── Scenario 17: Render ambiguity audit fires on spec save ──────────────────
+//
+// When the design agent saves a spec, auditSpecRenderAmbiguity runs and its
+// result is included in the tool return value as `renderAmbiguities`.
+// When ambiguities are present, the agent must patch them immediately.
+// When the spec is fully specified, the tool result has no renderAmbiguities field.
+
+describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
+  const THREAD = "workflow-s17"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("save returns renderAmbiguities when audit finds vague elements", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Call sequence (0 history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent
+    //   [1] isSpecStateQuery
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] generateDesignPreview → HTML
+    //   [4] auditSpecRenderAmbiguity → ambiguities present
+    //   [5] runAgent (tool_use again) → apply_design_spec_patch (agent fixes ambiguities)
+    //   [6] generateDesignPreview → HTML for second save
+    //   [7] auditSpecRenderAmbiguity → [] (resolved)
+    //   [8] runAgent (end_turn) → response
+    //   [9] identifyUncommittedDecisions
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips positioned near the bottom." } }],
+      })                                                                        // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Chat Home chips position is vague — must specify exact spacing from prompt bar"]' }] }) // auditSpecRenderAmbiguity → ambiguities
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t2", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips: 12px above the prompt bar." } }],
+      })                                                                        // runAgent: tool_use (agent patches ambiguity)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview2</html>" }] }) // generateDesignPreview (second save)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity → resolved
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated chip positioning to 12px above the prompt bar." }] }) // runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "save the spec"), client })
+
+    // Agent called apply_design_spec_patch twice (initial save + ambiguity fix)
+    const patchCalls = mockAnthropicCreate.mock.calls.filter((c: any[]) =>
+      c[0]?.tools?.some((t: any) => t.name === "apply_design_spec_patch")
+    )
+    expect(patchCalls.length).toBeGreaterThanOrEqual(1)
+
+    // Final response text is from the agent fixing the ambiguity
+    const text = lastUpdateText(client)
+    expect(text).toContain("12px")
+  })
+
+  it("save with no ambiguities produces no renderAmbiguities in tool result", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Call sequence (didSave=true → identifyUncommittedDecisions skipped):
+    //   [0] isOffTopicForAgent
+    //   [1] isSpecStateQuery
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] generateDesignPreview → HTML
+    //   [4] auditSpecRenderAmbiguity → [] (no ambiguities)
+    //   [5] runAgent (end_turn) → response
+    //   NO identifyUncommittedDecisions (save tool was called)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nHeading: \"Health360\". Chips: 12px above prompt bar." } }],
+      })                                                                        // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity → no ambiguities
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec saved. Ready to approve." }] }) // runAgent: end_turn
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "save with full spec"), client })
+
+    // Exactly 6 Anthropic calls — no 7th (identifyUncommittedDecisions skipped when save tool ran)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+
+    const text = lastUpdateText(client)
+    expect(text).toContain("approve")
+  })
+})
+
 describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-based on spec save", () => {
   const THREAD = "workflow-s16"
 
@@ -1300,7 +1400,8 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     //   [2] runAgent (tool_use) → apply_design_spec_patch with THE_PATCH
     //       handler: readFile(designFilePath) → existing spec; applySpecPatch; saveDesignDraft(merged, THE_PATCH)
     //         saveDesignDraft: readFile(htmlFilePath) → EXISTING_HTML → [3] updateDesignPreview (patch-based renderer)
-    //   [4] runAgent (end_turn), [5] identifyUncommittedDecisions
+    //         [4] auditSpecRenderAmbiguity → [] (no ambiguities)
+    //   [5] runAgent (end_turn), [6] identifyUncommittedDecisions
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
@@ -1309,6 +1410,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: THE_PATCH } }],
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>updated preview</html>" }] }) // updateDesignPreview renderer
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })               // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec and preview updated." }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
 

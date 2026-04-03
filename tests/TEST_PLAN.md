@@ -640,6 +640,13 @@ Layer 2: `apply_design_spec_patch` passes the exact patch sections (not the full
 - first preview (no cache) calls renderer and saves HTML to branch for future requests
 - apply_design_spec_patch calls updateDesignPreview with the exact patch — renderer receives specPatch and existingHtml, not the full merged spec
 
+**Scenario 17 — Render ambiguity audit fires on spec save**
+
+`auditSpecRenderAmbiguity()` runs after every spec save and returns elements too vague for consistent rendering. When ambiguities are found, the design agent must call `apply_design_spec_patch` in the same response turn. When none are found, no extra patch call is made.
+
+- save returns `renderAmbiguities` when audit finds vague elements — agent calls a second `apply_design_spec_patch` to resolve them in the same response
+- save with fully specified spec produces no `renderAmbiguities` — exactly 6 Anthropic calls, no extra patch
+
 ---
 
 ## Layer 3: Regression Tests

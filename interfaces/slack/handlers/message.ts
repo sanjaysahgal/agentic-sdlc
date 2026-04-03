@@ -8,11 +8,11 @@ import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, sav
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
-import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
+import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
 import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview, updateDesignPreview } from "../../../runtime/html-renderer"
-import { extractBlockingQuestions } from "../../../runtime/spec-utils"
+import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 
 const { paths: workspacePaths } = loadWorkspaceConfig()
@@ -598,7 +598,15 @@ async function runDesignAgent(params: {
     ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${totalDriftCount} spec Brand section value${totalDriftCount === 1 ? "" : "s"} don't match BRAND.md: ${[...brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`), ...animDriftsDesign.map(d => `${d.param} spec=${d.specValue} brand=${d.brandValue}`)].join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
     : ""
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice
+  // Extract committed text literals from the spec and inject as PLATFORM SPEC FACTS.
+  // The agent reads from this authoritative platform-extracted block rather than reconstructing
+  // spec content from memory — preventing confabulation ("the spec doesn't define X" when it does).
+  const specTextLiterals = extractSpecTextLiterals(context.currentDraft)
+  const specTextNotice = specTextLiterals.length > 0
+    ? `\n\n[PLATFORM SPEC FACTS — committed text literals in the current design spec (use these exactly, never substitute):\n${specTextLiterals.map(l => `${l.label}: "${l.value}"`).join("\n")}]`
+    : ""
+
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -668,7 +676,8 @@ async function runDesignAgent(params: {
 
     const brandDrifts = context.brand ? auditBrandTokens(content, context.brand) : []
     const specGap = audit.status === "gap" ? audit.message : null
-    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined } }
+    const renderAmbiguities = await auditSpecRenderAmbiguity(content).catch(() => [])
+    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined, renderAmbiguities: renderAmbiguities.length > 0 ? renderAmbiguities : undefined } }
   }
 
   // Design agent has a much larger context (system prompt + product vision + full draft spec)
@@ -742,7 +751,8 @@ async function runDesignAgent(params: {
           const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
           if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` }
           const text = await res.text()
-          return { result: { content: text.slice(0, 200_000) } }
+          const content = await filterDesignContent(text)
+          return { result: { content } }
         } catch (err: any) {
           return { error: `Fetch failed: ${err?.message}` }
         }

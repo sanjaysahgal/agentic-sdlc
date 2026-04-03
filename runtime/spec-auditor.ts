@@ -79,6 +79,47 @@ ${draft}`,
   return { status: "ok" }
 }
 
+// ─── Render ambiguity audit ────────────────────────────────────────────────────
+// Identifies elements in a design spec that are too vague for consistent rendering.
+// "Consistent" means two independent renderers given the same spec produce the same output.
+// Returns an array of specific ambiguity strings; empty array means the spec is render-ready.
+// Non-blocking — ambiguities don't prevent save; they surface to the agent as required fixes.
+export async function auditSpecRenderAmbiguity(designSpec: string): Promise<string[]> {
+  if (!designSpec) return []
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 500,
+    system: `You are auditing a design spec for rendering consistency. Identify elements where two different HTML renderers given the same spec would produce different output because the spec doesn't define the value explicitly.
+
+Flag ONLY elements where a renderer must make an unspecified choice:
+- Screens with no title/subtitle defined and no explicit "no title" or "no subtitle" statement
+- UI element positions described only as relative ("between X and Y", "near the bottom") without exact pixel spacing
+- Sheets, modals, or overlays with no entry direction (from bottom, from top, overlay fade-in)
+- Interactive element text (button labels, chip labels, placeholder text) not defined in the spec
+- Animation behavior described vaguely ("smooth transition") without timing values when the spec references an animation
+
+Do NOT flag:
+- General aesthetic descriptions ("minimal", "dark, premium feel")
+- Elements that have an explicit "none" or "no X" statement
+- Brand token values — color drift is handled by a separate brand auditor
+- Implementation details and accessibility notes
+
+Return a JSON array of strings. Each string names one specific ambiguity. If the spec is fully specified for rendering, return: []
+
+Return ONLY the JSON array, no preamble or explanation.`,
+    messages: [{ role: "user", content: designSpec }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim() : "[]"
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
+  } catch {
+    return []
+  }
+}
+
 // ─── Decision audit ────────────────────────────────────────────────────────────
 // Checks a final spec against the decisions explicitly locked during the
 // conversation (e.g. "Locked. Glow opacity 10%"). If any locked value
@@ -192,6 +233,35 @@ If fewer than 2 decisions are clearly locked, output: none`,
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "none"
   if (text === "none" || !text.includes("•")) return ""
   return text
+}
+
+// Extracts design-relevant content (brand tokens, CSS variables, colors, fonts, spacing) from
+// raw HTML/CSS fetched from a reference URL. Used by fetch_url tool handler in place of .slice()
+// truncation — Haiku reads the raw content and returns only what the design agent needs.
+export async function filterDesignContent(rawHtml: string): Promise<string> {
+  // Pre-slice only to fit Haiku context — this is an implementation limit of the LLM call,
+  // not a silent truncation passed to the design agent. Haiku extracts what matters.
+  const input = rawHtml.slice(0, 150_000)
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 2000,
+    system: `Extract design-relevant content from this HTML/CSS for a design agent extracting brand tokens.
+
+Return ONLY:
+- CSS custom properties (--variable: value)
+- Color values (#hex, rgb(), hsl(), oklch())
+- Font families and font sizes
+- Spacing/sizing values that establish the design system
+- Design system class names and token definitions
+
+Exclude all HTML content, JavaScript, non-design markup, and boilerplate.
+If no design tokens exist, return the most visually relevant CSS rules (max 50 rules).
+Return plain text, no JSON wrapping.`,
+    messages: [{ role: "user", content: input }],
+  })
+
+  return response.content[0].type === "text" ? response.content[0].text.trim() : input
 }
 
 // Applies decision corrections to a spec string via direct text replacement.
