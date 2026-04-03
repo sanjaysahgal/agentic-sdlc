@@ -169,7 +169,7 @@ Tool results carry structured data (spec URL, audit findings, preview URL) back 
 - PLATFORM OVERRIDE injection in `message.ts`
 - Truncation retry loops
 
-**Post-response uncommitted decisions audit (design agent only):** After every design agent turn, if no save tool was called in that turn AND conversation history > 6 messages, the platform calls `identifyUncommittedDecisions`. If uncommitted decisions are found, the platform appends a "save those" note to the Slack response. This replaces the PLATFORM OVERRIDE safety net.
+**Post-response uncommitted decisions audit (design agent only):** After every design agent turn where no save tool was called, the platform calls `identifyUncommittedDecisions` on the 2-message current turn (user message + agent response). If the Haiku finds decisions the user actively agreed to that are not in the committed spec, the platform appends a "save those" note to the Slack response. Not cached (caching per thread_ts caused stale results across turns). Haiku prompt counts only agreed decisions — not proposed options, unanswered questions, or clarifying exchanges.
 
 ### Proactive constraint audit pattern
 

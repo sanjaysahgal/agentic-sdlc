@@ -139,7 +139,7 @@ describe("identifyUncommittedDecisions", () => {
   })
 
   it("sends both spec and conversation to Haiku", async () => {
-    mockCreate.mockResolvedValue(haiku("1. Dark mode default: I recommend going with Archon palette — discussed in thread"))
+    mockCreate.mockResolvedValue(haiku("1. Dark mode default: Archon palette agreed by user"))
 
     await identifyUncommittedDecisions(
       [{ role: "user", content: "Let's do dark mode" }],
@@ -149,18 +149,18 @@ describe("identifyUncommittedDecisions", () => {
     const prompt = mockCreate.mock.calls[0][0].messages[0].content
     expect(prompt).toContain("COMMITTED SPEC")
     expect(prompt).toContain("Light mode default")
-    expect(prompt).toContain("CONVERSATION HISTORY")
+    expect(prompt).toContain("CONVERSATION")
     expect(prompt).toContain("dark mode")
   })
 
-  it("asks Haiku to be specific about missing decisions", async () => {
-    mockCreate.mockResolvedValue(haiku("1. something"))
+  it("instructs Haiku to count only agreed decisions — not proposals or unanswered questions", async () => {
+    mockCreate.mockResolvedValue(haiku("none"))
     await identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec")
     const prompt = mockCreate.mock.calls[0][0].messages[0].content
-    expect(prompt).toContain("NOT reflected in the committed spec")
-    expect(prompt).toContain("specific")
+    expect(prompt).toContain("actively agreed")
+    expect(prompt).toContain("Do NOT count")
+    expect(prompt).toContain("Options the agent proposed but the user has not chosen yet")
     expect(prompt).toContain("numbered list")
-    expect(prompt).toContain("recommendation")
   })
 
   it("sends the FULL spec to Haiku — no truncation — so Brand section is visible", async () => {
@@ -168,7 +168,7 @@ describe("identifyUncommittedDecisions", () => {
     // The Brand section of a full design spec is well past position 3000.
     // Haiku couldn't see committed brand tokens and flagged them as uncommitted.
     const longSpec = "A".repeat(4000) + "\n## Brand\n--violet: #7C6FCD\n--bg: #0A0A0F\n"
-    mockCreate.mockResolvedValue(haiku("All discussed decisions appear to be in the committed spec."))
+    mockCreate.mockResolvedValue(haiku("none"))
     await identifyUncommittedDecisions([{ role: "user", content: "fix brand tokens" }], longSpec)
     const prompt = mockCreate.mock.calls[0][0].messages[0].content
     // Full Brand section must be present in the prompt — not truncated

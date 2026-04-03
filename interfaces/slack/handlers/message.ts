@@ -506,7 +506,7 @@ async function runDesignAgent(params: {
         await update("_Reviewing conversation for uncommitted decisions..._")
         const cacheKey = `${featureName}:${fullHistory.length}`
         const uncommitted = await identifyUncommittedDecisions(fullHistory, draftContent ?? "", cacheKey).catch(() => "")
-        const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
+        const isAllCommitted = !uncommitted || uncommitted.trim().toLowerCase() === "none"
         if (uncommitted && !isAllCommitted) {
           uncommittedDecisions = uncommitted
         }
@@ -824,9 +824,11 @@ async function runDesignAgent(params: {
       { role: "user", content: userMessage },
       { role: "assistant", content: response },
     ]
-    const cacheKey = `${featureName}:postturn:${threadTs}`
-    const uncommitted = await identifyUncommittedDecisions(currentTurn, context.currentDraft ?? "", cacheKey).catch(() => "")
-    const isAllCommitted = uncommitted.toLowerCase().includes("all discussed decisions appear to be in the committed spec")
+    // No cacheKey — threadTs is shared across all replies in a Slack thread, so caching
+    // per-thread returns the first turn's stale result for all subsequent turns.
+    // Post-turn only evaluates 2 messages so the Haiku call is fast; no caching needed.
+    const uncommitted = await identifyUncommittedDecisions(currentTurn, context.currentDraft ?? "").catch(() => "")
+    const isAllCommitted = !uncommitted || uncommitted.trim().toLowerCase() === "none"
     if (uncommitted && !isAllCommitted) {
       uncommittedNote = `\n\n⚠️ *Heads up:* decisions were discussed this turn but not saved to the spec. Say *save those* to commit them.`
     }

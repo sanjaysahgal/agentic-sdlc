@@ -539,7 +539,7 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] })  // design runAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] }) // post-turn identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] }) // post-turn identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "another design question")
     await handleFeatureChannelMessage(params)
@@ -638,7 +638,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
     // identifyUncommittedDecisions is the only Anthropic call.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     const params = makeParams(THREAD, "feature-onboarding", "hi")
     await handleFeatureChannelMessage(params)
@@ -869,7 +869,7 @@ describe("Scenario 12 — State query preview freshness", () => {
 
     // Anthropic: only identifyUncommittedDecisions — no generateDesignPreview call
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -958,7 +958,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
       })                                                                            // runAgent: tool_use
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview is live. Ready to approve." }] }) // runAgent: end_turn
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] }) // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] }) // identifyUncommittedDecisions
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -1188,7 +1188,7 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // html-renderer
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview is live." }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -1349,7 +1349,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Agent Memory (irrelevant)" } }],
       })
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Here's the latest preview." }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     const client = makeClient() as ReturnType<typeof makeClient> & { files: { uploadV2: ReturnType<typeof vi.fn> } }
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -1382,7 +1382,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html><!DOCTYPE html><html>fresh</html>" }] }) // html-renderer
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview generated." }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     const client = makeClient() as ReturnType<typeof makeClient> & { files: { uploadV2: ReturnType<typeof vi.fn> } }
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -1435,7 +1435,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
       .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>updated preview</html>" }] }) // updateDesignPreview renderer
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })               // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec and preview updated." }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     const client = makeClient() as ReturnType<typeof makeClient> & { files: { uploadV2: ReturnType<typeof vi.fn> } }
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})

@@ -149,7 +149,7 @@ describe("post-response uncommitted decisions audit", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with the layout direction." }] }) // runAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec" }] }) // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] }) // identifyUncommittedDecisions
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("what should we design first?", client))

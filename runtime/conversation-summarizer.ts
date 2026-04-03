@@ -104,23 +104,31 @@ export async function identifyUncommittedDecisions(
     messages: [
       {
         role: "user",
-        content: `You are comparing a conversation to a committed spec to find what was discussed but never saved.
+        content: `You are checking whether anything was AGREED TO in this conversation that has not yet been saved to the spec.
 
 COMMITTED SPEC (what is on GitHub):
 ---
 ${committedSpec}
 ---
 
-CONVERSATION HISTORY:
+CONVERSATION:
 ---
 ${formatted}
 ---
 
-List decisions or directions that were DISCUSSED in the conversation but are NOT reflected in the committed spec above. Be specific — name the actual decision (e.g. "Dark mode as default — Archon palette #0A0A0F background", not just "dark mode").
+Count something as uncommitted ONLY if:
+- The user actively agreed to it ("yes", "go with that", "approved", "let's do option 2", confirmed a specific value, etc.)
+- AND it is not already in the committed spec above.
 
-Format: numbered list (1. 2. 3.), 3-6 items. For each item, include a concrete recommendation from the agent: "1. [Decision]: I recommend [X] — [brief reason from the thread]"
+Do NOT count:
+- Options the agent proposed but the user has not chosen yet
+- Questions the agent asked that the user has not answered
+- Clarifying discussions that ended without a decision
+- Anything already present in the committed spec
 
-If everything discussed is already in the spec, respond with exactly: "All discussed decisions appear to be in the committed spec."`,
+If nothing was agreed to that is not already in the spec, respond with exactly: none
+
+Otherwise, list each uncommitted agreed decision as a numbered list. For each item include the specific value agreed to: "1. [Decision]: [what was agreed, specific value]"`,
       },
     ],
   })
