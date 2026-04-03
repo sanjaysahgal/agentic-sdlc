@@ -163,6 +163,15 @@ describe("identifyUncommittedDecisions", () => {
     expect(prompt).toContain("numbered list")
   })
 
+  it("prompt instructs Haiku to exclude regression complaints and past-state references", async () => {
+    mockCreate.mockResolvedValue(haiku("none"))
+    await identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec")
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content
+    // Must filter out "we had fixed", "it used to", etc. — these are bug reports, not agreements
+    expect(prompt).toContain("we had fixed")
+    expect(prompt).toContain("complaints about what broke, not new agreements")
+  })
+
   it("sends the FULL spec to Haiku — no truncation — so Brand section is visible", async () => {
     // Root cause of false positive: spec was sliced to 3000 chars.
     // The Brand section of a full design spec is well past position 3000.

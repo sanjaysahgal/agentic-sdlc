@@ -622,7 +622,7 @@ async function runDesignAgent(params: {
 
   // Shared save logic: audit + save + preview + checkpoint.
   // Used by both save_design_spec_draft and apply_design_spec_patch tools.
-  const saveDesignDraft = async (content: string, specPatch?: string): Promise<{ result?: unknown; error?: string }> => {
+  const saveDesignDraft = async (content: string): Promise<{ result?: unknown; error?: string }> => {
     await update("_Auditing draft against product vision and architecture..._")
     const audit = await auditSpecDraft({
       draft: content,
@@ -637,23 +637,23 @@ async function runDesignAgent(params: {
     await update("_Saving draft to GitHub..._")
     await saveDraftDesignSpec({ featureName, filePath: designFilePath, content })
 
-    // Generate HTML preview — non-fatal.
-    // If a cached HTML exists and this is a patch (not first save), use updateDesignPreview so only
-    // the changed spec sections are applied to the existing HTML. This prevents the renderer from
-    // re-improvising approved inspector states, animations, and brand values from scratch.
-    // For a first save (no specPatch) or when no cache exists, fall back to full generateDesignPreview.
+    // Generate HTML preview — non-fatal. Always do a full regeneration from the complete merged spec.
+    // updateDesignPreview (surgical patch-based update) was removed because it caused two failure modes:
+    // 1. It failed to apply the patch text — Sonnet missed or paraphrased the changed content.
+    // 2. It regressed elements outside the patch scope — elements not in the spec (like Auth Sheet
+    //    animation direction) were modified when an unrelated patch was processed.
+    // Full regeneration is deterministic and always produces correct content from the committed spec.
     await update("_Generating HTML preview..._")
     const { paths: dp, githubOwner: dOwner, githubRepo: dRepo } = loadWorkspaceConfig()
     const designSpecUrl = `https://github.com/${dOwner}/${dRepo}/blob/${designBranchName}/${designFilePath}`
     const htmlFilePath = `${dp.featuresRoot}/${featureName}/${featureName}.preview.html`
-    const existingHtml = await readFile(htmlFilePath, designBranchName).catch(() => "")
     let previewUrl = "none"
     let renderWarnings: string[] = []
-    const previewResult = await (
-      existingHtml && specPatch
-        ? updateDesignPreview({ existingHtml, specPatch, featureName, brandContent: context.brand })
-        : generateDesignPreview({ specContent: content, featureName, brandContent: context.brand })
-    ).catch((e: Error) => e)
+    const previewResult = await generateDesignPreview({
+      specContent: content,
+      featureName,
+      brandContent: context.brand,
+    }).catch((e: Error) => e)
     if (!(previewResult instanceof Error)) {
       renderWarnings = previewResult.warnings
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
@@ -705,7 +705,7 @@ async function runDesignAgent(params: {
         const patch = input.patch as string
         const existingDraft = await readFile(designFilePath, designBranchName)
         const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
-        return saveDesignDraft(mergedDraft, patch)
+        return saveDesignDraft(mergedDraft)
       }
       if (name === "generate_design_preview") {
         // Serve the HTML that was saved when the spec was last committed.

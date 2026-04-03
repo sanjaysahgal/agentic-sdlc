@@ -1397,33 +1397,33 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     expect(uploadCall.content).toContain("fresh")
   })
 
-  it("apply_design_spec_patch calls updateDesignPreview with the exact patch (not full spec)", async () => {
+  it("apply_design_spec_patch always calls generateDesignPreview with the full merged spec — not patch-based update", async () => {
+    // updateDesignPreview was removed because it caused two failure modes:
+    // 1. Sonnet missed or paraphrased the patch text (wrong content in preview).
+    // 2. Sonnet modified elements outside the patch scope (regressions on Auth Sheet, animations, etc.).
+    // Now saveDesignDraft always does a full regeneration from the merged spec.
     setConfirmedAgent("onboarding", "ux-design")
 
-    const EXISTING_HTML = "<html>existing preview EXISTING_MARKER</html>"
+    const EXISTING_SECTION = "## Existing Section\nContent."
     const THE_PATCH = "## Screens\nNew dark mode screen layout PATCH_MARKER"
+    // Merged spec = EXISTING_SECTION + THE_PATCH (applySpecPatch appends new sections)
 
-    // Return existing HTML for preview file, existing spec for design file, reject everything else
+    // Only the design.md file needs to be returned; no preview.html cache read anymore.
     mockGetContent.mockImplementation(({ path }: { path?: string }) => {
-      if (path?.endsWith(".preview.html")) {
-        return Promise.resolve({
-          data: { content: Buffer.from(EXISTING_HTML).toString("base64"), type: "file" },
-        })
-      }
       if (path?.endsWith(".design.md")) {
         return Promise.resolve({
-          data: { content: Buffer.from("## Existing Section\nContent.").toString("base64"), type: "file" },
+          data: { content: Buffer.from(EXISTING_SECTION).toString("base64"), type: "file" },
         })
       }
       return Promise.reject(new Error("Not Found"))
     })
 
-    // Call sequence (0 history → no extractLockedDecisions):
+    // Call sequence:
     //   [0] isOffTopicForAgent, [1] isSpecStateQuery
     //   [2] runAgent (tool_use) → apply_design_spec_patch with THE_PATCH
-    //       handler: readFile(designFilePath) → existing spec; applySpecPatch; saveDesignDraft(merged, THE_PATCH)
-    //         saveDesignDraft: readFile(htmlFilePath) → EXISTING_HTML → [3] updateDesignPreview (patch-based renderer)
-    //         [4] auditSpecRenderAmbiguity → [] (no ambiguities)
+    //       handler: readFile(designFilePath) → existing spec; applySpecPatch; saveDesignDraft(merged)
+    //         saveDesignDraft: generateDesignPreview(full merged spec) → [3] renderer call
+    //         [4] auditSpecRenderAmbiguity → []
     //   [5] runAgent (end_turn), [6] identifyUncommittedDecisions
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
@@ -1432,7 +1432,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: THE_PATCH } }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>updated preview</html>" }] }) // updateDesignPreview renderer
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>updated preview</html>" }] }) // generateDesignPreview renderer
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })               // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec and preview updated." }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
@@ -1442,11 +1442,12 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "lock in dark mode screens"), client })
 
-    // The renderer (call index 3) received the patch content — not the full merged spec.
-    // updateDesignPreview puts specPatch in the user message alongside EXISTING HTML.
+    // The renderer (call index 3) received the FULL MERGED SPEC — both existing and patch sections.
+    // It does NOT receive the existing HTML cache (no EXISTING HTML in the prompt).
     const rendererCall = mockAnthropicCreate.mock.calls[3][0]
     const rendererUserMessage = rendererCall.messages[0].content as string
-    expect(rendererUserMessage).toContain("PATCH_MARKER")       // patch was passed through
-    expect(rendererUserMessage).toContain("EXISTING_MARKER")    // existing HTML was passed through
+    expect(rendererUserMessage).toContain("PATCH_MARKER")         // patch section present in merged spec
+    expect(rendererUserMessage).toContain("Existing Section")     // existing section present in merged spec
+    expect(rendererUserMessage).not.toContain("existing preview") // old HTML cache NOT passed through
   })
 })

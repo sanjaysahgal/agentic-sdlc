@@ -125,6 +125,7 @@ Do NOT count:
 - Questions the agent asked that the user has not answered
 - Clarifying discussions that ended without a decision
 - Anything already present in the committed spec
+- The user describing a regression, bug report, or past state ("we had fixed", "it used to", "it was working before", "it's back to") — these are complaints about what broke, not new agreements
 
 If nothing was agreed to that is not already in the spec, respond with exactly: none
 

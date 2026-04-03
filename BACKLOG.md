@@ -51,10 +51,6 @@ When a developer runs `npx tsx scripts/generate-preview.ts [feature]` without `-
 
 ---
 
-### Gap: `updateDesignPreview` can still hallucinate outside its patch scope
-
-`updateDesignPreview` gives the LLM renderer existing HTML + patch sections and instructs it to modify only the affected elements. But the renderer is still a language model and can make unrequested changes to sections it wasn't asked to touch — inspector states, animation keyframes, or brand values in other sections. A complete fix would require a structured HTML → spec section mapping so only the HTML subtree corresponding to changed spec sections is replaced. No such mapping exists yet. Current mitigation: the patch instruction is explicit ("update ONLY the HTML elements for these sections"), which reduces drift significantly but doesn't eliminate it. Track as a known gap until the HTML section mapping is built.
-
 ---
 
 ### Trust Step 0.5c — URL-based brand comparison ("compare with this site")

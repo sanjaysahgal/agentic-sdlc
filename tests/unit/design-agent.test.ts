@@ -34,6 +34,14 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("open with a concrete structural proposal")
   })
 
+  it("recommendation before question — prompt requires agent to state recommendation before asking", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    // Every question must include the agent's recommendation — user should never need to ask "what do you recommend?"
+    expect(prompt).toContain("recommendation")
+    expect(prompt).toContain("Never make the user ask")
+    expect(prompt).toContain("what do you recommend")
+  })
+
   it("enforces flows before screens", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("Flows before screens")
