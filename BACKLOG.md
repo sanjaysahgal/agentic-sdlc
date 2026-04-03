@@ -33,6 +33,18 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Gap: Smoke tests use simplified system prompt, not `buildDesignSystemPrompt`
+
+`tests/smoke/design-agent-workflow.test.ts` Scenario 1 uses an inline system prompt with the key escalation rule rather than calling `buildDesignSystemPrompt`. This means regressions in the full system prompt (e.g., the rule being softened or removed) won't be caught. The durable fix: make `buildDesignSystemPrompt` usable in tests without a real `.env` by accepting an optional config override, then use the real prompt in the smoke test.
+
+---
+
+### Gap: No smoke test for `apply_design_spec_patch` auto-save after user agreement
+
+There is no real-API test that verifies the design agent calls `apply_design_spec_patch` after a user agrees to a design direction. This is the second most common tool call in production and has no behavioral regression guard. Add a Scenario 4 to `tests/smoke/design-agent-workflow.test.ts` once the `buildDesignSystemPrompt` config override gap above is resolved.
+
+---
+
 ### Gap: `generate-preview.ts --push` is opt-in — local re-render silently diverges from Slack cache
 
 When a developer runs `npx tsx scripts/generate-preview.ts [feature]` without `--push`, the locally-written HTML diverges from what the design agent serves in Slack. The `--push` flag was added but easy to forget. The durable fix: make `--push` the default behavior and add a `--local-only` flag for disk-only output. This eliminates the class of "I re-rendered but Slack still shows the old one" bugs.
