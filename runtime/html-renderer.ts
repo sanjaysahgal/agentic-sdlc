@@ -356,3 +356,69 @@ ${specContent}`,
   const warnings = validateRenderedHtml(html, brandContent)
   return { html, warnings }
 }
+
+// Applies targeted updates to an existing HTML preview based on the spec sections that changed.
+// Unlike generateDesignPreview (full rewrite from spec), this receives only the changed sections
+// as a patch string — the renderer knows exactly what to update and leaves everything else identical.
+// Use this after apply_design_spec_patch saves so approved inspector states, animations, and
+// brand values are not re-improvised from scratch.
+export async function updateDesignPreview(params: {
+  existingHtml: string
+  specPatch: string      // Only the changed spec sections — not the full spec
+  featureName: string
+  brandContent?: string
+}): Promise<{ html: string; warnings: string[] }> {
+  const { existingHtml, specPatch, featureName, brandContent } = params
+
+  const brandBlock = brandContent
+    ? `AUTHORITATIVE BRAND TOKENS (from BRAND.md — use these exact values):
+${brandContent}
+
+---
+
+`
+    : ""
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
+    system: `You are applying targeted updates to an existing HTML design preview.
+
+CRITICAL RULES:
+1. You are given ONLY the spec sections that changed. Do not modify HTML for any other section.
+2. Do NOT restructure the HTML, change CSS class names, or rename Alpine.js properties.
+3. Do NOT add or remove inspector states unless the patch explicitly defines new screens.
+4. Do NOT change animation keyframe names, timing values, or color values unless the patch specifies new values.
+5. Output ONLY the complete updated HTML — no explanation, no markdown fences.
+
+The output must be a complete valid HTML file starting with <!DOCTYPE html>.`,
+    messages: [
+      {
+        role: "user",
+        content: `${brandBlock}Feature: ${featureName}
+
+EXISTING HTML (preserve everything not covered by the patch below):
+${existingHtml}
+
+SPEC PATCH — only these sections changed (update ONLY the HTML elements for these sections, leave everything else identical):
+${specPatch}
+
+Apply the patch to the HTML. Return the complete HTML file.`,
+      },
+    ],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
+  const html = text
+    .replace(/^```html\n?/, "")
+    .replace(/^```\n?/, "")
+    .replace(/\n?```$/, "")
+    .trim()
+
+  if (!html.includes("</html>")) {
+    throw new Error("HTML preview was truncated before </html>")
+  }
+
+  const warnings = validateRenderedHtml(html, brandContent)
+  return { html, warnings }
+}

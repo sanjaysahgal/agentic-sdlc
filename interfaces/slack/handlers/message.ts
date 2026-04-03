@@ -11,7 +11,7 @@ import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions } from "../../../runtime/spec-auditor"
 import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
-import { generateDesignPreview } from "../../../runtime/html-renderer"
+import { generateDesignPreview, updateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 
@@ -614,7 +614,7 @@ async function runDesignAgent(params: {
 
   // Shared save logic: audit + save + preview + checkpoint.
   // Used by both save_design_spec_draft and apply_design_spec_patch tools.
-  const saveDesignDraft = async (content: string): Promise<{ result?: unknown; error?: string }> => {
+  const saveDesignDraft = async (content: string, specPatch?: string): Promise<{ result?: unknown; error?: string }> => {
     await update("_Auditing draft against product vision and architecture..._")
     const audit = await auditSpecDraft({
       draft: content,
@@ -629,16 +629,25 @@ async function runDesignAgent(params: {
     await update("_Saving draft to GitHub..._")
     await saveDraftDesignSpec({ featureName, filePath: designFilePath, content })
 
-    // Generate HTML preview in background — non-fatal.
+    // Generate HTML preview — non-fatal.
+    // If a cached HTML exists and this is a patch (not first save), use updateDesignPreview so only
+    // the changed spec sections are applied to the existing HTML. This prevents the renderer from
+    // re-improvising approved inspector states, animations, and brand values from scratch.
+    // For a first save (no specPatch) or when no cache exists, fall back to full generateDesignPreview.
     await update("_Generating HTML preview..._")
     const { paths: dp, githubOwner: dOwner, githubRepo: dRepo } = loadWorkspaceConfig()
     const designSpecUrl = `https://github.com/${dOwner}/${dRepo}/blob/${designBranchName}/${designFilePath}`
+    const htmlFilePath = `${dp.featuresRoot}/${featureName}/${featureName}.preview.html`
+    const existingHtml = await readFile(htmlFilePath, designBranchName).catch(() => "")
     let previewUrl = "none"
     let renderWarnings: string[] = []
-    const previewResult = await generateDesignPreview({ specContent: content, featureName, brandContent: context.brand }).catch((e: Error) => e)
+    const previewResult = await (
+      existingHtml && specPatch
+        ? updateDesignPreview({ existingHtml, specPatch, featureName, brandContent: context.brand })
+        : generateDesignPreview({ specContent: content, featureName, brandContent: context.brand })
+    ).catch((e: Error) => e)
     if (!(previewResult instanceof Error)) {
       renderWarnings = previewResult.warnings
-      const htmlFilePath = `${dp.featuresRoot}/${featureName}/${featureName}.preview.html`
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
       try {
         await client.files.uploadV2({
@@ -687,23 +696,34 @@ async function runDesignAgent(params: {
         const patch = input.patch as string
         const existingDraft = await readFile(designFilePath, designBranchName)
         const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
-        return saveDesignDraft(mergedDraft)
+        return saveDesignDraft(mergedDraft, patch)
       }
       if (name === "generate_design_preview") {
-        // Always render from the committed spec on GitHub — not from the agent's in-memory content.
-        // After thread summarization the agent's memory is stale; context.currentDraft (loaded from
-        // GitHub at turn start) is authoritative. If a save ran earlier this turn, reload from GitHub
-        // so the preview reflects the freshly committed content, not the pre-save snapshot.
-        let specContent: string
-        if (toolCallsOutDesign.some(t => designSaveTools.includes(t.name))) {
-          const freshContext = await loadDesignAgentContext(featureName)
-          specContent = freshContext.currentDraft ?? ""
-        } else {
-          specContent = context.currentDraft ?? ""
-        }
+        // Serve the HTML that was saved when the spec was last committed.
+        // The renderer is non-deterministic — regenerating from the same spec produces
+        // different HTML each time (different inspector states, animation values, headings).
+        // Only fall through to generation if no saved HTML exists yet (first preview).
+        const { paths: gp } = loadWorkspaceConfig()
+        const htmlFilePath = `${gp.featuresRoot}/${featureName}/${featureName}.preview.html`
         try {
+          await update("_Fetching preview..._")
+          const cachedHtml = await readFile(htmlFilePath, designBranchName)
+          if (cachedHtml) {
+            await client.files.uploadV2({
+              channel_id: channelId,
+              thread_ts: threadTs,
+              content: cachedHtml,
+              filename: `${featureName}.preview.html`,
+              title: `${featureName} — Design Preview`,
+            })
+            return { result: { previewUrl: "uploaded_to_slack" } }
+          }
+          // No cache exists — generate from committed spec and save for future requests.
+          // Use context.currentDraft (loaded from GitHub at turn start) — authoritative even
+          // after thread summarization clears the agent's in-memory spec content.
           await update("_Generating preview..._")
-          const previewResult = await generateDesignPreview({ specContent, featureName, brandContent: context.brand })
+          const previewResult = await generateDesignPreview({ specContent: context.currentDraft ?? "", featureName, brandContent: context.brand })
+          await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
           await client.files.uploadV2({
             channel_id: channelId,
             thread_ts: threadTs,
@@ -713,7 +733,7 @@ async function runDesignAgent(params: {
           })
           return { result: { previewUrl: "uploaded_to_slack", renderWarnings: previewResult.warnings.length > 0 ? previewResult.warnings : undefined } }
         } catch (err: any) {
-          return { error: `Preview generation failed: ${err?.message}` }
+          return { error: `Preview failed: ${err?.message}` }
         }
       }
       if (name === "fetch_url") {

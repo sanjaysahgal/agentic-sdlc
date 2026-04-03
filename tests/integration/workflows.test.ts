@@ -1178,3 +1178,150 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
     expect(uploadCall.title).not.toContain("not saved")
   })
 })
+
+
+// ─── Scenario 16: Deterministic previews — cache + patch-based rendering ──────
+//
+// Two behaviors verified here:
+//
+// Layer 1 (cache): generate_design_preview reads the saved HTML from the design branch
+// and serves it directly — no LLM renderer call. The preview is always identical across
+// "give me the preview" calls because the renderer is only invoked when the spec changes.
+//
+// Layer 2 (patch-based): apply_design_spec_patch passes the exact patch sections to
+// updateDesignPreview instead of the full merged spec. The renderer receives existing HTML
+// + only the changed sections, so approved inspector states and animations are preserved.
+
+describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-based on spec save", () => {
+  const THREAD = "workflow-s16"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("cached HTML served directly when generate_design_preview called (no LLM renderer call)", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Return cached HTML for the preview file; reject everything else (product vision, brand, etc.)
+    mockGetContent.mockImplementation(({ path }: { path?: string }) => {
+      if (path?.endsWith(".preview.html")) {
+        return Promise.resolve({
+          data: { content: Buffer.from("<html>cached preview CACHE_MARKER</html>").toString("base64"), type: "file" },
+        })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Call sequence (0 history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent         → false
+    //   [1] isSpecStateQuery           → false
+    //   [2] runAgent (tool_use)        → generate_design_preview
+    //       handler: cache hit → uploadV2(cached HTML) → return immediately (no renderer call)
+    //   [3] runAgent (end_turn)        → "Here's the latest preview."
+    //   [4] identifyUncommittedDecisions → all committed
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Agent Memory (irrelevant)" } }],
+      })
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Here's the latest preview." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+
+    const client = makeClient() as ReturnType<typeof makeClient> & { files: { uploadV2: ReturnType<typeof vi.fn> } }
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "give me the latest preview"), client })
+
+    // 5 Anthropic calls — no LLM renderer call (that would add a 6th)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+
+    // uploadV2 received the cached HTML, not a freshly generated one
+    const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(uploadCall.content).toContain("CACHE_MARKER")
+  })
+
+  it("first preview (no cache) calls renderer and saves HTML to branch", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    // default mockGetContent → "Not Found" for everything (set in beforeEach)
+
+    // Call sequence:
+    //   [0] isOffTopicForAgent, [1] isSpecStateQuery
+    //   [2] runAgent (tool_use) → generate_design_preview
+    //       handler: no cache → [3] generateDesignPreview (renderer) → saveDraftHtmlPreview → uploadV2
+    //   [4] runAgent (end_turn), [5] identifyUncommittedDecisions
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html><!DOCTYPE html><html>fresh</html>" }] }) // html-renderer
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview generated." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+
+    const client = makeClient() as ReturnType<typeof makeClient> & { files: { uploadV2: ReturnType<typeof vi.fn> } }
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "show me the preview"), client })
+
+    // HTML saved to branch (createOrUpdateFileContents called for the .preview.html file)
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    // uploadV2 received the freshly generated HTML
+    const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(uploadCall.content).toContain("fresh")
+  })
+
+  it("apply_design_spec_patch calls updateDesignPreview with the exact patch (not full spec)", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    const EXISTING_HTML = "<html>existing preview EXISTING_MARKER</html>"
+    const THE_PATCH = "## Screens\nNew dark mode screen layout PATCH_MARKER"
+
+    // Return existing HTML for preview file, existing spec for design file, reject everything else
+    mockGetContent.mockImplementation(({ path }: { path?: string }) => {
+      if (path?.endsWith(".preview.html")) {
+        return Promise.resolve({
+          data: { content: Buffer.from(EXISTING_HTML).toString("base64"), type: "file" },
+        })
+      }
+      if (path?.endsWith(".design.md")) {
+        return Promise.resolve({
+          data: { content: Buffer.from("## Existing Section\nContent.").toString("base64"), type: "file" },
+        })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Call sequence (0 history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent, [1] isSpecStateQuery
+    //   [2] runAgent (tool_use) → apply_design_spec_patch with THE_PATCH
+    //       handler: readFile(designFilePath) → existing spec; applySpecPatch; saveDesignDraft(merged, THE_PATCH)
+    //         saveDesignDraft: readFile(htmlFilePath) → EXISTING_HTML → [3] updateDesignPreview (patch-based renderer)
+    //   [4] runAgent (end_turn), [5] identifyUncommittedDecisions
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: THE_PATCH } }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>updated preview</html>" }] }) // updateDesignPreview renderer
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec and preview updated." }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "All discussed decisions appear to be in the committed spec." }] })
+
+    const client = makeClient() as ReturnType<typeof makeClient> & { files: { uploadV2: ReturnType<typeof vi.fn> } }
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "lock in dark mode screens"), client })
+
+    // The renderer (call index 3) received the patch content — not the full merged spec.
+    // updateDesignPreview puts specPatch in the user message alongside EXISTING HTML.
+    const rendererCall = mockAnthropicCreate.mock.calls[3][0]
+    const rendererUserMessage = rendererCall.messages[0].content as string
+    expect(rendererUserMessage).toContain("PATCH_MARKER")       // patch was passed through
+    expect(rendererUserMessage).toContain("EXISTING_MARKER")    // existing HTML was passed through
+  })
+})

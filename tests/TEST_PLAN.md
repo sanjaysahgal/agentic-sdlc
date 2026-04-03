@@ -1,6 +1,6 @@
 # archcon Test Plan
 
-**453 tests across 24 files — all passing**
+**456 tests across 24 files — all passing**
 
 Run: `npx vitest run`
 
@@ -546,7 +546,7 @@ Post-response uncommitted decisions audit — platform appends a save reminder w
 - skips uncommitted note when history is short (fresh conversation)
 - skips uncommitted note when save tool was called
 
-### `tests/integration/workflows.test.ts` — 32 tests
+### `tests/integration/workflows.test.ts` — 35 tests
 
 End-to-end multi-turn workflow tests. Each scenario runs multiple `handleFeatureChannelMessage` calls in sequence, asserting state transitions between turns.
 
@@ -627,6 +627,18 @@ Fix 2: `generate_design_preview` uses `context.currentDraft` (loaded from GitHub
 
 - audit fires and flags uncommitted decision when in-memory history is empty (guard removed)
 - generate_design_preview uses context.currentDraft from GitHub, not agent's stale in-memory specContent; upload title no longer says "(not saved)"
+
+**Scenario 16 — Deterministic previews: cache on pure-preview, patch-based on spec save**
+
+Two rendering behaviors that make previews stable across turns:
+
+Layer 1: `generate_design_preview` reads the saved HTML from the design branch and serves it directly — no LLM renderer call. The preview is always identical across "give me the preview" requests because the renderer is only invoked when the spec changes (on save). First-ever preview request (no cache) falls through to `generateDesignPreview` and saves the result for future requests.
+
+Layer 2: `apply_design_spec_patch` passes the exact patch sections (not the full merged spec) to `updateDesignPreview`. The renderer receives existing HTML + only the changed sections, so approved inspector states, animations, and brand values are not re-improvised from scratch.
+
+- cached HTML served directly when generate_design_preview called (no LLM renderer call, verified by Anthropic call count)
+- first preview (no cache) calls renderer and saves HTML to branch for future requests
+- apply_design_spec_patch calls updateDesignPreview with the exact patch — renderer receives specPatch and existingHtml, not the full merged spec
 
 ---
 
