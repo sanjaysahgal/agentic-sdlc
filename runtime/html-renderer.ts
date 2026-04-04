@@ -13,6 +13,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 3
  * 1. Hero x-show → :class  (hero stays visible before Alpine loads)
  * 2. Thread missing display:none → inject it  (thread stays hidden before Alpine loads)
  * 3. Single-quoted JS strings with apostrophes → double-quoted  (prevents appData() syntax errors)
+ * 4. Inspector buttons with :style only → inject static resting style  (buttons visible without Alpine)
  */
 export function sanitizeRenderedHtml(html: string): string {
   let out = html
@@ -73,6 +74,23 @@ export function sanitizeRenderedHtml(html: string): string {
     })
     return scriptTag.replace(body, fixed)
   })
+
+  // Fix 4: inspector buttons missing static resting styles.
+  // Any <button> that has a :style= binding (Alpine active-state highlight) but no static
+  // style= attribute will have no visible background, text color, or border before Alpine loads.
+  // Inject a safe dark-theme resting style. :style adds the active highlight on top.
+  // Signal: :style= with a conditional expression (the inspector pattern). This is narrow enough
+  // to avoid touching phone-frame buttons that use Tailwind classes instead of :style.
+  out = out.replace(
+    /<button\b([^>]*)>/g,
+    (match, attrs) => {
+      if (!/:style\s*=/.test(attrs)) return match          // not an Alpine-styled button
+      if (/(?<![:\w])style\s*=\s*"/.test(attrs)) return match  // already has static style — leave it
+      // Inject safe dark-theme resting appearance before the :style binding
+      const resting = `style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;" `
+      return `<button ${resting}${attrs}>`
+    }
+  )
 
   return out
 }

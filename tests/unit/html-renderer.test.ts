@@ -384,4 +384,28 @@ describe("sanitizeRenderedHtml", () => {
     const out = sanitizeRenderedHtml(html)
     expect(out).toBe(html)
   })
+
+  it("injects static resting style on button with :style but no static style", () => {
+    const html = `<button :style="inspectorMode === 'default' ? 'border-color:#8b5cf6' : ''" @click="applyMode('default')">Default</button>`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toMatch(/style="background:rgba/)
+    expect(out).toMatch(/color:rgba/)
+    expect(out).toMatch(/border:1px solid/)
+    // :style binding preserved
+    expect(out).toContain(":style=")
+  })
+
+  it("does not modify button that already has a static style attribute", () => {
+    const html = `<button style="background:#333;color:#fff" :style="inspectorMode === 'x' ? 'border-color:purple' : ''" @click="applyMode('x')">X</button>`
+    const out = sanitizeRenderedHtml(html)
+    // Should not double-inject
+    expect((out.match(/style=/g) ?? []).length).toBe(2) // static + :style
+    expect(out).not.toMatch(/background:rgba.*background:/)
+  })
+
+  it("does not modify button without :style binding", () => {
+    const html = `<button class="btn" @click="sendMsg(chip)">Send</button>`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toBe(html)
+  })
 })
