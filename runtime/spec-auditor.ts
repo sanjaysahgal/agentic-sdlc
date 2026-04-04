@@ -107,11 +107,15 @@ function findUndefinedScreenReferences(spec: string): string[] {
   return missing
 }
 
-export async function auditSpecRenderAmbiguity(designSpec: string): Promise<string[]> {
+export async function auditSpecRenderAmbiguity(designSpec: string, options?: { formFactors?: string[] }): Promise<string[]> {
   if (!designSpec) return []
 
   // Run deterministic check first — catches missing screen definitions without an LLM call
   const undefinedScreens = findUndefinedScreenReferences(designSpec)
+
+  const formFactorCheck = options?.formFactors && options.formFactors.length > 0
+    ? `- Layout defined for only one form factor when the spec targets ${options.formFactors.join(", ")}: flag any screen that has layout details but doesn't specify how it adapts across all target form factors`
+    : ""
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
@@ -128,7 +132,7 @@ Flag ONLY elements where a renderer must make an unspecified choice:
 - UI copy that is stated as "TBD", "to be determined", "placeholder", or any equivalent deferral — these are not defined values and cannot be rendered consistently
 - Screen states (loading, empty, error) that are named in the state list but have no visual description — named without definition is not defined
 - Values that appear with two different specifications within the same spec (e.g. a color token defined as two different hex codes in different sections)
-- Language that two renderers would interpret differently: "near the top", "slightly", "subtle", "prominent", "appropriate" used in place of a specific measurement or value
+- Language that two renderers would interpret differently: "near the top", "slightly", "subtle", "prominent", "appropriate" used in place of a specific measurement or value${formFactorCheck ? `\n${formFactorCheck}` : ""}
 
 Do NOT flag:
 - General aesthetic descriptions ("minimal", "dark, premium feel")

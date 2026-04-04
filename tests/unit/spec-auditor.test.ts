@@ -124,6 +124,27 @@ No additional requirements.
     // Vague measurement language
     expect(systemPrompt).toMatch(/near the top|slightly|subtle.*specific measurement/i)
   })
+
+  it("Haiku prompt includes form factor check when formFactors option is provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity(
+      "## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome",
+      { formFactors: ["mobile", "desktop"] }
+    )
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("mobile")
+    expect(systemPrompt).toContain("desktop")
+  })
+
+  it("Haiku prompt omits form factor check when formFactors option is not provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Without the option, no form factor language injected
+    expect(systemPrompt).not.toContain("form factor")
+  })
 })
 
 describe("auditSpecDraft", () => {

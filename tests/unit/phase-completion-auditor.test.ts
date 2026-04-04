@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
-import { auditPhaseCompletion, PM_RUBRIC, DESIGN_RUBRIC } from "../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, PM_RUBRIC, DESIGN_RUBRIC, buildDesignRubric } from "../../runtime/phase-completion-auditor"
 
 beforeEach(() => {
   mockCreate.mockReset()
@@ -171,5 +171,34 @@ describe("PM_RUBRIC and DESIGN_RUBRIC exports", () => {
   it("DESIGN_RUBRIC is exported as a non-empty string", () => {
     expect(typeof DESIGN_RUBRIC).toBe("string")
     expect(DESIGN_RUBRIC.length).toBeGreaterThan(0)
+  })
+
+  it("DESIGN_RUBRIC contains mobile and desktop form factors by default", () => {
+    expect(DESIGN_RUBRIC).toContain("mobile")
+    expect(DESIGN_RUBRIC).toContain("desktop")
+  })
+})
+
+describe("buildDesignRubric — form factor injection", () => {
+  it("injects custom form factors into criterion 9", () => {
+    const rubric = buildDesignRubric(["mobile", "tablet", "desktop"])
+    expect(rubric).toContain("mobile, tablet, desktop")
+  })
+
+  it("single form factor — mobile-only product skips desktop requirement", () => {
+    const rubric = buildDesignRubric(["mobile"])
+    expect(rubric).toContain("mobile")
+    expect(rubric).not.toContain("desktop")
+  })
+
+  it("form factor criterion names an explicit Non-Goals exception path", () => {
+    const rubric = buildDesignRubric(["mobile", "desktop"])
+    expect(rubric).toContain("Non-Goals")
+  })
+
+  it("returns a non-empty string for any non-empty form factor list", () => {
+    const rubric = buildDesignRubric(["mobile"])
+    expect(typeof rubric).toBe("string")
+    expect(rubric.length).toBeGreaterThan(0)
   })
 })

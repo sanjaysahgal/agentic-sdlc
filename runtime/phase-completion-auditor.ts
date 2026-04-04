@@ -104,7 +104,12 @@ export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories 
 
 // ─── Design Rubric ─────────────────────────────────────────────────────────────
 
-export const DESIGN_RUBRIC = `1. ALL SCREENS DEFINED — Every screen, sheet, modal, and overlay that appears in any ## User Flows flow must have a corresponding entry in ## Screens with: purpose, all states (at minimum: default, loading, empty, error), and interactions. A screen referenced in flows but absent from ## Screens is a blocking gap.
+// buildDesignRubric injects the team's target form factors into criterion 9.
+// Use this wherever you call auditPhaseCompletion for a design spec — pass targetFormFactors from WorkspaceConfig.
+// DESIGN_RUBRIC is the default (mobile + desktop) — exported for tests and as a fallback.
+export function buildDesignRubric(formFactors: string[]): string {
+  const formFactorList = formFactors.join(", ")
+  return `1. ALL SCREENS DEFINED — Every screen, sheet, modal, and overlay that appears in any ## User Flows flow must have a corresponding entry in ## Screens with: purpose, all states (at minimum: default, loading, empty, error), and interactions. A screen referenced in flows but absent from ## Screens is a blocking gap.
 
 2. ALL STATES FULLY SPECIFIED — For every screen in ## Screens, each named state must be defined with its visual treatment. "Error state: shows error message" is not a definition. "Error state: red inline text beneath the input reading the exact error string, no modal" is a definition. State names without visual descriptions are incomplete.
 
@@ -118,4 +123,9 @@ export const DESIGN_RUBRIC = `1. ALL SCREENS DEFINED — Every screen, sheet, mo
 
 7. BRAND TOKEN CONSISTENCY — Every color, font, and spacing value used in the spec must correspond to a named token from the ## Brand section or be an explicit "none" statement. Raw hex values in screen descriptions that don't match any brand token are a finding.
 
-8. NO TBD/TODO/PLACEHOLDER — The spec must contain zero instances of "TBD", "TODO", "PLACEHOLDER", "to be determined", "to be decided", "to come", "to be defined", or any equivalent deferral. Every such occurrence is a blocking gap.`
+8. NO TBD/TODO/PLACEHOLDER — The spec must contain zero instances of "TBD", "TODO", "PLACEHOLDER", "to be determined", "to be decided", "to come", "to be defined", or any equivalent deferral. Every such occurrence is a blocking gap.
+
+9. FORM FACTOR COVERAGE — Every screen must define layout behavior for all target form factors: ${formFactorList}. For each form factor, the spec must describe at minimum how key elements are arranged or sized at that viewport (e.g. single-column vs two-column, full-width vs fixed-width container, stacked vs side-by-side). A screen that defines layout for only one form factor without addressing the others is incomplete. The only acceptable exception is an explicit exclusion in ## Non-Goals (e.g. "Desktop layout is out of scope for this feature").`
+}
+
+export const DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"])

@@ -9,6 +9,7 @@ export type WorkspaceConfig = {
   githubOwner: string        // GitHub org or user
   githubRepo: string         // GitHub repo name
   mainChannel: string        // Main Slack channel for the concierge (e.g. "all-health360")
+  targetFormFactors: string[]  // Form factors the design must specify layout for, e.g. ["mobile", "desktop"]
   roles: {
     pmUser: string           // Slack user ID for the PM — used by Orchestrator alerts
     designerUser: string     // Slack user ID for the designer
@@ -41,6 +42,10 @@ export function loadWorkspaceConfig(): WorkspaceConfig {
     githubOwner,
     githubRepo,
     mainChannel: process.env.SLACK_MAIN_CHANNEL ?? "general",
+    targetFormFactors: (process.env.TARGET_FORM_FACTORS ?? "mobile,desktop")
+      .split(",")
+      .map(f => f.trim())
+      .filter(Boolean),
     roles: {
       pmUser:         process.env.SLACK_PM_USER         ?? "",
       designerUser:   process.env.SLACK_DESIGNER_USER   ?? "",

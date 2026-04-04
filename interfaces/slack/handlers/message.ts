@@ -9,14 +9,14 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
-import { auditPhaseCompletion, PM_RUBRIC, DESIGN_RUBRIC } from "../../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview, updateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 
-const { paths: workspacePaths } = loadWorkspaceConfig()
+const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
 // Per-feature flag: tracks which features have already received the context-summarization notice.
 // Prevents spamming the user on every message after the history limit is reached.
@@ -733,7 +733,7 @@ async function runDesignAgent(params: {
 
     const brandDrifts = context.brand ? auditBrandTokens(content, context.brand) : []
     const specGap = audit.status === "gap" ? audit.message : null
-    const renderAmbiguities = await auditSpecRenderAmbiguity(content).catch(() => [])
+    const renderAmbiguities = await auditSpecRenderAmbiguity(content, { formFactors: targetFormFactors }).catch(() => [])
     return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined, renderAmbiguities: renderAmbiguities.length > 0 ? renderAmbiguities : undefined } }
   }
 
@@ -832,7 +832,7 @@ async function runDesignAgent(params: {
         }
         const result = await auditPhaseCompletion({
           specContent: draft,
-          rubric: DESIGN_RUBRIC,
+          rubric: buildDesignRubric(targetFormFactors),
           featureName,
         })
         return { result }
@@ -1042,7 +1042,7 @@ async function runArchitectAgent(params: {
         ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
         : null,
       designSpecContentArch
-        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: DESIGN_RUBRIC, featureName }).catch(() => null)
+        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName }).catch(() => null)
         : null,
     ])
     const archFindings: string[] = []
