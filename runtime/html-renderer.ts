@@ -5,66 +5,142 @@ import Anthropic from "@anthropic-ai/sdk"
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000, maxRetries: 0 })
 
 /**
- * Validates structural properties of rendered HTML without hardcoding brand values.
- * Checks that the renderer produced what the system prompt instructed.
- * Returns a list of issues to surface to the agent (and thus the user).
+ * Deterministically fixes known structural violations that Sonnet produces despite
+ * explicit instructions. Running this after every generation eliminates the failure
+ * modes without relying on Sonnet to follow the rules correctly.
+ *
+ * Fixes applied:
+ * 1. Hero x-show → :class  (hero stays visible before Alpine loads)
+ * 2. Thread missing display:none → inject it  (thread stays hidden before Alpine loads)
+ * 3. Single-quoted JS strings with apostrophes → double-quoted  (prevents appData() syntax errors)
  */
-function validateRenderedHtml(html: string, brandContent?: string): string[] {
-  const issues: string[] = []
+export function sanitizeRenderedHtml(html: string): string {
+  let out = html
+
+  // Fix 1: hero x-show → :class
+  // Matches the opening tag of id="hero" when it contains an x-show attribute.
+  // Removes the x-show and adds :class so hero starts visible without JS.
+  out = out.replace(
+    /(<div\b[^>]*\bid="hero"[^>]*)\bx-show="[^"]*"([^>]*>)/g,
+    (_, before, after) => {
+      const tag = before + after
+      // Only inject :class if not already present
+      if (!tag.includes(":class")) {
+        return before + ' :class="{ \'hidden\': msgs.length > 0 || typing }"' + after
+      }
+      return tag
+    }
+  )
+  // Handle id="hero" after other attributes too
+  out = out.replace(
+    /(<div\b[^>]*)\bx-show="[^"]*"([^>]*\bid="hero"[^>]*>)/g,
+    (_, before, after) => {
+      const tag = before + after
+      if (!tag.includes(":class")) {
+        return before + ' :class="{ \'hidden\': msgs.length > 0 || typing }"' + after
+      }
+      return tag
+    }
+  )
+
+  // Fix 2: thread missing display:none
+  // Finds the opening tag of id="thread" and injects display:none into its style attribute.
+  // If style= already exists, prepends to it. If no style, adds one.
+  out = out.replace(
+    /(<(?:div|section)\b[^>]*\bid="thread"[^>]*)(>)/g,
+    (_, tag, close) => {
+      if (tag.includes("display:none") || tag.includes("display: none")) return _ // already fine
+      if (/style\s*=\s*"/.test(tag)) {
+        // Prepend display:none to existing style value
+        return tag.replace(/style\s*=\s*"/, 'style="display:none; ') + close
+      }
+      return tag + ' style="display:none;"' + close
+    }
+  )
+
+  // Fix 3: single-quoted JS strings with apostrophes inside <script> blocks
+  // Converts 'text with apostrophe's' → "text with apostrophe's"
+  // Only operates inside <script>...</script> to avoid touching HTML attribute values.
+  out = out.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (scriptTag, body) => {
+    // Replace single-quoted strings that contain an apostrophe (word char after closing quote)
+    // Strategy: find 'word's pattern and convert to double quotes
+    const fixed = body.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (match: string, inner: string) => {
+      // If inner content contains an apostrophe (not escaped), it was a broken string
+      if (/\w'\w/.test(inner) || inner.includes("\u2019")) {
+        return '"' + inner.replace(/"/g, '\\"') + '"'
+      }
+      return match // leave single-quoted strings without apostrophes alone
+    })
+    return scriptTag.replace(body, fixed)
+  })
+
+  return out
+}
+
+/**
+ * Validates structural properties of rendered HTML without hardcoding brand values.
+ * Returns { blocking, warnings } — blocking issues warrant a retry; warnings are surfaced
+ * to the caller but do not prevent the HTML from being used.
+ *
+ * Blocking (retry-worthy):
+ * - Truncated HTML (cut off before </html>)
+ * - JS syntax error that the sanitizer couldn't fix (apostrophes remaining in script blocks)
+ *
+ * Warnings (non-blocking):
+ * - Missing keyframe animations
+ * - Body background-color not in <style>
+ * - Brand background token not applied
+ * - Hero still using x-show after sanitization
+ * - Thread still missing display:none after sanitization
+ */
+function validateRenderedHtml(html: string, brandContent?: string): { blocking: string[]; warnings: string[] } {
+  const blocking: string[] = []
+  const warnings: string[] = []
+
+  // --- Blocking checks ---
+
+  if (!html.trim().endsWith("</html>")) {
+    blocking.push("HTML appears truncated — missing closing </html>")
+  }
+
+  // JS syntax error: apostrophe inside single-quoted string in a <script> block.
+  // Pattern: 'word's — a single quote, word chars, apostrophe, word char.
+  if (/<script\b[^>]*>[\s\S]*?'\w+'\w[\s\S]*?<\/script>/i.test(html)) {
+    blocking.push("Unescaped apostrophe in JavaScript string literal — Alpine will fail to initialize")
+  }
+
+  // --- Warning checks ---
 
   if (!html.includes("@keyframes")) {
-    issues.push("No CSS keyframe animations found — glow animation likely missing")
+    warnings.push("No CSS keyframe animations found — glow animation likely missing")
   }
-  if (!html.trim().endsWith("</html>")) {
-    issues.push("HTML appears truncated — missing closing </html>")
-  }
+
   // Body background must be in explicit CSS — Tailwind custom classes fail on file:// URLs
   if (!html.match(/body\s*\{[^}]*background(?:-color)?:/s)) {
-    issues.push("Body has no explicit CSS background-color in <style> — dark background will not render when opened from disk. Use background-color in the <style> tag, not just a Tailwind class.")
+    warnings.push("Body has no explicit CSS background-color in <style> — dark background will not render when opened from disk. Use background-color in the <style> tag, not just a Tailwind class.")
   }
 
   if (brandContent) {
-    // Extract the canonical background token from BRAND.md to verify it was applied.
-    // This is the only brand-specific check — derived from runtime BRAND.md, never hardcoded.
     const bgMatch = brandContent.match(/--bg:\s*(#[0-9A-Fa-f]{6})/)
     if (bgMatch && !html.includes(bgMatch[1])) {
-      issues.push(`Background token ${bgMatch[1]} (--bg from BRAND.md) not found in rendered HTML`)
+      warnings.push(`Background token ${bgMatch[1]} (--bg from BRAND.md) not found in rendered HTML`)
     }
   }
 
-  // Detect unescaped apostrophes inside single-quoted JavaScript strings — the most common
-  // cause of Alpine.js initialization failure (e.g. 'How's my heart rate?' in a chips array).
-  // A syntax error in appData() makes Alpine throw on x-data="appData()" → all x-show elements
-  // stay display:none from Alpine's pre-init walk → hero permanently hidden → blank phone screen.
-  const singleQuotedStrings = html.matchAll(/'([^'\\]*)'/g)
-  for (const m of singleQuotedStrings) {
-    // If the captured content contains an apostrophe character that got through, flag it.
-    // This catches the case where the regex engine matched a broken string across boundaries.
-    if (m[1].includes("\u2019") || m.input?.slice(m.index, m.index + m[0].length).match(/'\w+'\w/)) {
-      issues.push("Possible unescaped apostrophe in single-quoted JavaScript string — use double quotes for all string literals in appData() chips, msgs, and text values")
-      break
-    }
-  }
-  // Simpler check: look for the classic pattern of word-apostrophe-word inside a JS string context
-  // e.g. 'How's' or 'What's' — matches a closing quote after a word, then a word char continuing
-  if (/<script[\s\S]*?'[A-Za-z]+\s*'[A-Za-z][\s\S]*?<\/script>/i.test(html)) {
-    issues.push("Possible unescaped apostrophe in JavaScript string literal — use double-quoted strings for all chip labels, message text, and string values in appData()")
-  }
-
-  // Hero must NOT use x-show (causes blank screen on Alpine init failure)
+  // Hero must NOT use x-show (sanitizer should have fixed this — warn if it remains)
   if (/id="hero"[^>]*x-show/i.test(html) || /x-show[^>]*id="hero"/i.test(html)) {
-    issues.push('Hero element uses x-show — hero will be blank if Alpine fails to initialize. Use :class="{ hidden: msgs.length > 0 || typing }" instead.')
+    warnings.push('Hero element uses x-show — hero will be blank if Alpine fails to initialize. Use :class="{ hidden: msgs.length > 0 || typing }" instead.')
   }
 
-  // Thread must have style="display:none" alongside x-show (so it starts hidden before Alpine loads)
+  // Thread must have display:none (sanitizer should have fixed this — warn if it remains)
   if (/id="thread"/.test(html)) {
-    const threadMatch = html.match(/id="thread"[^>]*>|<[^>]+id="thread"[^>]*>/)
-    if (threadMatch && !threadMatch[0].includes("display:none") && !threadMatch[0].includes('display: none')) {
-      issues.push('Thread element is missing style="display:none" — without this, thread is visible before Alpine loads')
+    const threadMatch = html.match(/<[^>]+id="thread"[^>]*>/)
+    if (threadMatch && !threadMatch[0].includes("display:none") && !threadMatch[0].includes("display: none")) {
+      warnings.push('Thread element is missing style="display:none" — without this, thread is visible before Alpine loads')
     }
   }
 
-  return issues
+  return { blocking, warnings }
 }
 
 /**
@@ -109,10 +185,7 @@ ${brandContent}
 `
     : ""
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 32000,
-    system: `You generate beautiful, self-contained HTML preview files directly from design specs. The output will be opened in a browser to let a designer approve or iterate on the spec before it goes to engineering.
+  const SYSTEM = `You generate beautiful, self-contained HTML preview files directly from design specs. The output will be opened in a browser to let a designer approve or iterate on the spec before it goes to engineering.
 
 ## Output requirements
 
@@ -473,7 +546,12 @@ chips: [
 ]
 \`\`\`
 
-A syntax error anywhere in the \`appData()\` function body causes Alpine to throw on \`x-data="appData()"\`. Alpine's pre-init walk then sets ALL \`x-show\` elements to \`display:none\` and never completes the show pass. Result: every element with \`x-show\` stays hidden permanently — the phone screen is completely blank.`,
+A syntax error anywhere in the \`appData()\` function body causes Alpine to throw on \`x-data="appData()"\`. Alpine's pre-init walk then sets ALL \`x-show\` elements to \`display:none\` and never completes the show pass. Result: every element with \`x-show\` stays hidden permanently — the phone screen is completely blank.`
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
+    system: SYSTEM,
     messages: [
       {
         role: "user",
@@ -484,21 +562,56 @@ ${specContent}`,
     ],
   })
 
-  const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
-
-  const html = text
-    .replace(/^```html\n?/, "")
-    .replace(/^```\n?/, "")
-    .replace(/\n?```$/, "")
-    .trim()
-
-  // Validate completeness — a truncated HTML file renders as a broken screen.
-  if (!html.includes("</html>")) {
-    throw new Error("HTML preview was truncated before </html> — spec may be too large for a single render pass")
+  function extractHtml(response: Anthropic.Message): string {
+    const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
+    return text
+      .replace(/^```html\n?/, "")
+      .replace(/^```\n?/, "")
+      .replace(/\n?```$/, "")
+      .trim()
   }
 
-  const warnings = [...validateRenderedHtml(html, brandContent), ...validateTextFidelity(html, specContent)]
-  return { html, warnings }
+  // Pass 1: sanitize + validate
+  const raw1 = extractHtml(response)
+  const sanitized1 = sanitizeRenderedHtml(raw1)
+  const { blocking: blocking1, warnings: warnings1 } = validateRenderedHtml(sanitized1, brandContent)
+
+  // If no blocking issues, we're done
+  if (blocking1.length === 0) {
+    const allWarnings = [...warnings1, ...validateTextFidelity(sanitized1, specContent)]
+    return { html: sanitized1, warnings: allWarnings }
+  }
+
+  // Blocking issues remain — retry once. A syntax error or truncated render won't fix itself
+  // via sanitization alone; the second LLM pass has the error list injected as context.
+  const retryPrompt = `${brandBlock}Feature: ${featureName}
+
+${specContent}
+
+---
+PREVIOUS RENDER FAILED — fix these issues in your new output:
+${blocking1.map(b => `- ${b}`).join("\n")}
+
+Output a complete, valid HTML file. Start with <!DOCTYPE html>, end with </html>. Use double-quoted strings for ALL JavaScript string literals.`
+
+  const response2 = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
+    system: SYSTEM,
+    messages: [{ role: "user", content: retryPrompt }],
+  })
+
+  const raw2 = extractHtml(response2)
+  const sanitized2 = sanitizeRenderedHtml(raw2)
+  const { blocking: blocking2, warnings: warnings2 } = validateRenderedHtml(sanitized2, brandContent)
+
+  // If still blocking after retry (e.g. still truncated), throw — the spec is too large
+  if (blocking2.length > 0) {
+    throw new Error(`HTML preview failed after retry: ${blocking2.join("; ")}`)
+  }
+
+  const allWarnings = [...warnings2, ...validateTextFidelity(sanitized2, specContent)]
+  return { html: sanitized2, warnings: allWarnings }
 }
 
 // Applies targeted updates to an existing HTML preview based on the spec sections that changed.
@@ -564,6 +677,8 @@ Apply the patch to the HTML. Return the complete HTML file.`,
     throw new Error("HTML preview was truncated before </html>")
   }
 
-  const warnings = [...validateRenderedHtml(html, brandContent), ...validateTextFidelity(html, specPatch)]
-  return { html, warnings }
+  const sanitized = sanitizeRenderedHtml(html)
+  const { warnings: structuralWarnings } = validateRenderedHtml(sanitized, brandContent)
+  const warnings = [...structuralWarnings, ...validateTextFidelity(sanitized, specPatch)]
+  return { html: sanitized, warnings }
 }

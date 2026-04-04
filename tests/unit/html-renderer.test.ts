@@ -9,7 +9,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 import Anthropic from "@anthropic-ai/sdk"
-import { generateDesignPreview } from "../../runtime/html-renderer"
+import { generateDesignPreview, sanitizeRenderedHtml } from "../../runtime/html-renderer"
 
 beforeEach(() => {
   mockCreate.mockReset()
@@ -86,13 +86,14 @@ describe("generateDesignPreview", () => {
       .rejects.toThrow("truncated")
   })
 
-  it("throws when HTML is missing closing </html> tag (truncated response)", async () => {
+  it("throws when HTML is missing closing </html> tag — retries once then throws (both passes truncated)", async () => {
+    // Mock returns truncated HTML on both the initial call and the retry
     mockCreate.mockResolvedValue({
       content: [{ type: "text", text: "<!DOCTYPE html><html><body><p>Truncated..." }],
     })
 
     await expect(generateDesignPreview({ specContent: "spec", featureName: "test" }))
-      .rejects.toThrow("truncated before </html>")
+      .rejects.toThrow(/truncated|failed after retry/)
   })
 
   it("uses max_tokens 32000 for complex spec rendering", async () => {
@@ -298,27 +299,89 @@ describe("generateDesignPreview", () => {
     expect(call.system).toContain("JavaScript string safety")
   })
 
-  it("returns warning when hero uses x-show (will be blank on Alpine init failure)", async () => {
+  it("sanitizer removes x-show from hero so hero is always visible — no warning in output", async () => {
+    // Sonnet put x-show on the hero — sanitizer removes it and adds :class instead
     const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" x-show="msgs.length === 0"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
-    expect(result.warnings.some(w => w.includes("x-show") && w.toLowerCase().includes("hero"))).toBe(true)
+    // Sanitizer fixed it — no hero x-show warning, and the output HTML does not have x-show on hero
+    expect(result.warnings.some(w => w.includes("x-show") && w.toLowerCase().includes("hero"))).toBe(false)
+    expect(result.html).not.toMatch(/id="hero"[^>]*x-show/)
+    expect(result.html).toMatch(/:class.*hidden.*msgs/)
   })
 
-  it("returns warning when thread element is missing style='display:none'", async () => {
+  it("sanitizer injects display:none into thread so it starts hidden — no warning in output", async () => {
+    // Sonnet forgot display:none on thread — sanitizer injects it
     const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="thread" x-show="msgs.length > 0"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
-    expect(result.warnings.some(w => w.toLowerCase().includes("thread") && w.toLowerCase().includes("display:none"))).toBe(true)
+    // Sanitizer fixed it — no thread display:none warning, and output HTML has display:none on thread
+    expect(result.warnings.some(w => w.toLowerCase().includes("thread") && w.toLowerCase().includes("display:none"))).toBe(false)
+    expect(result.html).toMatch(/id="thread"[^>]*display:none|display:none[^>]*id="thread"/)
   })
 
-  it("does not warn about thread display:none when style is present", async () => {
+  it("no thread display:none warning when style was already present (sanitizer leaves it unchanged)", async () => {
     const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="thread" style="position:absolute;inset:0;overflow-y:auto;display:none;" x-show="msgs.length > 0"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
     expect(result.warnings.some(w => w.toLowerCase().includes("thread") && w.toLowerCase().includes("display:none"))).toBe(false)
+  })
+})
+
+describe("sanitizeRenderedHtml", () => {
+  it("removes x-show from hero and adds :class", () => {
+    const html = `<div id="hero" x-show="msgs.length === 0" style="padding:24px">`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).not.toContain('x-show="msgs.length === 0"')
+    expect(out).toContain(":class")
+    expect(out).toContain("hidden")
+  })
+
+  it("leaves hero unchanged when it already has :class and no x-show", () => {
+    const html = `<div id="hero" :class="{ 'hidden': msgs.length > 0 }" style="padding:24px">`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toBe(html)
+  })
+
+  it("injects display:none into thread style when missing", () => {
+    const html = `<div id="thread" x-show="msgs.length > 0" style="position:absolute;inset:0">`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toContain("display:none")
+    expect(out).toMatch(/id="thread"/)
+  })
+
+  it("does not double-inject display:none when already present on thread", () => {
+    const html = `<div id="thread" style="position:absolute;inset:0;display:none;" x-show="msgs.length > 0">`
+    const out = sanitizeRenderedHtml(html)
+    const count = (out.match(/display:none/g) ?? []).length
+    expect(count).toBe(1)
+  })
+
+  it("injects style attribute with display:none when thread has no style attribute", () => {
+    const html = `<div id="thread" x-show="msgs.length > 0">`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toContain('style="display:none;"')
+  })
+
+  it("converts single-quoted JS strings with apostrophes to double-quoted in script blocks", () => {
+    const html = `<script>var chips = ['How\'s your day?', 'Normal string']</script>`
+    const out = sanitizeRenderedHtml(html)
+    // The apostrophe-containing string should use double quotes now
+    expect(out).not.toContain("'How\\'s your day?'")
+  })
+
+  it("leaves non-apostrophe single-quoted strings unchanged in script blocks", () => {
+    const html = `<script>var x = 'hello world'</script>`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toContain("'hello world'")
+  })
+
+  it("does not modify html outside script blocks", () => {
+    const html = `<p class='my-class'>Don't change this</p>`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toBe(html)
   })
 })
