@@ -11,6 +11,106 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
+describe("auditSpecRenderAmbiguity — undefined screen detection", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("flags a screen referenced in User Flows but missing from Screens section", async () => {
+    // LLM returns empty — deterministic check must catch the missing screen
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+
+    const spec = `
+## Screens
+
+### Screen 1: Chat Home
+**Purpose:** Main chat interface.
+
+## User Flows
+
+### Flow: US-1 — New user sign-up
+Landing (logged-out) → Auth Sheet (default) → Landing (logged-in)
+`
+    const result = await auditSpecRenderAmbiguity(spec)
+    // The finding names the screen (Auth) not the type — check for the name
+    expect(result.some(s => s.toLowerCase().includes("auth"))).toBe(true)
+    expect(result.some(s => s.toLowerCase().includes("screens section"))).toBe(true)
+  })
+
+  it("does NOT flag a screen that IS defined in Screens section", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+
+    const spec = `
+## Screens
+
+### Screen 1: Chat Home
+**Purpose:** Main chat interface.
+
+### Screen 2: Auth Sheet
+**Purpose:** Sign-in via SSO.
+
+## User Flows
+
+### Flow: US-1 — New user sign-up
+Landing (logged-out) → Auth Sheet (default) → Landing (logged-in)
+`
+    const result = await auditSpecRenderAmbiguity(spec)
+    // Auth Sheet is defined → should not be flagged by the deterministic check
+    expect(result.some(s => s.toLowerCase().includes("auth sheet"))).toBe(false)
+  })
+
+  it("merges deterministic findings with LLM findings", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: '["Button label not specified"]' }],
+    })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+
+    const spec = `
+## Screens
+
+### Screen 1: Chat Home
+**Purpose:** Main chat interface.
+
+## User Flows
+
+### Flow: US-1
+Landing → Auth Sheet (default) → Landing (logged-in)
+`
+    const result = await auditSpecRenderAmbiguity(spec)
+    expect(result.some(s => s.toLowerCase().includes("auth"))).toBe(true)
+    expect(result).toContain("Button label not specified")
+    expect(result.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("returns empty array for spec with no User Flows section", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+
+    const spec = `
+## Screens
+
+### Screen 1: Chat Home
+**Purpose:** Main chat interface.
+
+## Accessibility
+No additional requirements.
+`
+    const result = await auditSpecRenderAmbiguity(spec)
+    expect(result).toEqual([])
+  })
+
+  it("Haiku prompt includes animation spec requirement for sheets and modals", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toMatch(/entry\/exit animation.*timing.*easing/i)
+  })
+})
+
 describe("auditSpecDraft", () => {
   beforeEach(() => {
     vi.resetModules()

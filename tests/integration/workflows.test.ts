@@ -1035,6 +1035,32 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     const text = lastUpdateText(client)
     expect(text).not.toContain("⚠️")
   })
+
+  it("does not fire warning when agent response ends with 'Lock this in?' — agentStillSeeking guard", async () => {
+    seedHistory("onboarding", 3)
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Agent recommends glow opacity and asks "Lock this in?" — no save, but confirmation is pending.
+    // Call sequence (history=3, length < 6 → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent  → false
+    //   [1] isSpecStateQuery    → false
+    //   [2] runAgent (end_turn) → recommendation + "Lock this in?"
+    //   NO identifyUncommittedDecisions call (agentStillSeeking guard fires)
+    const agentResponseWithSeekingPhrase = "My recommendation: use 8–12% glow opacity (subtle ambient warmth). Lock this in?"
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: agentResponseWithSeekingPhrase }] }) // runAgent
+
+    const client = makeClient()
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "what glow opacity do you recommend?"), client })
+
+    // Only 3 calls — identifyUncommittedDecisions is NOT called when agentStillSeeking
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+    const text = lastUpdateText(client)
+    expect(text).not.toContain("⚠️")
+    expect(text).toContain("Lock this in?")
+  })
 })
 
 

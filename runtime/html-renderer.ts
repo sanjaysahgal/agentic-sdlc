@@ -353,14 +353,30 @@ Every named screen and state must also be reachable directly from nav tabs and s
 
 When the spec describes a chat home screen, the default (empty) state MUST show a centered hero section:
 - This hero is a SEPARATE div below the nav bar — it is NOT inside the nav
-- The nav bar contains the app name left-aligned (always visible) — the hero heading is CENTERED and only visible when \`msgs.length === 0 && !typing\`
+- The nav bar contains the app name left-aligned (always visible)
 - Hero content: \`<h1>\` with the app name in gradient text matching the spec, centered
 - Tagline below the h1, centered, in muted text color
 - Glow effect behind the hero (per glow pattern above)
 - Starter chips row below the tagline (horizontal, nowrap, scrollable)
 - The prompt bar is always pinned at the bottom of the phone frame
 
-When the user sends a message: hide the hero, show the conversation thread.`,
+**Static-first hero — REQUIRED:** The hero MUST be visible without JavaScript. Do NOT put the hero behind \`x-show\` or \`x-if\`. Alpine.js hides elements with \`x-show\` as \`display:none\` before initialization — when opened in Slack's file viewer or with JS disabled, the hero will be blank.
+
+**Pattern to use:**
+\`\`\`html
+<!-- Hero: always in DOM, always visible by default -->
+<div id="hero">
+  <h1>App Name</h1>
+  <p>Tagline</p>
+  <!-- chips -->
+</div>
+<!-- Thread: hidden by default, shown by Alpine when msgs exist -->
+<div id="thread" style="display:none" x-show="msgs.length > 0 || typing">
+  <!-- messages -->
+</div>
+\`\`\`
+
+When the user sends a message: Alpine shows the thread. Use :class or Alpine's x-show on the THREAD (not the hero). The hero can then be hidden reactively via \`:class="{ 'hidden': msgs.length > 0 || typing }"\` on the hero div — CSS class-based toggling is safe because the hero starts visible.`,
     messages: [
       {
         role: "user",

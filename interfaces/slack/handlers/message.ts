@@ -819,7 +819,10 @@ async function runDesignAgent(params: {
   // Slack thread summarization resets in-memory history), catching hallucinated saves.
   const didSave = toolCallsOutDesign.some(t => designSaveTools.includes(t.name))
   let uncommittedNote = ""
-  if (!didSave) {
+  // Skip the audit when the agent is still seeking confirmation — the user hasn't agreed yet,
+  // so decisions are genuinely uncommitted by design. Firing the warning here is a false positive.
+  const agentStillSeeking = /lock this in\?|confirm\?|shall i (save|apply|commit|update)\?|save this\?|ready to (commit|save|lock)\?/i.test(response)
+  if (!didSave && !agentStillSeeking) {
     const currentTurn: Message[] = [
       { role: "user", content: userMessage },
       { role: "assistant", content: response },

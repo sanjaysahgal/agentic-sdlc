@@ -84,8 +84,34 @@ ${draft}`,
 // "Consistent" means two independent renderers given the same spec produce the same output.
 // Returns an array of specific ambiguity strings; empty array means the spec is render-ready.
 // Non-blocking — ambiguities don't prevent save; they surface to the agent as required fixes.
+
+// Deterministic pre-filter: finds screens/sheets/modals referenced in User Flows
+// that have no corresponding definition in the ## Screens section.
+// No LLM needed — exact substring match is sufficient for structured section names.
+function findUndefinedScreenReferences(spec: string): string[] {
+  const screensSection = spec.match(/## Screens([\s\S]*?)(?:\n## |\n# |$)/)?.[1] ?? ""
+  const flowsSection = spec.match(/## User Flows([\s\S]*?)(?:\n## |\n# |$)/)?.[1] ?? ""
+  if (!flowsSection) return []
+
+  const refs = new Map<string, string>() // lowercased name → original name
+  for (const match of flowsSection.matchAll(/\b([\w][\w\s-]{1,30}?)\s+(screen|sheet|modal|overlay)\b/gi)) {
+    refs.set(match[1].trim().toLowerCase(), match[1].trim())
+  }
+
+  const missing: string[] = []
+  for (const [lower, original] of refs) {
+    if (!screensSection.toLowerCase().includes(lower)) {
+      missing.push(`"${original}" referenced in User Flows but has no definition in ## Screens section`)
+    }
+  }
+  return missing
+}
+
 export async function auditSpecRenderAmbiguity(designSpec: string): Promise<string[]> {
   if (!designSpec) return []
+
+  // Run deterministic check first — catches missing screen definitions without an LLM call
+  const undefinedScreens = findUndefinedScreenReferences(designSpec)
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
@@ -96,6 +122,7 @@ Flag ONLY elements where a renderer must make an unspecified choice:
 - Screens with no title/subtitle defined and no explicit "no title" or "no subtitle" statement
 - UI element positions described only as relative ("between X and Y", "near the bottom") without exact pixel spacing
 - Sheets, modals, or overlays with no entry direction (from bottom, from top, overlay fade-in)
+- Sheets, modals, or overlays with no entry/exit animation, timing, or easing specified (e.g. defined as "bottom sheet" but no slide-up animation duration or easing)
 - Interactive element text (button labels, chip labels, placeholder text) not defined in the spec
 - Animation behavior described vaguely ("smooth transition") without timing values when the spec references an animation
 
@@ -112,12 +139,15 @@ Return ONLY the JSON array, no preamble or explanation.`,
   })
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "[]"
+  let llmAmbiguities: string[] = []
   try {
     const parsed = JSON.parse(text)
-    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
+    llmAmbiguities = Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
   } catch {
-    return []
+    llmAmbiguities = []
   }
+
+  return [...undefinedScreens, ...llmAmbiguities]
 }
 
 // ─── Decision audit ────────────────────────────────────────────────────────────

@@ -180,7 +180,7 @@ The principle: **the specialist surfaces all violations proactively**. The human
 | Audit | File | What it checks | Model |
 |---|---|---|---|
 | Spec conflict + gap | `runtime/spec-auditor.ts` → `auditSpecDraft()` | Vision conflicts, architecture gaps | Haiku (runs post-draft-save) |
-| Render ambiguity | `runtime/spec-auditor.ts` → `auditSpecRenderAmbiguity()` | Elements too vague for consistent rendering (undefined text, relative-only positioning, no sheet entry direction, vague animation) | Haiku (runs post-draft-save, result in tool return) |
+| Render ambiguity | `runtime/spec-auditor.ts` → `auditSpecRenderAmbiguity()` | Two-stage: (1) deterministic pre-filter — screens referenced in User Flows but missing from Screens section (no LLM); (2) Haiku — defined-but-vague elements: undefined text, relative-only positioning, no sheet entry direction, no entry/exit animation timing, vague animation | Deterministic + Haiku (runs post-draft-save, result in tool return; design agent must resolve all before next response) |
 | Renderer text fidelity | `runtime/html-renderer.ts` → `validateTextFidelity()` | Spec-defined text literals (Heading, Tagline, etc.) appear verbatim in rendered HTML | None (pure string match) |
 | Brand color drift | `runtime/brand-auditor.ts` → `auditBrandTokens()` | Entire spec hex values vs BRAND.md (all sections, not just ## Brand) | None (pure string diff) |
 | Brand animation drift | `runtime/brand-auditor.ts` → `auditAnimationTokens()` | Spec glow duration, blur radius vs BRAND.md ## Animation section | None (pure string diff) |

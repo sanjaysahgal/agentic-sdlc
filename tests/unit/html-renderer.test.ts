@@ -236,7 +236,7 @@ describe("generateDesignPreview", () => {
     expect(call.system).toContain("applyMode")
   })
 
-  it("system prompt requires empty-state hero to be separate from nav bar", async () => {
+  it("system prompt requires empty-state hero to be separate from nav bar and static-first (no x-show on hero)", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -244,7 +244,9 @@ describe("generateDesignPreview", () => {
     const call = mockCreate.mock.calls[0][0]
     // Hero is a separate div below the nav — nav contains app name left-aligned
     expect(call.system).toContain("SEPARATE div below the nav bar")
-    // Hero is only visible in empty state
-    expect(call.system).toContain("msgs.length === 0")
+    // Static-first: hero must be visible without JavaScript — not behind x-show
+    expect(call.system).toContain("Static-first hero")
+    expect(call.system).toContain("Do NOT put the hero behind")
+    expect(call.system).toContain("x-show")
   })
 })

@@ -622,4 +622,30 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("When uncertain, use")
     expect(prompt).toContain("generate_design_preview")
   })
+
+  it("rule 8 — renderAmbiguities are blocking: agent must fix every one before next response", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("renderAmbiguities")
+    expect(prompt).toContain("Render ambiguities are blocking")
+    expect(prompt).toContain("must address every one before the next response")
+  })
+
+  it("rule 9 — [PROPOSED ADDITION] blocks surface as numbered decisions with recommendations", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("[PROPOSED ADDITION]")
+    expect(prompt).toContain("Unresolved proposals are not spec")
+    expect(prompt).toContain("numbered")
+    expect(prompt).toContain("My recommendation")
+  })
+
+  it("save tool descriptions mention renderAmbiguities return value", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    const saveToolIdx = prompt.indexOf("save_design_spec_draft")
+    const patchToolIdx = prompt.indexOf("apply_design_spec_patch")
+    expect(saveToolIdx).toBeGreaterThan(-1)
+    expect(patchToolIdx).toBeGreaterThan(-1)
+    // renderAmbiguities must appear in each tool's description
+    expect(prompt.slice(saveToolIdx).indexOf("renderAmbiguities")).toBeGreaterThan(-1)
+    expect(prompt.slice(patchToolIdx).indexOf("renderAmbiguities")).toBeGreaterThan(-1)
+  })
 })
