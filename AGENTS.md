@@ -124,6 +124,15 @@ Every spec-producing agent must implement a phase completion gate before it is c
 
 **Save-time vs completion-gate:** The Haiku `auditSpecRenderAmbiguity` is the fast, frequent save-time pass (catches incremental gaps as you work). The Sonnet completion gate is the comprehensive one-shot pass at approval. They are complementary — Haiku catches regressions early; Sonnet provides the definitive engineering-readiness verdict.
 
+**Phase entry upstream spec audit:** In addition to the completion gate (which fires at the end of each phase), every agent audits the spec(s) approved in the previous phase on every message — automatically, without the user needing to trigger it.
+
+- Design agent: audits the approved PM spec against `PM_RUBRIC` on every message.
+- Architect agent: audits both the approved PM spec (`PM_RUBRIC`) and approved design spec (`DESIGN_RUBRIC`) in parallel on every message.
+
+Implementation: `message.ts` reads the upstream spec(s) from `main`, fingerprints their content, and checks an in-memory content-addressed cache. On a cache miss (first message after deployment, or after any manual edit to an upstream spec), `auditPhaseCompletion()` runs and the result is cached under the content fingerprint. Findings are injected as a `[PLATFORM UPSTREAM SPEC AUDIT]` notice into the enriched user message, which the agent surfaces to the user and recommends returning to the relevant upstream agent to address.
+
+This covers two scenarios: (1) a gap in a just-approved spec that slipped past the completion gate, and (2) a manual edit to an upstream spec mid-phase — the fingerprint change invalidates the cache automatically, and the next message triggers a fresh audit.
+
 ---
 
 ## architect agent

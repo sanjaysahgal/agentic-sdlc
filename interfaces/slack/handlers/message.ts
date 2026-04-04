@@ -22,6 +22,18 @@ const { paths: workspacePaths } = loadWorkspaceConfig()
 // Prevents spamming the user on every message after the history limit is reached.
 const summarizationWarnedFeatures = new Set<string>()
 
+// Content-addressed cache for phase entry upstream spec audits.
+// Key: `${agentType}:${featureName}:${specFingerprint}` — invalidates automatically when upstream spec content changes.
+// Value: formatted PLATFORM NOTICE string (empty string = no issues found).
+// In-memory only: intentionally lost on restart so first message after deployment always re-audits.
+const phaseEntryAuditCache = new Map<string, string>()
+
+// Lightweight content fingerprint — fast, no crypto dependency.
+// Detects any edit to spec content including manual edits mid-phase.
+function specFingerprint(content: string): string {
+  return `${content.length}:${content.slice(0, 100)}:${content.slice(-50)}`
+}
+
 // Formats a save checkpoint into the Slack footer shown after every DRAFT or PATCH save.
 // Shows what key decisions were just committed and flags anything still only in the thread.
 // Non-fatal: callers pass a null checkpoint and fall back to the simple CTA.
@@ -622,7 +634,36 @@ async function runDesignAgent(params: {
     ? `\n\n[PLATFORM SPEC FACTS — committed text literals in the current design spec (use these exactly, never substitute):\n${specTextLiterals.map(l => `${l.label}: "${l.value}"`).join("\n")}]`
     : ""
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice
+  // Phase entry upstream spec audit — PM spec health check on every design agent message.
+  // Uses content-addressed cache: any edit to the approved PM spec (including manual edits mid-phase)
+  // invalidates the cache automatically. Cache starts empty on restart so first message always audits.
+  let upstreamNoticeDesign = ""
+  const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
+  const pmSpecContent = await readFile(pmSpecPath, "main").catch(() => null)
+  if (pmSpecContent) {
+    const fp = specFingerprint(pmSpecContent)
+    const cacheKey = `design:${featureName}:${fp}`
+    if (phaseEntryAuditCache.has(cacheKey)) {
+      upstreamNoticeDesign = phaseEntryAuditCache.get(cacheKey)!
+    } else {
+      const pmAuditResult = await auditPhaseCompletion({
+        specContent: pmSpecContent,
+        rubric: PM_RUBRIC,
+        featureName,
+        productVision: context.productVision,
+        systemArchitecture: context.systemArchitecture,
+      }).catch(() => null)
+      if (pmAuditResult && !pmAuditResult.ready) {
+        const findingLines = pmAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+        upstreamNoticeDesign = `\n\n[PLATFORM UPSTREAM SPEC AUDIT — APPROVED PM SPEC HAS ${pmAuditResult.findings.length} GAP${pmAuditResult.findings.length === 1 ? "" : "S"} THAT MUST BE SURFACED TO THE USER BEFORE PROCEEDING:\n${findingLines}\nYou MUST surface these gaps prominently in your response and recommend returning to the PM agent to address them before the design phase continues.]`
+      } else {
+        upstreamNoticeDesign = ""
+      }
+      phaseEntryAuditCache.set(cacheKey, upstreamNoticeDesign)
+    }
+  }
+
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice + upstreamNoticeDesign
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -982,7 +1023,46 @@ async function runArchitectAgent(params: {
     extractLockedDecisions(historyArch).catch(() => ""),
     getPriorContext(featureName, historyArch, ARCH_HISTORY_LIMIT),
   ])
-  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch })
+  // Phase entry upstream spec audit — PM + Design spec health check on every architect agent message.
+  // Audits both upstream specs in parallel using content-addressed cache.
+  // Cache invalidates automatically when either upstream spec is manually edited mid-phase.
+  let upstreamNoticeArch = ""
+  const pmSpecPathArch = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
+  const designSpecPathArch = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
+  const [pmSpecContentArch, designSpecContentArch] = await Promise.all([
+    readFile(pmSpecPathArch, "main").catch(() => null),
+    readFile(designSpecPathArch, "main").catch(() => null),
+  ])
+  const archCacheKey = `arch:${featureName}:${specFingerprint(pmSpecContentArch ?? "")}:${specFingerprint(designSpecContentArch ?? "")}`
+  if (phaseEntryAuditCache.has(archCacheKey)) {
+    upstreamNoticeArch = phaseEntryAuditCache.get(archCacheKey)!
+  } else {
+    const [pmAuditArch, designAuditArch] = await Promise.all([
+      pmSpecContentArch
+        ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
+        : null,
+      designSpecContentArch
+        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: DESIGN_RUBRIC, featureName }).catch(() => null)
+        : null,
+    ])
+    const archFindings: string[] = []
+    if (pmAuditArch && !pmAuditArch.ready) {
+      const lines = pmAuditArch.findings.map((f, i) => `${i + 1}. [PM] ${f.issue} — ${f.recommendation}`).join("\n")
+      archFindings.push(`APPROVED PM SPEC — ${pmAuditArch.findings.length} GAP${pmAuditArch.findings.length === 1 ? "" : "S"}:\n${lines}`)
+    }
+    if (designAuditArch && !designAuditArch.ready) {
+      const lines = designAuditArch.findings.map((f, i) => `${i + 1}. [Design] ${f.issue} — ${f.recommendation}`).join("\n")
+      archFindings.push(`APPROVED DESIGN SPEC — ${designAuditArch.findings.length} GAP${designAuditArch.findings.length === 1 ? "" : "S"}:\n${lines}`)
+    }
+    if (archFindings.length > 0) {
+      upstreamNoticeArch = `\n\n[PLATFORM UPSTREAM SPEC AUDIT — UPSTREAM SPECS HAVE GAPS THAT MUST BE SURFACED TO THE USER BEFORE PROCEEDING:\n${archFindings.join("\n\n")}\nYou MUST surface these gaps prominently in your response and recommend returning to the relevant agent to address them before the engineering phase continues.]`
+    } else {
+      upstreamNoticeArch = ""
+    }
+    phaseEntryAuditCache.set(archCacheKey, upstreamNoticeArch)
+  }
+
+  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
