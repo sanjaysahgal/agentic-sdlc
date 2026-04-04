@@ -33,24 +33,6 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### Gap: Smoke tests use simplified system prompt, not `buildDesignSystemPrompt`
-
-`tests/smoke/design-agent-workflow.test.ts` Scenario 1 uses an inline system prompt with the key escalation rule rather than calling `buildDesignSystemPrompt`. This means regressions in the full system prompt (e.g., the rule being softened or removed) won't be caught. The durable fix: make `buildDesignSystemPrompt` usable in tests without a real `.env` by accepting an optional config override, then use the real prompt in the smoke test.
-
----
-
-### Gap: No smoke test for `apply_design_spec_patch` auto-save after user agreement
-
-There is no real-API test that verifies the design agent calls `apply_design_spec_patch` after a user agrees to a design direction. This is the second most common tool call in production and has no behavioral regression guard. Add a Scenario 4 to `tests/smoke/design-agent-workflow.test.ts` once the `buildDesignSystemPrompt` config override gap above is resolved.
-
----
-
-### Gap: `generate-preview.ts --push` is opt-in — local re-render silently diverges from Slack cache
-
-When a developer runs `npx tsx scripts/generate-preview.ts [feature]` without `--push`, the locally-written HTML diverges from what the design agent serves in Slack. The `--push` flag was added but easy to forget. The durable fix: make `--push` the default behavior and add a `--local-only` flag for disk-only output. This eliminates the class of "I re-rendered but Slack still shows the old one" bugs.
-
----
-
 ---
 
 ### Trust Step 0.5c — URL-based brand comparison ("compare with this site")
@@ -771,6 +753,8 @@ Most valuable once several features have shipped and patterns in the vision show
 ---
 
 ## Completed
+
+- **Design agent smoke test hardening + generate-preview default push (April 2026)** — Three gaps closed: (1) `buildDesignSystemPrompt` gains optional `configOverride?: WorkspaceConfig` parameter — if provided, skips `loadWorkspaceConfig()` so the function is usable in tests without a real `.env`. (2) Scenario 1 in `tests/smoke/design-agent-workflow.test.ts` updated to call the real `buildDesignSystemPrompt` with a minimal `TEST_CONFIG` — regressions in the full system prompt (escalation rule softened, tool removed) now caught. (3) Scenario 4 added: verifies design agent calls a save tool (`apply_design_spec_patch` or `save_design_spec_draft`) after user explicitly agrees to a design direction — guards against the agent acknowledging in text but not calling the tool. (4) `scripts/generate-preview.ts`: `--push` made the default behavior; replaced with `--local-only` flag for disk-only output. Eliminates the "I re-rendered but Slack still shows the old one" failure class. 514 tests pass.
 
 - **Phase completion gate + phase entry upstream audit — PM + Design + Architect agents (April 2026)** — Two structural enforcement mechanisms added together: (1) **Phase completion gate**: before any spec can be finalized, the agent calls `run_phase_completion_audit()` — a Sonnet-based comprehensive audit against a domain-specific rubric. PM rubric (6 criteria): all user stories have error paths, acceptance criteria measurable, zero unresolved blocking questions, data requirements explicit, no architectural contradictions, Non-Goals names a scope boundary. Design rubric (8 criteria): all screens defined with all states, all UI copy verbatim, all animations with timing+easing, no conflicting values, no vague language, brand token consistency, no TBD/TODO/PLACEHOLDER. If any criterion fails, the agent surfaces findings as a numbered list with recommendations and blocks `finalize_*`. Phase does not advance until audit returns zero findings. (2) **Phase entry upstream audit**: design agent audits the approved PM spec against PM_RUBRIC on every message; architect agent audits both approved PM and design specs in parallel on every message. Content-addressed in-memory cache (fingerprint = `length:first100:last50`): cache starts empty on restart (first message always audits), and any manual edit to an upstream spec mid-phase automatically invalidates the cache. Findings injected as `[PLATFORM UPSTREAM SPEC AUDIT]` notice into enriched user message — surfaces gaps without the user needing to ask. `auditSpecRenderAmbiguity` Haiku prompt expanded with 4 new save-time check categories (TBD copy, unnamed states without visual descriptions, conflicting values, vague measurement language). Pattern documented for future agents in `runtime/phase-completion-auditor.ts` JSDoc and AGENTS.md. 11 new tests for phase-completion-auditor; 1 new test for expanded Haiku prompt. 489 tests pass.
 

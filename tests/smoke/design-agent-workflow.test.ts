@@ -12,14 +12,48 @@
 
 import { describe, it, expect, beforeAll } from "vitest"
 import Anthropic from "@anthropic-ai/sdk"
-import { DESIGN_TOOLS } from "../../agents/design"
+import { DESIGN_TOOLS, buildDesignSystemPrompt } from "../../agents/design"
 import { identifyUncommittedDecisions } from "../../runtime/conversation-summarizer"
+import { WorkspaceConfig } from "../../runtime/workspace-config"
 
 const ENABLED = process.env.SMOKE_TEST === "true"
+
+// Minimal config that satisfies buildDesignSystemPrompt without a real .env.
+// Tests must pass a context and featureName — config values affect prompt copy
+// but not the behavioral rules under test (escalation, patch auto-save).
+const TEST_CONFIG: WorkspaceConfig = {
+  productName: "TestApp",
+  githubOwner: "test-owner",
+  githubRepo: "test-repo",
+  mainChannel: "general",
+  targetFormFactors: ["mobile"],
+  roles: { pmUser: "", designerUser: "", architectUser: "" },
+  paths: {
+    productVision: "specs/product/PRODUCT_VISION.md",
+    systemArchitecture: "specs/architecture/system-architecture.md",
+    designSystem: "specs/design/DESIGN_SYSTEM.md",
+    brand: "specs/brand/BRAND.md",
+    featureConventions: "specs/features/CLAUDE.md",
+    featuresRoot: "specs/features",
+  },
+}
+
+// Minimal AgentContext for smoke tests — no brand or upstream specs needed
+// to exercise the behavioral rules we are guarding.
+const TEST_CONTEXT = {
+  productVision: "New users create an account and complete a 3-step health profile. The app shows a personalized dashboard after onboarding completes.",
+  systemArchitecture: "",
+  brand: null,
+  designSystem: null,
+  approvedSpecs: [],
+  currentDraft: null,
+  featureName: "onboarding",
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scenario 1: Design agent calls offer_pm_escalation on a product spec gap
 // Guards against: tool removed from DESIGN_TOOLS, system prompt rule weakened
+// Uses the real buildDesignSystemPrompt to catch regressions in that function.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe.skipIf(!ENABLED)("Smoke — design agent calls offer_pm_escalation on spec gap (real API)", () => {
@@ -29,18 +63,12 @@ describe.skipIf(!ENABLED)("Smoke — design agent calls offer_pm_escalation on s
   beforeAll(async () => {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+    const systemPrompt = buildDesignSystemPrompt(TEST_CONTEXT as any, "onboarding", false, TEST_CONFIG)
+
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: `You are a UX Design agent. Your rules:
-- When a user request exposes a product question the spec doesn't answer and you cannot resolve from design judgment alone, call offer_pm_escalation IMMEDIATELY with the specific blocking question. Do NOT ask the user "want me to flag it for the PM?" — just call the tool.
-- Do NOT ask multiple questions. Do NOT proceed with design assumptions on unanswered product questions.
-
-PRODUCT SPEC:
-## Onboarding
-New users create an account and complete a 3-step health profile. The app shows a personalized dashboard after onboarding completes.
-
-[IMPORTANT: The spec does not define what happens when an already-authenticated user opens the app after reinstalling — whether they see onboarding again, skip to the dashboard, or see a "welcome back" flow.]`,
+      system: systemPrompt + `\n\nCURRENT PRODUCT SPEC:\n## Onboarding\nNew users create an account and complete a 3-step health profile. The app shows a personalized dashboard after onboarding completes.\n\n[IMPORTANT: The spec does not define what happens when an already-authenticated user opens the app after reinstalling — whether they see onboarding again, skip to the dashboard, or see a "welcome back" flow.]`,
       tools: DESIGN_TOOLS,
       tool_choice: { type: "auto" as const },
       messages: [{ role: "user", content: "Design the onboarding screen. What should happen when a user who already completed onboarding reinstalls and opens the app?" }],
@@ -108,5 +136,64 @@ describe.skipIf(!ENABLED)("Smoke — identifyUncommittedDecisions: detects genui
 
   it("result references the dark mode decision", () => {
     expect(result.toLowerCase()).toMatch(/dark mode|archon/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scenario 4: Design agent calls apply_design_spec_patch after user agreement
+// Guards against: agent acknowledging agreement in text but not calling the tool
+// Uses real buildDesignSystemPrompt to catch prompt regressions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe.skipIf(!ENABLED)("Smoke — design agent calls apply_design_spec_patch after user agrees to design direction (real API)", () => {
+  let patchToolName: string | null
+  let patchInput: Record<string, unknown> | null
+
+  beforeAll(async () => {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+    // Context simulates mid-conversation: agent has proposed a direction,
+    // user has now explicitly agreed. A draft already exists (triggers patch vs. save).
+    const contextWithDraft = {
+      ...TEST_CONTEXT,
+      currentDraft: "## Brand\nPrimary: #FFFFFF\n\n## Screens\n### Onboarding\nTBD",
+    }
+    const systemPrompt = buildDesignSystemPrompt(contextWithDraft as any, "onboarding", false, TEST_CONFIG)
+
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
+      system: systemPrompt,
+      tools: DESIGN_TOOLS,
+      tool_choice: { type: "auto" as const },
+      messages: [
+        {
+          role: "user",
+          content: "Let's use a dark background (#0A0A0F) with white text (#FFFFFF) and the Inter font throughout.",
+        },
+        {
+          role: "assistant",
+          content: "Dark background #0A0A0F with white text #FFFFFF and Inter throughout — that's a strong, clean foundation. I'll lock in the Brand section now.",
+        },
+        {
+          role: "user",
+          content: "Yes, lock those in.",
+        },
+      ],
+    })
+
+    // Find the patch tool call (apply_design_spec_patch or save_design_spec_draft)
+    const toolUse = response.content.find(b => b.type === "tool_use")
+    patchToolName = toolUse?.type === "tool_use" ? toolUse.name : null
+    patchInput = toolUse?.type === "tool_use" ? (toolUse.input as Record<string, unknown>) : null
+  }, 60_000)
+
+  it("agent calls a save tool — not just acknowledges in text", () => {
+    expect(patchToolName).toMatch(/apply_design_spec_patch|save_design_spec_draft/)
+  })
+
+  it("patch includes the brand color or font decision", () => {
+    const patchStr = JSON.stringify(patchInput ?? "").toLowerCase()
+    expect(patchStr).toMatch(/#0a0a0f|inter|#ffffff/)
   })
 })

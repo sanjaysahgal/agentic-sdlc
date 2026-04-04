@@ -109,6 +109,8 @@ The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/
 
 **Cross-thread uncommitted decision detection.** `identifyUncommittedDecisions` receives the merged history from `[...getLegacyMessages(), ...getHistory(featureName)]`. `getLegacyMessages()` returns pre-migration conversation history (threadTs-keyed entries consolidated into `"_legacy_"` on startup). This ensures decisions discussed in any prior session surface in the PENDING section, even if those conversations happened in a different Slack thread.
 
+**`buildDesignSystemPrompt` testability.** Accepts an optional fourth parameter `configOverride?: WorkspaceConfig`. When provided, it is used directly instead of calling `loadWorkspaceConfig()` — no env vars required. This allows smoke tests to pass a minimal `TEST_CONFIG` and call the real system prompt function, so regressions in the prompt (rules softened, tools removed) are caught without a `.env` file.
+
 ---
 
 ## Phase completion gate — extensibility pattern for all future agents

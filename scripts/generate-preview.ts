@@ -1,8 +1,10 @@
 // generate-preview.ts — renders a design spec to an interactive HTML preview.
-// Usage: npx tsx scripts/generate-preview.ts [featureName] [outputPath] [--push]
+// Usage: npx tsx scripts/generate-preview.ts [featureName] [outputPath] [--local-only]
 // Example: npx tsx scripts/generate-preview.ts onboarding /tmp/preview.html
-//   --push  also commits the generated HTML to the design branch on GitHub,
-//           replacing the cached preview served by the design agent in Slack.
+//   --local-only  write HTML to disk only; skip pushing to the GitHub design branch.
+//
+// By default, the generated HTML is pushed to GitHub to update the design agent's
+// cache in Slack. Pass --local-only for disk-only output (dev/inspection use only).
 //
 // The renderer (generateDesignPreview) is the agent. This script is just the
 // entry point that feeds it the spec + brand content and writes the output.
@@ -19,7 +21,7 @@ import { loadWorkspaceConfig } from "../runtime/workspace-config"
 async function main() {
   const cfg = loadWorkspaceConfig()
   const args = process.argv.slice(2)
-  const pushFlag = args.includes("--push")
+  const localOnly = args.includes("--local-only")
   const positional = args.filter(a => !a.startsWith("--"))
   const featureName = positional[0] ?? "onboarding"
   const outputPath = positional[1] ?? `/tmp/${featureName}-preview.html`
@@ -64,16 +66,17 @@ async function main() {
   console.log(`\nPreview written to: ${outputPath}`)
   console.log(`Open in browser: file://${outputPath}`)
 
-  // Optionally push to GitHub to update the design agent's cache.
-  // The design agent serves the cached preview from the design branch directly —
-  // passing --push replaces it so the next Slack "show me the preview" request
-  // serves this renderer-generated version.
-  if (pushFlag) {
+  // Push to GitHub to update the design agent's cache in Slack.
+  // The design agent serves the cached preview from the design branch directly.
+  // Skip only when --local-only is passed (dev/inspection use).
+  if (!localOnly) {
     console.log("\nPushing to GitHub design branch...")
     const htmlFilePath = `${cfg.paths.featuresRoot}/${featureName}/${featureName}.preview.html`
     await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: html })
     console.log(`Pushed: ${htmlFilePath} → spec/${featureName}-design branch`)
     console.log("Design agent will serve this preview on next request.")
+  } else {
+    console.log("\n--local-only: skipping GitHub push.")
   }
 }
 

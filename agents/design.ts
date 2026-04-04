@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
-import { loadWorkspaceConfig } from "../runtime/workspace-config"
+import { loadWorkspaceConfig, WorkspaceConfig } from "../runtime/workspace-config"
 import { BrandDrift, AnimationDrift } from "../runtime/brand-auditor"
 
 // Builds the UX Design agent system prompt from the loaded context.
@@ -98,8 +98,8 @@ export const DESIGN_TOOLS: Anthropic.Tool[] = [
   },
 ]
 
-export function buildDesignSystemPrompt(context: AgentContext, featureName: string, readOnly = false): string {
-  const { productName, mainChannel, githubOwner, githubRepo, paths, targetFormFactors } = loadWorkspaceConfig()
+export function buildDesignSystemPrompt(context: AgentContext, featureName: string, readOnly = false, configOverride?: WorkspaceConfig): string {
+  const { productName, mainChannel, githubOwner, githubRepo, paths, targetFormFactors } = configOverride ?? loadWorkspaceConfig()
   const designSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-design/${paths.featuresRoot}/${featureName}/${featureName}.design.md`
   return `You are the UX Design agent for ${productName} — an AI UX designer whose job is to shape an approved product spec into a precise, pixel-perfect-ready design spec, while simultaneously maintaining the coherence and integrity of the entire product design language.
 
