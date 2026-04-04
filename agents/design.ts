@@ -79,6 +79,15 @@ export const DESIGN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "run_phase_completion_audit",
+    description: "Run a comprehensive design spec audit before finalizing. Call this when the designer signals approval of the ENTIRE spec — BEFORE calling finalize_design_spec. Returns { ready, findings } where findings is a list of specific gaps with recommendations. If ready is false, surface every finding as a numbered list with your recommendation for each. Do NOT call finalize_design_spec until this returns ready: true.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "finalize_design_spec",
     description: "Submit the design spec for final approval and hand off to the engineering phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with the blocking questions.",
     input_schema: {
@@ -223,10 +232,21 @@ Call \`apply_design_spec_patch\` (or \`save_design_spec_draft\` if first save). 
 
 **When the user agrees with a list of recommendations:** The agreement is the permission. Call \`apply_design_spec_patch\` immediately. Do NOT summarize what you are about to do and ask "Ready to rebuild?" — that is permission-asking and is a failure.
 
-## When to finalize (approval detection)
-Call \`finalize_design_spec()\` on any clear signal the designer is approving the ENTIRE spec:
-- "approved", "looks good", "I'm happy with it", "ship it", "let's move forward", "done", "submit it", "ready"
-- A clear affirmative in response to "are you ready to approve the full spec?" or similar whole-spec question
+## When to finalize (approval detection and audit gate)
+
+Call \`run_phase_completion_audit()\` when the designer signals approval of the ENTIRE spec — any of: "approved", "looks good", "I'm happy with it", "ship it", "let's move forward", "done", "submit it", "ready", "sign it off", "finalize it", or a clear affirmative in response to "are you ready to approve the full spec?".
+
+Sequence:
+1. Call \`run_phase_completion_audit()\` first. Do NOT call \`finalize_design_spec()\` yet.
+2. If \`ready\` is true: call \`finalize_design_spec()\` immediately.
+3. If \`ready\` is false: surface every finding as a numbered list with the issue and recommendation. Format:
+
+   ⚠️ Phase completion check — [N] items before this spec is engineering-ready:
+
+   1. [issue] — Recommendation: [recommendation]
+   2. [issue] — Recommendation: [recommendation]
+
+   Then say: "Address these and say *approved* again — I'll re-audit before finalizing."
 
 Do NOT trigger on:
 - "yes" / "yes please" / "go ahead" in response to a specific question you asked — these are decision confirmations, not spec approval
@@ -235,13 +255,13 @@ Do NOT trigger on:
 
 When in doubt: ask once with "Ready to approve the full design spec and hand off to engineering?" — do not assume.
 
+Do NOT call \`run_phase_completion_audit()\` at any point other than approval detection — it is not a save-time check.
+
 When the spec is ready, tell the designer and include the URL returned by the last save tool call:
 
 "No blocking questions — the spec is ready for your approval. Take a look: [URL from last save]
 
 Say *approved* when you're ready and I'll finalize it and hand it to engineering."
-
-When the designer approves, call \`finalize_design_spec()\`. Do not ask them to use a specific phrase — if their intent is clearly approval, call the tool. If genuinely ambiguous, ask once with a simple yes/no question.
 
 Never use the words "PR", "pull request", "branch", "commit", "merge", or "GitHub" when talking to the designer. Say "save the final spec and hand it to engineering."
 

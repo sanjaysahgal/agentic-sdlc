@@ -9,6 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
+import { auditPhaseCompletion, PM_RUBRIC, DESIGN_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview, updateDesignPreview } from "../../../runtime/html-renderer"
@@ -376,6 +377,21 @@ async function runPmAgent(params: {
         const url = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${pmFilePath}`
         const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
         return { result: { url, audit: auditOut } }
+      }
+      if (name === "run_phase_completion_audit") {
+        await update("_Running phase completion audit..._")
+        const draft = await readFile(pmFilePath, `spec/${featureName}-product`)
+        if (!draft) {
+          return { result: { ready: false, findings: [{ issue: "No spec draft found", recommendation: "Save a draft first using save_product_spec_draft before running the audit." }] } }
+        }
+        const result = await auditPhaseCompletion({
+          specContent: draft,
+          rubric: PM_RUBRIC,
+          featureName,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+        })
+        return { result }
       }
       if (name === "finalize_product_spec") {
         const existingDraft = await readFile(pmFilePath, `spec/${featureName}-product`)
@@ -766,6 +782,19 @@ async function runDesignAgent(params: {
         } catch (err: any) {
           return { error: `Fetch failed: ${err?.message}` }
         }
+      }
+      if (name === "run_phase_completion_audit") {
+        await update("_Running phase completion audit..._")
+        const draft = await readFile(designFilePath, designBranchName)
+        if (!draft) {
+          return { result: { ready: false, findings: [{ issue: "No design spec draft found", recommendation: "Save a draft first using save_design_spec_draft before running the audit." }] } }
+        }
+        const result = await auditPhaseCompletion({
+          specContent: draft,
+          rubric: DESIGN_RUBRIC,
+          featureName,
+        })
+        return { result }
       }
       if (name === "finalize_design_spec") {
         const existingDraft = await readFile(designFilePath, designBranchName)

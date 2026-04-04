@@ -34,7 +34,10 @@ Shapes a feature idea into a structured product spec through conversation. Asks 
 **Native tool-use (Step 13):** The PM agent uses the Anthropic tool-use API:
 - `save_product_spec_draft` — first save; platform runs spec audit and returns `{ url, audit }` as tool result
 - `apply_product_spec_patch` — incremental update; same audit
+- `run_phase_completion_audit` — Sonnet-based comprehensive completeness check; called on approval intent BEFORE finalize; returns `{ ready, findings }`
 - `finalize_product_spec` — blocked if unresolved `[blocking: yes]` questions exist; triggers phase advance to design
+
+**Phase completion gate (PM).** When the PM signals approval, the agent calls `run_phase_completion_audit()` first. The tool runs `auditPhaseCompletion(PM_RUBRIC)` — a Sonnet-based check covering: all user stories have error paths, acceptance criteria are measurable, zero unresolved blocking questions, data requirements are explicit, no architectural contradictions, Non-Goals names at least one scope boundary. If findings exist, the agent surfaces them numbered with recommendations and waits for re-approval. The phase does not advance to design until the audit returns zero findings.
 
 The old text-block protocol (`DRAFT_SPEC_START/END`, `PRODUCT_PATCH_START/END`, `INTENT: CREATE_SPEC`) is fully removed.
 
@@ -88,7 +91,9 @@ The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/
 
 **False-positive uncommitted-decision guard.** The post-turn audit (`identifyUncommittedDecisions`) is skipped when the agent's response itself ends with a confirmation-seeking phrase ("Lock this in?", "Shall I save?", etc.). In this case, the decision is pending by design — the agent is waiting for the user to confirm. Firing the ⚠️ warning here is a false positive.
 
-**Spec completeness standard (engineer bar, not designer bar).** The design agent holds every spec to one standard: can an engineer with no design background implement 100% from the spec alone without guessing or inventing anything? This means every text literal, pixel distance, element position, sheet entry direction, state transition trigger, and interactive element behavior must be explicitly defined — or an explicit "none" statement provided. The render ambiguity audit enforces this structurally; the system prompt enforces it behaviorally.
+**Spec completeness standard (engineer bar, not designer bar).** The design agent holds every spec to one standard: can an engineer with no design background implement 100% from the spec alone without guessing or inventing anything? This means every text literal, pixel distance, element position, sheet entry direction, state transition trigger, and interactive element behavior must be explicitly defined — or an explicit "none" statement provided. The render ambiguity audit enforces this structurally; the phase completion gate enforces it at approval.
+
+**Phase completion gate (design).** When the designer signals approval of the full spec ("approved", "looks good", "ship it", etc.), the design agent calls `run_phase_completion_audit()` BEFORE `finalize_design_spec()`. The tool calls `auditPhaseCompletion(DESIGN_RUBRIC)` in `runtime/phase-completion-auditor.ts` — a Sonnet-based comprehensive check covering: all screens defined with all states, all UI copy verbatim in spec, all animations with timing and easing, no conflicting values, no vague language, brand token consistency, no TBD/TODO/PLACEHOLDER. If any criterion fails, the agent surfaces the findings as a numbered list with recommendations and blocks approval. The phase does not advance until the audit returns zero findings. This gate is structural — enforced by tool architecture, not a prompt instruction.
 
 **`fetch_url` tool: relevance-filtered output.** The `fetch_url` tool handler calls `filterDesignContent(rawHtml)` in `spec-auditor.ts` instead of `.slice(0, 200_000)` truncation. `filterDesignContent` is a Haiku call that extracts only CSS custom properties, color values, font families, spacing values, and design system token definitions from the raw HTML — the design agent receives focused, relevant content rather than truncated raw markup.
 
@@ -101,6 +106,23 @@ The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/
 **State response schema (three ordered sections).** `buildDesignStateResponse()` always returns in the same priority order: (1) `*── PENDING ──*` — always shown; if uncommitted conversation decisions exist they appear here with a warning to save before approving; if everything is committed it shows "No open items from prior conversations" so the user knows the check ran; (2) `*── DRIFT (spec vs BRAND.md) ──*` — color and animation drift, gates approval; (3) `*── SPEC ──*` — committed decisions, blocking/non-blocking questions, spec gap, preview link. The CTA at the bottom is conditional: uncommitted decisions present → "Save the pending decisions above first"; drift present → "Fix the drift above first"; blocking questions present → "Resolve the blocking questions above"; all clear → "Say *approved* to move to engineering." Approval is never offered while any gate is open.
 
 **Cross-thread uncommitted decision detection.** `identifyUncommittedDecisions` receives the merged history from `[...getLegacyMessages(), ...getHistory(featureName)]`. `getLegacyMessages()` returns pre-migration conversation history (threadTs-keyed entries consolidated into `"_legacy_"` on startup). This ensures decisions discussed in any prior session surface in the PENDING section, even if those conversations happened in a different Slack thread.
+
+---
+
+## Phase completion gate — extensibility pattern for all future agents
+
+Every spec-producing agent must implement a phase completion gate before it is considered complete. The gate is structural — enforced by tool architecture, not prompt instructions.
+
+**The infrastructure:** `runtime/phase-completion-auditor.ts` exports `auditPhaseCompletion(params)` and rubric constants. Uses `claude-sonnet-4-6` (consequential, one-shot). Parses `FINDING: <issue> | <recommendation>` lines from Sonnet output, or `PASS` for a clean spec. Falls back to `{ ready: true }` on unexpected format (never blocks on ambiguity).
+
+**To add a phase completion gate to a new agent:**
+1. Define a rubric constant in `phase-completion-auditor.ts` (e.g. `export const ARCHITECT_RUBRIC = \`...\``). The rubric is a numbered list: each item names what must be present and what "incomplete" looks like.
+2. Add `run_phase_completion_audit` tool to the agent's TOOLS array (no parameters).
+3. Add approval-intent detection + audit-first sequence to the agent's "When to finalize" system prompt section. Sequence: detect approval → call `run_phase_completion_audit` → if `ready: true` call `finalize_*` → if `ready: false` surface findings numbered with recommendations → wait for re-approval.
+4. Wire the tool handler in `message.ts`: read draft from GitHub → call `auditPhaseCompletion(rubric, context)` → return `{ result }`. The agent surfaces findings; the human re-approves; agent re-audits.
+5. Add tests to `phase-completion-auditor.test.ts` following the `vi.hoisted`/`vi.mock` pattern.
+
+**Save-time vs completion-gate:** The Haiku `auditSpecRenderAmbiguity` is the fast, frequent save-time pass (catches incremental gaps as you work). The Sonnet completion gate is the comprehensive one-shot pass at approval. They are complementary — Haiku catches regressions early; Sonnet provides the definitive engineering-readiness verdict.
 
 ---
 

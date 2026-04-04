@@ -125,6 +125,10 @@ Flag ONLY elements where a renderer must make an unspecified choice:
 - Sheets, modals, or overlays with no entry/exit animation, timing, or easing specified (e.g. defined as "bottom sheet" but no slide-up animation duration or easing)
 - Interactive element text (button labels, chip labels, placeholder text) not defined in the spec
 - Animation behavior described vaguely ("smooth transition") without timing values when the spec references an animation
+- UI copy that is stated as "TBD", "to be determined", "placeholder", or any equivalent deferral — these are not defined values and cannot be rendered consistently
+- Screen states (loading, empty, error) that are named in the state list but have no visual description — named without definition is not defined
+- Values that appear with two different specifications within the same spec (e.g. a color token defined as two different hex codes in different sections)
+- Language that two renderers would interpret differently: "near the top", "slightly", "subtle", "prominent", "appropriate" used in place of a specific measurement or value
 
 Do NOT flag:
 - General aesthetic descriptions ("minimal", "dark, premium feel")

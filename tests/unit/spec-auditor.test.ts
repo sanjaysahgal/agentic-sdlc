@@ -109,6 +109,21 @@ No additional requirements.
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
     expect(systemPrompt).toMatch(/entry\/exit animation.*timing.*easing/i)
   })
+
+  it("Haiku prompt includes the 4 expanded save-time check categories", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // TBD / placeholder copy
+    expect(systemPrompt).toContain("TBD")
+    // Named states with no visual description
+    expect(systemPrompt).toMatch(/named.*no visual description|state.*without.*visual/i)
+    // Conflicting values
+    expect(systemPrompt).toMatch(/two different specifications|conflicting.*value/i)
+    // Vague measurement language
+    expect(systemPrompt).toMatch(/near the top|slightly|subtle.*specific measurement/i)
+  })
 })
 
 describe("auditSpecDraft", () => {

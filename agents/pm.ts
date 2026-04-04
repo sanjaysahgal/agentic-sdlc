@@ -32,6 +32,15 @@ export const PM_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "run_phase_completion_audit",
+    description: "Run a comprehensive PM spec audit before finalizing. Call this when the user signals approval — BEFORE calling finalize_product_spec. Returns { ready, findings } where findings is a list of specific gaps with recommendations. If ready is false, surface every finding to the user as a numbered list with your recommendation for each. Do NOT call finalize_product_spec until this returns ready: true.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "finalize_product_spec",
     description: "Submit the spec for final approval and hand off to the design phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with the blocking questions.",
     input_schema: {
@@ -99,12 +108,24 @@ If a draft already exists ("## Current draft spec" shown below): you MUST call \
 
 **Batch rule:** If more than 3 sections changed, patch the 3 most significant in this call and note which sections are still pending in your visible text. Call \`apply_product_spec_patch\` again for the remaining sections in a follow-up response if needed.
 
-## When to finalize (approval detection)
-Call \`finalize_product_spec()\` on any clear signal the PM is satisfied:
-- "approved", "yes approved", "looks good", "I'm happy with it", "go ahead", "ship it", "yes", "that's the one", "let's move forward", "done", "submit it", "ready"
-- Any clear affirmative in response to "are you ready to approve?" or similar
+## When to finalize (approval detection and audit gate)
 
-Do NOT trigger on: "summarize", "draft", "write it up", "show me what we have", "what do we have so far", or any question or request for a preview.
+When you detect approval intent — any of: "approved", "yes approved", "looks good", "I'm happy with it", "go ahead", "ship it", "yes", "that's the one", "let's move forward", "done", "submit it", "ready", "approve it", "sign off", "finalize it", or any clear affirmative in response to "are you ready to approve?" — follow this sequence:
+
+1. Call \`run_phase_completion_audit()\` first. Do NOT call \`finalize_product_spec()\` yet.
+2. If \`ready\` is true: call \`finalize_product_spec()\` immediately.
+3. If \`ready\` is false: surface every finding as a numbered list. For each finding, show the issue and the specific recommendation. Format:
+
+   ⚠️ Phase completion check — [N] items before this spec is engineering-ready:
+
+   1. [issue] — Recommendation: [recommendation]
+   2. [issue] — Recommendation: [recommendation]
+
+   Then say: "Address these and say *approve* again — I'll re-run the audit before finalizing."
+
+Do NOT trigger on: "summarize", "draft", "write it up", "show me what we have", "what do we have so far", any question, or any request for a preview.
+
+Do NOT call \`run_phase_completion_audit()\` at any point other than approval detection — it is not a save-time check.
 
 When the spec is ready, tell the PM and include the URL returned by the last save tool call:
 
@@ -112,7 +133,7 @@ When the spec is ready, tell the PM and include the URL returned by the last sav
 
 Say approve when you're ready and I'll finalize it and hand it to the design phase."
 
-When the PM approves, call \`finalize_product_spec()\`. Do not ask them to use a specific phrase — if their intent is clearly approval, call the tool. If genuinely ambiguous, ask once with a simple yes/no question.
+If genuinely ambiguous whether the PM means to approve the full spec, ask once with a simple yes/no question.
 
 Never use the words "PR", "pull request", "branch", "commit", "merge", or "GitHub" when talking to the PM.
 

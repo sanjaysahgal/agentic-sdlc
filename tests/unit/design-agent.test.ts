@@ -185,8 +185,8 @@ describe("buildDesignSystemPrompt", () => {
 })
 
 describe("DESIGN_TOOLS structure", () => {
-  it("exports 6 tools", () => {
-    expect(DESIGN_TOOLS).toHaveLength(6)
+  it("exports 7 tools", () => {
+    expect(DESIGN_TOOLS).toHaveLength(7)
   })
 
   it("includes save_design_spec_draft as first tool", () => {
@@ -209,8 +209,12 @@ describe("DESIGN_TOOLS structure", () => {
     expect(DESIGN_TOOLS[4].name).toBe("offer_pm_escalation")
   })
 
-  it("includes finalize_design_spec as sixth tool", () => {
-    expect(DESIGN_TOOLS[5].name).toBe("finalize_design_spec")
+  it("includes run_phase_completion_audit as sixth tool", () => {
+    expect(DESIGN_TOOLS[5].name).toBe("run_phase_completion_audit")
+  })
+
+  it("includes finalize_design_spec as seventh tool", () => {
+    expect(DESIGN_TOOLS[6].name).toBe("finalize_design_spec")
   })
 
   it("save_design_spec_draft requires content parameter", () => {

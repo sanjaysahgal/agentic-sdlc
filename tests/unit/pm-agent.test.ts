@@ -13,8 +13,8 @@ const baseContext: AgentContext = {
 }
 
 describe("PM_TOOLS structure", () => {
-  it("exports 3 tools", () => {
-    expect(PM_TOOLS).toHaveLength(3)
+  it("exports 4 tools", () => {
+    expect(PM_TOOLS).toHaveLength(4)
   })
 
   it("includes save_product_spec_draft as first tool", () => {
@@ -25,8 +25,12 @@ describe("PM_TOOLS structure", () => {
     expect(PM_TOOLS[1].name).toBe("apply_product_spec_patch")
   })
 
-  it("includes finalize_product_spec as third tool", () => {
-    expect(PM_TOOLS[2].name).toBe("finalize_product_spec")
+  it("includes run_phase_completion_audit as third tool", () => {
+    expect(PM_TOOLS[2].name).toBe("run_phase_completion_audit")
+  })
+
+  it("includes finalize_product_spec as fourth tool", () => {
+    expect(PM_TOOLS[3].name).toBe("finalize_product_spec")
   })
 
   it("save_product_spec_draft requires content parameter", () => {
