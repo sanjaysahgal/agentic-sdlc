@@ -33,6 +33,10 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Gap: Scenario 4 smoke test accepts save_design_spec_draft as a pass
+
+Scenario 4 (`apply_design_spec_patch` auto-save after user agreement) accepts either `apply_design_spec_patch` or `save_design_spec_draft` as a passing result. The test context sets `currentDraft` in the `AgentContext` but the agent may not read it from the test message construction — the agent has no prior save call in the conversation that would make it aware a draft exists. The durable fix: add a prior assistant tool call (`save_design_spec_draft`) to the message history in the test's `beforeAll` block, then verify the agent's response to "lock those in" uses `apply_design_spec_patch` specifically.
+
 ---
 
 ### Trust Step 0.5c — URL-based brand comparison ("compare with this site")
