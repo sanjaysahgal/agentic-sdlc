@@ -249,4 +249,76 @@ describe("generateDesignPreview", () => {
     expect(call.system).toContain("Do NOT put the hero behind")
     expect(call.system).toContain("x-show")
   })
+
+  it("system prompt mandates phone content area position:absolute structure for hero and thread", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    // Mandatory phone content area structure
+    expect(call.system).toContain("MANDATORY STRUCTURE")
+    expect(call.system).toContain("position:absolute; inset:0")
+    // Hero uses :class, not x-show
+    expect(call.system).toContain(":class")
+    expect(call.system).toContain("hidden': msgs.length")
+    // Thread uses style="display:none" + x-show
+    expect(call.system).toContain('style="display:none"')
+  })
+
+  it("system prompt forbids height:100% inside overflow-y:auto for phone content area", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("Do not use height:100% inside overflow-y:auto")
+  })
+
+  it("system prompt requires inspector buttons to have full resting-state styles in static style attribute", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("Inspector buttons")
+    expect(call.system).toContain("resting")
+    // Must not rely on :style as the ONLY source of color
+    expect(call.system).toContain("Never use `:style` as the ONLY source")
+  })
+
+  it("system prompt requires double-quoted strings in appData to prevent apostrophe syntax errors", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+
+    await generateDesignPreview({ specContent: "spec", featureName: "test" })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("double quotes")
+    expect(call.system).toContain("apostrophe")
+    expect(call.system).toContain("JavaScript string safety")
+  })
+
+  it("returns warning when hero uses x-show (will be blank on Alpine init failure)", async () => {
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" x-show="msgs.length === 0"></div></body></html>`
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings.some(w => w.includes("x-show") && w.toLowerCase().includes("hero"))).toBe(true)
+  })
+
+  it("returns warning when thread element is missing style='display:none'", async () => {
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="thread" x-show="msgs.length > 0"></div></body></html>`
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings.some(w => w.toLowerCase().includes("thread") && w.toLowerCase().includes("display:none"))).toBe(true)
+  })
+
+  it("does not warn about thread display:none when style is present", async () => {
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="thread" style="position:absolute;inset:0;overflow-y:auto;display:none;" x-show="msgs.length > 0"></div></body></html>`
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
+
+    const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
+    expect(result.warnings.some(w => w.toLowerCase().includes("thread") && w.toLowerCase().includes("display:none"))).toBe(false)
+  })
 })

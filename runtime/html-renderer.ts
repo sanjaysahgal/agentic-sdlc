@@ -32,6 +32,38 @@ function validateRenderedHtml(html: string, brandContent?: string): string[] {
     }
   }
 
+  // Detect unescaped apostrophes inside single-quoted JavaScript strings — the most common
+  // cause of Alpine.js initialization failure (e.g. 'How's my heart rate?' in a chips array).
+  // A syntax error in appData() makes Alpine throw on x-data="appData()" → all x-show elements
+  // stay display:none from Alpine's pre-init walk → hero permanently hidden → blank phone screen.
+  const singleQuotedStrings = html.matchAll(/'([^'\\]*)'/g)
+  for (const m of singleQuotedStrings) {
+    // If the captured content contains an apostrophe character that got through, flag it.
+    // This catches the case where the regex engine matched a broken string across boundaries.
+    if (m[1].includes("\u2019") || m.input?.slice(m.index, m.index + m[0].length).match(/'\w+'\w/)) {
+      issues.push("Possible unescaped apostrophe in single-quoted JavaScript string — use double quotes for all string literals in appData() chips, msgs, and text values")
+      break
+    }
+  }
+  // Simpler check: look for the classic pattern of word-apostrophe-word inside a JS string context
+  // e.g. 'How's' or 'What's' — matches a closing quote after a word, then a word char continuing
+  if (/<script[\s\S]*?'[A-Za-z]+\s*'[A-Za-z][\s\S]*?<\/script>/i.test(html)) {
+    issues.push("Possible unescaped apostrophe in JavaScript string literal — use double-quoted strings for all chip labels, message text, and string values in appData()")
+  }
+
+  // Hero must NOT use x-show (causes blank screen on Alpine init failure)
+  if (/id="hero"[^>]*x-show/i.test(html) || /x-show[^>]*id="hero"/i.test(html)) {
+    issues.push('Hero element uses x-show — hero will be blank if Alpine fails to initialize. Use :class="{ hidden: msgs.length > 0 || typing }" instead.')
+  }
+
+  // Thread must have style="display:none" alongside x-show (so it starts hidden before Alpine loads)
+  if (/id="thread"/.test(html)) {
+    const threadMatch = html.match(/id="thread"[^>]*>|<[^>]+id="thread"[^>]*>/)
+    if (threadMatch && !threadMatch[0].includes("display:none") && !threadMatch[0].includes('display: none')) {
+      issues.push('Thread element is missing style="display:none" — without this, thread is visible before Alpine loads')
+    }
+  }
+
   return issues
 }
 
@@ -349,6 +381,44 @@ If the spec describes an auth sheet, login sheet, or bottom sheet that slides up
 
 Every named screen and state must also be reachable directly from nav tabs and state pills — so the designer can jump to any state without clicking through the flow.
 
+## Phone content area — MANDATORY STRUCTURE
+
+The area inside the phone frame (below the status bar, above the prompt bar) MUST use this exact layout. **Do not use height:100% inside overflow-y:auto — that causes heroes to be zero-height on some browsers and makes position:absolute impossible.**
+
+\`\`\`html
+<!-- Phone content area: flex:1 takes remaining height; position:relative is the stacking context -->
+<!-- overflow:hidden clips content to phone frame bounds — NEVER overflow-y:auto here -->
+<div style="flex:1; position:relative; overflow:hidden;">
+
+  <!-- Hero: position:absolute fills the content area — ALWAYS VISIBLE without JavaScript -->
+  <!-- NEVER use x-show on hero — Alpine hides x-show elements before initialization -->
+  <!-- Use :class to hide hero reactively once Alpine loads — starts visible, hides when msgs appear -->
+  <div id="hero"
+       style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 24px; overflow-y:auto;"
+       :class="{ 'hidden': msgs.length > 0 || typing }">
+    <h1>App Name</h1>
+    <p>Tagline</p>
+    <!-- chips in horizontal row -->
+  </div>
+
+  <!-- Thread: style="display:none" ensures it is hidden BEFORE Alpine loads -->
+  <!-- x-show makes Alpine show it once msgs exist — the display:none is overridden by Alpine -->
+  <div id="thread"
+       style="position:absolute; inset:0; overflow-y:auto; display:none;"
+       x-show="msgs.length > 0 || typing">
+    <!-- messages -->
+  </div>
+
+</div>
+\`\`\`
+
+**Rules that must not be broken:**
+- The wrapper div uses \`flex:1; position:relative; overflow:hidden\` — no exceptions
+- Hero uses \`position:absolute; inset:0\` — NOT \`height:100%\` or \`min-height:100%\`
+- Hero uses \`:class="{ 'hidden': msgs.length > 0 || typing }"\` — NOT \`x-show\`
+- Thread uses BOTH \`style="display:none"\` AND \`x-show\` — the inline style hides it before Alpine, Alpine then shows/hides it reactively
+- Scrolling (overflow-y:auto) is on hero and thread individually — NOT on the wrapper
+
 ## Empty-state hero — REQUIRED for chat/assistant screens
 
 When the spec describes a chat home screen, the default (empty) state MUST show a centered hero section:
@@ -360,23 +430,50 @@ When the spec describes a chat home screen, the default (empty) state MUST show 
 - Starter chips row below the tagline (horizontal, nowrap, scrollable)
 - The prompt bar is always pinned at the bottom of the phone frame
 
-**Static-first hero — REQUIRED:** The hero MUST be visible without JavaScript. Do NOT put the hero behind \`x-show\` or \`x-if\`. Alpine.js hides elements with \`x-show\` as \`display:none\` before initialization — when opened in Slack's file viewer or with JS disabled, the hero will be blank.
+**Static-first hero — REQUIRED:** Follow the Phone content area mandatory structure above. Use \`position:absolute; inset:0\` for hero. Do NOT put the hero behind \`x-show\` — Alpine hides \`x-show\` elements before initialization, leaving the screen blank. Use \`:class="{ 'hidden': msgs.length > 0 || typing }"\` on the hero instead. Thread gets \`style="display:none"\` + \`x-show\`.
 
-**Pattern to use:**
+## Inspector buttons — REQUIRED base styles
+
+Inspector buttons must be visually correct WITHOUT JavaScript. Do not rely on \`:style\` or Alpine bindings for resting-state colors — these only apply after Alpine initializes.
+
+**Pattern:**
 \`\`\`html
-<!-- Hero: always in DOM, always visible by default -->
-<div id="hero">
-  <h1>App Name</h1>
-  <p>Tagline</p>
-  <!-- chips -->
-</div>
-<!-- Thread: hidden by default, shown by Alpine when msgs exist -->
-<div id="thread" style="display:none" x-show="msgs.length > 0 || typing">
-  <!-- messages -->
-</div>
+<!-- Correct: base style has explicit color and border, :style adds active highlight only -->
+<button
+  style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.7); border:1px solid rgba(255,255,255,0.12); border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer; width:100%; text-align:left;"
+  :style="inspectorMode === 'default' ? 'border-color:#8b5cf6; background:rgba(139,92,246,0.15); color:#fff;' : ''"
+  @click="applyMode('default')">
+  Default
+</button>
 \`\`\`
 
-When the user sends a message: Alpine shows the thread. Use :class or Alpine's x-show on the THREAD (not the hero). The hero can then be hidden reactively via \`:class="{ 'hidden': msgs.length > 0 || typing }"\` on the hero div — CSS class-based toggling is safe because the hero starts visible.`,
+**Rules:**
+- The \`style\` attribute provides the FULL resting appearance (background, color, border)
+- The \`:style\` binding ONLY adds the active/selected highlight on top
+- Never use \`:style\` as the ONLY source of background or text color
+
+## JavaScript string safety — REQUIRED
+
+**All string literals in \`appData()\` and any \`<script>\` block MUST use double quotes.** Never use single quotes for strings that might contain an apostrophe.
+
+**Wrong — causes Alpine initialization failure:**
+\`\`\`javascript
+chips: [
+  'How\\'s my heart rate trend?',  // WRONG even with escape — use double quotes
+  'What\\'s the best time to sleep?'
+]
+\`\`\`
+
+**Correct:**
+\`\`\`javascript
+chips: [
+  "How's my heart rate trend?",
+  "What's the best time to sleep?",
+  "Am I hitting my step goals?"
+]
+\`\`\`
+
+A syntax error anywhere in the \`appData()\` function body causes Alpine to throw on \`x-data="appData()"\`. Alpine's pre-init walk then sets ALL \`x-show\` elements to \`display:none\` and never completes the show pass. Result: every element with \`x-show\` stays hidden permanently — the phone screen is completely blank.`,
     messages: [
       {
         role: "user",
