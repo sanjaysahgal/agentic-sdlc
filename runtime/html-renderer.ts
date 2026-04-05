@@ -160,11 +160,34 @@ export function validateRenderedHtml(html: string, brandContent?: string): { blo
   }
 
   // Hero must NOT be nested inside the thread element.
-  // If hero is inside thread (wrong sibling structure), the overlay stacking is wrong —
-  // hero and messages will overlap. Check a window after id="thread" for id="hero".
+  // Uses a bracket counter to find the exact closing </div> that pairs with id="thread",
+  // then checks whether id="hero" appears within that span — no false positives from
+  // sibling hero divs that happen to fall within an arbitrary character window.
   const threadIdx = html.indexOf('id="thread"')
-  if (threadIdx !== -1 && html.slice(threadIdx, threadIdx + 5000).includes('id="hero"')) {
-    blocking.push('Hero element is nested inside thread — hero and thread must be siblings in a position:relative wrapper, not parent-child. This causes hero and messages to overlap.')
+  if (threadIdx !== -1) {
+    // Walk forward from id="thread" to find the start of its inner content (past the '>').
+    const threadTagEnd = html.indexOf('>', threadIdx)
+    if (threadTagEnd !== -1) {
+      let depth = 1
+      let i = threadTagEnd + 1
+      while (i < html.length && depth > 0) {
+        const openTag = html.indexOf('<div', i)
+        const closeTag = html.indexOf('</div', i)
+        if (closeTag === -1) break
+        if (openTag !== -1 && openTag < closeTag) {
+          depth++
+          i = openTag + 4
+        } else {
+          depth--
+          i = closeTag + 5
+        }
+      }
+      // i now points just past the paired </div> — everything from threadTagEnd+1 to i is inside thread
+      const threadInnerContent = html.slice(threadTagEnd + 1, i)
+      if (threadInnerContent.includes('id="hero"')) {
+        blocking.push('Hero element is nested inside thread — hero and thread must be siblings in a position:relative wrapper, not parent-child. This causes hero and messages to overlap.')
+      }
+    }
   }
 
   // --- Warning checks ---

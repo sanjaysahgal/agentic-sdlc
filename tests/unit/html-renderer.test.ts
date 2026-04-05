@@ -483,6 +483,16 @@ describe("validateRenderedHtml — blocking: hero nested inside thread", () => {
     const nestingBlocking = result.blocking.filter((b: string) => b.toLowerCase().includes("nested") || b.toLowerCase().includes("sibling"))
     expect(nestingBlocking.length).toBe(0)
   })
+
+  it("does NOT false-positive when hero appears AFTER thread as a sibling (old window-search bug)", () => {
+    // thread comes first, hero is its sibling — NOT nested inside it.
+    // The old code used a 5000-char forward window from id="thread" and would incorrectly
+    // flag this as nesting. The bracket-counter correctly scopes to thread's inner content.
+    const html = `<!DOCTYPE html><html><body><div id="thread" style="display:none;" x-show="msgs.length > 0 || typing"><p>msg</p></div><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }"></div></body></html>`
+    const result = validateRenderedHtml(html)
+    const nestingBlocking = result.blocking.filter((b: string) => b.toLowerCase().includes("nested") || b.toLowerCase().includes("sibling"))
+    expect(nestingBlocking.length).toBe(0)
+  })
 })
 
 // ─── System prompt reinforcement: id="hero" required ─────────────────────────
