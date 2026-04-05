@@ -7,6 +7,13 @@
           {
             "type": "command",
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then STAGED=$(git diff --name-only --cached 2>/dev/null); if echo \"$STAGED\" | grep -qE '^(agents|runtime|interfaces)/'; then if ! echo \"$STAGED\" | grep -q '^tests/'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Behavior files in agents/, runtime/, or interfaces/ are staged with no test files. Add or update tests for the changed behavior before committing. Run: npm test\"}}'; fi; fi; fi; true"
+          },
+          {
+            "type": "prompt",
+            "model": "claude-haiku-4-5-20251001",
+            "timeout": 10,
+            "statusMessage": "Pre-push readiness check...",
+            "prompt": "You enforce a pre-push readiness check for the agentic-sdlc codebase.\n\nExamine the bash command in $ARGUMENTS.\n\nStep 1: If the command does NOT contain 'git push', respond ONLY with: {}\n\nStep 2: If it IS a git push command, check whether behavior files (agents/, runtime/, interfaces/) appear in the recent commits by examining the command context. Then respond ONLY with:\n{\"additionalContext\": \"[PRE-PUSH READINESS CHECK — required before this push proceeds]\\n1. DOC ACCURACY: Re-read every doc updated this session (AGENTS.md, SYSTEM_ARCHITECTURE.md, BACKLOG.md). Grep for the names of changed functions/behaviors and confirm the descriptions match actual implementation — not the plan written earlier in the session. Stale docs are a user-visible bug.\\n2. USER CAN TEST: Enumerate what the user needs to run this (env vars, server state, feature state in the repo). Surface any missing pieces explicitly. If a new env var was added, confirm it is in .env.example and documented.\\nDo both checks now. If either fails, fix before the push proceeds.\"}"
           }
         ]
       },
