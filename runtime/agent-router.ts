@@ -150,18 +150,21 @@ Respond with exactly one word: yes or no`,
 // to hand off to engineering. This triggers a platform-layer phase completion audit
 // so the design agent receives the audit findings before it responds — deterministic,
 // not prompt-rule-dependent.
-export function isReadinessQuery(message: string): boolean {
-  const lower = message.toLowerCase()
-  return (
-    lower.includes("ready to hand off") ||
-    lower.includes("ready for engineering") ||
-    lower.includes("hand off to engineer") ||
-    lower.includes("can we move to engineering") ||
-    lower.includes("ready to move on") ||
-    lower.includes("is this ready") ||
-    lower.includes("can we hand off") ||
-    lower.includes("ready for the engineer")
-  )
+// Uses Haiku classification (not keyword matching) so any phrasing is caught:
+// "can we ship?", "good to go?", "should I tell the engineer?", etc.
+export async function isReadinessQuery(message: string): Promise<boolean> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 10,
+    system: `Is this message asking whether a design spec is ready to hand off to engineering, or whether work is complete enough to move to the next phase?
+TRUE: "is this ready for engineering", "can we hand off", "good to go?", "should I tell the engineer to start", "is the design locked", "can we move on", "is it done", "ready to ship", "ready to move to the next phase", "shall we proceed", "are we ready"
+FALSE: questions about spec content ("what are the open questions"), state queries ("where are we", "catch me up"), general greetings ("hi", "hello"), action requests ("add a screen", "change the color"), status of other things ("how is the feature doing" — this is a state query, not a readiness handoff question)
+Respond with exactly one word: yes or no`,
+    messages: [{ role: "user", content: message }],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "no"
+  return text === "yes"
 }
 
 export function detectPhase(params: {

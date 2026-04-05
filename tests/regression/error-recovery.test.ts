@@ -173,6 +173,7 @@ describe("bug #8 — blocking gate: finalize tool returns error when [blocking: 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })     // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "There's a blocking question about session TTL. Resolve it before finalizing." }] }) // runAgent — text-only
 
     setConfirmedAgent("onboarding", "ux-design" as any)

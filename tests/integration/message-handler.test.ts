@@ -200,11 +200,12 @@ describe("blocking gate — design agent", () => {
     })
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
-    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent (tool_use: finalize_design_spec),
-    // [3] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] isReadinessQuery, [3] runAgent (tool_use: finalize_design_spec),
+    // [4] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],

@@ -668,7 +668,7 @@ async function runDesignAgent(params: {
   // findings as a PLATFORM READINESS AUDIT notice. This is deterministic — does not rely on the
   // agent noticing the question and calling run_phase_completion_audit on its own.
   let readinessAuditNotice = ""
-  if (isReadinessQuery(userMessage)) {
+  if (await isReadinessQuery(userMessage)) {
     const draft = await readFile(`${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`, `spec/${featureName}-design`).catch(() => null)
     if (draft) {
       const readinessResult = await auditPhaseCompletion({

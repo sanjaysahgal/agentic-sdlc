@@ -178,11 +178,12 @@ describe("bug #6 — premature spec approval: text-only agent responses must nev
   })
 
   it("Design agent: text-only response never saves spec", async () => {
-    // Design agent makes 3 Anthropic calls: isOffTopicForAgent, isSpecStateQuery, runAgent.
+    // Design agent makes 4 Anthropic calls: isOffTopicForAgent, isSpecStateQuery, isReadinessQuery, runAgent.
     // A text-only response from runAgent (no tool calls) must not save anything.
     mockCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })    // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "I recommend dark mode as the default. Want me to lock this in?" }] }) // runAgent — text-only
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 

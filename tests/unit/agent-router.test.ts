@@ -253,35 +253,40 @@ describe("isSpecStateQuery", () => {
   })
 })
 
-// ─── isReadinessQuery — pure deterministic, no mocks needed ──────────────────
+// ─── isReadinessQuery — LLM-based classifier ─────────────────────────────────
 
 describe("isReadinessQuery", () => {
-  it("returns true for 'ready to hand off'", () => {
-    expect(isReadinessQuery("is this ready to hand off to engineering?")).toBe(true)
+  beforeEach(() => mockCreate.mockReset())
+
+  it("returns true when Haiku responds yes", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    expect(await isReadinessQuery("can we ship this?")).toBe(true)
   })
 
-  it("returns true for 'ready for engineering'", () => {
-    expect(isReadinessQuery("is the spec ready for engineering?")).toBe(true)
+  it("returns false when Haiku responds no", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    expect(await isReadinessQuery("what are the open questions?")).toBe(false)
   })
 
-  it("returns true for 'hand off to engineer'", () => {
-    expect(isReadinessQuery("can we hand off to engineer now?")).toBe(true)
+  it("returns false on unexpected Haiku response (safe default)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "maybe" }] })
+    expect(await isReadinessQuery("hmm")).toBe(false)
   })
 
-  it("returns true for 'can we move to engineering'", () => {
-    expect(isReadinessQuery("can we move to engineering?")).toBe(true)
+  it("uses claude-haiku-4-5-20251001 model", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
+    await isReadinessQuery("good to go?")
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
   })
 
-  it("returns true for 'is this ready'", () => {
-    expect(isReadinessQuery("is this ready?")).toBe(true)
-  })
-
-  it("returns false for a generic message", () => {
-    expect(isReadinessQuery("what are the open questions?")).toBe(false)
-  })
-
-  it("returns false for an empty string", () => {
-    expect(isReadinessQuery("")).toBe(false)
+  it("system prompt distinguishes readiness handoff from state queries", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    await isReadinessQuery("where are we?")
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("hand off")
+    expect(call.system).toContain("FALSE")
+    // State queries and greetings explicitly listed as FALSE examples
+    expect(call.system.toLowerCase()).toMatch(/state quer|where are we|greeting|hi/)
   })
 })
 
