@@ -133,6 +133,8 @@ Flag ONLY elements where a renderer must make an unspecified choice:
 - Screen states (loading, empty, error) that are named in the state list but have no visual description — named without definition is not defined
 - Values that appear with two different specifications within the same spec (e.g. a color token defined as two different hex codes in different sections)
 - Language that two renderers would interpret differently: "near the top", "slightly", "subtle", "prominent", "appropriate" used in place of a specific measurement or value${formFactorCheck ? `\n${formFactorCheck}` : ""}
+- Suggestion chips or action chips described without a concrete position anchor relative to a fixed layout element: if chips can be interpreted as floating in the vertical center of the screen OR pinned near a fixed element (prompt bar, nav bar, bottom edge), the spec must say which — "horizontal row" alone is ambiguous
+- Auth or SSO buttons containing both an icon/logo and label text without specifying their internal horizontal arrangement — flag if the spec does not say how icon and text are positioned relative to each other (e.g. "icon left, text centered", "both centered as a unit with 8px gap"); "full-width stacked" does not resolve this
 
 Do NOT flag:
 - General aesthetic descriptions ("minimal", "dark, premium feel")

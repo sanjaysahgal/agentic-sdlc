@@ -17,9 +17,9 @@ export type Message = {
 }
 
 export type PendingEscalation = {
-  targetAgent: "pm"
-  question: string    // the specific blocking question to hand to the PM
-  designContext: string // current design draft — gives PM instant context
+  targetAgent: "pm" | "architect"
+  question: string    // the specific blocking question to hand to the PM or architect
+  designContext: string // current design draft — gives them instant context
 }
 
 // Pending spec approval — set when the agent detects approval intent.

@@ -17,6 +17,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 //   channelName "feature-dashboard"  → featureName "dashboard"
 // THREAD constants are retained as threadTs values for Slack API calls only.
 
+// Minimal HTML that satisfies all blocking validators (id="hero" present as sibling of id="thread")
+const VALID_MOCK_HTML = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
+
 const mockGetContent    = vi.hoisted(() => vi.fn())
 const mockGetRef        = vi.hoisted(() => vi.fn())
 const mockCreateRef     = vi.hoisted(() => vi.fn())
@@ -697,7 +700,7 @@ describe("Scenario 9 — Design patch flow", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Accessibility\nWCAG AA required. Focus rings on all interactive elements. Min tap target 44px." } }],
       })                                                                               // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview (inside tool handler)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview (inside tool handler)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })             // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated the accessibility section. Ready to approve?" }] }) // runAgent: end_turn
 
@@ -833,7 +836,7 @@ describe("Scenario 12 — State query preview freshness", () => {
     // Anthropic: [0] identifyUncommittedDecisions → pending, [1] generateDesignPreview → HTML
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode: Archon palette agreed\n2. Chip fade timing: 150ms agreed" }] }) // identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>fresh-preview</html>" }] })                                            // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] })                                            // generateDesignPreview
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -843,7 +846,7 @@ describe("Scenario 12 — State query preview freshness", () => {
     // uploadV2 called with "(committed spec)" title — not the stale saved file
     const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
     expect(uploadCall?.title).toContain("committed spec")
-    expect(uploadCall?.content).toBe("<html>fresh-preview</html>")
+    expect(uploadCall?.content).toBe(VALID_MOCK_HTML)
 
     // generateDesignPreview was called (2nd Anthropic call)
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
@@ -956,7 +959,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
       })                                                                            // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview is live. Ready to approve." }] }) // runAgent: end_turn
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] }) // identifyUncommittedDecisions
 
@@ -983,7 +986,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
       })                                                                            // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Here's the preview. I also recommend switching the CTA to violet." }] }) // runAgent: end_turn
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. CTA button color: violet — discussed this turn, not in spec." }] }) // identifyUncommittedDecisions
 
@@ -1018,7 +1021,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Colors\nViolet CTA." } }],
       })                                                                            // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })          // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated and saved. Ready to approve?" }] }) // runAgent: end_turn
     // If identifyUncommittedDecisions were called, it would hit the default mockResolvedValue
@@ -1097,7 +1100,7 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Auth Sheet\nEnters from bottom." } }],
       })                                                                            // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview
       .mockRejectedValueOnce(new Error("Input too long: request exceeds context window")) // runAgent: end_turn FAILS
 
     const client = makeClient()
@@ -1212,7 +1215,7 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Stale Agent Memory STALE_MARKER" } }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // html-renderer
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // html-renderer
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview is live." }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
@@ -1279,13 +1282,13 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips positioned near the bottom." } }],
       })                                                                        // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview
       .mockResolvedValueOnce({ content: [{ type: "text", text: '["Chat Home chips position is vague — must specify exact spacing from prompt bar"]' }] }) // auditSpecRenderAmbiguity → ambiguities
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t2", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips: 12px above the prompt bar." } }],
       })                                                                        // runAgent: tool_use (agent patches ambiguity)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview2</html>" }] }) // generateDesignPreview (second save)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview (second save)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity → resolved
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated chip positioning to 12px above the prompt bar." }] }) // runAgent: end_turn
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
@@ -1324,7 +1327,7 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nHeading: \"Health360\". Chips: 12px above prompt bar." } }],
       })                                                                        // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec saved. Ready to approve." }] }) // runAgent: end_turn
 
@@ -1406,7 +1409,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html><!DOCTYPE html><html>fresh</html>" }] }) // html-renderer
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // html-renderer
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Preview generated." }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
@@ -1418,9 +1421,9 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     // HTML saved to branch (createOrUpdateFileContents called for the .preview.html file)
     expect(mockCreateOrUpdate).toHaveBeenCalled()
 
-    // uploadV2 received the freshly generated HTML
+    // uploadV2 received the freshly generated HTML (matching the renderer mock output)
     const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(uploadCall.content).toContain("fresh")
+    expect(uploadCall.content).toContain('id="hero"')
   })
 
   it("apply_design_spec_patch always calls generateDesignPreview with the full merged spec — not patch-based update", async () => {
@@ -1458,7 +1461,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: THE_PATCH } }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>updated preview</html>" }] }) // generateDesignPreview renderer
+      .mockResolvedValueOnce({ content: [{ type: "text", text: VALID_MOCK_HTML }] }) // generateDesignPreview renderer
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })               // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec and preview updated." }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })

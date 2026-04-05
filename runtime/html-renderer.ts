@@ -10,10 +10,11 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 3
  * modes without relying on Sonnet to follow the rules correctly.
  *
  * Fixes applied:
- * 1. Hero x-show → :class  (hero stays visible before Alpine loads)
- * 2. Thread missing display:none → inject it  (thread stays hidden before Alpine loads)
- * 3. Single-quoted JS strings with apostrophes → double-quoted  (prevents appData() syntax errors)
- * 4. Inspector buttons with :style only → inject static resting style  (buttons visible without Alpine)
+ * 1a/b. Hero x-show → :class  (hero with id="hero" stays visible before Alpine loads)
+ * 1c.   Hero without id="hero" → inject id + convert x-show to :class  (catches wrong-structure output)
+ * 2.    Thread missing display:none → inject it; also inject x-show if absent
+ * 3.    Single-quoted JS strings with apostrophes → double-quoted  (prevents appData() syntax errors)
+ * 4.    Inspector buttons with :style only → inject static resting style  (buttons visible without Alpine)
  */
 export function sanitizeRenderedHtml(html: string): string {
   let out = html
@@ -44,18 +45,42 @@ export function sanitizeRenderedHtml(html: string): string {
     }
   )
 
-  // Fix 2: thread missing display:none
-  // Finds the opening tag of id="thread" and injects display:none into its style attribute.
-  // If style= already exists, prepends to it. If no style, adds one.
+  // Fix 1c: hero without id="hero" — match by characteristic x-show predicate.
+  // Catches the wrong structure where Sonnet generates the hero inside the thread div
+  // without assigning id="hero", making Fix 1a/b unable to act. Injects id="hero" and
+  // converts the x-show to :class so the hero is visible without Alpine.
+  out = out.replace(
+    /(<div\b(?![^>]*\bid="hero")[^>]*)\bx-show="([^"]*msgs\.length\s*===?\s*0[^"]*)"([^>]*>)/g,
+    (_, before, _expr, after) => {
+      let tag = before + ' id="hero"' + after
+      if (!tag.includes(":class")) {
+        tag = tag.replace(/>$/, ' :class="{ \'hidden\': msgs.length > 0 || typing }">')
+      }
+      return tag
+    }
+  )
+
+  // Fix 2: thread missing display:none + missing x-show.
+  // Injects display:none so thread is hidden before Alpine loads.
+  // Also injects x-show so Alpine can show it once messages exist —
+  // without x-show the display:none becomes permanent (nothing un-hides it).
   out = out.replace(
     /(<(?:div|section)\b[^>]*\bid="thread"[^>]*)(>)/g,
     (_, tag, close) => {
-      if (tag.includes("display:none") || tag.includes("display: none")) return _ // already fine
-      if (/style\s*=\s*"/.test(tag)) {
-        // Prepend display:none to existing style value
-        return tag.replace(/style\s*=\s*"/, 'style="display:none; ') + close
+      let result = tag
+      // Step A: inject display:none if missing
+      if (!result.includes("display:none") && !result.includes("display: none")) {
+        if (/style\s*=\s*"/.test(result)) {
+          result = result.replace(/style\s*=\s*"/, 'style="display:none; ')
+        } else {
+          result = result + ' style="display:none;"'
+        }
       }
-      return tag + ' style="display:none;"' + close
+      // Step B: inject x-show if missing — ensures Alpine can un-hide thread when messages arrive
+      if (!result.includes("x-show")) {
+        result = result + ' x-show="msgs.length > 0 || typing"'
+      }
+      return result + close
     }
   )
 
@@ -111,7 +136,7 @@ export function sanitizeRenderedHtml(html: string): string {
  * - Hero still using x-show after sanitization
  * - Thread still missing display:none after sanitization
  */
-function validateRenderedHtml(html: string, brandContent?: string): { blocking: string[]; warnings: string[] } {
+export function validateRenderedHtml(html: string, brandContent?: string): { blocking: string[]; warnings: string[] } {
   const blocking: string[] = []
   const warnings: string[] = []
 
@@ -125,6 +150,21 @@ function validateRenderedHtml(html: string, brandContent?: string): { blocking: 
   // Pattern: 'word's — a single quote, word chars, apostrophe, word char.
   if (/<script\b[^>]*>[\s\S]*?'\w+'\w[\s\S]*?<\/script>/i.test(html)) {
     blocking.push("Unescaped apostrophe in JavaScript string literal — Alpine will fail to initialize")
+  }
+
+  // Hero element must be present with id="hero".
+  // Fix 1a/b/c all require this attribute to apply the :class visibility pattern.
+  // A hero without id="hero" cannot be fixed post-generation — retry required.
+  if (!html.includes('id="hero"')) {
+    blocking.push('Hero element missing id="hero" — sanitizer cannot apply :class visibility pattern; retry required. CRITICAL: add id="hero" to the hero div.')
+  }
+
+  // Hero must NOT be nested inside the thread element.
+  // If hero is inside thread (wrong sibling structure), the overlay stacking is wrong —
+  // hero and messages will overlap. Check a window after id="thread" for id="hero".
+  const threadIdx = html.indexOf('id="thread"')
+  if (threadIdx !== -1 && html.slice(threadIdx, threadIdx + 5000).includes('id="hero"')) {
+    blocking.push('Hero element is nested inside thread — hero and thread must be siblings in a position:relative wrapper, not parent-child. This causes hero and messages to overlap.')
   }
 
   // --- Warning checks ---
@@ -509,6 +549,8 @@ The area inside the phone frame (below the status bar, above the prompt bar) MUS
 - Hero uses \`:class="{ 'hidden': msgs.length > 0 || typing }"\` — NOT \`x-show\`
 - Thread uses BOTH \`style="display:none"\` AND \`x-show\` — the inline style hides it before Alpine, Alpine then shows/hides it reactively
 - Scrolling (overflow-y:auto) is on hero and thread individually — NOT on the wrapper
+- CRITICAL: hero div MUST have \`id="hero"\` — the post-generation sanitizer requires this exact attribute to apply the :class visibility pattern. A hero without \`id="hero"\` cannot be fixed and will trigger a retry. Never omit this attribute.
+- CRITICAL: hero and thread MUST be siblings — never put the hero div inside the thread div. Hero inside thread = hero overlaps messages in conversation state.
 
 ## Empty-state hero — REQUIRED for chat/assistant screens
 
@@ -518,7 +560,7 @@ When the spec describes a chat home screen, the default (empty) state MUST show 
 - Hero content: \`<h1>\` with the app name in gradient text matching the spec, centered
 - Tagline below the h1, centered, in muted text color
 - Glow effect behind the hero (per glow pattern above)
-- Starter chips row below the tagline (horizontal, nowrap, scrollable)
+- Starter chips row: positioned at the **bottom** of the hero layer via \`margin-top: auto\` in the hero flex column — NOT vertically centered with the heading. Layout: heading → tagline → \`margin-top:auto\` spacer → chips row. This anchors chips just above the prompt bar.
 - The prompt bar is always pinned at the bottom of the phone frame
 
 **Static-first hero — REQUIRED:** Follow the Phone content area mandatory structure above. Use \`position:absolute; inset:0\` for hero. Do NOT put the hero behind \`x-show\` — Alpine hides \`x-show\` elements before initialization, leaving the screen blank. Use \`:class="{ 'hidden': msgs.length > 0 || typing }"\` on the hero instead. Thread gets \`style="display:none"\` + \`x-show\`.

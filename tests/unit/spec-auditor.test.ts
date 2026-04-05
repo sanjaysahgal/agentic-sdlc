@@ -284,3 +284,34 @@ describe("auditSpecDraft", () => {
     )
   })
 })
+
+// ─── auditSpecRenderAmbiguity — Haiku prompt content checks ──────────────────
+
+describe("auditSpecRenderAmbiguity — Haiku prompt includes chip anchor check", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("Haiku system prompt includes chip position anchor requirement", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n\n### Chat Home\nSuggestion chips: horizontal row.")
+    const callArgs = mockCreate.mock.calls[0][0]
+    const systemPrompt = callArgs.system as string
+    // Must mention chip/suggestion chip anchor ambiguity
+    expect(systemPrompt.toLowerCase()).toMatch(/chip/)
+    expect(systemPrompt.toLowerCase()).toMatch(/anchor|position anchor|fixed/)
+  })
+
+  it("Haiku system prompt includes SSO button internal layout requirement", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n\n### Auth Sheet\nSSO buttons: full-width, stacked.")
+    const callArgs = mockCreate.mock.calls[0][0]
+    const systemPrompt = callArgs.system as string
+    // Must mention icon+text arrangement on auth/SSO buttons
+    expect(systemPrompt.toLowerCase()).toMatch(/sso|auth/)
+    expect(systemPrompt.toLowerCase()).toMatch(/icon|arrangement|horizontal/)
+  })
+})

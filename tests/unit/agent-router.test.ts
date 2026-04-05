@@ -18,6 +18,7 @@ import {
   classifyApprovedPhaseIntent,
   isOffTopicForAgent,
   isSpecStateQuery,
+  isReadinessQuery,
 } from "../../runtime/agent-router"
 
 // ─── detectPhase — pure logic, no mocks needed ────────────────────────────
@@ -249,6 +250,38 @@ describe("isSpecStateQuery", () => {
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ system: expect.stringContaining("are you there") })
     )
+  })
+})
+
+// ─── isReadinessQuery — pure deterministic, no mocks needed ──────────────────
+
+describe("isReadinessQuery", () => {
+  it("returns true for 'ready to hand off'", () => {
+    expect(isReadinessQuery("is this ready to hand off to engineering?")).toBe(true)
+  })
+
+  it("returns true for 'ready for engineering'", () => {
+    expect(isReadinessQuery("is the spec ready for engineering?")).toBe(true)
+  })
+
+  it("returns true for 'hand off to engineer'", () => {
+    expect(isReadinessQuery("can we hand off to engineer now?")).toBe(true)
+  })
+
+  it("returns true for 'can we move to engineering'", () => {
+    expect(isReadinessQuery("can we move to engineering?")).toBe(true)
+  })
+
+  it("returns true for 'is this ready'", () => {
+    expect(isReadinessQuery("is this ready?")).toBe(true)
+  })
+
+  it("returns false for a generic message", () => {
+    expect(isReadinessQuery("what are the open questions?")).toBe(false)
+  })
+
+  it("returns false for an empty string", () => {
+    expect(isReadinessQuery("")).toBe(false)
   })
 })
 

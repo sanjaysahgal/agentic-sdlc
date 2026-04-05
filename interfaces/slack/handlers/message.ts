@@ -5,7 +5,7 @@ import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, isReadinessQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
@@ -663,7 +663,29 @@ async function runDesignAgent(params: {
     }
   }
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice + upstreamNoticeDesign
+  // Readiness query audit — fires when the user asks if the spec is ready for engineering.
+  // Runs auditPhaseCompletion with the DESIGN_RUBRIC (same as the finalization gate) and injects
+  // findings as a PLATFORM READINESS AUDIT notice. This is deterministic — does not rely on the
+  // agent noticing the question and calling run_phase_completion_audit on its own.
+  let readinessAuditNotice = ""
+  if (isReadinessQuery(userMessage)) {
+    const draft = await readFile(`${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`, `spec/${featureName}-design`).catch(() => null)
+    if (draft) {
+      const readinessResult = await auditPhaseCompletion({
+        specContent: draft,
+        rubric: buildDesignRubric(targetFormFactors),
+        featureName,
+      }).catch(() => null)
+      if (readinessResult && !readinessResult.ready) {
+        const findingLines = readinessResult.findings.map((f, i) => `${i + 1}. ${f.issue} — Recommendation: ${f.recommendation}`).join("\n")
+        readinessAuditNotice = `\n\n[PLATFORM READINESS AUDIT — The design spec has ${readinessResult.findings.length} gap${readinessResult.findings.length === 1 ? "" : "s"} that make it NOT engineering-ready. You MUST surface every finding with your concrete recommendation before answering the readiness question. For design gaps you own, provide your recommendation directly. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation.\n${findingLines}]`
+      } else if (readinessResult?.ready) {
+        readinessAuditNotice = `\n\n[PLATFORM READINESS AUDIT — Spec passed all ${buildDesignRubric(targetFormFactors).split("\n").filter(l => /^\d+\./.test(l)).length} design rubric criteria. You may confirm the spec is engineering-ready.]`
+      }
+    }
+  }
+
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice + upstreamNoticeDesign + readinessAuditNotice
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -810,6 +832,16 @@ async function runDesignAgent(params: {
         })
         return {
           result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the PM will be notified with your question.",
+        }
+      }
+      if (name === "offer_architect_escalation") {
+        setPendingEscalation(featureName, {
+          targetAgent: "architect",
+          question: input.question as string,
+          designContext: context.currentDraft ?? "",
+        })
+        return {
+          result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the Architect will be notified with your question.",
         }
       }
       if (name === "fetch_url") {

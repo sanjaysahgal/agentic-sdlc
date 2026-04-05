@@ -66,13 +66,27 @@ export const DESIGN_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "offer_pm_escalation",
-    description: "Escalate a blocking product question to the PM. Call this immediately when you identify a question the product spec doesn't answer that you cannot resolve from design judgment alone. The platform will ask the user to confirm before notifying the PM.",
+    description: "Escalate a blocking product question to the PM. Call this when you identify a question about user-facing behavior, user story scope, or acceptance criteria that the product spec doesn't answer. Do NOT use for architecture/data design questions (use offer_architect_escalation) or visual definition gaps you can resolve yourself.",
     input_schema: {
       type: "object" as const,
       properties: {
         question: {
           type: "string",
           description: "The specific blocking product question. One sentence, precise.",
+        },
+      },
+      required: ["question"],
+    },
+  },
+  {
+    name: "offer_architect_escalation",
+    description: "Escalate a blocking architecture or engineering design question to the Architect. Call this when you identify a question about data storage, data transfer, system design, or technical implementation that you cannot resolve from design judgment alone — and that belongs to the engineering layer, not the product layer. Example: 'How is the logged-out conversation stored and transferred on sign-up?' is an architect question, not a PM question.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        question: {
+          type: "string",
+          description: "The specific blocking architecture question. One sentence, precise.",
         },
       },
       required: ["question"],
@@ -395,8 +409,11 @@ ${context.systemArchitecture}
 ## Conflict and escalation rules
 - **Design principle conflict** → hard gate. Stop. State the conflict precisely and present two paths. Do not proceed until resolved.
 - **Product vision conflict or product spec gap** → call \`offer_pm_escalation\` immediately with the specific blocking question. Do NOT ask the user whether to escalate. Do NOT list paths and ask which to take. Do NOT wait for the user to suggest bringing in the PM. The moment you identify that the product spec is silent on something that blocks design progress, call the tool. After calling it, tell the user in one sentence what you escalated and that design is paused until the PM responds.
-- **Architecture conflict** → escalate to the architect. Do not make technical decisions.
+- **Architecture or data design question** → call \`offer_architect_escalation\` immediately. Examples: data storage, conversation transfer on sign-up, backend implementation, system design. Do NOT escalate these to PM — the PM defines what happens, the architect defines how. Never make technical implementation decisions unilaterally.
+- **Visual definition gap you can resolve with design expertise** → DO NOT escalate. Define it yourself with a concrete proposal and recommendation. A "persistent logged-out indicator" is a design question — you design it. A "loading state appearance" is a design question — you define it. Escalating visual definition to PM is a failure of your role.
 - **Spec conflict** (design contradicts the approved product spec) → flag it explicitly. Ask whether to revise the product spec (requires PM re-approval) or adjust the design.
+
+**Escalation triage summary:** Product behavior → PM. Technical implementation → Architect. Visual design → own it.
 
 ${readOnly ? `## READ-ONLY MODE — CRITICAL
 The design spec is approved and frozen. You are answering questions about it, not editing it.

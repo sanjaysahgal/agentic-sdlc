@@ -9,7 +9,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 import Anthropic from "@anthropic-ai/sdk"
-import { generateDesignPreview, sanitizeRenderedHtml } from "../../runtime/html-renderer"
+import { generateDesignPreview, sanitizeRenderedHtml, validateRenderedHtml } from "../../runtime/html-renderer"
 
 beforeEach(() => {
   mockCreate.mockReset()
@@ -21,9 +21,12 @@ describe("Anthropic client config", () => {
   })
 })
 
+// Minimal valid HTML that satisfies all blocking validators (id="hero" present, hero not nested in thread)
+const VALID_MOCK_HTML = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
+
 describe("generateDesignPreview", () => {
   it("returns html and warnings from Claude response", async () => {
-    const html = "<!DOCTYPE html><html><body><h1>Preview</h1></body></html>"
+    const html = VALID_MOCK_HTML
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({
@@ -37,7 +40,7 @@ describe("generateDesignPreview", () => {
 
   it("strips leading ```html fence if model adds one", async () => {
     mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: "```html\n<!DOCTYPE html><html></html>\n```" }],
+      content: [{ type: "text", text: "```html\n" + VALID_MOCK_HTML + "\n```" }],
     })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -47,7 +50,7 @@ describe("generateDesignPreview", () => {
 
   it("strips leading ``` fence without language tag", async () => {
     mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: "```\n<!DOCTYPE html><html></html>\n```" }],
+      content: [{ type: "text", text: "```\n" + VALID_MOCK_HTML + "\n```" }],
     })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -56,7 +59,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("passes featureName and specContent to Claude", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({
       specContent: "## Screens\n### Dashboard",
@@ -70,7 +73,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("uses claude-sonnet-4-6 model for production-quality rendering", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -97,7 +100,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("uses max_tokens 32000 for complex spec rendering", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -107,7 +110,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt instructs renderer to read opacity from AUTHORITATIVE BRAND TOKENS", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -120,7 +123,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt uses non-prefixed color names to avoid Tailwind class collision", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -131,7 +134,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt instructs sheets and modals to be own nav tabs", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -140,7 +143,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("prepends AUTHORITATIVE BRAND TOKENS block when brandContent is provided", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     const brandContent = "## Color Palette\n--bg: #0A0A0F\n--violet: #7C6FCD"
     await generateDesignPreview({ specContent: "spec", featureName: "test", brandContent })
@@ -152,7 +155,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("does not prepend brand block when brandContent is not provided", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -163,8 +166,8 @@ describe("generateDesignPreview", () => {
 
   it("returns warnings when bg token from BRAND.md is absent from rendered HTML", async () => {
     const brandContent = "## Color Palette\n--bg: #1A1A2E\n"
-    // HTML that does not include the brand bg token
-    const html = "<!DOCTYPE html><html><body style='background: #000'></body></html>"
+    // HTML that does not include the brand bg token — but has valid hero/thread structure
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #000; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test", brandContent })
@@ -172,7 +175,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("returns empty warnings when HTML is structurally complete", async () => {
-    const html = "<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #F8F8F7; }</style></head><body></body></html>"
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #F8F8F7; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -180,7 +183,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("returns warning when keyframe animations are missing", async () => {
-    const html = "<!DOCTYPE html><html><body></body></html>"
+    const html = `<!DOCTYPE html><html><head><style>body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -189,7 +192,7 @@ describe("generateDesignPreview", () => {
 
   it("returns warning when body has no explicit CSS background-color (Tailwind-only silently fails on file:// URLs)", async () => {
     // bg-primary class without explicit background-color in <style> → white page on disk
-    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {}</style></head><body class="bg-primary"><div>content</div></body></html>`
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {}</style></head><body class="bg-primary"><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -197,7 +200,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("no background warning when body has explicit CSS background-color in style tag", async () => {
-    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #F8F8F7; }</style></head><body><div>content</div></body></html>`
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #F8F8F7; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -205,7 +208,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt instructs chips to be horizontal row not vertical stack", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -214,7 +217,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt requires Alpine.js x-data function pattern to prevent $nextTick escaping", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -227,7 +230,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt specifies phone frame + inspector panel preview layout", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -238,7 +241,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt requires empty-state hero to be separate from nav bar and static-first (no x-show on hero)", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -252,7 +255,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt mandates phone content area position:absolute structure for hero and thread", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -268,7 +271,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt forbids height:100% inside overflow-y:auto for phone content area", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -277,7 +280,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt requires inspector buttons to have full resting-state styles in static style attribute", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -289,7 +292,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("system prompt requires double-quoted strings in appData to prevent apostrophe syntax errors", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "<!DOCTYPE html><html></html>" }] })
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_MOCK_HTML }] })
 
     await generateDesignPreview({ specContent: "spec", featureName: "test" })
 
@@ -312,8 +315,8 @@ describe("generateDesignPreview", () => {
   })
 
   it("sanitizer injects display:none into thread so it starts hidden — no warning in output", async () => {
-    // Sonnet forgot display:none on thread — sanitizer injects it
-    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="thread" x-show="msgs.length > 0"></div></body></html>`
+    // Sonnet forgot display:none on thread — sanitizer injects it. Hero is present with :class.
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }"></div><div id="thread" x-show="msgs.length > 0"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -323,7 +326,7 @@ describe("generateDesignPreview", () => {
   })
 
   it("no thread display:none warning when style was already present (sanitizer leaves it unchanged)", async () => {
-    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="thread" style="position:absolute;inset:0;overflow-y:auto;display:none;" x-show="msgs.length > 0"></div></body></html>`
+    const html = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }"></div><div id="thread" style="position:absolute;inset:0;overflow-y:auto;display:none;" x-show="msgs.length > 0"></div></body></html>`
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: html }] })
 
     const result = await generateDesignPreview({ specContent: "spec", featureName: "test" })
@@ -407,5 +410,107 @@ describe("sanitizeRenderedHtml", () => {
     const html = `<button class="btn" @click="sendMsg(chip)">Send</button>`
     const out = sanitizeRenderedHtml(html)
     expect(out).toBe(html)
+  })
+})
+
+// ─── Fix 1c: hero without id="hero" ──────────────────────────────────────────
+
+describe("sanitizeRenderedHtml — Fix 1c: hero without id='hero'", () => {
+  it("injects id='hero' and :class when x-show matches hero predicate but id is missing", () => {
+    const html = `<div x-show="msgs.length === 0 && !typing" style="position:absolute;inset:0"></div>`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toContain('id="hero"')
+    expect(out).not.toContain('x-show="msgs.length === 0')
+    expect(out).toContain(":class")
+    expect(out).toContain("hidden")
+  })
+
+  it("does not double-add id='hero' when hero already has it", () => {
+    const html = `<div id="hero" :class="{ 'hidden': msgs.length > 0 }" style="position:absolute;inset:0"></div>`
+    const out = sanitizeRenderedHtml(html)
+    const count = (out.match(/id="hero"/g) ?? []).length
+    expect(count).toBe(1)
+  })
+})
+
+// ─── Fix 2 enhancement: thread missing x-show ────────────────────────────────
+
+describe("sanitizeRenderedHtml — Fix 2 enhancement: thread missing x-show", () => {
+  it("injects x-show on thread when x-show is absent", () => {
+    const html = `<div id="thread" style="position:absolute;inset:0;display:none;"></div>`
+    const out = sanitizeRenderedHtml(html)
+    expect(out).toContain('x-show="msgs.length > 0 || typing"')
+  })
+
+  it("does not inject x-show on thread when x-show is already present", () => {
+    const html = `<div id="thread" style="position:absolute;inset:0;display:none;" x-show="msgs.length > 0 || typing"></div>`
+    const out = sanitizeRenderedHtml(html)
+    const count = (out.match(/x-show=/g) ?? []).length
+    expect(count).toBe(1)
+  })
+})
+
+// ─── validateRenderedHtml — blocking validators ───────────────────────────────
+
+describe("validateRenderedHtml — blocking: missing id='hero'", () => {
+  it("returns a blocking issue when id='hero' is absent", () => {
+    // Minimal but otherwise valid structure — no hero id
+    const html = `<!DOCTYPE html><html><body><div id="thread" style="display:none;" x-show="msgs.length > 0 || typing"><p>msg</p></div></body></html>`
+    const result = validateRenderedHtml(html)
+    expect(result.blocking.length).toBeGreaterThan(0)
+    expect(result.blocking.some((b: string) => b.toLowerCase().includes("hero") && b.toLowerCase().includes("id"))).toBe(true)
+  })
+
+  it("returns no hero-id blocking issue when id='hero' is present", () => {
+    const html = `<!DOCTYPE html><html><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }"></div><div id="thread" style="display:none;" x-show="msgs.length > 0 || typing"><p>msg</p></div></body></html>`
+    const result = validateRenderedHtml(html)
+    const heroIdBlocking = result.blocking.filter((b: string) => b.toLowerCase().includes("hero") && b.toLowerCase().includes("id"))
+    expect(heroIdBlocking.length).toBe(0)
+  })
+})
+
+describe("validateRenderedHtml — blocking: hero nested inside thread", () => {
+  it("returns a blocking issue when hero is nested inside thread", () => {
+    // hero incorrectly placed inside thread
+    const html = `<!DOCTYPE html><html><body><div id="thread" style="display:none;" x-show="msgs.length > 0 || typing"><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }"></div><p>msg</p></div></body></html>`
+    const result = validateRenderedHtml(html)
+    expect(result.blocking.some((b: string) => b.toLowerCase().includes("nested") || b.toLowerCase().includes("sibling"))).toBe(true)
+  })
+
+  it("returns no nesting blocking issue when hero and thread are siblings", () => {
+    const html = `<!DOCTYPE html><html><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }"></div><div id="thread" style="display:none;" x-show="msgs.length > 0 || typing"><p>msg</p></div></body></html>`
+    const result = validateRenderedHtml(html)
+    const nestingBlocking = result.blocking.filter((b: string) => b.toLowerCase().includes("nested") || b.toLowerCase().includes("sibling"))
+    expect(nestingBlocking.length).toBe(0)
+  })
+})
+
+// ─── System prompt reinforcement: id="hero" required ─────────────────────────
+// Verify the source file enforces id="hero" in the renderer system prompt.
+// This is a static content check — if someone removes the rule, this test breaks.
+
+describe("generateDesignPreview system prompt — id='hero' reinforcement", () => {
+  it("html-renderer source enforces id='hero' in system prompt rules", async () => {
+    const { readFileSync } = await import("fs")
+    const { resolve, dirname } = await import("path")
+    const { fileURLToPath } = await import("url")
+    // Works in both CJS and ESM test environments
+    const filePath = resolve(dirname(fileURLToPath(import.meta.url)), "../../runtime/html-renderer.ts")
+    const src: string = readFileSync(filePath, "utf-8")
+    // The source must contain a CRITICAL enforcement of id="hero" somewhere.
+    // Find the occurrence that's adjacent to CRITICAL / must / retry language.
+    let found = false
+    let searchFrom = 0
+    while (true) {
+      const idx = src.indexOf('id="hero"', searchFrom)
+      if (idx === -1) break
+      const ctx = src.slice(Math.max(0, idx - 300), idx + 300).toLowerCase()
+      if (/critical|must not omit|retry required/.test(ctx)) {
+        found = true
+        break
+      }
+      searchFrom = idx + 1
+    }
+    expect(found).toBe(true)
   })
 })

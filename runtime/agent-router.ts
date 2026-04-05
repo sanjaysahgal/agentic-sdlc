@@ -146,6 +146,24 @@ Respond with exactly one word: yes or no`,
   return text === "yes"
 }
 
+// isReadinessQuery detects when the user is asking whether the design spec is ready
+// to hand off to engineering. This triggers a platform-layer phase completion audit
+// so the design agent receives the audit findings before it responds — deterministic,
+// not prompt-rule-dependent.
+export function isReadinessQuery(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes("ready to hand off") ||
+    lower.includes("ready for engineering") ||
+    lower.includes("hand off to engineer") ||
+    lower.includes("can we move to engineering") ||
+    lower.includes("ready to move on") ||
+    lower.includes("is this ready") ||
+    lower.includes("can we hand off") ||
+    lower.includes("ready for the engineer")
+  )
+}
+
 export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean
