@@ -322,6 +322,38 @@ Phase detection latency is invisible to users today because it runs in parallel 
 
 ---
 
+### Trust Step 4e — API rate limit management (GitHub + Anthropic)
+
+**The problem today:** The platform uses a single GitHub token and a single Anthropic API key for all workspaces. At 100+ concurrent features each making 3–8 GitHub reads and 3–8 Anthropic calls per message, both limits break. GitHub REST: 5,000 req/hour per token. Anthropic: RPM/TPM limits per key. There is no queuing, backpressure, or per-workspace isolation.
+
+**What this adds:**
+- Per-workspace GitHub tokens: `GITHUB_TOKEN` moved to WorkspaceConfig (already the right abstraction — just needs to be loaded per-request from the workspace registry once Step 10 lands). Until then, pool multiple tokens round-robin.
+- Per-workspace Anthropic keys: same pattern — `ANTHROPIC_API_KEY` per workspace, loaded from workspace registry.
+- Request queue in `runtime/claude-client.ts`: bounded concurrency (max N in-flight Anthropic calls per workspace), exponential backoff on 429/529, surface rate-limit errors to the user as "_I've hit an API rate limit — retrying in a moment._" rather than "Something went wrong."
+- GitHub read deduplication: if two concurrent messages read the same file in the same 10-second window, return the cached result rather than making two identical API calls.
+
+**Prerequisite:** Trust Step 3 (Redis) for per-workspace state, Trust Step 4d (phase cache) for reduced GitHub read volume. Implement before Step 5 (production deployment).
+
+**Source:** DECISIONS.md — "Single API key" and "GitHub rate limits" entries.
+
+---
+
+### Trust Step 4f — Legacy migration cleanup: featureName cross-contamination
+
+**The problem today:** `getHistory(featureName)` merges all entries stored under `_legacy_` (the migration catch-all for old threadTs-keyed messages) into every featureName's history. With one feature this is harmless. With multiple features, feature B's agent sees feature A's full conversation history — injecting irrelevant decisions into `identifyUncommittedDecisions` and producing garbage results.
+
+**What this adds:**
+- Build a `threadTs → featureName` index: on every incoming Slack event, store `threadTs → channelName → featureName` mapping in Redis (from Trust Step 3).
+- `migrateThreadTsKeys()` re-runs with the index: re-keys each `_legacy_` entry to its correct featureName instead of `_legacy_`.
+- `getHistory()` removes the `_legacy_` merge — each feature gets only its own history.
+- After migration is confirmed clean (no `_legacy_` entries remain), remove `migrateThreadTsKeys()` entirely.
+
+**Prerequisite:** Trust Step 3 (Redis) — the threadTs index needs a shared store to work across instances. This fix is a correctness issue, not just performance: multiple features means actively wrong agent output.
+
+**Source:** DECISIONS.md — "featureName-keying migration" entry.
+
+---
+
 ### Step 2.5b — Remaining API cost optimizations (minor)
 
 Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps. **Do not prioritise until onboarding a second workspace** — the savings only compound at multi-user, multi-feature volume.
