@@ -165,14 +165,19 @@ export async function handleFeatureChannelMessage(params: {
     if (pendingEscalation && isAffirmative(userMessage)) {
       clearPendingEscalation(featureName)
       const { roles } = loadWorkspaceConfig()
-      const mention = roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`
+      const isArchitectEscalation = pendingEscalation.targetAgent === "architect"
+      const mention = isArchitectEscalation
+        ? (roles.architectUser ? `<@${roles.architectUser}>` : `*Architect*`)
+        : (roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`)
+      const questionType = isArchitectEscalation ? "blocking architecture question" : "blocking product question"
+      const pausedRole = isArchitectEscalation ? "Architect" : "PM"
       const escalationMsg =
-        `${mention} — UX Designer has a blocking product question that needs a decision before the design spec can continue:\n\n` +
+        `${mention} — UX Designer has a ${questionType} that needs a decision before the design spec can continue:\n\n` +
         `*"${pendingEscalation.question}"*\n\n` +
         `_Reply here to unblock design._`
       await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: escalationMsg })
       appendMessage(featureName, { role: "user", content: userMessage })
-      appendMessage(featureName, { role: "assistant", content: `Escalated to PM: "${pendingEscalation.question}". Design is paused until they respond.` })
+      appendMessage(featureName, { role: "assistant", content: `Escalated to ${pausedRole}: "${pendingEscalation.question}". Design is paused until they respond.` })
       return
     }
     // User declined escalation or sent a new message — clear pending and continue normally

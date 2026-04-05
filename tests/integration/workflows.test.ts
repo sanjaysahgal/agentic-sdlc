@@ -1511,3 +1511,175 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     expect(rendererUserMessage).not.toContain("existing preview") // old HTML cache NOT passed through
   })
 })
+
+// ─── Scenario 18: Architect escalation round-trip ────────────────────────────
+//
+// Verifies that offer_architect_escalation correctly notifies the ARCHITECT
+// (not the PM) on confirmation. Previously the handler always used roles.pmUser
+// regardless of pendingEscalation.targetAgent.
+
+describe("Scenario 18 — Architect escalation round-trip from design agent", () => {
+  const THREAD = "workflow-s18"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("Turn 1: design agent calls offer_architect_escalation → pending stored with targetAgent: architect", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Anthropic call sequence (empty history, no PM spec → no phase entry audit):
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] isReadinessQuery         → no
+    //   [3] runAgent (tool_use)      → offer_architect_escalation
+    //   [4] runAgent (end_turn)      → text after tool result
+    //   [5] identifyUncommittedDecisions → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })            // isReadinessQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_architect_escalation", input: { question: "Where is user state persisted between logged-out and logged-in sessions?" } }],
+      })                                                                              // runAgent: tool_use
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I've flagged this for the architect — design is paused until they weigh in on the storage model." }],
+      })                                                                              // runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })          // identifyUncommittedDecisions
+
+    const params = makeParams(THREAD, "feature-onboarding", "how should we handle session carry-over?")
+    await handleFeatureChannelMessage(params)
+
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.targetAgent).toBe("architect")
+    expect(pending?.question).toContain("user state persisted")
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("architect")
+  })
+
+  it("Turn 2: user says yes → architect @mentioned (not PM), message contains 'blocking architecture question'", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    // Override env so architectUser is set to a known Slack ID
+    process.env.SLACK_ARCHITECT_USER = "U_ARCHITECT"
+    appendMessage("onboarding", { role: "user", content: "how should we handle session carry-over?" })
+    appendMessage("onboarding", { role: "assistant", content: "I've flagged this for the architect — design is paused until they weigh in on the storage model." })
+
+    const { setPendingEscalation } = await import("../../../runtime/conversation-store")
+    setPendingEscalation("onboarding", {
+      targetAgent: "architect",
+      question: "Where is user state persisted between logged-out and logged-in sessions?",
+      designContext: "Onboarding design in progress.",
+    })
+
+    // No Anthropic calls — escalation confirmation is handled entirely by the platform
+    const params = makeParams(THREAD, "feature-onboarding", "yes please escalate")
+    await handleFeatureChannelMessage(params)
+
+    // Architect was notified — NOT the PM
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const escalationPost = postCalls.find((c: any) => c[0]?.text?.includes("blocking architecture question"))
+    expect(escalationPost).toBeDefined()
+    expect(escalationPost[0].text).toContain("<@U_ARCHITECT>")
+    expect(escalationPost[0].text).toContain("Where is user state persisted")
+    expect(escalationPost[0].text).not.toContain("blocking product question")
+
+    // PM was NOT mentioned
+    expect(escalationPost[0].text).not.toContain("Product Manager")
+
+    // Pending cleared
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // No AI call
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Scenario 19: Readiness audit injection ───────────────────────────────────
+//
+// Verifies that when the user asks a readiness question ("is this ready for engineering?"),
+// isReadinessQuery returns true → auditPhaseCompletion fires → findings are injected
+// as [PLATFORM READINESS AUDIT] in the enriched user message passed to runAgent.
+//
+// This is the deterministic platform enforcement that prevents the agent from silently
+// answering "yes, it's ready" when there are unresolved spec gaps.
+
+describe("Scenario 19 — Readiness query triggers phase completion audit injection", () => {
+  const THREAD = "workflow-s19"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("isReadinessQuery → yes: auditPhaseCompletion fires and PLATFORM READINESS AUDIT injected into runAgent message", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Design spec exists on design branch — provides content for readiness audit
+    const DESIGN_SPEC = "## Screens\nChat Home: chips positioned horizontally.\n## Auth Sheet\nSSO buttons full-width."
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith(".design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(DESIGN_SPEC).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Anthropic call sequence (empty history, no PM spec on main → no phase entry audit):
+    //   [0] isOffTopicForAgent     → false
+    //   [1] isSpecStateQuery       → false
+    //   [2] isReadinessQuery       → yes  ← triggers audit
+    //   [3] auditPhaseCompletion   → FINDING (spec not ready)
+    //   [4] runAgent               → agent surfaces the gap
+    //   [5] identifyUncommittedDecisions → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })     // isReadinessQuery → TRIGGERS
+      .mockResolvedValueOnce({                                                  // auditPhaseCompletion
+        content: [{ type: "text", text: "FINDING: Chip row has no concrete position anchor | Specify margin-top: auto on hero flex column to pin chips above prompt bar" }],
+      })
+      .mockResolvedValueOnce({                                                  // runAgent
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "The spec is NOT engineering-ready. The chip row lacks a concrete position anchor. I recommend specifying margin-top: auto to pin chips above the prompt bar. Should I apply this now?" }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
+
+    const params = makeParams(THREAD, "feature-onboarding", "is this ready to hand off to engineering?")
+    await handleFeatureChannelMessage(params)
+
+    // The runAgent call (index 4) received the enriched message with the audit injected
+    const runAgentCall = mockAnthropicCreate.mock.calls[4][0]
+    const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
+    expect(userMsg?.content).toContain("[PLATFORM READINESS AUDIT")
+    expect(userMsg?.content).toContain("Chip row has no concrete position anchor")
+
+    // 6 total Anthropic calls (no phase entry audit — PM spec not found)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+  })
+
+  it("isReadinessQuery → no: auditPhaseCompletion does NOT fire, only standard 5-call sequence", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Anthropic call sequence (no readiness audit):
+    //   [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] isReadinessQuery → no,
+    //   [3] runAgent, [4] identifyUncommittedDecisions
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })       // isReadinessQuery → skip
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "The dark mode spec looks solid. Any other questions?" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+
+    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "how does dark mode look?"))
+
+    // auditPhaseCompletion never ran — only 5 calls total
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+
+    // runAgent call (index 3) does NOT contain audit notice
+    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
+    const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
+    expect(userMsg?.content).not.toContain("[PLATFORM READINESS AUDIT")
+  })
+})
