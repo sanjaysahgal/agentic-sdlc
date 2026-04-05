@@ -33,6 +33,12 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Gap: hero-inside-thread blocking validator uses window search, not structural parse
+
+`validateRenderedHtml()` detects hero-inside-thread by checking `html.slice(threadIdx, threadIdx + 5000).includes('id="hero"')`. This is a forward window search — it would match a hero that appears *after* thread at sibling level if it falls within 5000 chars of `id="thread"`. The durable fix is a lightweight nesting check: find the closing `>` after `id="thread"`, find its paired `</div>`, and assert that `id="hero"` does not appear within that span. This requires a simple bracket-counter or regex to find the paired closing tag, but eliminates the false-positive risk entirely.
+
+---
+
 ### Gap: Scenario 4 smoke test accepts save_design_spec_draft as a pass
 
 Scenario 4 (`apply_design_spec_patch` auto-save after user agreement) accepts either `apply_design_spec_patch` or `save_design_spec_draft` as a passing result. The test context sets `currentDraft` in the `AgentContext` but the agent may not read it from the test message construction — the agent has no prior save call in the conversation that would make it aware a draft exists. The durable fix: add a prior assistant tool call (`save_design_spec_draft`) to the message history in the test's `beforeAll` block, then verify the agent's response to "lock those in" uses `apply_design_spec_patch` specifically.
