@@ -33,6 +33,29 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Coverage gaps — uncovered paths in critical files (v8 report, 2026-04-06)
+
+Overall: 75.97% stmts / 67.35% branch / 71.07% funcs / 76.93% lines. Critical gaps:
+
+**`interfaces/slack/handlers/message.ts` — 67% stmts, 59% branch, 44% funcs**
+- Architect `finalize_engineering_spec` tool handler: zero integration test coverage (lines ~1211-1246)
+- `general.ts`, `reactions.ts`, `app.ts`: 0% — Slack event wiring layer has no tests at all
+
+**`runtime/spec-auditor.ts` — 67% stmts**
+- `auditSpecDecisions` correction-application path (lines 243-253): `status === "corrections"` branch not covered
+- `identifyBlockingQuestions` branches (lines 298-335): no unit tests
+
+**`runtime/pest-tracker.ts` — 28% stmts**
+- Nearly untested; `recordPestEvent`, `getPestSummary` paths uncovered (lines 18-38)
+
+**`runtime/claude-client.ts` — 85% stmts**
+- No-toolhandler error path (lines 125-126): `toolHandler` is undefined but agent calls a tool
+- Thrown error path (lines 147-149): tool handler throws instead of returning `{ error }` shape
+
+**Priority order:** `finalize_engineering_spec` handler first (same trust level as `finalize_design_spec`); then `spec-auditor.ts` correction path; then `claude-client.ts` error paths; then `pest-tracker.ts`; then Slack wiring layer last (requires Bolt mocking).
+
+---
+
 ### Gap: Pre-commit new-agent gate has no smoke test
 
 The pre-commit hook in `.claude/settings.json` that blocks new `run[X]Agent()` function exports without an always-on audit block (`[X]ReadinessNotice` or `ALWAYS-ON-AUDIT-JUSTIFIED:` comment) has never been triggered in a real commit. The hook logic is live but unverified. If the regex is wrong, a new agent could ship without the required audit block and the gate would silently pass.
