@@ -21,7 +21,8 @@
     "eval:pm": "tsx scripts/run-evals.ts -- --agent pm",
     "eval:design": "tsx scripts/run-evals.ts -- --agent design",
     "eval:architect": "tsx scripts/run-evals.ts -- --agent architect",
-    "eval:concierge": "tsx scripts/run-evals.ts -- --agent concierge"
+    "eval:concierge": "tsx scripts/run-evals.ts -- --agent concierge",
+    "eval:pipeline": "vitest run --config vitest.pipeline.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

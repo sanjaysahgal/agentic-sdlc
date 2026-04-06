@@ -387,3 +387,16 @@ Tests live in `tests/unit/` and run with `npx vitest run`. All external dependen
 **Mocking pattern:** `vi.hoisted()` for mock functions referenced in `vi.mock()` factories. `function()` syntax (not arrow functions) for constructors used with `new`. Top-level `vi.mock()` per file.
 
 See individual test files for coverage details. The rule: every new agent behavior added must have a corresponding test. A behavior with no test does not count as done.
+
+### Pipeline Eval Tier
+
+A separate eval tier (`tests/evals/pipeline/**/*.eval.ts`) runs hybrid tests — mocked GitHub (deterministic state) + real Anthropic API (live reasoning) + Haiku judge (pass/fail criteria). These are not in the main test suite.
+
+| Config | `vitest.pipeline.config.ts` |
+|---|---|
+| Run command | `npm run eval:pipeline` |
+| Setup file | `tests/pipeline-setup.ts` — loads dotenv before any module reads `ANTHROPIC_API_KEY` |
+| Timeout | 120s per test (real API calls) |
+| Purpose | Validate Principle 7 (zero human errors of omission) — agent must surface blocking gaps without trigger phrases |
+
+**Current evals:** `principle7-design.eval.ts` — design agent surfaces PM blocking questions on neutral phrasing ("what is the next step for this feature", "are we ready to start designing?") with Haiku judge verifying the response is not generic, names specific blockers, and escalates appropriately.
