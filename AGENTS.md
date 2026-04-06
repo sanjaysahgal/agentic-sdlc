@@ -127,6 +127,9 @@ Every spec-producing agent must implement a phase completion gate before it is c
 **The infrastructure:** `runtime/phase-completion-auditor.ts` exports `auditPhaseCompletion(params)` and rubric constants. Uses `claude-sonnet-4-6` (consequential, one-shot). Parses `FINDING: <issue> | <recommendation>` lines from Sonnet output, or `PASS` for a clean spec. Falls back to `{ ready: true }` on unexpected format (never blocks on ambiguity).
 
 **To add a phase completion gate to a new agent:**
+
+**Step 0 — Platform always-on audit (required before the agent is considered complete).** Add an always-on `[X]ReadinessNotice` block in `message.ts` following the `designReadinessNotice` / `archReadinessNotice` pattern: read spec draft from branch → content-addressed cache on spec fingerprint → `auditPhaseCompletion(RUBRIC)` on every message → inject `[PLATFORM X READINESS]` notice into enriched user message. This is the platform-level enforcement. The tool-triggered gate (steps 1–5 below) is the agent-level enforcement. Both are required.
+
 1. Define a rubric constant in `phase-completion-auditor.ts` (e.g. `export const ARCHITECT_RUBRIC = \`...\``). The rubric is a numbered list: each item names what must be present and what "incomplete" looks like.
 2. Add `run_phase_completion_audit` tool to the agent's TOOLS array (no parameters).
 3. Add approval-intent detection + audit-first sequence to the agent's "When to finalize" system prompt section. Sequence: detect approval → call `run_phase_completion_audit` → if `ready: true` call `finalize_*` → if `ready: false` surface findings numbered with recommendations → wait for re-approval.
@@ -166,6 +169,8 @@ Operates simultaneously at feature level (engineering spec) and product level (o
 - `finalize_engineering_spec` — blocked if unresolved `[blocking: yes]` questions exist
 
 The old text-block protocol (`DRAFT_ENGINEERING_SPEC_START/END`, `ENGINEERING_PATCH_START/END`, `INTENT: CREATE_ENGINEERING_SPEC`) is fully removed.
+
+**Always-on engineering spec completeness audit:** On every architect agent message, the platform reads the engineering spec draft from the branch and runs `auditPhaseCompletion(ENGINEER_RUBRIC)`. If the spec has blocking gaps, findings are injected as `[PLATFORM ENGINEERING READINESS — N gap(s) blocking implementation handoff]` into the enriched user message before the agent runs. The architect sees the findings and must surface each one with a concrete recommendation. Uses a content-addressed cache keyed on spec fingerprint — any edit to the draft automatically invalidates the cache; repeat turns on the same spec hit the cache (no redundant Sonnet call). **Principle 7:** this check runs on every message regardless of human phrasing.
 
 ---
 

@@ -13,6 +13,10 @@
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then DIFF=$(git diff --cached 2>/dev/null); if echo \"$DIFF\" | grep -qE '^\\+.*(export (async )?function is[A-Z][a-zA-Z]+\\()'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[CLASSIFIER GATE] A new is[X]() classifier function is being committed. Principle 7: checks must run on EVERY message, not on trigger. Two options: (1) Redesign as always-on audit injected in message.ts enrichment block (preferred). (2) If genuinely conditional for infrastructure reasons (not phrasing), add a // TRIGGER-JUSTIFIED: [reason] comment to the function and get explicit user approval before committing.\"}}'; fi; fi; true"
           },
           {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then DIFF=$(git diff --cached 2>/dev/null); if echo \"$DIFF\" | grep -qE '^\\+.*(export (async )?function run[A-Z][a-zA-Z]+Agent\\()'; then if ! echo \"$DIFF\" | grep -qE '^\\+.*(ReadinessNotice|ALWAYS-ON-AUDIT-JUSTIFIED)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[NEW AGENT GATE] A new run[X]Agent() function is being committed without an always-on platform audit block. Principle 7: every agent must have a platform-injected completeness audit that fires on every message. Options: (1) Add the always-on audit block in message.ts following the designReadinessNotice/archReadinessNotice pattern. (2) If genuinely not applicable, add // ALWAYS-ON-AUDIT-JUSTIFIED: [reason] in the diff and get explicit user approval.\"}}'; fi; fi; fi; true"
+          },
+          {
             "type": "prompt",
             "model": "claude-haiku-4-5-20251001",
             "timeout": 10,

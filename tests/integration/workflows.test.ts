@@ -1568,6 +1568,87 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
   })
 })
 
+// ─── Scenario 20: Always-on architect engineering spec completeness audit ──────
+//
+// auditPhaseCompletion(ENGINEER_RUBRIC) runs always-on at position [2] when an
+// engineering spec draft is found on the branch (via readFile). If no engineering
+// draft is found, auditPhaseCompletion is skipped entirely and runAgent runs at [2].
+//
+// This mirrors the designReadinessNotice pattern and enforces Principle 7 for the
+// architect agent: spec gaps are surfaced on every message, not only on readiness queries.
+
+describe("Scenario 20 — Always-on architect engineering spec completeness audit", () => {
+  const THREAD = "workflow-s20"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("auditPhaseCompletion fires on every architect message when engineering draft exists", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // Engineering spec draft exists on engineering branch — triggers auditPhaseCompletion
+    const ENG_SPEC = "## API Design\nPOST /api/v1/onboarding — creates onboarding session.\n## Data Model\nOnboardingSession entity."
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith(".engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from(ENG_SPEC).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Anthropic call sequence (empty history, no PM/design spec on main → no upstream audit):
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] auditPhaseCompletion     → FINDING (spec not ready)
+    //   [3] runAgent                 → agent surfaces the gap
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({                                                  // auditPhaseCompletion → FINDING
+        content: [{ type: "text", text: "FINDING: OnboardingSession data model missing explicit field names | Add fields: id (UUID), userId (UUID FK), completedAt (timestamp nullable), createdAt (timestamp)" }],
+      })
+      .mockResolvedValueOnce({                                                  // runAgent
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "The engineering spec is NOT implementation-ready. The OnboardingSession data model lacks explicit field names. I recommend adding: id (UUID), userId (UUID FK), completedAt (timestamp nullable), createdAt (timestamp). Shall I apply this now?" }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "how does the data model look?")
+    await handleFeatureChannelMessage(params)
+
+    // The runAgent call (index 3) received the enriched message with the audit injected
+    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
+    const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
+    expect(userMsg?.content).toContain("[PLATFORM ENGINEERING READINESS")
+    expect(userMsg?.content).toContain("OnboardingSession data model missing explicit field names")
+
+    // 4 total Anthropic calls
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+  })
+
+  it("auditPhaseCompletion is skipped when no engineering draft exists on branch", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // Default mockGetContent rejects everything → no engineering draft found
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] runAgent                 → response (no audit injection)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "No engineering spec drafted yet. What would you like to spec out first?" }] })
+
+    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "how does the data model look?"))
+
+    // auditPhaseCompletion never ran — only 3 calls total
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+
+    // runAgent call (index 2) does NOT contain audit notice
+    const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
+    const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
+    expect(userMsg?.content).not.toContain("[PLATFORM ENGINEERING READINESS")
+  })
+})
+
 // ─── Scenario 19: Always-on phase completion audit injection ─────────────────
 //
 // auditPhaseCompletion runs always-on at position [2] when a design spec draft is

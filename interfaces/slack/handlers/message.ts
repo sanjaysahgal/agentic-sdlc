@@ -9,7 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
-import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric } from "../../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -1123,7 +1123,34 @@ async function runArchitectAgent(params: {
     phaseEntryAuditCache.set(archCacheKey, upstreamNoticeArch)
   }
 
-  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch
+  // Always-on engineering spec completeness audit — runs on every architect agent message.
+  // Content-addressed cache on spec fingerprint: any edit to the draft invalidates automatically.
+  // Principle 7: this check runs always, not when the user asks a readiness-adjacent phrase.
+  let archReadinessNotice = ""
+  const engSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+  const engDraftContent = await readFile(engSpecDraftPath, `spec/${featureName}-engineering`).catch(() => null)
+  if (engDraftContent) {
+    const efp = specFingerprint(engDraftContent)
+    const archPhaseCacheKey = `arch-phase:${featureName}:${efp}`
+    if (phaseEntryAuditCache.has(archPhaseCacheKey)) {
+      archReadinessNotice = phaseEntryAuditCache.get(archPhaseCacheKey)!
+    } else {
+      const archAuditResult = await auditPhaseCompletion({
+        specContent: engDraftContent,
+        rubric: ENGINEER_RUBRIC,
+        featureName,
+      }).catch(() => null)
+      if (archAuditResult && !archAuditResult.ready) {
+        const findingLines = archAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+        archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — ${archAuditResult.findings.length} gap${archAuditResult.findings.length === 1 ? "" : "s"} blocking implementation handoff. You MUST surface each finding with your concrete recommendation before proceeding.\n${findingLines}]`
+      } else if (archAuditResult?.ready) {
+        archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — Spec passed all engineering rubric criteria. You may confirm the spec is implementation-ready when asked.]`
+      }
+      phaseEntryAuditCache.set(archPhaseCacheKey, archReadinessNotice)
+    }
+  }
+
+  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch + archReadinessNotice
   const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")

@@ -62,8 +62,8 @@ The human cannot be expected to know what to ask. They don't know what they don'
 
 **Every agent must implement a proactive audit for its domain:**
 - PM agent → `spec-auditor.ts` runs on every draft save (conflict + gap detection)
-- Design agent → `brand-auditor.ts` runs on every response (brand token drift), spec-auditor on every draft save
-- Architect agent → `spec-auditor.ts` runs on every draft save (conflict + gap detection)
+- Design agent → `brand-auditor.ts` runs on every response (brand token drift), spec-auditor on every draft save; always-on `designReadinessNotice` via `auditPhaseCompletion(buildDesignRubric)` on every message when design spec draft exists; content-addressed cache on spec fingerprint
+- Architect agent → `spec-auditor.ts` runs on every draft save (conflict + gap detection); always-on `archReadinessNotice` via `auditPhaseCompletion(ENGINEER_RUBRIC)` on every message when engineering spec draft exists; same content-addressed cache as design
 - Every future agent → must define and wire its equivalent proactive audit before the agent is considered complete
 
 **The test for compliance:** Could a human approve a spec with a known violation without being told? If yes, the audit is missing or mis-wired.
@@ -153,6 +153,7 @@ A task is NOT done until the following are updated to reflect the change:
 | New runtime behavior, routing, or data flow | `SYSTEM_ARCHITECTURE.md` — architecture section |
 | New backlog item completed | `BACKLOG.md` — move to Completed |
 | New solo-team shortcut taken | `DECISIONS.md` — add entry with scale gap |
+| New agent built | `message.ts` — must add always-on platform audit block (`[X]ReadinessNotice`) before agent is considered complete; see `designReadinessNotice` / `archReadinessNotice` as reference implementations |
 | New WorkspaceConfig field added | `.env.example` — add with comment |
 | New agent goes live | `PRESENTATIONS.md` + `platform-engineering-deep-dive.html` + `investor-pitch.html` |
 | Roadmap step completes | `PRESENTATIONS.md` + `investor-pitch.html` + `platform-engineering-deep-dive.html` |

@@ -129,3 +129,17 @@ export function buildDesignRubric(formFactors: string[]): string {
 }
 
 export const DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"])
+
+// ─── Engineer Rubric ────────────────────────────────────────────────────────────
+
+export const ENGINEER_RUBRIC = `1. API CONTRACTS — Every user story or data operation must have at least one endpoint defined. Each endpoint must name: HTTP method + path, request body/query params (field names and types), and response shape (field names and types). "API to be defined" or "endpoint TBD" is not a contract.
+
+2. DATA MODEL — Every entity the feature reads or writes must have its fields named explicitly (not just the entity name). Relationship cardinality (one-to-many, etc.) must be stated. "User table updated" is not a data model entry.
+
+3. ERROR PATHS — For every operation (create, read, update, delete), at least one error case must be documented with its HTTP status code and response shape. A spec with only happy-path flows is incomplete.
+
+4. AUTHENTICATION + AUTHORIZATION — Every endpoint must state its auth requirement explicitly: which roles or conditions allow access. "Auth required" alone is not sufficient — it must name the role or condition.
+
+5. MIGRATION STRATEGY — Any schema change (new table, new column, column rename, column removal) must have a migration approach documented: additive migration, backfill strategy, or explicit "no migration needed" with reasoning. "Schema will be updated" is not a strategy.
+
+6. NO UNRESOLVED BLOCKING QUESTIONS — The spec contains zero questions tagged [blocking: yes] that are unresolved. A spec with unresolved blocking questions cannot move to implementation.`
