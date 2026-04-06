@@ -84,6 +84,41 @@ ${draft}`,
 // Returns an array of specific ambiguity strings; empty array means the spec is render-ready.
 // Non-blocking — ambiguities don't prevent save; they surface to the agent as required fixes.
 
+// Deterministic copy-completeness check: finds quoted copy literals that are
+// structurally incomplete — placeholder brackets, TBD markers, or sentence-case
+// strings that don't end with terminal punctuation.
+// No LLM needed — structural incompleteness is detectable without reasoning.
+export function auditCopyCompleteness(spec: string): string[] {
+  const issues: string[] = []
+
+  // Extract all quoted string literals from the spec
+  // Matches both: Heading: "..." and inline tagline "..." patterns
+  const quotedStrings = [...spec.matchAll(/"([^"]{2,120})"/g)].map(m => m[1].trim())
+
+  for (const s of quotedStrings) {
+    // 1. Placeholder bracket patterns — [TBD], [placeholder], [to be determined], etc.
+    if (/\[(?:TBD|placeholder|to be determined|todo|coming soon|insert|fill in)[^\]]*\]/i.test(s)) {
+      issues.push(`Copy literal contains placeholder: "${s}" — must be replaced with final text before spec can be approved`)
+      continue
+    }
+
+    // 2. Sentence-case strings that don't end with terminal punctuation
+    // Only flag when: starts with a capital letter (it's a sentence, not a code value),
+    // contains at least one space (multi-word — single words like "Health360" are identifiers),
+    // does not end with . ! ? ) ] or a digit (URLs, version strings, etc. are exempt)
+    const isSentenceCase = /^[A-Z]/.test(s)
+    const isMultiWord = /\s/.test(s)
+    const hasTerminalPunctuation = /[.!?)\]"']$/.test(s)
+    const isIdentifierOrToken = /^[A-Z][a-z0-9]+$/.test(s) || /^--/.test(s) || /#[0-9A-Fa-f]/.test(s)
+
+    if (isSentenceCase && isMultiWord && !hasTerminalPunctuation && !isIdentifierOrToken) {
+      issues.push(`Copy literal missing terminal punctuation: "${s}" — add . ! or ? to complete the sentence`)
+    }
+  }
+
+  return issues
+}
+
 // Deterministic pre-filter: finds screens/sheets/modals referenced in User Flows
 // that have no corresponding definition in the ## Screens section.
 // No LLM needed — exact substring match is sufficient for structured section names.
@@ -109,8 +144,9 @@ function findUndefinedScreenReferences(spec: string): string[] {
 export async function auditSpecRenderAmbiguity(designSpec: string, options?: { formFactors?: string[] }): Promise<string[]> {
   if (!designSpec) return []
 
-  // Run deterministic check first — catches missing screen definitions without an LLM call
+  // Run deterministic checks first — no LLM call needed
   const undefinedScreens = findUndefinedScreenReferences(designSpec)
+  const copyIssues = auditCopyCompleteness(designSpec)
 
   const formFactorCheck = options?.formFactors && options.formFactors.length > 0
     ? `- Layout defined for only one form factor when the spec targets ${options.formFactors.join(", ")}: flag any screen that has layout details but doesn't specify how it adapts across all target form factors`
@@ -134,6 +170,7 @@ Flag ONLY elements where a renderer must make an unspecified choice:
 - Language that two renderers would interpret differently: "near the top", "slightly", "subtle", "prominent", "appropriate" used in place of a specific measurement or value${formFactorCheck ? `\n${formFactorCheck}` : ""}
 - Suggestion chips or action chips described without a concrete position anchor relative to a fixed layout element: if chips can be interpreted as floating in the vertical center of the screen OR pinned near a fixed element (prompt bar, nav bar, bottom edge), the spec must say which — "horizontal row" alone is ambiguous
 - Auth or SSO buttons containing both an icon/logo and label text without specifying their internal horizontal arrangement — flag if the spec does not say how icon and text are positioned relative to each other (e.g. "icon left, text centered", "both centered as a unit with 8px gap"); "full-width stacked" does not resolve this
+- User-facing copy defined in the spec (taglines, subheadings, button labels, error messages, nudge text) that appears to be a grammatically incomplete sentence — specifically: sentence-case multi-word strings that do not end with a period, exclamation mark, or question mark when a complete sentence is clearly intended (e.g. "All your health. One conversation" ends mid-thought; a full sentence would end with a period). Do NOT flag identifiers, brand names, or single-word labels.
 
 Do NOT flag:
 - General aesthetic descriptions ("minimal", "dark, premium feel")
@@ -171,7 +208,7 @@ Return ONLY the JSON array, no preamble or explanation.`,
     }
   }
 
-  return [...undefinedScreens, ...llmAmbiguities]
+  return [...undefinedScreens, ...copyIssues, ...llmAmbiguities]
 }
 
 // ─── Decision audit ────────────────────────────────────────────────────────────

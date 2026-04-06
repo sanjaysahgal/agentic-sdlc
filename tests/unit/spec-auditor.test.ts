@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { readFileSync } from "fs"
+import { resolve, dirname } from "path"
+import { fileURLToPath } from "url"
+
+const dir = dirname(fileURLToPath(import.meta.url))
+const fixturesDir = resolve(dir, "../fixtures/agent-output")
 
 // auditSpecDraft calls `new Anthropic()` at module load — mock before any import.
 // Use vi.hoisted() so mockCreate is available when the factory runs (factories are hoisted
@@ -393,5 +399,79 @@ describe("auditSpecDraft — robust output parsing", () => {
     const { auditSpecDraft } = await import("../../runtime/spec-auditor")
     const result = await auditSpecDraft({ draft: "spec", productVision: "v", systemArchitecture: "a", featureName: "f" })
     expect(result.status).toBe("ok")
+  })
+})
+
+// ─── auditCopyCompleteness ────────────────────────────────────────────────────
+
+describe("auditCopyCompleteness — deterministic copy checks", () => {
+  let auditCopyCompleteness: (spec: string) => string[]
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import("../../runtime/spec-auditor")
+    auditCopyCompleteness = mod.auditCopyCompleteness
+  })
+
+  it("flags tagline missing terminal punctuation — real onboarding spec fixture", () => {
+    // Real spec has: tagline "All your health. One conversation" — no trailing period
+    const spec = readFileSync(resolve(fixturesDir, "onboarding-design-full.md"), "utf-8")
+    const issues = auditCopyCompleteness(spec)
+    const taglineIssue = issues.find(i => i.includes("One conversation"))
+    expect(taglineIssue).toBeTruthy()
+    expect(taglineIssue).toContain("terminal punctuation")
+  })
+
+  it("does NOT flag correctly punctuated sentences", () => {
+    const spec = `Tagline: "All your health. One conversation."
+Subheading: "Your conversation will be saved when you sign in."`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("does NOT flag single-word labels and identifiers", () => {
+    const spec = `- "Health360"
+- "Default"
+- "Loading"
+- "Success"`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("flags [TBD] placeholder in copy literal", () => {
+    const spec = `Chips: "[TBD]"
+Nudge text: "Your conversation won't be saved. [Sign in]"`
+    const issues = auditCopyCompleteness(spec)
+    const tbdIssue = issues.find(i => i.includes("TBD"))
+    expect(tbdIssue).toBeTruthy()
+    expect(tbdIssue).toContain("placeholder")
+  })
+
+  it("flags [placeholder] variant", () => {
+    const spec = `Error message: "[placeholder text]"`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues[0]).toContain("placeholder")
+  })
+
+  it("does NOT flag brand token values or hex colors", () => {
+    const spec = `--violet: "#7C6FCD"
+animation: "heartbeat-violet 2.5s"`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("does NOT flag interrogative sentences (questions end with ?)", () => {
+    const spec = `Chip: "How did I sleep last week?"`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("flags sentence-case multi-word copy missing period in inline tagline format", () => {
+    // Mirrors the exact format the onboarding spec uses: tagline "All your health. One conversation"
+    const spec = `with tagline "All your health. One conversation" directly below`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues.length).toBe(1)
+    expect(issues[0]).toContain("One conversation")
   })
 })

@@ -233,6 +233,8 @@ This is foundational. Every screen, component, and color decision that follows d
 
 **When \`renderAmbiguities\` appears in a save tool result:** Call \`apply_design_spec_patch\` immediately in this SAME response to resolve every listed item. Use your design judgment to pick specific, correct values — do not ask the user. The user asked you to design; an ambiguous spec is an incomplete design. Apply the engineer standard: if an engineer couldn't implement it from that spec line alone, it is not specific enough.
 
+**Copy completeness is blocking.** \`renderAmbiguities\` includes copy quality issues — incomplete sentences, missing terminal punctuation, and placeholder brackets. These are not cosmetic: a spec that says "All your health. One conversation" (no trailing period) or "[TBD]" cannot be approved. Fix every copy issue in the same patch call. A tagline is a complete sentence and must end with a period. A subheading is a complete sentence and must end with a period. Do not defer copy decisions to the user unless the copy requires a product decision (e.g. a new error message that depends on an unresolved PM question).
+
 **Batch patch rule:** When more than 3 sections need to change, patch the 3 most significant in this call. In your visible text, note which sections were patched and which still need updating. Call \`apply_design_spec_patch\` again for the remaining sections in a follow-up response.
 
 **Preview requests — two cases, two different tools:**
