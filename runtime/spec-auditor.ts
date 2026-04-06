@@ -86,33 +86,35 @@ ${draft}`,
 
 // Deterministic copy-completeness check: finds quoted copy literals that are
 // structurally incomplete — placeholder brackets, TBD markers, or sentence-case
-// strings that don't end with terminal punctuation.
+// narrative strings that don't end with terminal punctuation.
+//
+// Scope: checks ALL quoted strings for TBD/placeholder markers (universally bad),
+// but only checks terminal punctuation for narrative roles (tagline, description,
+// subheading, slogan, etc.) — NOT button labels, headings, auth copy, or placeholders.
+// This avoids false positives on "Sign in", "Sign in with Google", etc.
 // No LLM needed — structural incompleteness is detectable without reasoning.
 export function auditCopyCompleteness(spec: string): string[] {
   const issues: string[] = []
 
-  // Extract all quoted string literals from the spec
-  // Matches both: Heading: "..." and inline tagline "..." patterns
-  const quotedStrings = [...spec.matchAll(/"([^"]{2,120})"/g)].map(m => m[1].trim())
-
-  for (const s of quotedStrings) {
-    // 1. Placeholder bracket patterns — [TBD], [placeholder], [to be determined], etc.
+  // 1. Placeholder bracket patterns — scan ALL quoted strings since [TBD] anywhere is bad
+  const allQuoted = [...spec.matchAll(/"([^"]{2,120})"/g)].map(m => m[1].trim())
+  for (const s of allQuoted) {
     if (/\[(?:TBD|placeholder|to be determined|todo|coming soon|insert|fill in)[^\]]*\]/i.test(s)) {
       issues.push(`Copy literal contains placeholder: "${s}" — must be replaced with final text before spec can be approved`)
-      continue
     }
+  }
 
-    // 2. Sentence-case strings that don't end with terminal punctuation
-    // Only flag when: starts with a capital letter (it's a sentence, not a code value),
-    // contains at least one space (multi-word — single words like "Health360" are identifiers),
-    // does not end with . ! ? ) ] or a digit (URLs, version strings, etc. are exempt)
-    const isSentenceCase = /^[A-Z]/.test(s)
-    const isMultiWord = /\s/.test(s)
-    const hasTerminalPunctuation = /[.!?)\]"']$/.test(s)
-    const isIdentifierOrToken = /^[A-Z][a-z0-9]+$/.test(s) || /^--/.test(s) || /#[0-9A-Fa-f]/.test(s)
-
-    if (isSentenceCase && isMultiWord && !hasTerminalPunctuation && !isIdentifierOrToken) {
-      issues.push(`Copy literal missing terminal punctuation: "${s}" — add . ! or ? to complete the sentence`)
+  // 2. Terminal punctuation — only check narrative copy roles, not button labels or headings.
+  // Narrative roles: tagline, subheading, supporting text, description, slogan, hero text, nudge
+  // Pattern: <role> "..." or <role>: "..."
+  const narrativePattern = /(?:tagline|subheading|supporting[\s-]text|description|slogan|hero[\s-]text|body[\s-]copy|nudge[\s-]?text)\s*:?\s*"([^"]{2,200})"/gi
+  for (const match of spec.matchAll(narrativePattern)) {
+    const s = match[1].trim()
+    // Skip if already flagged as TBD above
+    if (/\[(?:TBD|placeholder)[^\]]*\]/i.test(s)) continue
+    const hasTerminalPunctuation = /[.!?]$/.test(s)
+    if (!hasTerminalPunctuation) {
+      issues.push(`Narrative copy missing terminal punctuation: "${s}" — taglines and subheadings are complete sentences and must end with . ! or ?`)
     }
   }
 

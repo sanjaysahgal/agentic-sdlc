@@ -474,4 +474,15 @@ animation: "heartbeat-violet 2.5s"`
     expect(issues.length).toBe(1)
     expect(issues[0]).toContain("One conversation")
   })
+
+  it("does NOT flag button labels or auth copy (not narrative roles)", () => {
+    // Button labels, auth headings, SSO copy — none need terminal punctuation
+    const spec = `Button: "Sign in"
+Button: "Sign in with Google"
+Button: "Sign in with Apple"
+Heading: "Sign in to Health360"
+placeholder text "Ask anything about your health"`
+    const issues = auditCopyCompleteness(spec)
+    expect(issues).toHaveLength(0)
+  })
 })
