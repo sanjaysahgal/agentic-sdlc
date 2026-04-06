@@ -120,9 +120,10 @@ describe("renderFromSpec — structural guarantees", () => {
     expect(html).toMatch(/body\s*\{[^}]*background-color:/s)
   })
 
-  it("includes @keyframes glow-pulse animation", () => {
+  it("includes heartbeat-violet and heartbeat-teal keyframe animations", () => {
     const html = renderFromSpec(MINIMAL_SPEC, MINIMAL_BRAND, "healthapp")
-    expect(html).toContain("@keyframes glow-pulse")
+    expect(html).toContain("@keyframes heartbeat-violet")
+    expect(html).toContain("@keyframes heartbeat-teal")
   })
 })
 
@@ -205,16 +206,16 @@ describe("renderFromSpec — brand color substitution", () => {
     expect(html).toContain("#7C6FCD")
   })
 
-  it("uses glow-duration from BRAND.md in animation", () => {
-    // brand-md-glow.md has 4s duration
+  it("uses glow-duration from spec Brand section in animation", () => {
+    // Spec Brand section defines 2.5s duration; MINIMAL_SPEC has no Brand section → default 2.5s
     const html = renderFromSpec(MINIMAL_SPEC, brandMd, "test")
-    expect(html).toContain("4s")
+    expect(html).toContain("2.5s")
   })
 
-  it("uses glow-blur from BRAND.md in filter", () => {
-    // brand-md-glow.md has 80px blur
+  it("uses glow-blur from spec Brand section in filter", () => {
+    // Spec Brand section defines 200px blur; MINIMAL_SPEC has no Brand section → default 200px
     const html = renderFromSpec(MINIMAL_SPEC, brandMd, "test")
-    expect(html).toContain("80px")
+    expect(html).toContain("200px")
   })
 })
 
@@ -238,10 +239,11 @@ describe("renderFromSpec — real onboarding fixtures", () => {
     expect(blocking.some(b => b.includes("nested"))).toBe(false)
   })
 
-  it("applies BRAND.md glow opacity values from real fixture", () => {
-    // brand-md-glow.md has 0.55 opacity-min
-    const html = renderFromSpec(MINIMAL_SPEC, brandMd, "test")
-    expect(html).toContain("0.55")
+  it("applies heartbeat opacity values from spec Brand section in real fixture", () => {
+    // Onboarding spec Brand section has 0.10 opacity at 0% keyframe
+    const html = renderFromSpec(onboardingSpec, brandMd, "onboarding")
+    expect(html).toContain("heartbeat-violet")
+    expect(html).toContain("0.10")
   })
 })
 

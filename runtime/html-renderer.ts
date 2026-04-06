@@ -10,7 +10,8 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SpecValues {
-  appName: string
+  wordmark: string        // nav + hero heading (e.g. "Health360")
+  authHeading: string    // auth sheet heading (e.g. "Sign in to Health360")
   tagline: string
   chips: string[]
   placeholder: string
@@ -20,17 +21,37 @@ interface SpecValues {
 // ─── Spec parser ─────────────────────────────────────────────────────────────
 
 function parseSpecValues(specContent: string, featureName: string): SpecValues {
-  const headingMatch = specContent.match(/[Hh]eading:\s*"([^"]+)"/)
-  const appName = headingMatch?.[1] ??
+  // Wordmark: nav + hero heading — look for "Health360 wordmark" pattern or wordmark line
+  // Spec: "Health360 wordmark: gradient text..." — extract the product name before " wordmark"
+  const wordmarkLineMatch = specContent.match(/^[-*]\s*([^\n:]+?)\s+wordmark:/im)
+  const wordmarkFromNav = wordmarkLineMatch?.[1]?.trim() ?? null
+
+  // Auth sheet heading — look for Heading: in Auth Sheet section specifically
+  // The auth heading is always "Sign in to [AppName]" — look for that pattern
+  const authHeadingMatch = specContent.match(/[Hh]eading:\s*"([^"]+)"/)
+  const authHeading = authHeadingMatch?.[1] ??
     (featureName.charAt(0).toUpperCase() + featureName.slice(1))
 
-  const taglineMatch = specContent.match(/[Tt]agline:\s*"([^"]+)"/)
+  // Wordmark: derive from auth heading by stripping "Sign in to " prefix, or fall back to feature name
+  const wordmark = wordmarkFromNav ??
+    (authHeading.replace(/^sign in to\s+/i, "").trim() ||
+     featureName.charAt(0).toUpperCase() + featureName.slice(1))
+
+  // Tagline: spec writes it inline as "tagline "All your health. One conversation""
+  // Match: tagline "..." (no colon) OR Tagline: "..."
+  const taglineMatch = specContent.match(/[Tt]agline\s*"([^"]+)"/) ??
+    specContent.match(/[Tt]agline:\s*"([^"]+)"/)
   const tagline = taglineMatch?.[1] ?? ""
 
-  const placeholderMatch = specContent.match(/[Pp]laceholder:\s*"([^"]+)"/)
+  // Placeholder: spec writes "placeholder text "Ask anything about your health""
+  // Match: placeholder text "..." OR Placeholder: "..."
+  const placeholderMatch = specContent.match(/[Pp]laceholder(?:\s+text)?\s+"([^"]+)"/) ??
+    specContent.match(/[Pp]laceholder:\s*"([^"]+)"/)
   const placeholder = placeholderMatch?.[1] ?? "Ask me anything..."
 
-  // Chips: extract from Starter Chips / Suggestion Chips section, up to 3
+  // Chips: look for quoted strings in the Starter Chips section, then fall back to
+  // accessibility section examples (where chip examples are typically listed).
+  // Spec may not define chip content yet — treat as open question if empty.
   const chipsSectionMatch = specContent.match(
     /(?:Starter|Suggestion)?\s*[Cc]hips?[^\n]*\n([\s\S]*?)(?=\n#{1,4}\s|\n---|\n\n\*\*|$)/
   )
@@ -40,13 +61,29 @@ function parseSpecValues(specContent: string, featureName: string): SpecValues {
     chips.push(m[1])
     if (chips.length === 3) break
   }
+  // Accessibility section example chips — only pick up strings that look like
+  // conversational prompts (questions or short action phrases, not page titles or labels)
+  if (chips.length === 0) {
+    const a11ySectionMatch = specContent.match(/## Accessibility[\s\S]*?(?=\n## |$)/)
+    const a11ySection = a11ySectionMatch?.[0] ?? ""
+    // Only pick up quoted text that is a question or short imperative — not labels/page titles/SSO text
+    for (const m of a11ySection.matchAll(/"([^"]{4,80})"/g)) {
+      const candidate = m[1]
+      const isConversational = (candidate.endsWith("?") ||
+        /^(How|What|Show|Tell|Find|Why|When|Which)/i.test(candidate)) &&
+        !/^(Button:|Dialog:|System|Sign|Continue|Log|Health360)/i.test(candidate)
+      if (isConversational) {
+        chips.push(candidate)
+        if (chips.length === 3) break
+      }
+    }
+  }
 
-  const nudgeMatch = specContent.match(
-    /(?:[Nn]udge|logged.out|sign.in)[^\n]*\n(?:[^\n]*\n){0,3}[^\n]*"([^"]{10,120})"/m
-  )
+  // Nudge text: spec Flow US-5 describes it verbatim
+  const nudgeMatch = specContent.match(/"(Your conversation won['']t be saved[^"]{0,80})"/)
   const nudgeText = nudgeMatch?.[1] ?? "Your conversation won't be saved unless you sign in."
 
-  return { appName, tagline, chips, placeholder, nudgeText }
+  return { wordmark, authHeading, tagline, chips, placeholder, nudgeText }
 }
 
 // ─── Brand parser ─────────────────────────────────────────────────────────────
@@ -69,20 +106,39 @@ function parseBrandColors(brandMd: string): Record<string, string> {
   return colors
 }
 
-function parseGlowParams(brandMd: string) {
-  const glowSection = brandMd.match(/## Glow[^\n]*\n([\s\S]*?)(?=\n## |\n---|$)/)?.[1] ?? ""
-  const durationMatch = glowSection.match(/animation:\s*\S+\s+([\d.]+s)/)
-  const blurMatch = glowSection.match(/filter:\s*blur\(([\d.]+px)\)/)
-  const delayMatch = glowSection.match(/animation-delay:\s*([-\d.]+s)/)
-  const keyframeBlock = glowSection.match(/@keyframes[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? ""
-  const opacityMinMatch = keyframeBlock.match(/0%\s*\{[^}]*opacity:\s*([\d.]+)/)
-  const allOpacities = [...keyframeBlock.matchAll(/opacity:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
+function parseGlowParams(specContent: string) {
+  // Parse glow from the design spec's Brand section (authoritative).
+  // The spec defines separate heartbeat-violet and heartbeat-teal keyframes.
+  const brandSection = specContent.match(/## Brand[\s\S]*?(?=\n## |\[END |$)/)?.[0] ?? specContent
+
+  // Duration: look for animation: heartbeat-violet Xs
+  const durationMatch = brandSection.match(/animation:\s*heartbeat-[a-z]+\s+([\d.]+s)/)
+  // Blur: look for filter: blur(Xpx) in brand/glow section
+  const blurMatch = brandSection.match(/filter:\s*blur\(([\d.]+px)\)/)
+  // Delay: look for animation-delay
+  const delayMatch = brandSection.match(/animation-delay:\s*([-\d.]+s)/)
+  // Easing: look for cubic-bezier in glow animation line
+  const easingMatch = brandSection.match(/animation:\s*heartbeat-[a-z]+[^;]*?(cubic-bezier\([^)]+\))/)
+
+  // Keyframe opacities from heartbeat-violet block
+  const violetBlock = brandSection.match(/@keyframes heartbeat-violet\s*\{([\s\S]*?)\}/)?.[1] ?? ""
+  const violetOpacities = [...violetBlock.matchAll(/opacity:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
+
+  // Teal keyframe block
+  const tealBlock = brandSection.match(/@keyframes heartbeat-teal\s*\{([\s\S]*?)\}/)?.[1] ?? ""
+  const tealOpacities = [...tealBlock.matchAll(/opacity:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
+
+  // Violet transform scale values (for scale animation)
+  const violetScales = [...violetBlock.matchAll(/scale\(([\d.]+)\)/g)].map(m => m[1])
+
   return {
-    duration: durationMatch?.[1] ?? "4s",
-    blur: blurMatch?.[1] ?? "80px",
-    delay: delayMatch?.[1] ?? "-1.8s",
-    opacityMin: opacityMinMatch?.[1] ?? "0.55",
-    opacityMax: allOpacities.length > 0 ? Math.max(...allOpacities).toFixed(2) : "1.00",
+    duration: durationMatch?.[1] ?? "2.5s",
+    blur: blurMatch?.[1] ?? "200px",
+    delay: delayMatch?.[1] ?? "-1.25s",
+    easing: easingMatch?.[1] ?? "cubic-bezier(0.4, 0, 0.2, 1)",
+    violetOpacities,
+    tealOpacities,
+    violetScales,
   }
 }
 
@@ -114,23 +170,47 @@ export function renderFromSpec(
   featureName = "preview"
 ): string {
   const values = parseSpecValues(specContent, featureName)
-  const colors = parseBrandColors(brandMd)
-  const glow = parseGlowParams(brandMd)
+  // Brand colors from BRAND.md (or spec fallback)
+  const colors = parseBrandColors(brandMd || specContent)
+  // Glow params from spec Brand section (authoritative)
+  const glow = parseGlowParams(specContent)
 
   const bg = colors["--bg"]
   const surface = colors["--surface"]
   const text = colors["--text"]
   const violet = colors["--violet"]
   const teal = colors["--teal"]
+  const error = colors["--error"] ?? "#e06c75"
   const violetRgb = hexToRgb(violet)
   const tealRgb = hexToRgb(teal)
+
+  // Build heartbeat keyframe CSS from parsed opacity/scale values
+  function buildHeartbeatKeyframes(name: string, opacities: number[], scales: string[]): string {
+    const points = [0, 12, 36, 60, 100]
+    const defaultOpacities = [0.10, 0.15, 0.13, 0.10, 0.10]
+    const defaultScales = ["0.97", "1.20", "1.13", "0.98", "0.97"]
+    const ops = opacities.length >= 5 ? opacities : defaultOpacities
+    const sc = scales.length >= 5 ? scales : defaultScales
+    return `@keyframes ${name} {\n` +
+      points.map((p, i) => `  ${p}%  { opacity: ${ops[i].toFixed(2)}; transform: scale(${sc[i]}); }`).join("\n") +
+      "\n}"
+  }
+
+  const heartbeatVioletCss = buildHeartbeatKeyframes("heartbeat-violet", glow.violetOpacities, glow.violetScales)
+  const heartbeatTealCss = buildHeartbeatKeyframes("heartbeat-teal", glow.tealOpacities, glow.violetScales)
 
   // Chip buttons — use data-chip to safely handle apostrophes in chip text
   const chipsHtml = values.chips.map(chip =>
     `<button data-chip="${chip.replace(/"/g, "&quot;")}" @click="sendMsg($el.dataset.chip)"` +
-    ` style="background:rgba(255,255,255,0.08);color:${text};border:1px solid rgba(255,255,255,0.15);` +
+    ` style="background:${surface};color:${text};border:1px solid rgba(${tealRgb},0.15);` +
     `border-radius:20px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;">${chip}</button>`
   ).join("\n            ")
+
+  // Placeholder chips shown when spec has none — makes the gap visible without breaking layout
+  const chipsPlaceholderHtml = values.chips.length === 0
+    ? `<!-- OPEN QUESTION: Starter chip content not yet defined in spec -->
+            <button disabled style="background:${surface};color:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:8px 16px;font-size:13px;white-space:nowrap;flex-shrink:0;cursor:default;">[chip content TBD]</button>`
+    : chipsHtml
 
   // Pre-fill first chip for inspector "In Conversation" / "Nudge" states
   const firstChip = JSON.stringify(values.chips[0] ?? "Tell me about this feature")
@@ -140,7 +220,7 @@ export function renderFromSpec(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${values.appName} \u2014 Design Preview</title>
+  <title>${values.wordmark} \u2014 Design Preview</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -154,9 +234,11 @@ export function renderFromSpec(
       align-items: center;
       padding: 24px 16px;
     }
-    @keyframes glow-pulse {
-      0%, 100% { opacity: ${glow.opacityMin}; }
-      50%       { opacity: ${glow.opacityMax}; }
+    ${heartbeatVioletCss}
+    ${heartbeatTealCss}
+    @keyframes glow-shrink {
+      0%   { filter: blur(200px); opacity: 0.10; }
+      100% { filter: blur(100px); opacity: 0.04; }
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes typing-bounce {
@@ -198,14 +280,19 @@ export function renderFromSpec(
       justify-content: center;
       gap: 8px;
       width: 100%;
-      height: 52px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 12px;
+      height: 56px;
+      background: ${surface};
+      border: 1px solid rgba(${tealRgb}, 0.15);
+      border-radius: 40px;
       color: ${text};
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 500;
       cursor: pointer;
+      transition: border-color 0.20s ease, background 0.20s ease;
+    }
+    .sso-btn:hover {
+      border-color: rgba(${tealRgb}, 0.30);
+      background: rgba(${tealRgb}, 0.05);
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
@@ -279,7 +366,7 @@ export function renderFromSpec(
 
   <!-- Meta bar -->
   <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:16px;text-align:center;">
-    ${values.appName} \xb7 Design Preview \xb7 ${values.chips.length} chips \xb7 BRAND.md \u2713
+    ${values.wordmark} \xb7 Design Preview \xb7 ${values.chips.length} chips \xb7 BRAND.md \u2713
   </div>
 
   <!-- Main layout: phone frame + inspector panel -->
@@ -300,11 +387,11 @@ export function renderFromSpec(
 
       <!-- Nav bar -->
       <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:18px;font-weight:700;background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${values.appName}</span>
+        <span style="font-size:20px;font-weight:600;background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${values.wordmark}</span>
         <button
           x-show="auth !== 'signed in'"
           @click="sheet = 'open'; inspectorMode = 'auth-default'"
-          style="background:rgba(255,255,255,0.08);color:${text};border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;">
+          style="background:transparent;color:${text};border:1px solid rgba(${tealRgb},0.15);border-radius:9999px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;min-width:44px;min-height:44px;">
           Sign in
         </button>
         <span x-show="auth === 'signed in'" style="font-size:13px;color:${teal};">\u25cf Signed in</span>
@@ -313,11 +400,20 @@ export function renderFromSpec(
       <!-- Content area: position:relative is the stacking context -->
       <div style="flex:1;position:relative;overflow:hidden;">
 
-        <!-- Glow: always behind both hero and thread -->
-        <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;z-index:0;
-          background:radial-gradient(ellipse at 50% 85%,rgba(${violetRgb},0.65) 0%,rgba(${tealRgb},0.35) 45%,transparent 70%);
-          filter:blur(${glow.blur});
-          animation:glow-pulse ${glow.duration} ease-in-out infinite;"></div>
+        <!-- Glow: two independent glows, violet + teal, per spec -->
+        <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;z-index:0;">
+          <div style="position:absolute;left:20%;right:20%;bottom:15%;top:30%;
+            background:radial-gradient(ellipse at center,rgba(${violetRgb},0.12) 0%,rgba(${violetRgb},0.04) 50%,transparent 100%);
+            filter:blur(${glow.blur});
+            animation:heartbeat-violet ${glow.duration} ${glow.easing} infinite;"
+            :class="{ 'glow-shrunk': msgs.length >= 4 }"></div>
+          <div style="position:absolute;left:25%;right:25%;bottom:10%;top:40%;
+            background:radial-gradient(ellipse at center,rgba(${tealRgb},0.10) 0%,rgba(${tealRgb},0.03) 50%,transparent 100%);
+            filter:blur(${glow.blur});
+            animation:heartbeat-teal ${glow.duration} ${glow.easing} infinite;
+            animation-delay:${glow.delay};"
+            :class="{ 'glow-shrunk': msgs.length >= 4 }"></div>
+        </div>
 
         <!-- Hero (empty state)
              CRITICAL: id="hero" present; :class used for visibility (never the reactive show directive).
@@ -325,13 +421,13 @@ export function renderFromSpec(
         <div id="hero"
           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:40px 24px 0;overflow-y:auto;z-index:1;"
           :class="{ 'hidden': msgs.length > 0 || typing }">
-          <h1 style="font-size:28px;font-weight:700;margin:0 0 8px;text-align:center;
+          <h1 style="font-size:28px;font-weight:600;margin:0 0 4px;text-align:center;
             background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
-            ${values.appName}
+            ${values.wordmark}
           </h1>
-          <p style="font-size:15px;color:rgba(255,255,255,0.5);margin:0;text-align:center;">${values.tagline}</p>
-          <div style="margin-top:auto;padding-bottom:16px;display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;overflow-x:auto;width:100%;justify-content:center;padding-top:16px;">
-            ${chipsHtml}
+          ${values.tagline ? `<p style="font-size:12px;color:rgba(248,248,247,0.45);margin:0;text-align:center;font-weight:400;">${values.tagline}</p>` : ""}
+          <div style="margin-top:auto;padding-bottom:16px;display:flex;flex-direction:row;flex-wrap:nowrap;gap:16px;overflow-x:auto;width:100%;justify-content:center;padding-top:16px;">
+            ${chipsPlaceholderHtml}
           </div>
         </div>
 
@@ -368,41 +464,50 @@ export function renderFromSpec(
         <div x-show="sheet !== 'closed'" style="position:absolute;inset:0;z-index:10;">
           <div @click="sheet = 'closed'; inspectorMode = msgs.length > 0 ? 'in-conversation' : 'default'"
             style="position:absolute;inset:0;background:rgba(0,0,0,0.6);"></div>
-          <div style="position:absolute;bottom:0;left:0;right:0;background:${surface};border-radius:24px 24px 0 0;padding:24px;border-top:1px solid rgba(255,255,255,0.1);">
+          <div style="position:absolute;bottom:0;left:0;right:0;background:${surface};border-radius:16px 16px 0 0;padding:24px 24px 32px;">
+            <!-- Drag handle -->
             <div style="width:32px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;margin:0 auto 20px;"></div>
-            <h2 style="font-size:20px;font-weight:700;margin:0 0 6px;text-align:center;">${values.appName}</h2>
-            <p style="font-size:14px;color:rgba(255,255,255,0.5);text-align:center;margin:0 0 24px;">Sign in to save your conversation</p>
+            <!-- Auth sheet heading — gradient text per spec -->
+            <h2 id="auth-sheet-heading" style="font-size:20px;font-weight:600;margin:0 0 8px;text-align:center;
+              background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+              ${values.authHeading}
+            </h2>
+            <p style="font-size:14px;color:rgba(248,248,247,0.45);text-align:center;margin:0 0 24px;">Your conversation will be saved when you sign in.</p>
 
-            <!-- Glow behind SSO buttons -->
-            <div aria-hidden="true" style="position:absolute;left:0;right:0;bottom:60px;height:120px;pointer-events:none;
-              background:radial-gradient(ellipse at 50% 100%,rgba(${violetRgb},0.4) 0%,rgba(${tealRgb},0.2) 50%,transparent 70%);
-              filter:blur(40px);
-              animation:glow-pulse ${glow.duration} ease-in-out infinite;
-              animation-delay:${glow.delay};"></div>
+            <!-- Glow behind SSO buttons — two independent glows per spec -->
+            <div aria-hidden="true" style="position:absolute;left:0;right:0;bottom:60px;height:160px;pointer-events:none;overflow:hidden;">
+              <div style="position:absolute;left:15%;right:50%;top:20%;bottom:0;
+                background:radial-gradient(ellipse at center,rgba(${violetRgb},0.12) 0%,rgba(${violetRgb},0.04) 50%,transparent 100%);
+                filter:blur(48px);
+                animation:heartbeat-violet ${glow.duration} ${glow.easing} infinite;"></div>
+              <div style="position:absolute;left:50%;right:15%;top:20%;bottom:0;
+                background:radial-gradient(ellipse at center,rgba(${tealRgb},0.10) 0%,rgba(${tealRgb},0.03) 50%,transparent 100%);
+                filter:blur(48px);
+                animation:heartbeat-teal ${glow.duration} ${glow.easing} infinite;
+                animation-delay:${glow.delay};"></div>
+            </div>
 
-            <div x-show="sheet === 'open'" style="display:flex;flex-direction:column;gap:12px;position:relative;z-index:1;">
-              <button class="sso-btn" @click="signIn()">
+            <!-- Error message (shown in error state) -->
+            <div x-show="sheet === 'error'" style="font-size:14px;color:${error};text-align:center;margin-bottom:16px;">Sign in failed. Please try again.</div>
+
+            <div x-show="sheet === 'open' || sheet === 'error'" style="display:flex;flex-direction:column;gap:16px;position:relative;z-index:1;">
+              <button class="sso-btn" @click="signIn()" aria-label="Sign in with Apple">
                 <svg width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.42c1.42.07 2.38.74 3.2.8 1.21-.24 2.38-.93 3.7-.84 1.58.12 2.76.72 3.53 1.9-3.23 1.94-2.46 5.9.57 7.08-.57 1.39-1.29 2.76-3 2.92zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
-                Continue with Apple
+                Sign in with Apple
               </button>
-              <button class="sso-btn" @click="signIn()">
+              <button class="sso-btn" @click="signIn()" aria-label="Sign in with Google">
                 <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                Continue with Google
+                Sign in with Google
               </button>
             </div>
 
             <div x-show="sheet === 'loading'" style="text-align:center;padding:20px 0;">
-              <div style="width:32px;height:32px;border:2px solid rgba(255,255,255,0.1);border-top-color:${violet};border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px;"></div>
-              <p style="color:rgba(255,255,255,0.5);font-size:14px;margin:0;">Signing you in...</p>
-            </div>
-
-            <div x-show="sheet === 'error'" style="text-align:center;padding:20px 0;position:relative;z-index:1;">
-              <p style="color:#ff6b6b;font-size:14px;margin:0 0 12px;">Something went wrong. Please try again.</p>
-              <button class="sso-btn" @click="sheet = 'open'">Try again</button>
+              <div style="width:12px;height:12px;border:2px solid rgba(255,255,255,0.1);border-top-color:${text};border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div>
+              <p style="color:rgba(248,248,247,0.45);font-size:14px;margin:0;">Signing you in...</p>
             </div>
 
             <div x-show="sheet === 'success'" style="text-align:center;padding:20px 0;">
-              <div style="font-size:32px;margin-bottom:8px;">\u2713</div>
+              <div style="font-size:32px;margin-bottom:8px;color:${teal};">\u2713</div>
               <p style="color:${teal};font-size:15px;font-weight:600;margin:0;">Signed in successfully</p>
             </div>
           </div>
@@ -417,7 +522,7 @@ export function renderFromSpec(
           x-model="draft"
           @keydown.enter="sendMsg(draft)"
           placeholder="${values.placeholder}"
-          style="flex:1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:24px;padding:10px 16px;font-size:14px;color:${text};outline:none;">
+          style="flex:1;background:${surface};border:1px solid rgba(${tealRgb},0.15);border-radius:9999px;padding:10px 16px;font-size:14px;color:${text};outline:none;">
         <button
           @click="sendMsg(draft)"
           style="width:36px;height:36px;background:${violet};border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
