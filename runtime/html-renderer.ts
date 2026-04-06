@@ -231,6 +231,9 @@ export function renderFromSpec(
   <title>${values.wordmark} \u2014 Design Preview</title>
   <style>
     * { box-sizing: border-box; }
+    /* Hide native scrollbars everywhere — polished preview never shows browser chrome */
+    * { scrollbar-width: none; -ms-overflow-style: none; }
+    *::-webkit-scrollbar { display: none; }
     body {
       background-color: ${bg};
       color: ${text};

@@ -143,12 +143,38 @@ function findUndefinedScreenReferences(spec: string): string[] {
   return missing
 }
 
+// Deterministic brand-redundancy check: detects when the app name (nav wordmark)
+// is repeated in the auth sheet heading — a common polish failure on mobile apps.
+// The nav frame already establishes brand context; repeating it in the auth heading
+// is redundant and signals amateur-level UX. No LLM needed — pure string match.
+export function auditRedundantBranding(spec: string): string[] {
+  const issues: string[] = []
+
+  const wordmarkMatch = spec.match(/^[-*]\s*([^\n:]+?)\s+wordmark:/im)
+  const wordmark = wordmarkMatch?.[1]?.trim()
+  if (!wordmark) return issues
+
+  for (const match of spec.matchAll(/[Hh]eading:\s*"([^"]+)"/g)) {
+    const heading = match[1].trim()
+    if (heading.toLowerCase().includes(wordmark.toLowerCase())) {
+      issues.push(
+        `Auth heading "${heading}" repeats the app name already shown in the nav wordmark — ` +
+        `redundant: the nav bar already establishes brand context. ` +
+        `Replace with copy that adds meaning: e.g. "Welcome back" or "Sign in".`
+      )
+    }
+  }
+
+  return issues
+}
+
 export async function auditSpecRenderAmbiguity(designSpec: string, options?: { formFactors?: string[] }): Promise<string[]> {
   if (!designSpec) return []
 
   // Run deterministic checks first — no LLM call needed
   const undefinedScreens = findUndefinedScreenReferences(designSpec)
   const copyIssues = auditCopyCompleteness(designSpec)
+  const brandingIssues = auditRedundantBranding(designSpec)
 
   const formFactorCheck = options?.formFactors && options.formFactors.length > 0
     ? `- Layout defined for only one form factor when the spec targets ${options.formFactors.join(", ")}: flag any screen that has layout details but doesn't specify how it adapts across all target form factors`
@@ -174,11 +200,19 @@ Flag ONLY elements where a renderer must make an unspecified choice:
 - Auth or SSO buttons containing both an icon/logo and label text without specifying their internal horizontal arrangement — flag if the spec does not say how icon and text are positioned relative to each other (e.g. "icon left, text centered", "both centered as a unit with 8px gap"); "full-width stacked" does not resolve this
 - User-facing copy defined in the spec (taglines, subheadings, button labels, error messages, nudge text) that appears to be a grammatically incomplete sentence — specifically: sentence-case multi-word strings that do not end with a period, exclamation mark, or question mark when a complete sentence is clearly intended (e.g. "All your health. One conversation" ends mid-thought; a full sentence would end with a period). Do NOT flag identifiers, brand names, or single-word labels.
 
+Design quality issues that would block a senior design review (flag these the same as structural ambiguities — a spec that ships with these is not a 10/10):
+- Horizontally scrollable rows (chip rows, tag rows, carousels) with no scrollbar treatment defined — native browser scrollbars show on all platforms and look unfinished; spec must say "scrollbar hidden" or define a custom treatment
+- Dynamic content areas (message threads, health data feeds, activity logs) with no empty state defined — what the user sees before any data exists must be specified
+- Primary interactive elements (buttons, chips) with no explicit minimum touch target size — 44×44pt minimum is required for accessible mobile UX; if the spec defines a smaller visual size it must also specify the tap target expansion
+- Copy that states the obvious given established visual context: an auth heading that repeats the app name already shown in the nav bar, a tooltip that restates its button label, a confirmation dialog that describes what the user just did in the same words the user used to trigger it
+
 Do NOT flag:
 - General aesthetic descriptions ("minimal", "dark, premium feel")
 - Elements that have an explicit "none" or "no X" statement
 - Brand token values — color drift is handled by a separate brand auditor
 - Implementation details and accessibility notes
+- Scrollbar treatment if the spec explicitly states "scrollbar hidden", "overflow: hidden", or any equivalent
+- Empty state if a screen is explicitly defined as always having data (e.g. a detail view only reachable from a populated list)
 
 Return a JSON array of strings. Each string names one specific ambiguity. If the spec is fully specified for rendering, return: []
 
@@ -210,7 +244,7 @@ Return ONLY the JSON array, no preamble or explanation.`,
     }
   }
 
-  return [...undefinedScreens, ...copyIssues, ...llmAmbiguities]
+  return [...undefinedScreens, ...copyIssues, ...brandingIssues, ...llmAmbiguities]
 }
 
 // ─── Decision audit ────────────────────────────────────────────────────────────

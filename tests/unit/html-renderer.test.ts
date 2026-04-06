@@ -191,6 +191,13 @@ describe("renderFromSpec — spec value parsing", () => {
     expect(html).toContain("height:44px")
     expect(html).toContain("border-radius:40px")
   })
+
+  it("hides native scrollbars — polished preview never shows browser chrome", () => {
+    const html = renderFromSpec(MINIMAL_SPEC, MINIMAL_BRAND, "test")
+    expect(html).toContain("scrollbar-width: none")
+    expect(html).toContain("-ms-overflow-style: none")
+    expect(html).toContain("::-webkit-scrollbar")
+  })
 })
 
 // ─── renderFromSpec: brand color substitution ─────────────────────────────────
