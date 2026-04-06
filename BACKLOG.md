@@ -354,6 +354,18 @@ Phase detection latency is invisible to users today because it runs in parallel 
 
 ---
 
+### Test quality — section header resilience fixtures
+
+**The gap today:** The `auditAnimationTokens — section header format resilience` tests use inline synthetic CSS strings to test that various Glow header formats (`**Animation & Glow**`, `**Glow**`, `**Glow:**`, no-bold, etc.) are correctly recognized. These inline strings are acceptable for testing header variation (not format-sensitive by the fixture rule), but the gold standard would be sourcing one fixture from a real agent response that uses a non-standard header. Today the design agent consistently produces `**Glow (Signature Effect)**`, so there is no real sample to source yet.
+
+**What this adds:** When a real agent response with a non-standard Glow header is observed in production, capture it as `tests/fixtures/agent-output/design-brand-animation-alt-header.md` and add a fixture-sourced test to replace the inline synthetic one for that variant.
+
+**Why deferred:** No non-standard header has been observed in production. Premature fixture creation would require hand-crafting — the exact failure mode the fixture rule prohibits. This becomes actionable when a real sample exists.
+
+**Source:** Self-rating gap noted after animation drift detection fix (April 2026).
+
+---
+
 ### Step 2.5b — Remaining API cost optimizations (minor)
 
 Two small items left from the original cost optimization work. Neither is blocking — do these opportunistically between larger steps. **Do not prioritise until onboarding a second workspace** — the savings only compound at multi-user, multi-feature volume.
