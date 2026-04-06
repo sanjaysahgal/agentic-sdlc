@@ -524,8 +524,9 @@ export function buildDesignStateResponse(params: {
   animationDrifts?: AnimationDrift[]
   specGap?: string | null
   uncommittedDecisions?: string
+  qualityIssues?: string[]
 }): string {
-  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], animationDrifts = [], specGap, uncommittedDecisions } = params
+  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], animationDrifts = [], specGap, uncommittedDecisions, qualityIssues = [] } = params
 
   if (!draftContent) {
     const pendingSection = uncommittedDecisions
@@ -558,6 +559,7 @@ export function buildDesignStateResponse(params: {
 
   const totalDrift = brandDrifts.length + animationDrifts.length
   const hasUncommitted = !!uncommittedDecisions
+  const hasQualityIssues = qualityIssues.length > 0
 
   const lines: string[] = []
 
@@ -591,7 +593,17 @@ export function buildDesignStateResponse(params: {
     lines.push(`Say *fix drift* and I'll patch the spec to match BRAND.md. This also corrects the HTML preview.`)
   }
 
-  // ── Section 3: SPEC ──
+  // ── Section 3: QUALITY ──
+  // Design quality issues caught by deterministic platform audits — these are
+  // 10/10 review failures that must be fixed before approval, same as drift.
+  if (hasQualityIssues) {
+    lines.push("")
+    lines.push("*── QUALITY ──*")
+    qualityIssues.forEach((issue, i) => lines.push(`  ${i + 1}. ${issue}`))
+    lines.push(`Fix these before saying *approved* — say *fix quality* and I'll patch the spec.`)
+  }
+
+  // ── Section 4: SPEC ──
   lines.push("")
   lines.push("*── SPEC ──*")
   if (keyDecisions.length > 0) {
@@ -623,13 +635,15 @@ export function buildDesignStateResponse(params: {
   }
 
   // ── Conditional CTA — one clear next step, priority-ordered ──
-  // Uncommitted decisions > drift > blocking questions > all-clear.
-  // Approval is not offered until all three gates are clear.
+  // Uncommitted decisions > drift > quality issues > blocking questions > all-clear.
+  // Approval is not offered until all gates are clear.
   lines.push("")
   if (hasUncommitted) {
     lines.push(`Save the pending decisions above first — say *save those*, then come back to approve.`)
   } else if (totalDrift > 0) {
     lines.push(`Fix the drift above first — say *fix drift*, then approve.`)
+  } else if (hasQualityIssues) {
+    lines.push(`Fix the quality issues above — say *fix quality* and I'll patch the spec, then approve.`)
   } else if (blocking.length > 0) {
     lines.push(`Resolve the blocking question${blocking.length !== 1 ? "s" : ""} above, then say *approved* to move to engineering.`)
   } else {

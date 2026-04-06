@@ -530,6 +530,38 @@ None.
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
     expect(result).not.toContain("Spec gap")
   })
+
+  it("shows QUALITY section when qualityIssues provided", () => {
+    const issues = [
+      'Auth heading "Sign in to Health360" repeats the app name already shown in the nav wordmark — redundant.',
+      'Narrative copy missing terminal punctuation: "All your health. One conversation"',
+    ]
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, qualityIssues: issues })
+    expect(result).toContain("*── QUALITY ──*")
+    expect(result).toContain("Sign in to Health360")
+    expect(result).toContain("One conversation")
+    expect(result).toContain("fix quality")
+  })
+
+  it("omits QUALITY section when qualityIssues is empty", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, qualityIssues: [] })
+    expect(result).not.toContain("QUALITY")
+  })
+
+  it("CTA prioritises drift over quality — shows fix drift when both present", () => {
+    const drift = [{ token: "--accent", specValue: "#000", brandValue: "#7C6FCD" }]
+    const issues = ["Redundant branding issue"]
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drift, qualityIssues: issues })
+    expect(result).toContain("fix drift")
+    expect(result).not.toContain("fix quality")
+  })
+
+  it("CTA shows fix quality when no drift but quality issues present", () => {
+    const issues = ["Redundant branding issue"]
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, qualityIssues: issues })
+    expect(result).toContain("fix quality")
+    expect(result).not.toContain("*approved*")
+  })
 })
 
 describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {

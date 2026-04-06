@@ -8,7 +8,7 @@ import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, sav
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
-import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
+import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness } from "../../../runtime/spec-auditor"
 import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
@@ -593,7 +593,11 @@ async function runDesignAgent(params: {
         }
       }
 
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, animationDrifts, specGap, uncommittedDecisions })
+      // Deterministic design quality checks — zero LLM cost, always run alongside drift audit.
+      const stateQualityIssues = draftContent
+        ? [...auditRedundantBranding(draftContent), ...auditCopyCompleteness(draftContent)]
+        : []
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, animationDrifts, specGap, uncommittedDecisions, qualityIssues: stateQualityIssues })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg)
@@ -680,6 +684,16 @@ async function runDesignAgent(params: {
   let designReadinessNotice = ""
   const designSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const designDraftContent = await readFile(designSpecDraftPath, `spec/${featureName}-design`).catch(() => null)
+
+  // Deterministic design quality checks — zero LLM cost, run on every response when draft exists.
+  // Uses designDraftContent (fetched above from the spec branch) — NOT context.currentDraft which
+  // may be empty if the draft is only on a feature branch and not yet committed to main.
+  const redundantBrandingIssues = designDraftContent ? auditRedundantBranding(designDraftContent) : []
+  const copyCompletenessIssues = designDraftContent ? auditCopyCompleteness(designDraftContent) : []
+  const qualityIssues = [...redundantBrandingIssues, ...copyCompletenessIssues]
+  const qualityNotice = qualityIssues.length > 0
+    ? `\n\n[PLATFORM NOTICE — DESIGN QUALITY: ${qualityIssues.length} issue${qualityIssues.length === 1 ? "" : "s"} must be fixed before approval:\n${qualityIssues.map((i, n) => `${n + 1}. ${i}`).join("\n")}\nYou MUST surface each issue with your concrete recommendation and offer to patch.]`
+    : ""
   if (designDraftContent) {
     const dfp = specFingerprint(designDraftContent)
     const designCacheKey = `design-phase:${featureName}:${dfp}`
@@ -701,7 +715,7 @@ async function runDesignAgent(params: {
     }
   }
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
