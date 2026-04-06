@@ -297,6 +297,8 @@ e.g. "Light, minimal, single-metric-forward. Reference: Oura ring score card. Hi
 e.g. "Primary: #0A0A0A. Accent: #E8FF4D. Font: Inter. Spacing: 8pt grid. Icons: Lucide."
 When the brand repo is connected (Step 10), this section is populated automatically from brand tokens.
 
+IMPORTANT — glow/animation format: copy the exact CSS block structure from BRAND.md. Use a **Glow (Signature Effect)** subsection with **Violet glow:** and **Teal glow:** sub-headings, each containing a \`\`\`css block with \`filter: blur(Xpx)\`, \`@keyframes\` (with opacity values at 0%/12%/36%/60%/100%), \`animation: name Xs ...\`, and \`animation-delay: Xs\` on the teal glow. The platform drift detector reads these CSS blocks directly — prose descriptions of animation values (e.g. "Duration: 2.5s") are not parseable and will cause drift to go undetected.
+
 ## Screens
 
 ### <Screen Name>

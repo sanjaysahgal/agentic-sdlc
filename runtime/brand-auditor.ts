@@ -88,7 +88,11 @@ function extractBrandAnimationParams(brandMd: string): Map<string, string> {
  */
 function extractSpecAnimationSection(specContent: string): string {
   const brandSection = extractBrandSection(specContent)
-  const match = brandSection.match(/\*{0,2}(?:Animation|Glow)[^*\n]*\*{0,2}[^\n]*\n([\s\S]*?)(?=\n\*{0,2}[A-Z]|\n#{1,4}|\n---|\n\n##|$)/i)
+  // Stop only at markdown section boundaries (## headings, ---, end of string).
+  // Previously included \n\*{0,2}[A-Z] which terminated at any bold sub-heading
+  // inside the Glow section (e.g. **Violet glow:**), causing the CSS code blocks
+  // to be cut off and the parser to return an empty capture.
+  const match = brandSection.match(/\*{0,2}(?:Animation|Glow)[^*\n]*\*{0,2}[^\n]*\n([\s\S]*?)(?=\n#{1,4}|\n---|\n\n##|$)/i)
   return match?.[1] ?? ""
 }
 
@@ -121,6 +125,14 @@ function extractSpecOpacityRange(section: string): { min: string; max: string } 
  * Diffs the design spec's Brand animation section against BRAND.md animation params.
  * Returns any params that exist in both but have different values.
  *
+ * Supports two spec formats:
+ *   CSS format  — the design agent writes Brand animation as CSS code blocks matching
+ *                 BRAND.md's structure (filter, @keyframes, animation, animation-delay).
+ *                 Parsed with extractBrandAnimationParams — same parser as BRAND.md.
+ *   Prose format — older: "- Glow duration: `2.5s`", "Opacity cycle: X → Y".
+ *                 Parsed with extractSpecAnimValue / extractSpecOpacityRange.
+ * CSS is tried first; prose is the fallback for older specs.
+ *
  * Pure string operation — no API call, no I/O, no side effects.
  */
 export function auditAnimationTokens(specContent: string, brandMd: string): AnimationDrift[] {
@@ -132,12 +144,26 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
 
   const drifts: AnimationDrift[] = []
 
+  // CSS format — same parser as BRAND.md (the format the design agent currently produces).
+  // Prefix with a synthetic ## Glow heading so extractBrandAnimationParams can find its section root.
+  // specAnimSection is the captured content *after* the **Glow...** heading, not a full document.
+  const specParams = extractBrandAnimationParams(`## Glow\n${specAnimSection}`)
+  if (specParams.size > 0) {
+    for (const [param, brandValue] of brandParams) {
+      const specValue = specParams.get(param)
+      if (specValue && specValue !== brandValue) {
+        drifts.push({ param, specValue, brandValue })
+      }
+    }
+    return drifts
+  }
+
+  // Prose format fallback — older specs that predate the CSS format convention.
   const checks: Array<{ param: string; keyword: string }> = [
     { param: "glow-duration", keyword: "duration" },
     { param: "glow-blur", keyword: "blur" },
     { param: "glow-delay", keyword: "delay" },
   ]
-
   for (const { param, keyword } of checks) {
     const brandValue = brandParams.get(param)
     if (!brandValue) continue
@@ -146,8 +172,6 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
       drifts.push({ param, specValue, brandValue })
     }
   }
-
-  // Opacity is written as a range ("Opacity cycle: X → Y") — handled separately.
   const opacityRange = extractSpecOpacityRange(specAnimSection)
   if (opacityRange) {
     const minBrand = brandParams.get("glow-opacity-min")

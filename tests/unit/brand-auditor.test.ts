@@ -229,6 +229,54 @@ describe("auditAnimationTokens — section header format resilience", () => {
   })
 })
 
+describe("auditAnimationTokens — CSS-format spec (real onboarding design fixture)", () => {
+  // The real onboarding design spec writes the Brand section using CSS code blocks,
+  // not prose key-value lines. These tests verify the parser handles the actual
+  // format the design agent produces — not the prose format it was originally written for.
+  const ONBOARDING_BRAND_SECTION = readFileSync(join(FIXTURE_DIR, "onboarding-design-brand-section.md"), "utf-8")
+  const BRAND_MD_GLOW = readFileSync(join(FIXTURE_DIR, "brand-md-glow.md"), "utf-8")
+
+  it("detects all 5 animation drifts in the real CSS-format spec", () => {
+    const drifts = auditAnimationTokens(ONBOARDING_BRAND_SECTION, BRAND_MD_GLOW)
+    expect(drifts).toHaveLength(5)
+  })
+
+  it("detects duration drift (spec 2.5s vs BRAND.md 4s)", () => {
+    const drifts = auditAnimationTokens(ONBOARDING_BRAND_SECTION, BRAND_MD_GLOW)
+    const d = drifts.find(x => x.param === "glow-duration")
+    expect(d?.specValue).toBe("2.5s")
+    expect(d?.brandValue).toBe("4s")
+  })
+
+  it("detects blur drift (spec 200px vs BRAND.md 80px)", () => {
+    const drifts = auditAnimationTokens(ONBOARDING_BRAND_SECTION, BRAND_MD_GLOW)
+    const d = drifts.find(x => x.param === "glow-blur")
+    expect(d?.specValue).toBe("200px")
+    expect(d?.brandValue).toBe("80px")
+  })
+
+  it("detects delay drift (spec -1.25s vs BRAND.md -1.8s)", () => {
+    const drifts = auditAnimationTokens(ONBOARDING_BRAND_SECTION, BRAND_MD_GLOW)
+    const d = drifts.find(x => x.param === "glow-delay")
+    expect(d?.specValue).toBe("-1.25s")
+    expect(d?.brandValue).toBe("-1.8s")
+  })
+
+  it("detects opacity-min drift (spec 0.10 vs BRAND.md 0.55)", () => {
+    const drifts = auditAnimationTokens(ONBOARDING_BRAND_SECTION, BRAND_MD_GLOW)
+    const d = drifts.find(x => x.param === "glow-opacity-min")
+    expect(d?.specValue).toBe("0.10")
+    expect(d?.brandValue).toBe("0.55")
+  })
+
+  it("detects opacity-max drift (spec 0.15 vs BRAND.md 1.00)", () => {
+    const drifts = auditAnimationTokens(ONBOARDING_BRAND_SECTION, BRAND_MD_GLOW)
+    const d = drifts.find(x => x.param === "glow-opacity-max")
+    expect(d?.specValue).toBe("0.15")
+    expect(d?.brandValue).toBe("1.00")
+  })
+})
+
 describe("auditBrandTokens — boundary conditions", () => {
   it("returns empty when spec has no Brand section", () => {
     const drifts = auditBrandTokens(SPEC_NO_BRAND_SECTION, REAL_BRAND_MD)
