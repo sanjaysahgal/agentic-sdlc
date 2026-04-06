@@ -33,6 +33,22 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Gap: Pre-commit new-agent gate has no smoke test
+
+The pre-commit hook in `.claude/settings.json` that blocks new `run[X]Agent()` function exports without an always-on audit block (`[X]ReadinessNotice` or `ALWAYS-ON-AUDIT-JUSTIFIED:` comment) has never been triggered in a real commit. The hook logic is live but unverified. If the regex is wrong, a new agent could ship without the required audit block and the gate would silently pass.
+
+**Fix:** Add a smoke test script at `tests/hooks/new-agent-gate.sh` that:
+1. Stages a temp file with `export async function runFooAgent(` and no audit comment
+2. Invokes the hook command directly (pipe the staged diff to the command)
+3. Asserts exit code indicates block
+4. Stages the same file with `// ALWAYS-ON-AUDIT-JUSTIFIED: test` present
+5. Asserts exit code indicates pass
+6. Cleans up
+
+Run as part of the test suite via `vitest` or as a standalone `npm run test:hooks` script. Until this passes, the gate's correctness is assumed, not verified.
+
+---
+
 ### Gap: Scenario 4 smoke test accepts save_design_spec_draft as a pass
 
 Scenario 4 (`apply_design_spec_patch` auto-save after user agreement) accepts either `apply_design_spec_patch` or `save_design_spec_draft` as a passing result. The test context sets `currentDraft` in the `AgentContext` but the agent may not read it from the test message construction — the agent has no prior save call in the conversation that would make it aware a draft exists. The durable fix: add a prior assistant tool call (`save_design_spec_draft`) to the message history in the test's `beforeAll` block, then verify the agent's response to "lock those in" uses `apply_design_spec_patch` specifically.
