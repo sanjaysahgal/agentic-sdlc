@@ -9,6 +9,10 @@
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then STAGED=$(git diff --name-only --cached 2>/dev/null); if echo \"$STAGED\" | grep -qE '^(agents|runtime|interfaces)/'; then if ! echo \"$STAGED\" | grep -q '^tests/'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Behavior files in agents/, runtime/, or interfaces/ are staged with no test files. Add or update tests for the changed behavior before committing. Run: npm test\"}}'; fi; fi; fi; true"
           },
           {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then DIFF=$(git diff --cached 2>/dev/null); if echo \"$DIFF\" | grep -qE '^\\+.*(export (async )?function is[A-Z][a-zA-Z]+\\()'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[CLASSIFIER GATE] A new is[X]() classifier function is being committed. Principle 7: checks must run on EVERY message, not on trigger. Two options: (1) Redesign as always-on audit injected in message.ts enrichment block (preferred). (2) If genuinely conditional for infrastructure reasons (not phrasing), add a // TRIGGER-JUSTIFIED: [reason] comment to the function and get explicit user approval before committing.\"}}'; fi; fi; true"
+          },
+          {
             "type": "prompt",
             "model": "claude-haiku-4-5-20251001",
             "timeout": 10,

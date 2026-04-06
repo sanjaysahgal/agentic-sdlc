@@ -171,3 +171,27 @@ export function auditBrandTokens(specContent: string, brandMd: string): BrandDri
     brandValue: brandTokens.get(token)!,
   }))
 }
+
+/**
+ * Detects canonical tokens from BRAND.md that are entirely absent from the design spec.
+ * A token that appears with the wrong value is "drifted" (reported by auditBrandTokens) —
+ * this function only flags tokens that do not appear anywhere in the spec at all.
+ *
+ * Pure string operation — no API call, no I/O, no side effects.
+ */
+export function auditMissingBrandTokens(specContent: string, brandMd: string): Array<{ token: string; brandValue: string }> {
+  if (!brandMd || !specContent) return []
+  const brandTokens = extractTokenMap(brandMd)
+  if (brandTokens.size === 0) return []
+
+  const missing: Array<{ token: string; brandValue: string }> = []
+  for (const [token, brandValue] of brandTokens) {
+    // Escape the -- prefix for regex and match case-insensitively
+    const escapedToken = token.replace(/[-]/g, "\\-")
+    const tokenRegex = new RegExp(escapedToken, "i")
+    if (!tokenRegex.test(specContent)) {
+      missing.push({ token, brandValue })
+    }
+  }
+  return missing
+}

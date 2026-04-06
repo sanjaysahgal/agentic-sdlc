@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "fs"
 import { join } from "path"
-import { auditBrandTokens, auditAnimationTokens, BrandDrift, AnimationDrift } from "../../runtime/brand-auditor"
+import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens, BrandDrift, AnimationDrift } from "../../runtime/brand-auditor"
 
 // Real agent output — loaded from fixtures, NOT hand-crafted.
 // These files must be sourced from actual agent responses.
@@ -291,6 +291,41 @@ describe("auditAnimationTokens — CSS-format spec (real onboarding design fixtu
     const d = drifts.find(x => x.param === "glow-opacity-max")
     expect(d?.specValue).toBe("0.15")
     expect(d?.brandValue).toBe("1.00")
+  })
+})
+
+describe("auditMissingBrandTokens", () => {
+  it("detects a token in BRAND.md that is entirely absent from the spec", () => {
+    // --accent is in brand, spec only has --bg
+    const brandWithAccent = `${REAL_BRAND_MD}\n--accent: #FF6B35\n`
+    const specWithoutAccent = `## Brand\n--bg: #0A0A0F\n`
+    const missing = auditMissingBrandTokens(specWithoutAccent, brandWithAccent)
+    expect(missing.map(m => m.token)).toContain("--accent")
+  })
+
+  it("does NOT flag drifted tokens as missing — wrong value present is not absent", () => {
+    // spec has --violet but with wrong value — that's drift, not missing
+    const spec = `## Brand\n--violet: #8B7FE8\n`
+    const missing = auditMissingBrandTokens(spec, REAL_BRAND_MD)
+    expect(missing.map(m => m.token)).not.toContain("--violet")
+  })
+
+  it("returns empty when brand has no tokens", () => {
+    const brandNoTokens = `## Brand\nNo CSS variables here.\n`
+    const missing = auditMissingBrandTokens(REAL_SPEC_CANONICAL, brandNoTokens)
+    expect(missing).toHaveLength(0)
+  })
+
+  it("case-insensitive token matching — --PRIMARY in brand matches --primary in spec", () => {
+    const brandUppercase = `--PRIMARY: #7C6FCD\n`
+    const specLowercase = `## Brand\n--primary: #7C6FCD\n`
+    const missing = auditMissingBrandTokens(specLowercase, brandUppercase)
+    expect(missing).toHaveLength(0)
+  })
+
+  it("returns empty when both inputs are empty", () => {
+    expect(auditMissingBrandTokens("", REAL_BRAND_MD)).toHaveLength(0)
+    expect(auditMissingBrandTokens(REAL_SPEC_CANONICAL, "")).toHaveLength(0)
   })
 })
 

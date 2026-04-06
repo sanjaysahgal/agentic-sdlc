@@ -164,13 +164,12 @@ describe("locked decisions — design agent", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [1] isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary\n• Archon Labs aesthetic" }] })    // [2] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                                         // [3] isReadinessQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [4] runAgent (Sonnet)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })                           // [3] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("rebuild the spec", client))
 
-    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[4])
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[3])
     expect(lastUserContent).toContain("Decisions locked in this conversation")
     expect(lastUserContent).toContain("Dark primary")
     expect(lastUserContent).toContain("Archon Labs aesthetic")
@@ -185,8 +184,7 @@ describe("locked decisions — design agent", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
       .mockRejectedValueOnce(new Error("Haiku API failure"))                   // [2] extractLockedDecisions → caught
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // [3] isReadinessQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [4] runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] })  // [3] runAgent
 
     const client = makeClient()
     await expect(handleFeatureChannelMessage(makeParams("rebuild the spec", client))).resolves.toBeUndefined()
@@ -255,7 +253,6 @@ describe("featureName keying — two threads in the same feature channel share h
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark mode default\n• Archon palette\n• Chips above prompt bar" }] }) // extractLockedDecisions (history ≥ 6)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Welcome! Here is what we have decided so far." }] }) // runAgent
 
     const params = {
@@ -275,8 +272,8 @@ describe("featureName keying — two threads in the same feature channel share h
 
     await handleFeatureChannelMessage(params)
 
-    // extractLockedDecisions fired (4th call) — agent received prior decisions
-    const runAgentCall = mockAnthropicCreate.mock.calls[4][0]
+    // extractLockedDecisions fired (3rd call) — agent received prior decisions
+    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
     const lastUserMsg = (runAgentCall.messages as Array<{ role: string; content: string }>)
       .filter(m => m.role === "user").at(-1)?.content ?? ""
     expect(lastUserMsg).toContain("Decisions locked in this conversation")

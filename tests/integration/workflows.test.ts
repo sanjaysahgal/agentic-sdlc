@@ -224,12 +224,12 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
     // GitHub: product spec on main, no design spec, no design branch → product-spec-approved-awaiting-design
     mockProductApprovedState()
 
-    // Design agent calls: isOffTopicForAgent, isSpecStateQuery, isReadinessQuery, runAgent
+    // Design agent calls: isOffTopicForAgent, isSpecStateQuery, runAgent
     // history.length = 2 → extractLockedDecisions short-circuits (< 6), no Haiku call
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                           // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                              // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with flows." }] })         // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "let's start the design phase")
@@ -316,10 +316,10 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     // No confirmedAgent — fresh thread
     mockDesignInProgressState()
 
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here are the flows." }] }) // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "what are we designing?")
@@ -387,13 +387,12 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
-    //   [2] isReadinessQuery         → no
-    //   [3] runAgent (tool_use)      → offer_pm_escalation({ question: "Should chips be permanent for authenticated users?" })
-    //   [4] runAgent (end_turn)      → text response after tool result
+    //   [2] runAgent (tool_use)      → offer_pm_escalation({ question: "Should chips be permanent for authenticated users?" })
+    //   [3] runAgent (end_turn)      → text response after tool result
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: "Should chips be permanent for authenticated users?" } }],
@@ -492,10 +491,10 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
 
     vi.clearAllMocks()
 
+    // No design draft on dashboard branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })             // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Design response." }] }) // design runAgent
 
     const paramsB = makeParams(THREAD_B, "feature-dashboard", "update the flows")
@@ -543,20 +542,20 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
     appendMessage("onboarding", { role: "user", content: "first design message" })
     appendMessage("onboarding", { role: "assistant", content: "Design response." })
 
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] })  // design runAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] }) // post-turn identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "another design question")
     await handleFeatureChannelMessage(params)
 
-    // 5 calls: isOffTopicForAgent, isSpecStateQuery, isReadinessQuery, runAgent, post-turn identifyUncommittedDecisions
+    // 4 calls: isOffTopicForAgent, isSpecStateQuery, runAgent, post-turn identifyUncommittedDecisions
     // (history grows to 4 messages after this turn: 2 seeded + 1 user + 1 assistant > threshold of 2)
-    // classifyIntent was NOT called — that would add a 6th call
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // classifyIntent was NOT called — that would add a 5th call
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
   })
 })
@@ -582,19 +581,19 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
       appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })           // [1] isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                // [2] extractLockedDecisions (Haiku, fires at >6 msgs)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "- Glow timing pending" }] }) // [3] summarizeUnlockedDiscussion (Haiku, fires when history > 20)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })              // [4] isReadinessQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // [5] design runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Still designing." }] }) // [4] design runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "latest message")
     await handleFeatureChannelMessage(params)
 
-    // The 6th Anthropic call (index 5) is the runAgent call — inspect its messages array
-    const runAgentCall = mockAnthropicCreate.mock.calls[5][0]
+    // The 5th Anthropic call (index 4) is the runAgent call — inspect its messages array
+    const runAgentCall = mockAnthropicCreate.mock.calls[4][0]
     expect(runAgentCall.messages.length).toBeLessThanOrEqual(21)
 
     // The most recent history message should be present; the oldest (msg 0) should be gone
@@ -696,15 +695,14 @@ describe("Scenario 9 — Design patch flow", () => {
     // Anthropic call sequence (short history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent        → false
     //   [1] isSpecStateQuery          → false
-    //   [2] isReadinessQuery          → no
-    //   [3] runAgent (tool_use call)  → tool_use: apply_design_spec_patch
-    //   [4] generateDesignPreview     → HTML (from tool handler; auditSpecDraft skips — empty context)
-    //   [5] auditSpecRenderAmbiguity  → [] (no ambiguities)
-    //   [6] runAgent (end_turn call)  → text response after tool result
+    //   [2] runAgent (tool_use call)  → tool_use: apply_design_spec_patch
+    //   [3] generateDesignPreview     → HTML (from tool handler; auditSpecDraft skips — empty context)
+    //   [4] auditSpecRenderAmbiguity  → [] (no ambiguities)
+    //   [5] runAgent (end_turn call)  → text response after tool result
+    // No design draft found before tool call → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })             // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Accessibility\nWCAG AA required. Focus rings on all interactive elements. Min tap target 44px." } }],
@@ -949,14 +947,13 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     // Anthropic call sequence (short history → extractLockedDecisions fires at length ≥ 6; length=3 → skips):
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
-    //   [2] isReadinessQuery         → no
-    //   [3] runAgent (tool_use)      → generate_design_preview
-    //   [4] runAgent (end_turn)      → "Preview is live."  (generateDesignPreview is template-based)
-    //   [5] identifyUncommittedDecisions (current turn only) → all committed
+    //   [2] runAgent (tool_use)      → generate_design_preview
+    //   [3] runAgent (end_turn)      → "Preview is live."  (generateDesignPreview is template-based)
+    //   [4] identifyUncommittedDecisions (current turn only) → all committed
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })          // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
@@ -980,10 +977,10 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     setConfirmedAgent("onboarding", "ux-design")
 
     // Same sequence as above but identifyUncommittedDecisions returns an uncommitted decision.
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })          // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
@@ -1010,15 +1007,14 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     // Call sequence (history=3, length < 6 → no extractLockedDecisions):
     //   [0] isOffTopicForAgent  → false
     //   [1] isSpecStateQuery    → false
-    //   [2] isReadinessQuery    → no
-    //   [3] runAgent (tool_use) → apply_design_spec_patch
-    //   [4] auditSpecRenderAmbiguity  (generateDesignPreview is template-based — no LLM call) → [] (no ambiguities)
-    //   [6] runAgent (end_turn) → response text
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] auditSpecRenderAmbiguity  (generateDesignPreview is template-based — no LLM call) → [] (no ambiguities)
+    //   [4] runAgent (end_turn) → response text
     //   NO identifyUncommittedDecisions call
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })          // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Colors\nViolet CTA." } }],
@@ -1026,15 +1022,15 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })          // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated and saved. Ready to approve?" }] }) // runAgent: end_turn
     // If identifyUncommittedDecisions were called, it would hit the default mockResolvedValue
-    // fallback which is undefined → would throw. Verifying no throw + call count = 7.
+    // fallback which is undefined → would throw. Verifying no throw + call count = 5.
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "make the CTA violet and save"), client })
 
-    // Exactly 6 Anthropic calls — generateDesignPreview is template-based (no LLM); no 7th call for identifyUncommittedDecisions
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // Exactly 5 Anthropic calls — generateDesignPreview is template-based (no LLM); no 6th call for identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
     const text = lastUpdateText(client)
     expect(text).not.toContain("⚠️")
@@ -1048,21 +1044,20 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     // Call sequence (history=3, length < 6 → no extractLockedDecisions):
     //   [0] isOffTopicForAgent  → false
     //   [1] isSpecStateQuery    → false
-    //   [2] isReadinessQuery    → no
-    //   [3] runAgent (end_turn) → recommendation + "Lock this in?"
+    //   [2] runAgent (end_turn) → recommendation + "Lock this in?"
     //   NO identifyUncommittedDecisions call (agentStillSeeking guard fires)
+    // No design draft on branch → auditPhaseCompletion skipped
     const agentResponseWithSeekingPhrase = "My recommendation: use 8–12% glow opacity (subtle ambient warmth). Lock this in?"
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })           // isReadinessQuery
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: agentResponseWithSeekingPhrase }] }) // runAgent
 
     const client = makeClient()
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "what glow opacity do you recommend?"), client })
 
-    // Only 4 calls — identifyUncommittedDecisions is NOT called when agentStillSeeking
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // Only 3 calls — identifyUncommittedDecisions is NOT called when agentStillSeeking
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
     const text = lastUpdateText(client)
     expect(text).not.toContain("⚠️")
     expect(text).toContain("Lock this in?")
@@ -1093,14 +1088,13 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
     // Anthropic call sequence (empty history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent  → false
     //   [1] isSpecStateQuery    → false
-    //   [2] isReadinessQuery    → no
-    //   [3] runAgent (tool_use) → apply_design_spec_patch
-    //   [4] generateDesignPreview (inside saveDesignDraft)
-    //   [5] runAgent (end_turn) → THROWS (simulates context-limit or transient API error)
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] generateDesignPreview (inside saveDesignDraft)
+    //   [4] runAgent (end_turn) → THROWS (simulates context-limit or transient API error)
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })          // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Auth Sheet\nEnters from bottom." } }],
@@ -1135,10 +1129,10 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
     setConfirmedAgent("onboarding", "ux-design")
 
     // runAgent fails on the first call (no tool was called, no spec was saved)
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })          // isReadinessQuery
       .mockRejectedValueOnce(new Error("The API is overloaded"))                   // runAgent: first call FAILS
 
     const client = makeClient()
@@ -1181,13 +1175,12 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent          → false
     //   [1] isSpecStateQuery            → false
-    //   [2] isReadinessQuery            → no
-    //   [3] runAgent                    → text claiming spec update
-    //   [4] identifyUncommittedDecisions → uncommitted decision found
+    //   [2] runAgent                    → text claiming spec update
+    //   [3] identifyUncommittedDecisions → uncommitted decision found
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })            // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "The spec now uses 3 columns with wide margins." }] }) // runAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Layout: 3 columns — discussed this turn, not in spec." }] }) // identifyUncommittedDecisions
 
@@ -1198,7 +1191,7 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
     expect(text).toContain("⚠️")
     expect(text).toContain("Heads up")
     expect(text).toContain("save those")
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 
   it("generate_design_preview uses context.currentDraft from GitHub, not agent's stale in-memory specContent", async () => {
@@ -1211,15 +1204,14 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
-    //   [2] isReadinessQuery         → no
-    //   [3] runAgent (tool_use)      → generate_design_preview with stale specContent
-    //   [4] html-renderer            → receives context.currentDraft (not stale spec)
-    //   [5] runAgent (end_turn)      → "Preview is live."
-    //   [6] identifyUncommittedDecisions → all committed
+    //   [2] runAgent (tool_use)      → generate_design_preview with stale specContent
+    //   [3] html-renderer            → receives context.currentDraft (not stale spec)
+    //   [4] runAgent (end_turn)      → "Preview is live."
+    //   [5] identifyUncommittedDecisions → all committed
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })          // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Stale Agent Memory STALE_MARKER" } }],
@@ -1233,8 +1225,8 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "give me the latest preview"), client })
 
-    // The html-renderer Anthropic call (index 4) must NOT contain the agent's stale spec
-    const htmlRendererCall = mockAnthropicCreate.mock.calls[4][0]
+    // The html-renderer Anthropic call (index 3) must NOT contain the agent's stale spec
+    const htmlRendererCall = mockAnthropicCreate.mock.calls[3][0]
     const rendererUserMessage = htmlRendererCall.messages[0].content as string
     expect(rendererUserMessage).not.toContain("STALE_MARKER")
 
@@ -1276,17 +1268,16 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent
     //   [1] isSpecStateQuery
-    //   [2] isReadinessQuery
-    //   [3] runAgent (tool_use) → apply_design_spec_patch
-    //   [4] auditSpecRenderAmbiguity → ambiguities present  (generateDesignPreview is template-based)
-    //   [5] runAgent (tool_use again) → apply_design_spec_patch (agent fixes ambiguities)
-    //   [6] auditSpecRenderAmbiguity → [] (resolved)
-    //   [9] runAgent (end_turn) → response
-    //   [10] identifyUncommittedDecisions
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] auditSpecRenderAmbiguity → ambiguities present  (generateDesignPreview is template-based)
+    //   [4] runAgent (tool_use again) → apply_design_spec_patch (agent fixes ambiguities)
+    //   [5] auditSpecRenderAmbiguity → [] (resolved)
+    //   [6] runAgent (end_turn) → response
+    //   [7] identifyUncommittedDecisions
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips positioned near the bottom." } }],
@@ -1322,16 +1313,15 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
     // Call sequence (didSave=true → identifyUncommittedDecisions skipped):
     //   [0] isOffTopicForAgent
     //   [1] isSpecStateQuery
-    //   [2] isReadinessQuery
-    //   [3] runAgent (tool_use) → apply_design_spec_patch
-    //   [4] generateDesignPreview → HTML
-    //   [5] auditSpecRenderAmbiguity → [] (no ambiguities)
-    //   [6] runAgent (end_turn) → response
+    //   [2] runAgent (tool_use) → apply_design_spec_patch
+    //   [3] generateDesignPreview → HTML
+    //   [4] auditSpecRenderAmbiguity → [] (no ambiguities)
+    //   [5] runAgent (end_turn) → response
     //   NO identifyUncommittedDecisions (save tool was called)
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nHeading: \"Health360\". Chips: 12px above prompt bar." } }],
@@ -1344,8 +1334,8 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "save with full spec"), client })
 
-    // Exactly 6 Anthropic calls — generateDesignPreview is template-based (no LLM); no 7th (identifyUncommittedDecisions skipped)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // Exactly 5 Anthropic calls — generateDesignPreview is template-based (no LLM); no 6th (identifyUncommittedDecisions skipped)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
     const text = lastUpdateText(client)
     expect(text).toContain("approve")
@@ -1374,15 +1364,14 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent         → false
     //   [1] isSpecStateQuery           → false
-    //   [2] isReadinessQuery           → no
-    //   [3] runAgent (tool_use)        → generate_design_preview
+    //   [2] runAgent (tool_use)        → generate_design_preview
     //       handler: cache hit → uploadV2(cached HTML) → return immediately (no renderer call)
-    //   [4] runAgent (end_turn)        → "Here's the latest preview."
-    //   [5] identifyUncommittedDecisions → all committed
+    //   [3] runAgent (end_turn)        → "Here's the latest preview."
+    //   [4] identifyUncommittedDecisions → all committed
+    // mockGetContent only matches .preview.html (not .design.md) → no design draft → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Agent Memory (irrelevant)" } }],
@@ -1395,8 +1384,8 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "give me the latest preview"), client })
 
-    // 6 Anthropic calls — no LLM renderer call (that would add a 7th)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // 5 Anthropic calls — no LLM renderer call (that would add a 6th)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
     // uploadV2 received the cached HTML, not a freshly generated one
     const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
@@ -1408,14 +1397,14 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     // default mockGetContent → "Not Found" for everything (set in beforeEach)
 
     // Call sequence:
-    //   [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] isReadinessQuery
-    //   [3] runAgent (tool_use) → generate_design_preview
-    //       handler: no cache → [4] generateDesignPreview (renderer) → saveDraftHtmlPreview → uploadV2
-    //   [5] runAgent (end_turn), [6] identifyUncommittedDecisions
+    //   [0] isOffTopicForAgent, [1] isSpecStateQuery
+    //   [2] runAgent (tool_use) → generate_design_preview
+    //       handler: no cache → [3] generateDesignPreview (renderer) → saveDraftHtmlPreview → uploadV2
+    //   [4] runAgent (end_turn), [5] identifyUncommittedDecisions
+    // Default mockGetContent rejects everything → no design draft → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })      // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "generate_design_preview", input: { specContent: "# Spec" } }],
@@ -1459,16 +1448,17 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     })
 
     // Call sequence:
-    //   [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] isReadinessQuery
+    //   [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS
     //   [3] runAgent (tool_use) → apply_design_spec_patch with THE_PATCH
     //       handler: readFile(designFilePath) → existing spec; applySpecPatch; saveDesignDraft(merged)
     //         saveDesignDraft: generateDesignPreview(full merged spec) → [4] renderer call
     //         [5] auditSpecRenderAmbiguity → []
     //   [6] runAgent (end_turn), [7] identifyUncommittedDecisions
+    // Design draft found (.design.md matched) → auditPhaseCompletion fires at [2]
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })               // isReadinessQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })             // auditPhaseCompletion → PASS
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: THE_PATCH } }],
@@ -1510,14 +1500,13 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     // Anthropic call sequence (empty history, no PM spec → no phase entry audit):
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
-    //   [2] isReadinessQuery         → no
-    //   [3] runAgent (tool_use)      → offer_architect_escalation
-    //   [4] runAgent (end_turn)      → text after tool result
-    //   [5] identifyUncommittedDecisions → none
+    //   [2] runAgent (tool_use)      → offer_architect_escalation
+    //   [3] runAgent (end_turn)      → text after tool result
+    //   [4] identifyUncommittedDecisions → none
+    // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })            // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "offer_architect_escalation", input: { question: "Where is user state persisted between logged-out and logged-in sessions?" } }],
@@ -1579,25 +1568,25 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
   })
 })
 
-// ─── Scenario 19: Readiness audit injection ───────────────────────────────────
+// ─── Scenario 19: Always-on phase completion audit injection ─────────────────
 //
-// Verifies that when the user asks a readiness question ("is this ready for engineering?"),
-// isReadinessQuery returns true → auditPhaseCompletion fires → findings are injected
-// as [PLATFORM READINESS AUDIT] in the enriched user message passed to runAgent.
+// auditPhaseCompletion runs always-on at position [2] when a design spec draft is
+// found on the branch (via readFile). If no design draft is found, auditPhaseCompletion
+// is skipped entirely and runAgent runs at position [2].
 //
-// This is the deterministic platform enforcement that prevents the agent from silently
-// answering "yes, it's ready" when there are unresolved spec gaps.
+// This is the deterministic platform enforcement that proactively surfaces spec gaps
+// on every design agent response when a draft exists — not just on readiness queries.
 
-describe("Scenario 19 — Readiness query triggers phase completion audit injection", () => {
+describe("Scenario 19 — Always-on phase completion audit injection", () => {
   const THREAD = "workflow-s19"
 
   beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
   afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
 
-  it("isReadinessQuery → yes: auditPhaseCompletion fires and PLATFORM READINESS AUDIT injected into runAgent message", async () => {
+  it("auditPhaseCompletion fires on every design agent message when design draft exists", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
-    // Design spec exists on design branch — provides content for readiness audit
+    // Design spec exists on design branch — triggers auditPhaseCompletion
     const DESIGN_SPEC = "## Screens\nChat Home: chips positioned horizontally.\n## Auth Sheet\nSSO buttons full-width."
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith(".design.md") && ref === "spec/onboarding-design") {
@@ -1607,17 +1596,15 @@ describe("Scenario 19 — Readiness query triggers phase completion audit inject
     })
 
     // Anthropic call sequence (empty history, no PM spec on main → no phase entry audit):
-    //   [0] isOffTopicForAgent     → false
-    //   [1] isSpecStateQuery       → false
-    //   [2] isReadinessQuery       → yes  ← triggers audit
-    //   [3] auditPhaseCompletion   → FINDING (spec not ready)
-    //   [4] runAgent               → agent surfaces the gap
-    //   [5] identifyUncommittedDecisions → none
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] auditPhaseCompletion     → FINDING (spec not ready)
+    //   [3] runAgent                 → agent surfaces the gap
+    //   [4] identifyUncommittedDecisions → none
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })     // isReadinessQuery → TRIGGERS
-      .mockResolvedValueOnce({                                                  // auditPhaseCompletion
+      .mockResolvedValueOnce({                                                  // auditPhaseCompletion → FINDING
         content: [{ type: "text", text: "FINDING: Chip row has no concrete position anchor | Specify margin-top: auto on hero flex column to pin chips above prompt bar" }],
       })
       .mockResolvedValueOnce({                                                  // runAgent
@@ -1626,40 +1613,42 @@ describe("Scenario 19 — Readiness query triggers phase completion audit inject
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
 
-    const params = makeParams(THREAD, "feature-onboarding", "is this ready to hand off to engineering?")
+    const params = makeParams(THREAD, "feature-onboarding", "how does dark mode look?")
     await handleFeatureChannelMessage(params)
 
-    // The runAgent call (index 4) received the enriched message with the audit injected
-    const runAgentCall = mockAnthropicCreate.mock.calls[4][0]
+    // The runAgent call (index 3) received the enriched message with the audit injected
+    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
-    expect(userMsg?.content).toContain("[PLATFORM READINESS AUDIT")
+    expect(userMsg?.content).toContain("[PLATFORM DESIGN READINESS")
     expect(userMsg?.content).toContain("Chip row has no concrete position anchor")
 
-    // 6 total Anthropic calls (no phase entry audit — PM spec not found)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // 5 total Anthropic calls
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 
-  it("isReadinessQuery → no: auditPhaseCompletion does NOT fire, only standard 5-call sequence", async () => {
+  it("auditPhaseCompletion is skipped when no design draft exists on branch", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
-    // Anthropic call sequence (no readiness audit):
-    //   [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] isReadinessQuery → no,
-    //   [3] runAgent, [4] identifyUncommittedDecisions
+    // Default mockGetContent rejects everything → no design draft found
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] runAgent                 → response (no audit injection)
+    //   [3] identifyUncommittedDecisions → none
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })       // isReadinessQuery → skip
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "The dark mode spec looks solid. Any other questions?" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
     await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "how does dark mode look?"))
 
-    // auditPhaseCompletion never ran — only 5 calls total
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // auditPhaseCompletion never ran — only 4 calls total
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
 
-    // runAgent call (index 3) does NOT contain audit notice
-    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
+    // runAgent call (index 2) does NOT contain audit notice
+    const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
-    expect(userMsg?.content).not.toContain("[PLATFORM READINESS AUDIT")
+    expect(userMsg?.content).not.toContain("[PLATFORM DESIGN READINESS")
   })
 })

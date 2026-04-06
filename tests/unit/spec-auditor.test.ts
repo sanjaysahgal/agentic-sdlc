@@ -315,3 +315,83 @@ describe("auditSpecRenderAmbiguity — Haiku prompt includes chip anchor check",
     expect(systemPrompt.toLowerCase()).toMatch(/icon|arrangement|horizontal/)
   })
 })
+
+// ─── auditSpecRenderAmbiguity — JSON parsing robustness ───────────────────────
+
+describe("auditSpecRenderAmbiguity — JSON parsing robustness", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("logs warning and returns empty array on fully unrecoverable malformed JSON", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "not valid json at all" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    expect(result).toEqual([])
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("JSON parse failed"))
+    warnSpy.mockRestore()
+  })
+
+  it("repairs and extracts findings when LLM appends explanation after array", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: '["Screen title missing", "Button text TBD"] here is my explanation' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    expect(result).toContain("Screen title missing")
+    expect(result).toContain("Button text TBD")
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("JSON repair succeeded"))
+    warnSpy.mockRestore()
+  })
+
+  it("repairs and extracts findings when LLM prepends explanation before array", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: 'Here are the ambiguities I found:\n\n["Animation timing unclear", "Spacing vague"]' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    expect(result).toContain("Animation timing unclear")
+    expect(result).toContain("Spacing vague")
+    warnSpy.mockRestore()
+  })
+})
+
+// ─── auditSpecDraft — robust output parsing ───────────────────────────────────
+
+describe("auditSpecDraft — robust output parsing", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("handles lowercase conflict prefix", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "conflict: draft proposes bypassing auth" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDraft({ draft: "spec", productVision: "auth required", systemArchitecture: "OAuth", featureName: "auth" })
+    expect(result.status).toBe("conflict")
+    if (result.status === "conflict") expect(result.message).toBe("draft proposes bypassing auth")
+  })
+
+  it("handles extra spaces before colon in GAP prefix", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "GAP  :   spec assumes multi-tenant" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDraft({ draft: "spec", productVision: "single tenant", systemArchitecture: "monolith", featureName: "tenancy" })
+    expect(result.status).toBe("gap")
+    if (result.status === "gap") expect(result.message).toBe("spec assumes multi-tenant")
+  })
+
+  it("handles leading whitespace and newlines before CONFLICT prefix", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "  \n  CONFLICT:\n  spec uses SSO but vision mandates OAuth" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDraft({ draft: "spec", productVision: "OAuth only", systemArchitecture: "OAuth", featureName: "auth" })
+    expect(result.status).toBe("conflict")
+    if (result.status === "conflict") expect(result.message).toBe("spec uses SSO but vision mandates OAuth")
+  })
+
+  it("handles OK case-insensitively", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "ok" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDraft({ draft: "spec", productVision: "v", systemArchitecture: "a", featureName: "f" })
+    expect(result.status).toBe("ok")
+  })
+})

@@ -5,12 +5,12 @@ import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, isReadinessQuery, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent } from "../../../runtime/spec-auditor"
 import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric } from "../../../runtime/phase-completion-auditor"
-import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
+import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
@@ -626,9 +626,15 @@ async function runDesignAgent(params: {
   const brandDriftsDesign = context.brand ? auditBrandTokens(context.currentDraft, context.brand) : []
   // Animation drift audit — runs alongside color audit on every response.
   const animDriftsDesign = context.brand ? auditAnimationTokens(context.currentDraft, context.brand) : []
+  // Missing token audit — canonical BRAND.md tokens not present anywhere in the spec.
+  const missingTokensDesign = context.brand ? auditMissingBrandTokens(context.currentDraft, context.brand) : []
   const totalDriftCount = brandDriftsDesign.length + animDriftsDesign.length
-  const brandDriftNotice = totalDriftCount > 0
-    ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${totalDriftCount} spec Brand section value${totalDriftCount === 1 ? "" : "s"} don't match BRAND.md: ${[...brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`), ...animDriftsDesign.map(d => `${d.param} spec=${d.specValue} brand=${d.brandValue}`)].join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
+  const brandDriftNotice = (totalDriftCount > 0 || missingTokensDesign.length > 0)
+    ? `\n\n[PLATFORM NOTICE — BRAND TOKEN DRIFT: ${[
+        ...brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`),
+        ...animDriftsDesign.map(d => `${d.param} spec=${d.specValue} brand=${d.brandValue}`),
+        ...missingTokensDesign.map(d => `${d.token} MISSING from spec (brand=${d.brandValue})`),
+      ].join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
     : ""
 
   // Extract committed text literals from the spec and inject as PLATFORM SPEC FACTS.
@@ -668,29 +674,34 @@ async function runDesignAgent(params: {
     }
   }
 
-  // Readiness query audit — fires when the user asks if the spec is ready for engineering.
-  // Runs auditPhaseCompletion with the DESIGN_RUBRIC (same as the finalization gate) and injects
-  // findings as a PLATFORM READINESS AUDIT notice. This is deterministic — does not rely on the
-  // agent noticing the question and calling run_phase_completion_audit on its own.
-  let readinessAuditNotice = ""
-  if (await isReadinessQuery(userMessage)) {
-    const draft = await readFile(`${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`, `spec/${featureName}-design`).catch(() => null)
-    if (draft) {
-      const readinessResult = await auditPhaseCompletion({
-        specContent: draft,
+  // Always-on design phase completion audit — runs on every design agent message.
+  // Content-addressed cache on spec fingerprint: any edit to the draft invalidates automatically.
+  // Principle 7: this check runs always, not when the user asks a readiness-adjacent phrase.
+  let designReadinessNotice = ""
+  const designSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
+  const designDraftContent = await readFile(designSpecDraftPath, `spec/${featureName}-design`).catch(() => null)
+  if (designDraftContent) {
+    const dfp = specFingerprint(designDraftContent)
+    const designCacheKey = `design-phase:${featureName}:${dfp}`
+    if (phaseEntryAuditCache.has(designCacheKey)) {
+      designReadinessNotice = phaseEntryAuditCache.get(designCacheKey)!
+    } else {
+      const designAuditResult = await auditPhaseCompletion({
+        specContent: designDraftContent,
         rubric: buildDesignRubric(targetFormFactors),
         featureName,
       }).catch(() => null)
-      if (readinessResult && !readinessResult.ready) {
-        const findingLines = readinessResult.findings.map((f, i) => `${i + 1}. ${f.issue} — Recommendation: ${f.recommendation}`).join("\n")
-        readinessAuditNotice = `\n\n[PLATFORM READINESS AUDIT — The design spec has ${readinessResult.findings.length} gap${readinessResult.findings.length === 1 ? "" : "s"} that make it NOT engineering-ready. You MUST surface every finding with your concrete recommendation before answering the readiness question. For design gaps you own, provide your recommendation directly. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation.\n${findingLines}]`
-      } else if (readinessResult?.ready) {
-        readinessAuditNotice = `\n\n[PLATFORM READINESS AUDIT — Spec passed all ${buildDesignRubric(targetFormFactors).split("\n").filter(l => /^\d+\./.test(l)).length} design rubric criteria. You may confirm the spec is engineering-ready.]`
+      if (designAuditResult && !designAuditResult.ready) {
+        const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. You MUST surface each finding with your concrete recommendation. For design gaps you own, provide the recommendation directly. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation.\n${findingLines}]`
+      } else if (designAuditResult?.ready) {
+        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
       }
+      phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
     }
   }
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice + upstreamNoticeDesign + readinessAuditNotice
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice
   const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -888,6 +899,19 @@ async function runDesignAgent(params: {
         if (decisionAudit.status === "corrections") {
           const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
           finalContent = corrected
+        }
+        // Brand token drift hard gate — spec cannot be approved with drift vs BRAND.md
+        if (context.brand) {
+          const finalBrandDrifts = auditBrandTokens(finalContent, context.brand)
+          const finalAnimDrifts = auditAnimationTokens(finalContent, context.brand)
+          const totalDrifts = finalBrandDrifts.length + finalAnimDrifts.length
+          if (totalDrifts > 0) {
+            const driftLines = [
+              ...finalBrandDrifts.map(d => `• ${d.token}: spec has ${d.specValue} but BRAND.md requires ${d.brandValue}`),
+              ...finalAnimDrifts.map(d => `• ${d.param}: spec has ${d.specValue} but BRAND.md requires ${d.brandValue}`),
+            ].join("\n")
+            return { error: `Finalization blocked — ${totalDrifts} brand token drift${totalDrifts === 1 ? "" : "s"} detected. Patch the spec to align with BRAND.md before finalizing:\n${driftLines}` }
+          }
         }
         await update("_Saving final design spec..._")
         await saveApprovedDesignSpec({ featureName, filePath: designFilePath, content: finalContent })

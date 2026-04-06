@@ -122,12 +122,11 @@ describe("post-response uncommitted decisions audit", () => {
     setConfirmedAgent(FEATURE, "ux-design")
 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions,
-    // [3] isReadinessQuery, [4] runAgent (text-only, no tool calls), [5] identifyUncommittedDecisions
+    // [3] runAgent (text-only, no tool calls), [4] identifyUncommittedDecisions
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })               // extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })             // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "I recommend dark mode as the default." }] }) // runAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode default: I recommend dark mode — discussed in thread\n2. Chip positioning: I recommend above prompt bar — agreed" }] }) // identifyUncommittedDecisions
 
@@ -145,11 +144,10 @@ describe("post-response uncommitted decisions audit", () => {
     // No seedHistory — audit now fires on every turn, but classifier returns "all committed"
     setConfirmedAgent(FEATURE, "ux-design")
 
-    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] isReadinessQuery, [3] runAgent, [4] identifyUncommittedDecisions
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent, [3] identifyUncommittedDecisions
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })             // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's start with the layout direction." }] }) // runAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] }) // identifyUncommittedDecisions
 
@@ -158,7 +156,7 @@ describe("post-response uncommitted decisions audit", () => {
 
     const text = lastUpdateText(client)
     expect(text).not.toContain("save those")
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 
   it("skips uncommitted note when save tool was called", async () => {
@@ -166,18 +164,17 @@ describe("post-response uncommitted decisions audit", () => {
     setConfirmedAgent(FEATURE, "ux-design")
 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions,
-    // [3] isReadinessQuery, [4] runAgent (tool_use: apply_design_spec_patch), [5] generateDesignPreview (in tool handler),
-    // [6] runAgent (end_turn text) — no identifyUncommittedDecisions since didSave = true
+    // [3] runAgent (tool_use: apply_design_spec_patch), [4] auditSpecRenderAmbiguity (in tool handler),
+    // [5] runAgent (end_turn text) — no identifyUncommittedDecisions since didSave = true
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })               // extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })             // isReadinessQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Design Direction\nDark mode." } }],
       })                                                                               // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "<html>preview</html>" }] }) // generateDesignPreview
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })             // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Saved the dark mode decision to the spec." }] }) // runAgent: end_turn
 
     const client = makeClient()

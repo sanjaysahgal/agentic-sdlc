@@ -65,15 +65,14 @@ ${draft}`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "OK"
 
-  if (text === "OK") return { status: "ok" }
+  if (/^ok$/i.test(text)) return { status: "ok" }
 
-  if (text.startsWith("CONFLICT:")) {
-    return { status: "conflict", message: text.replace("CONFLICT:", "").trim() }
-  }
+  // Case-insensitive, handles extra spaces before colon and leading whitespace/newlines
+  const conflictMatch = text.match(/^[\s]*CONFLICT\s*:\s*([\s\S]*?)$/im)
+  if (conflictMatch) return { status: "conflict", message: conflictMatch[1].trim() }
 
-  if (text.startsWith("GAP:")) {
-    return { status: "gap", message: text.replace("GAP:", "").trim() }
-  }
+  const gapMatch = text.match(/^[\s]*GAP\s*:\s*([\s\S]*?)$/im)
+  if (gapMatch) return { status: "gap", message: gapMatch[1].trim() }
 
   // Unexpected format — don't block the save
   return { status: "ok" }
@@ -153,8 +152,23 @@ Return ONLY the JSON array, no preamble or explanation.`,
   try {
     const parsed = JSON.parse(text)
     llmAmbiguities = Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
-  } catch {
-    llmAmbiguities = []
+  } catch (e) {
+    console.warn(`[auditSpecRenderAmbiguity] JSON parse failed on LLM output: "${text.slice(0, 120)}". Error: ${e instanceof Error ? e.message : String(e)}. Attempting repair...`)
+    // Attempt to extract a JSON array from within the output (LLM sometimes adds preamble/postamble)
+    const bracketMatch = text.match(/\[\s*([\s\S]*?)\s*\]/)
+    if (bracketMatch) {
+      try {
+        const repaired = JSON.parse(`[${bracketMatch[1]}]`)
+        llmAmbiguities = Array.isArray(repaired) ? repaired.filter((s): s is string => typeof s === "string") : []
+        console.warn(`[auditSpecRenderAmbiguity] JSON repair succeeded. Extracted ${llmAmbiguities.length} finding(s).`)
+      } catch {
+        console.warn(`[auditSpecRenderAmbiguity] JSON repair failed. Ambiguities for this audit will be empty.`)
+        llmAmbiguities = []
+      }
+    } else {
+      console.warn(`[auditSpecRenderAmbiguity] No bracket-delimited content found in LLM output. Ambiguities will be empty.`)
+      llmAmbiguities = []
+    }
   }
 
   return [...undefinedScreens, ...llmAmbiguities]

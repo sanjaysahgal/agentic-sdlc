@@ -18,7 +18,6 @@ import {
   classifyApprovedPhaseIntent,
   isOffTopicForAgent,
   isSpecStateQuery,
-  isReadinessQuery,
 } from "../../runtime/agent-router"
 
 // ─── detectPhase — pure logic, no mocks needed ────────────────────────────
@@ -253,40 +252,4 @@ describe("isSpecStateQuery", () => {
   })
 })
 
-// ─── isReadinessQuery — LLM-based classifier ─────────────────────────────────
-
-describe("isReadinessQuery", () => {
-  beforeEach(() => mockCreate.mockReset())
-
-  it("returns true when Haiku responds yes", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
-    expect(await isReadinessQuery("can we ship this?")).toBe(true)
-  })
-
-  it("returns false when Haiku responds no", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
-    expect(await isReadinessQuery("what are the open questions?")).toBe(false)
-  })
-
-  it("returns false on unexpected Haiku response (safe default)", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "maybe" }] })
-    expect(await isReadinessQuery("hmm")).toBe(false)
-  })
-
-  it("uses claude-haiku-4-5-20251001 model", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "yes" }] })
-    await isReadinessQuery("good to go?")
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
-  })
-
-  it("system prompt distinguishes readiness handoff from state queries", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
-    await isReadinessQuery("where are we?")
-    const call = mockCreate.mock.calls[0][0]
-    expect(call.system).toContain("hand off")
-    expect(call.system).toContain("FALSE")
-    // State queries and greetings explicitly listed as FALSE examples
-    expect(call.system.toLowerCase()).toMatch(/state quer|where are we|greeting|hi/)
-  })
-})
 
