@@ -6,8 +6,8 @@
 // By default, the generated HTML is pushed to GitHub to update the design agent's
 // cache in Slack. Pass --local-only for disk-only output (dev/inspection use only).
 //
-// The renderer (generateDesignPreview) is the agent. This script is just the
-// entry point that feeds it the spec + brand content and writes the output.
+// The renderer (renderFromSpec) is deterministic — no LLM call. This script
+// feeds it the spec + brand content from the repo and writes the output.
 // Never hand-write HTML previews — always use this script.
 
 import { config } from "dotenv"
@@ -15,7 +15,7 @@ config()
 
 import { writeFileSync } from "fs"
 import { readFile, saveDraftHtmlPreview } from "../runtime/github-client"
-import { generateDesignPreview } from "../runtime/html-renderer"
+import { renderFromSpec } from "../runtime/html-renderer"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
 
 async function main() {
@@ -49,17 +49,9 @@ async function main() {
     console.warn("BRAND.md not found — rendering without brand tokens")
   }
 
-  // Generate the preview via the renderer agent
-  const { html, warnings } = await generateDesignPreview({
-    specContent,
-    featureName,
-    brandContent: brandContent ?? undefined,
-  })
-
-  if (warnings.length > 0) {
-    console.warn("\nRenderer warnings:")
-    warnings.forEach(w => console.warn(`  ⚠  ${w}`))
-  }
+  // Render the preview — deterministic template, no LLM call
+  const html = renderFromSpec(specContent, brandContent ?? "", featureName)
+  console.log("Preview rendered from template.")
 
   // Write output via fs (not the Write tool — this is the correct pattern)
   writeFileSync(outputPath, html, "utf-8")

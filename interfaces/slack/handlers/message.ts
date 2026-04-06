@@ -12,7 +12,7 @@ import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLo
 import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
-import { generateDesignPreview, updateDesignPreview } from "../../../runtime/html-renderer"
+import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 

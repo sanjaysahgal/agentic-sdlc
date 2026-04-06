@@ -1,171 +1,531 @@
-import Anthropic from "@anthropic-ai/sdk"
+// Template-based design preview renderer.
+// Parses values from a design spec and fills a fixed Alpine.js HTML template.
+// The platform owns the HTML structure — no LLM needed, no regex sanitizers.
+//
+// Root cause of the previous approach's failure: Sonnet cannot reliably follow
+// structural HTML rules via prompts. Every new scenario produced a new structural
+// bug (hero overlap, chip position, button styling), each requiring another regex patch.
+// Template rendering eliminates this class of failure permanently.
 
-// 5 minute timeout, no retries — a timed-out 32k-token render won't succeed on retry,
-// it just triples the user's wait. Fail fast and let the caller handle gracefully.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000, maxRetries: 0 })
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-/**
- * Deterministically fixes known structural violations that Sonnet produces despite
- * explicit instructions. Running this after every generation eliminates the failure
- * modes without relying on Sonnet to follow the rules correctly.
- *
- * Fixes applied:
- * 1a/b. Hero x-show → :class  (hero with id="hero" stays visible before Alpine loads)
- * 1c.   Hero without id="hero" → inject id + convert x-show to :class  (catches wrong-structure output)
- * 2.    Thread missing display:none → inject it; also inject x-show if absent
- * 3.    Single-quoted JS strings with apostrophes → double-quoted  (prevents appData() syntax errors)
- * 4.    Inspector buttons with :style only → inject static resting style  (buttons visible without Alpine)
- */
-export function sanitizeRenderedHtml(html: string): string {
-  let out = html
-
-  // Fix 1: hero x-show → :class
-  // Matches the opening tag of id="hero" when it contains an x-show attribute.
-  // Removes the x-show and adds :class so hero starts visible without JS.
-  out = out.replace(
-    /(<div\b[^>]*\bid="hero"[^>]*)\bx-show="[^"]*"([^>]*>)/g,
-    (_, before, after) => {
-      const tag = before + after
-      // Only inject :class if not already present
-      if (!tag.includes(":class")) {
-        return before + ' :class="{ \'hidden\': msgs.length > 0 || typing }"' + after
-      }
-      return tag
-    }
-  )
-  // Handle id="hero" after other attributes too
-  out = out.replace(
-    /(<div\b[^>]*)\bx-show="[^"]*"([^>]*\bid="hero"[^>]*>)/g,
-    (_, before, after) => {
-      const tag = before + after
-      if (!tag.includes(":class")) {
-        return before + ' :class="{ \'hidden\': msgs.length > 0 || typing }"' + after
-      }
-      return tag
-    }
-  )
-
-  // Fix 1c: hero without id="hero" — match by characteristic x-show predicate.
-  // Catches the wrong structure where Sonnet generates the hero inside the thread div
-  // without assigning id="hero", making Fix 1a/b unable to act. Injects id="hero" and
-  // converts the x-show to :class so the hero is visible without Alpine.
-  out = out.replace(
-    /(<div\b(?![^>]*\bid="hero")[^>]*)\bx-show="([^"]*msgs\.length\s*===?\s*0[^"]*)"([^>]*>)/g,
-    (_, before, _expr, after) => {
-      let tag = before + ' id="hero"' + after
-      if (!tag.includes(":class")) {
-        tag = tag.replace(/>$/, ' :class="{ \'hidden\': msgs.length > 0 || typing }">')
-      }
-      return tag
-    }
-  )
-
-  // Fix 2: thread missing display:none + missing x-show.
-  // Injects display:none so thread is hidden before Alpine loads.
-  // Also injects x-show so Alpine can show it once messages exist —
-  // without x-show the display:none becomes permanent (nothing un-hides it).
-  out = out.replace(
-    /(<(?:div|section)\b[^>]*\bid="thread"[^>]*)(>)/g,
-    (_, tag, close) => {
-      let result = tag
-      // Step A: inject display:none if missing
-      if (!result.includes("display:none") && !result.includes("display: none")) {
-        if (/style\s*=\s*"/.test(result)) {
-          result = result.replace(/style\s*=\s*"/, 'style="display:none; ')
-        } else {
-          result = result + ' style="display:none;"'
-        }
-      }
-      // Step B: inject x-show if missing — ensures Alpine can un-hide thread when messages arrive
-      if (!result.includes("x-show")) {
-        result = result + ' x-show="msgs.length > 0 || typing"'
-      }
-      return result + close
-    }
-  )
-
-  // Fix 3: single-quoted JS strings with apostrophes inside <script> blocks
-  // Converts 'text with apostrophe's' → "text with apostrophe's"
-  // Only operates inside <script>...</script> to avoid touching HTML attribute values.
-  out = out.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (scriptTag, body) => {
-    // Replace single-quoted strings that contain an apostrophe (word char after closing quote)
-    // Strategy: find 'word's pattern and convert to double quotes
-    const fixed = body.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (match: string, inner: string) => {
-      // If inner content contains an apostrophe (not escaped), it was a broken string
-      if (/\w'\w/.test(inner) || inner.includes("\u2019")) {
-        return '"' + inner.replace(/"/g, '\\"') + '"'
-      }
-      return match // leave single-quoted strings without apostrophes alone
-    })
-    return scriptTag.replace(body, fixed)
-  })
-
-  // Fix 4: inspector buttons missing static resting styles.
-  // Any <button> that has a :style= binding (Alpine active-state highlight) but no static
-  // style= attribute will have no visible background, text color, or border before Alpine loads.
-  // Inject a safe dark-theme resting style. :style adds the active highlight on top.
-  // Signal: :style= with a conditional expression (the inspector pattern). This is narrow enough
-  // to avoid touching phone-frame buttons that use Tailwind classes instead of :style.
-  out = out.replace(
-    /<button\b([^>]*)>/g,
-    (match, attrs) => {
-      if (!/:style\s*=/.test(attrs)) return match          // not an Alpine-styled button
-      if (/(?<![:\w])style\s*=\s*"/.test(attrs)) return match  // already has static style — leave it
-      // Inject safe dark-theme resting appearance before the :style binding
-      const resting = `style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;" `
-      return `<button ${resting}${attrs}>`
-    }
-  )
-
-  return out
+interface SpecValues {
+  appName: string
+  tagline: string
+  chips: string[]
+  placeholder: string
+  nudgeText: string
 }
 
+// ─── Spec parser ─────────────────────────────────────────────────────────────
+
+function parseSpecValues(specContent: string, featureName: string): SpecValues {
+  const headingMatch = specContent.match(/[Hh]eading:\s*"([^"]+)"/)
+  const appName = headingMatch?.[1] ??
+    (featureName.charAt(0).toUpperCase() + featureName.slice(1))
+
+  const taglineMatch = specContent.match(/[Tt]agline:\s*"([^"]+)"/)
+  const tagline = taglineMatch?.[1] ?? ""
+
+  const placeholderMatch = specContent.match(/[Pp]laceholder:\s*"([^"]+)"/)
+  const placeholder = placeholderMatch?.[1] ?? "Ask me anything..."
+
+  // Chips: extract from Starter Chips / Suggestion Chips section, up to 3
+  const chipsSectionMatch = specContent.match(
+    /(?:Starter|Suggestion)?\s*[Cc]hips?[^\n]*\n([\s\S]*?)(?=\n#{1,4}\s|\n---|\n\n\*\*|$)/
+  )
+  const chipsSection = chipsSectionMatch?.[1] ?? ""
+  const chips: string[] = []
+  for (const m of chipsSection.matchAll(/"([^"]{4,80})"/g)) {
+    chips.push(m[1])
+    if (chips.length === 3) break
+  }
+
+  const nudgeMatch = specContent.match(
+    /(?:[Nn]udge|logged.out|sign.in)[^\n]*\n(?:[^\n]*\n){0,3}[^\n]*"([^"]{10,120})"/m
+  )
+  const nudgeText = nudgeMatch?.[1] ?? "Your conversation won't be saved unless you sign in."
+
+  return { appName, tagline, chips, placeholder, nudgeText }
+}
+
+// ─── Brand parser ─────────────────────────────────────────────────────────────
+
+function parseBrandColors(brandMd: string): Record<string, string> {
+  const colors: Record<string, string> = {
+    "--bg": "#0A0A0F",
+    "--surface": "#13131A",
+    "--text": "#E8E8F0",
+    "--violet": "#7C6FCD",
+    "--teal": "#4FAFA8",
+  }
+  for (const line of brandMd.split("\n")) {
+    const tokenMatch = line.match(/--([\w-]+):/)
+    if (!tokenMatch) continue
+    const hexMatch = line.match(/#([0-9A-Fa-f]{6})\b/)
+    if (!hexMatch) continue
+    colors[`--${tokenMatch[1]}`] = `#${hexMatch[1].toUpperCase()}`
+  }
+  return colors
+}
+
+function parseGlowParams(brandMd: string) {
+  const glowSection = brandMd.match(/## Glow[^\n]*\n([\s\S]*?)(?=\n## |\n---|$)/)?.[1] ?? ""
+  const durationMatch = glowSection.match(/animation:\s*\S+\s+([\d.]+s)/)
+  const blurMatch = glowSection.match(/filter:\s*blur\(([\d.]+px)\)/)
+  const delayMatch = glowSection.match(/animation-delay:\s*([-\d.]+s)/)
+  const keyframeBlock = glowSection.match(/@keyframes[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? ""
+  const opacityMinMatch = keyframeBlock.match(/0%\s*\{[^}]*opacity:\s*([\d.]+)/)
+  const allOpacities = [...keyframeBlock.matchAll(/opacity:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
+  return {
+    duration: durationMatch?.[1] ?? "4s",
+    blur: blurMatch?.[1] ?? "80px",
+    delay: delayMatch?.[1] ?? "-1.8s",
+    opacityMin: opacityMinMatch?.[1] ?? "0.55",
+    opacityMax: allOpacities.length > 0 ? Math.max(...allOpacities).toFixed(2) : "1.00",
+  }
+}
+
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `${r}, ${g}, ${b}`
+}
+
+// ─── Template renderer ────────────────────────────────────────────────────────
+
 /**
- * Validates structural properties of rendered HTML without hardcoding brand values.
- * Returns { blocking, warnings } — blocking issues warrant a retry; warnings are surfaced
- * to the caller but do not prevent the HTML from being used.
+ * Renders a self-contained Alpine.js HTML preview from a design spec.
+ * Deterministic — no LLM call. The platform owns the structure; the spec
+ * populates copy, chips, and brand values.
  *
- * Blocking (retry-worthy):
- * - Truncated HTML (cut off before </html>)
- * - JS syntax error that the sanitizer couldn't fix (apostrophes remaining in script blocks)
- *
- * Warnings (non-blocking):
- * - Missing keyframe animations
- * - Body background-color not in <style>
- * - Brand background token not applied
- * - Hero still using x-show after sanitization
- * - Thread still missing display:none after sanitization
+ * Structural guarantees (formerly enforced by regex sanitizers, now by construction):
+ * - id="hero" is always present, always a sibling of id="thread"
+ * - Hero uses :class (not x-show) — visible before Alpine loads
+ * - Thread has style="display:none" + x-show — hidden before Alpine, shown reactively
+ * - Inspector buttons have full static style attributes (not dependent on Alpine)
+ * - Chips are in a horizontal row, anchored at the bottom of the hero via margin-top:auto
+ * - Brand colors and glow params are read directly from BRAND.md
+ */
+export function renderFromSpec(
+  specContent: string,
+  brandMd: string,
+  featureName = "preview"
+): string {
+  const values = parseSpecValues(specContent, featureName)
+  const colors = parseBrandColors(brandMd)
+  const glow = parseGlowParams(brandMd)
+
+  const bg = colors["--bg"]
+  const surface = colors["--surface"]
+  const text = colors["--text"]
+  const violet = colors["--violet"]
+  const teal = colors["--teal"]
+  const violetRgb = hexToRgb(violet)
+  const tealRgb = hexToRgb(teal)
+
+  // Chip buttons — use data-chip to safely handle apostrophes in chip text
+  const chipsHtml = values.chips.map(chip =>
+    `<button data-chip="${chip.replace(/"/g, "&quot;")}" @click="sendMsg($el.dataset.chip)"` +
+    ` style="background:rgba(255,255,255,0.08);color:${text};border:1px solid rgba(255,255,255,0.15);` +
+    `border-radius:20px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;">${chip}</button>`
+  ).join("\n            ")
+
+  // Pre-fill first chip for inspector "In Conversation" / "Nudge" states
+  const firstChip = JSON.stringify(values.chips[0] ?? "Tell me about this feature")
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${values.appName} \u2014 Design Preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background-color: ${bg};
+      color: ${text};
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+    @keyframes glow-pulse {
+      0%, 100% { opacity: ${glow.opacityMin}; }
+      50%       { opacity: ${glow.opacityMax}; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes typing-bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30%            { transform: translateY(-6px); }
+    }
+    .hidden { display: none !important; }
+    .msg-user {
+      background: ${violet};
+      color: #fff;
+      border-radius: 18px 18px 4px 18px;
+      padding: 10px 14px;
+      max-width: 80%;
+      align-self: flex-end;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .msg-agent {
+      background: rgba(255,255,255,0.08);
+      color: ${text};
+      border-radius: 18px 18px 18px 4px;
+      padding: 10px 14px;
+      max-width: 80%;
+      align-self: flex-start;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .typing-dot {
+      width: 6px; height: 6px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 50%;
+      animation: typing-bounce 1.2s infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    .sso-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      height: 52px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      color: ${text};
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
+</head>
+<body>
+  <script>
+    function appData() {
+      return {
+        msgs: [],
+        draft: "",
+        typing: false,
+        auth: "signed out",
+        sheet: "closed",
+        inspectorMode: "default",
+
+        sendMsg(text) {
+          if (!text || !text.trim()) return
+          this.msgs.push({ role: "user", text: text.trim() })
+          this.draft = ""
+          this.typing = true
+          setTimeout(() => {
+            this.typing = false
+            this.msgs.push({ role: "agent", text: "Based on your recent data, here's what I found. Would you like to explore this further?" })
+            this.$nextTick(() => {
+              const t = document.getElementById("thread")
+              if (t) t.scrollTop = t.scrollHeight
+            })
+          }, 900)
+        },
+
+        applyMode(mode) {
+          this.inspectorMode = mode
+          if (mode === "default") {
+            this.msgs = []; this.typing = false; this.sheet = "closed"; this.auth = "signed out"
+          } else if (mode === "in-conversation") {
+            this.msgs = [
+              { role: "user", text: ${firstChip} },
+              { role: "agent", text: "Based on your recent data, here's what I found. Would you like to explore this further?" }
+            ]
+            this.typing = false; this.sheet = "closed"; this.auth = "signed out"
+          } else if (mode === "nudge") {
+            this.msgs = [
+              { role: "user", text: ${firstChip} },
+              { role: "agent", text: "Based on your recent data, here's what I found. Would you like to explore this further?" }
+            ]
+            this.typing = false; this.sheet = "closed"; this.auth = "signed out"
+          } else if (mode === "auth-default") {
+            this.msgs = []; this.typing = false; this.sheet = "open"; this.auth = "signed out"
+          } else if (mode === "auth-loading") {
+            this.msgs = []; this.typing = false; this.sheet = "loading"; this.auth = "signed out"
+          } else if (mode === "auth-error") {
+            this.msgs = []; this.typing = false; this.sheet = "error"; this.auth = "signed out"
+          } else if (mode === "auth-success") {
+            this.msgs = []; this.typing = false; this.sheet = "success"; this.auth = "signed in"
+          } else if (mode === "logged-in") {
+            this.msgs = []; this.typing = false; this.sheet = "closed"; this.auth = "signed in"
+          }
+        },
+
+        signIn() {
+          this.sheet = "loading"
+          setTimeout(() => {
+            this.sheet = "success"
+            this.auth = "signed in"
+            setTimeout(() => { this.sheet = "closed" }, 800)
+          }, 1200)
+        }
+      }
+    }
+  </script>
+
+  <!-- Meta bar -->
+  <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:16px;text-align:center;">
+    ${values.appName} \xb7 Design Preview \xb7 ${values.chips.length} chips \xb7 BRAND.md \u2713
+  </div>
+
+  <!-- Main layout: phone frame + inspector panel -->
+  <div style="display:flex;gap:24px;align-items:flex-start;" x-data="appData()">
+
+    <!-- Phone frame: 390x844, owned by platform -->
+    <div style="width:390px;height:844px;background:${bg};border:1px solid rgba(255,255,255,0.12);border-radius:44px;overflow:hidden;display:flex;flex-direction:column;position:relative;flex-shrink:0;">
+
+      <!-- Status bar -->
+      <div style="padding:14px 24px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;">
+        <span>9:41</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="4" y="2.5" width="3" height="9.5" rx="1"/><rect x="8" y="1" width="3" height="11" rx="1"/><rect x="12" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.4C10.7 2.4 13.1 3.6 14.7 5.5L16 4C14 1.6 11.2 0 8 0S2 1.6 0 4l1.3 1.5C2.9 3.6 5.3 2.4 8 2.4z" opacity=".3"/><path d="M8 5.3c1.7 0 3.2.8 4.2 2L13.5 6C12.1 4.2 10.2 3 8 3S3.9 4.2 2.5 6l1.3 1.3C4.8 6.1 6.3 5.3 8 5.3z" opacity=".6"/><path d="M8 8.2c.9 0 1.7.4 2.2 1.1L11.5 8C10.6 6.8 9.4 6 8 6S5.4 6.8 4.5 8l1.3 1.3C6.3 8.6 7.1 8.2 8 8.2z"/><circle cx="8" cy="11" r="1.3"/></svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="currentColor"><rect x="0" y="1" width="21" height="10" rx="2.5" stroke="currentColor" stroke-width="1" fill="none" opacity=".35"/><rect x="22" y="3.5" width="3" height="5" rx="1" opacity=".4"/><rect x="1.5" y="2.5" width="16" height="7" rx="1.5"/></svg>
+        </div>
+      </div>
+
+      <!-- Nav bar -->
+      <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:18px;font-weight:700;background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${values.appName}</span>
+        <button
+          x-show="auth !== 'signed in'"
+          @click="sheet = 'open'; inspectorMode = 'auth-default'"
+          style="background:rgba(255,255,255,0.08);color:${text};border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;">
+          Sign in
+        </button>
+        <span x-show="auth === 'signed in'" style="font-size:13px;color:${teal};">\u25cf Signed in</span>
+      </div>
+
+      <!-- Content area: position:relative is the stacking context -->
+      <div style="flex:1;position:relative;overflow:hidden;">
+
+        <!-- Glow: always behind both hero and thread -->
+        <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;z-index:0;
+          background:radial-gradient(ellipse at 50% 85%,rgba(${violetRgb},0.65) 0%,rgba(${tealRgb},0.35) 45%,transparent 70%);
+          filter:blur(${glow.blur});
+          animation:glow-pulse ${glow.duration} ease-in-out infinite;"></div>
+
+        <!-- Hero (empty state)
+             CRITICAL: id="hero" present; :class used for visibility (never the reactive show directive).
+             Chips anchored at bottom via margin-top:auto — NOT vertically centered. -->
+        <div id="hero"
+          style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:40px 24px 0;overflow-y:auto;z-index:1;"
+          :class="{ 'hidden': msgs.length > 0 || typing }">
+          <h1 style="font-size:28px;font-weight:700;margin:0 0 8px;text-align:center;
+            background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+            ${values.appName}
+          </h1>
+          <p style="font-size:15px;color:rgba(255,255,255,0.5);margin:0;text-align:center;">${values.tagline}</p>
+          <div style="margin-top:auto;padding-bottom:16px;display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;overflow-x:auto;width:100%;justify-content:center;padding-top:16px;">
+            ${chipsHtml}
+          </div>
+        </div>
+
+        <!-- Thread (conversation state)
+             CRITICAL: style="display:none" hides before Alpine; x-show lets Alpine show it. -->
+        <div id="thread"
+          style="position:absolute;inset:0;overflow-y:auto;display:none;z-index:1;padding:16px;"
+          x-show="msgs.length > 0 || typing">
+
+          <!-- Nudge banner: logged-out, after first agent reply -->
+          <div
+            x-show="auth !== 'signed in' && msgs.filter(m => m.role === 'agent').length > 0"
+            style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:12px;">
+            ${values.nudgeText}
+            <a href="#" @click.prevent="sheet = 'open'; inspectorMode = 'auth-default'"
+               style="color:${violet};text-decoration:none;margin-left:4px;">Sign in</a>
+          </div>
+
+          <!-- Messages -->
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <template x-for="(msg, i) in msgs" :key="i">
+              <div :class="msg.role === 'user' ? 'msg-user' : 'msg-agent'" x-text="msg.text"></div>
+            </template>
+            <div x-show="typing"
+              style="display:flex;gap:5px;align-items:center;padding:10px 14px;background:rgba(255,255,255,0.08);border-radius:18px 18px 18px 4px;width:fit-content;">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Auth sheet overlay -->
+        <div x-show="sheet !== 'closed'" style="position:absolute;inset:0;z-index:10;">
+          <div @click="sheet = 'closed'; inspectorMode = msgs.length > 0 ? 'in-conversation' : 'default'"
+            style="position:absolute;inset:0;background:rgba(0,0,0,0.6);"></div>
+          <div style="position:absolute;bottom:0;left:0;right:0;background:${surface};border-radius:24px 24px 0 0;padding:24px;border-top:1px solid rgba(255,255,255,0.1);">
+            <div style="width:32px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;margin:0 auto 20px;"></div>
+            <h2 style="font-size:20px;font-weight:700;margin:0 0 6px;text-align:center;">${values.appName}</h2>
+            <p style="font-size:14px;color:rgba(255,255,255,0.5);text-align:center;margin:0 0 24px;">Sign in to save your conversation</p>
+
+            <!-- Glow behind SSO buttons -->
+            <div aria-hidden="true" style="position:absolute;left:0;right:0;bottom:60px;height:120px;pointer-events:none;
+              background:radial-gradient(ellipse at 50% 100%,rgba(${violetRgb},0.4) 0%,rgba(${tealRgb},0.2) 50%,transparent 70%);
+              filter:blur(40px);
+              animation:glow-pulse ${glow.duration} ease-in-out infinite;
+              animation-delay:${glow.delay};"></div>
+
+            <div x-show="sheet === 'open'" style="display:flex;flex-direction:column;gap:12px;position:relative;z-index:1;">
+              <button class="sso-btn" @click="signIn()">
+                <svg width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.42c1.42.07 2.38.74 3.2.8 1.21-.24 2.38-.93 3.7-.84 1.58.12 2.76.72 3.53 1.9-3.23 1.94-2.46 5.9.57 7.08-.57 1.39-1.29 2.76-3 2.92zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+                Continue with Apple
+              </button>
+              <button class="sso-btn" @click="signIn()">
+                <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                Continue with Google
+              </button>
+            </div>
+
+            <div x-show="sheet === 'loading'" style="text-align:center;padding:20px 0;">
+              <div style="width:32px;height:32px;border:2px solid rgba(255,255,255,0.1);border-top-color:${violet};border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px;"></div>
+              <p style="color:rgba(255,255,255,0.5);font-size:14px;margin:0;">Signing you in...</p>
+            </div>
+
+            <div x-show="sheet === 'error'" style="text-align:center;padding:20px 0;position:relative;z-index:1;">
+              <p style="color:#ff6b6b;font-size:14px;margin:0 0 12px;">Something went wrong. Please try again.</p>
+              <button class="sso-btn" @click="sheet = 'open'">Try again</button>
+            </div>
+
+            <div x-show="sheet === 'success'" style="text-align:center;padding:20px 0;">
+              <div style="font-size:32px;margin-bottom:8px;">\u2713</div>
+              <p style="color:${teal};font-size:15px;font-weight:600;margin:0;">Signed in successfully</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Prompt bar -->
+      <div style="padding:12px 16px 20px;display:flex;gap:8px;align-items:center;">
+        <input
+          type="text"
+          x-model="draft"
+          @keydown.enter="sendMsg(draft)"
+          placeholder="${values.placeholder}"
+          style="flex:1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:24px;padding:10px 16px;font-size:14px;color:${text};outline:none;">
+        <button
+          @click="sendMsg(draft)"
+          style="width:36px;height:36px;background:${violet};border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Inspector panel -->
+    <div style="width:240px;background:${surface};border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:16px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:16px;">INSPECTOR</div>
+
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;letter-spacing:0.06em;">CHAT HOME</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px;">
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'default' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('default')">Default</button>
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'in-conversation' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('in-conversation')">In Conversation</button>
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'nudge' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('nudge')">Nudge (logged-out)</button>
+      </div>
+
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;letter-spacing:0.06em;">AUTH SHEET</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px;">
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'auth-default' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('auth-default')">Default</button>
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'auth-loading' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('auth-loading')">Loading</button>
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'auth-error' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('auth-error')">Error</button>
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'auth-success' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('auth-success')">Success</button>
+      </div>
+
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;letter-spacing:0.06em;">USER STATE</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px;">
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="inspectorMode === 'logged-in' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('logged-in')">Logged In</button>
+        <button
+          style="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;width:100%;text-align:left;"
+          :style="auth === 'signed out' && inspectorMode !== 'logged-in' ? 'border-color:${violet};background:rgba(124,111,205,0.15);color:#fff;' : ''"
+          @click="applyMode('default')">Logged Out</button>
+      </div>
+
+      <!-- Status display -->
+      <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;font-size:11px;color:rgba(255,255,255,0.4);line-height:1.8;">
+        <div>Auth: <span x-text="auth" style="color:rgba(255,255,255,0.7);"></span></div>
+        <div>Messages: <span x-text="msgs.length" style="color:rgba(255,255,255,0.7);"></span></div>
+        <div>Sheet: <span x-text="sheet" style="color:rgba(255,255,255,0.7);"></span></div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>`
+}
+
+// ─── Backward-compat wrapper ───────────────────────────────────────────────────
+
+/**
+ * Async wrapper around renderFromSpec for backward compatibility with callers
+ * that expect Promise<{ html, warnings }>. No LLM call — synchronous template render.
+ */
+export async function generateDesignPreview(params: {
+  specContent: string
+  featureName: string
+  brandContent?: string
+}): Promise<{ html: string; warnings: string[] }> {
+  const html = renderFromSpec(params.specContent, params.brandContent ?? "", params.featureName)
+  return { html, warnings: [] }
+}
+
+// ─── Validators (kept for smoke testing) ─────────────────────────────────────
+
+/**
+ * Validates structural properties of rendered HTML.
+ * Template rendering guarantees these — kept for smoke testing and regression detection.
  */
 export function validateRenderedHtml(html: string, brandContent?: string): { blocking: string[]; warnings: string[] } {
   const blocking: string[] = []
   const warnings: string[] = []
 
-  // --- Blocking checks ---
-
   if (!html.trim().endsWith("</html>")) {
     blocking.push("HTML appears truncated — missing closing </html>")
   }
 
-  // JS syntax error: apostrophe inside single-quoted string in a <script> block.
-  // Pattern: 'word's — a single quote, word chars, apostrophe, word char.
-  if (/<script\b[^>]*>[\s\S]*?'\w+'\w[\s\S]*?<\/script>/i.test(html)) {
-    blocking.push("Unescaped apostrophe in JavaScript string literal — Alpine will fail to initialize")
-  }
-
-  // Hero element must be present with id="hero".
-  // Fix 1a/b/c all require this attribute to apply the :class visibility pattern.
-  // A hero without id="hero" cannot be fixed post-generation — retry required.
   if (!html.includes('id="hero"')) {
-    blocking.push('Hero element missing id="hero" — sanitizer cannot apply :class visibility pattern; retry required. CRITICAL: add id="hero" to the hero div.')
+    blocking.push('Hero element missing id="hero" — CRITICAL: must not omit this attribute')
   }
 
-  // Hero must NOT be nested inside the thread element.
-  // Uses a bracket counter to find the exact closing </div> that pairs with id="thread",
-  // then checks whether id="hero" appears within that span — no false positives from
-  // sibling hero divs that happen to fall within an arbitrary character window.
   const threadIdx = html.indexOf('id="thread"')
   if (threadIdx !== -1) {
-    // Walk forward from id="thread" to find the start of its inner content (past the '>').
     const threadTagEnd = html.indexOf('>', threadIdx)
     if (threadTagEnd !== -1) {
       let depth = 1
@@ -174,31 +534,22 @@ export function validateRenderedHtml(html: string, brandContent?: string): { blo
         const openTag = html.indexOf('<div', i)
         const closeTag = html.indexOf('</div', i)
         if (closeTag === -1) break
-        if (openTag !== -1 && openTag < closeTag) {
-          depth++
-          i = openTag + 4
-        } else {
-          depth--
-          i = closeTag + 5
-        }
+        if (openTag !== -1 && openTag < closeTag) { depth++; i = openTag + 4 }
+        else { depth--; i = closeTag + 5 }
       }
-      // i now points just past the paired </div> — everything from threadTagEnd+1 to i is inside thread
       const threadInnerContent = html.slice(threadTagEnd + 1, i)
       if (threadInnerContent.includes('id="hero"')) {
-        blocking.push('Hero element is nested inside thread — hero and thread must be siblings in a position:relative wrapper, not parent-child. This causes hero and messages to overlap.')
+        blocking.push('Hero element is nested inside thread — hero and thread must be siblings')
       }
     }
   }
-
-  // --- Warning checks ---
 
   if (!html.includes("@keyframes")) {
     warnings.push("No CSS keyframe animations found — glow animation likely missing")
   }
 
-  // Body background must be in explicit CSS — Tailwind custom classes fail on file:// URLs
   if (!html.match(/body\s*\{[^}]*background(?:-color)?:/s)) {
-    warnings.push("Body has no explicit CSS background-color in <style> — dark background will not render when opened from disk. Use background-color in the <style> tag, not just a Tailwind class.")
+    warnings.push("Body has no explicit CSS background-color in <style>")
   }
 
   if (brandContent) {
@@ -208,560 +559,20 @@ export function validateRenderedHtml(html: string, brandContent?: string): { blo
     }
   }
 
-  // Hero must NOT use x-show (sanitizer should have fixed this — warn if it remains)
-  if (/id="hero"[^>]*x-show/i.test(html) || /x-show[^>]*id="hero"/i.test(html)) {
-    warnings.push('Hero element uses x-show — hero will be blank if Alpine fails to initialize. Use :class="{ hidden: msgs.length > 0 || typing }" instead.')
-  }
-
-  // Thread must have display:none (sanitizer should have fixed this — warn if it remains)
-  if (/id="thread"/.test(html)) {
-    const threadMatch = html.match(/<[^>]+id="thread"[^>]*>/)
-    if (threadMatch && !threadMatch[0].includes("display:none") && !threadMatch[0].includes("display: none")) {
-      warnings.push('Thread element is missing style="display:none" — without this, thread is visible before Alpine loads')
-    }
-  }
-
   return { blocking, warnings }
 }
 
 /**
  * Checks that spec-defined text literals appear verbatim in the rendered HTML.
- * Deterministic string matching — no LLM needed. Catches renderer hallucination where
- * the renderer substitutes its own text ("Your AI health coach") for spec-defined text
- * ("Health360"). Matches patterns like: Heading: "..." / Tagline: "..." / Header: "..."
  */
-function validateTextFidelity(html: string, specContent: string): string[] {
+export function validateTextFidelity(html: string, specContent: string): string[] {
   const issues: string[] = []
-  // Match labeled text literals: Heading: "...", Tagline: "...", Header: "...", Description: "..."
   const pattern = /(?:Heading|Tagline|Header|Description|placeholder):\s*"([^"]{4,})"/gi
   for (const match of specContent.matchAll(pattern)) {
     const specText = match[1].trim()
     if (!html.includes(specText)) {
-      issues.push(`Spec text "${specText}" not found in rendered HTML — renderer substituted different content`)
+      issues.push(`Spec text "${specText}" not found in rendered HTML`)
     }
   }
   return issues
-}
-
-// Generates a self-contained HTML preview from a design spec.
-// Uses Tailwind CDN + Alpine.js for interactivity — no build step, no external deps.
-// Each screen gets a tab. Each screen state (default/loading/empty/error) gets a toggle.
-// Non-fatal — caller should catch and handle gracefully.
-export async function generateDesignPreview(params: {
-  specContent: string
-  featureName: string
-  brandContent?: string
-}): Promise<{ html: string; warnings: string[] }> {
-  const { specContent, featureName, brandContent } = params
-
-  // Prepend BRAND.md as an authoritative section when available.
-  // The renderer reads color values, animation params, and typography from here —
-  // not from the spec's Brand section (which may have drifted).
-  const brandBlock = brandContent
-    ? `AUTHORITATIVE BRAND TOKENS (from BRAND.md — use these exact values, not the spec's Brand section):
-${brandContent}
-
----
-
-`
-    : ""
-
-  const SYSTEM = `You generate beautiful, self-contained HTML preview files directly from design specs. The output will be opened in a browser to let a designer approve or iterate on the spec before it goes to engineering.
-
-## Output requirements
-
-Output ONLY the raw HTML — no explanation, no markdown fences, no preamble. Start with <!DOCTYPE html> and end with </html>.
-
-**Critical: always output a complete, valid HTML file.** If the spec is complex, be concise in your implementation — use Tailwind classes aggressively, keep custom CSS minimal. An incomplete file (cut off before </html>) is a total failure — the designer will see a broken, partially-rendered screen. Concise and complete is always better than verbose and truncated.
-
-## TEXT FIDELITY — NON-NEGOTIABLE
-
-Use ONLY the exact text content from the spec. Do not paraphrase, improve, or substitute.
-
-- If the spec defines a heading: use that exact string. Spec says \`Heading: "Health360"\` → render "Health360", never "Your AI Health Coach" or any variation.
-- If the spec defines chip labels: use those exact labels, in that exact order.
-- If the spec defines button text, placeholder text, or descriptions: use those exact strings.
-- If a text element has NO value in the spec: leave it absent. Do not invent plausible-sounding copy.
-- If the spec says "bottom sheet": the element enters from the bottom with a translate-Y animation. If "centered modal": it is a centered overlay. Respect layout direction exactly as written.
-
-Any text visible in the rendered HTML that does not appear verbatim in the spec is a renderer error.
-
-## Technical requirements
-
-- Single self-contained file
-- Tailwind CSS via CDN with inline config for custom colors/animations
-- Alpine.js via CDN for screen switching and state toggles
-- No other external JavaScript dependencies
-- Works when opened directly from disk (no server needed)
-
-## Brand tokens — use AUTHORITATIVE BRAND TOKENS section above
-
-When the user message begins with "AUTHORITATIVE BRAND TOKENS", those are the production-calibrated values. Use them verbatim — do NOT use values from the spec's Brand section, which may have drifted.
-
-Configure Tailwind with the exact values from AUTHORITATIVE BRAND TOKENS:
-\`\`\`html
-<script>
-  window.tailwind = {
-    theme: {
-      extend: {
-        colors: {
-          // Map token names to exact hex values from AUTHORITATIVE BRAND TOKENS
-          // "primary" → --bg value, "surface" → --surface value, "fg" → --text value
-          // "accent" → --violet value, "accent2" → --teal value
-          "primary": "<--bg hex>",
-          "surface": "<--surface hex>",
-          "fg": "<--text hex>",
-          "accent": "<--violet or primary accent hex>",
-          "accent2": "<--teal or secondary accent hex>"
-          // use the ACTUAL values from AUTHORITATIVE BRAND TOKENS — never invent colors
-        },
-        keyframes: {
-          "glow-pulse": {
-            // Use opacity values from AUTHORITATIVE BRAND TOKENS (glow-opacity-min / glow-opacity-max)
-            // If not specified, use 0.55 → 1.00 for a prominent visible glow on dark backgrounds
-            "0%, 100%": { opacity: "<glow-opacity-min>" },
-            "50%": { opacity: "<glow-opacity-max>" }
-          }
-          // include ALL animations from the spec
-        },
-        animation: {
-          // Use duration from AUTHORITATIVE BRAND TOKENS (glow-duration) if specified
-          "glow-pulse": "glow-pulse <glow-duration> ease-in-out infinite"
-        }
-      }
-    }
-  }
-</script>
-<script src="https://cdn.tailwindcss.com"></script>
-\`\`\`
-
-**Color naming rule:** Name colors WITHOUT a CSS-property prefix. Use \`"primary"\` not \`"bg-primary"\` — then use them as \`bg-primary\`, \`text-fg\`, \`border-accent\` etc. The prefix comes from Tailwind, not the color name.
-
-**This is how to get custom colors and animations into Tailwind — never skip this step.** If you define colors in the config, you can use them as Tailwind classes. If you skip this, all custom colors will fail to render — the designer will see a broken black screen instead of the designed palette.
-
-## Mandatory <style> block — ALWAYS add this to <head>, no exceptions
-
-This block is required on every page, even if the spec has no glow effect.
-
-**Why:** Tailwind CDN custom classes (\`bg-primary\`, \`text-fg\`, etc.) require CDN JavaScript to load and process \`window.tailwind\` config before they resolve. When HTML is opened from disk (file://) or as a Slack attachment, the CDN may not load before the browser paints — the page renders white. Explicit CSS in \`<style>\` always works.
-
-**The rule: ALL critical visual properties (background, text color) MUST be set in the \`<style>\` tag. Tailwind classes are an enhancement layer for spacing and interactive states only — never rely on them for the primary background or text color.**
-
-\`\`\`html
-<style>
-  @keyframes glow-pulse {
-    0%, 100% { opacity: <glow-opacity-min from BRAND, default 0.55>; }
-    50%       { opacity: <glow-opacity-max from BRAND, default 1.00>; }
-  }
-  body {
-    background-color: <--bg from AUTHORITATIVE BRAND TOKENS>;
-    color: <--text from AUTHORITATIVE BRAND TOKENS>;
-    margin: 0;
-    min-height: 100vh;
-    font-family: system-ui, sans-serif;
-  }
-</style>
-\`\`\`
-
-Use the exact hex values from AUTHORITATIVE BRAND TOKENS for \`background-color\` and \`color\`. Do not use Tailwind class names here — write the actual values.
-
-## Glow and gradient effects — use this exact pattern, always
-
-When the spec describes a pulsing glow effect, use this EXACT structure. Do not improvise.
-
-**The \`@keyframes glow-pulse\` is already in the mandatory \`<style>\` block above — do not repeat it.**
-
-**Step 2 — wrap the target element in a relative container and place the glow div as the FIRST child:**
-Use the --violet and --teal hex values converted to rgba for the gradient. Use blur value from AUTHORITATIVE BRAND TOKENS (glow-blur).
-\`\`\`html
-<div class="relative">
-  <!-- glow: first child so it renders behind content -->
-  <div aria-hidden="true" class="absolute inset-0 pointer-events-none"
-       style="background: radial-gradient(ellipse at 50% 85%, rgba(<--violet as rgb>,0.65) 0%, rgba(<--teal as rgb>,0.35) 45%, transparent 70%);
-              filter: blur(<glow-blur from BRAND>);
-              animation: glow-pulse <glow-duration from BRAND> ease-in-out infinite;
-              z-index: 0;"></div>
-  <!-- content: always sits above the glow -->
-  <div class="relative" style="z-index: 1;">
-    <!-- actual screen content here -->
-  </div>
-</div>
-\`\`\`
-
-**Rules that must not be broken:**
-- **Body background-color and text color MUST be in the \`<style>\` tag** (set above) — not only Tailwind classes. Tailwind-only fails silently on file:// URLs.
-- Always use a \`<style>\` keyframe for glow animation — Tailwind CDN keyframes are unreliable for glow
-- Glow div must be the FIRST child inside the relative wrapper — later siblings stack on top via z-index
-- Content must be in a div with \`position: relative; z-index: 1\` — without this, content sits behind the glow
-- Use blur value from AUTHORITATIVE BRAND TOKENS for \`filter: blur()\` — this creates the soft-bloom look
-- Use opacity values from AUTHORITATIVE BRAND TOKENS for the glow keyframe
-- Use inline \`style=""\` for radial-gradient and filter — never Tailwind \`from-*/to-*\` classes for arbitrary rgba values
-- If the spec names TWO glow locations (e.g. home prompt bar AND auth sheet), implement BOTH independently with separate glow divs
-
-## Gradient text on headings
-
-Primary headings (h1, wordmark, feature name) should use gradient text where the spec describes a gradient accent. Apply:
-\`\`\`html
-<h1 style="background: linear-gradient(135deg, <--violet hex>, <--teal hex>); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-  Heading Text
-</h1>
-\`\`\`
-Use the actual accent hex values from AUTHORITATIVE BRAND TOKENS.
-
-## Structure
-
-**Alpine.js data pattern — REQUIRED:**
-
-Declare ALL state and methods in a \`<script>\` block, NOT inline in the x-data attribute string. Then reference the function by name on the root element:
-
-\`\`\`html
-<script>
-  function appData() {
-    return {
-      msgs: [],
-      draft: '',
-      typing: false,
-      loggedIn: false,
-      authOpen: false,
-      authState: 'idle',
-      sendMsg(text) {
-        if (!text.trim()) return
-        this.msgs.push({ role: 'user', text: text.trim() })
-        this.draft = ''
-        this.typing = true
-        setTimeout(() => {
-          this.typing = false
-          this.msgs.push({ role: 'agent', text: '...' })
-          this.$nextTick(() => {
-            const t = document.getElementById('thread')
-            if (t) t.scrollTop = t.scrollHeight
-          })
-        }, 900)
-      }
-    }
-  }
-</script>
-<body x-data="appData()">
-\`\`\`
-
-**Never write methods inline in the x-data attribute string.** Alpine magic properties (\`$nextTick\`, \`$el\`, \`$refs\`, \`$dispatch\`) are safe inside \`<script>\` tags and break when written inside HTML attribute values. A broken \`$nextTick\` means auto-scroll never fires and state transitions fail silently.
-
-The \`appData()\` function manages:
-- \`msgs\`: array of { role: "user"|"agent", text: string } for live conversation
-- \`draft\`: string bound to the prompt input
-- \`typing\`: boolean — true during the 900ms agent "thinking" delay
-- \`loggedIn\`: boolean — true after successful SSO
-- \`authOpen\`: boolean — true when auth sheet overlay is visible
-- \`authState\`: "idle" | "loading" | "success" | "error"
-- \`inspectorMode\`: string — current inspector state selection (for the inspector panel)
-
-**Preview shell: phone frame + inspector panel**
-
-The preview is NOT a full-width wireframe. Structure:
-
-Left panel — Phone frame (390px wide, 844px tall, border-radius 44px, border: 1px solid rgba(255,255,255,0.12), background: --bg color from BRAND tokens):
-- iOS-style status bar at top (time "9:41", signal/wifi/battery SVG icons)
-- The app renders inside this frame exactly as it would on device
-- The phone frame is the PRIMARY interactive experience — users tap chips, type messages, click through flows directly in the frame
-
-Right panel — Inspector panel (280px wide, darker background than --bg, rounded border):
-- Heading row: "Inspector" label
-- Grouped buttons for every named screen and state from the spec
-- Group "Chat Home": Default, In Conversation, Nudge (logged-out)
-- Group "Auth Sheet": Default, Loading, Error, Success
-- "Logged In" state as its own entry
-- Clicking any button calls \`applyMode(mode)\` which resets the phone frame to that exact state
-- Active button is highlighted with an accent border/background
-- The inspector is ADDITIVE — it exists to let the designer jump to any edge state without clicking through the flow
-
-Both panels sit horizontally in a centered viewport with a thin top meta bar showing:
-feature name · BRAND.md ✓ · N screens · N flows
-
-**Suggestion chips and action pills must always be in a horizontal row** — never stacked vertically. Use \`display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto;\` so they scroll horizontally at narrow viewports instead of stacking.
-
-## Full interactivity — REQUIRED
-
-The preview must be fully interactive. Passive mock-ups are not acceptable. Implement all of the following:
-
-**Prompt bar:**
-- Bind the text input to \`draft\` with x-model
-- Hitting Enter or clicking Send appends \`{ role: "user", text: draft }\` to \`messages\`, clears \`draft\`, then after a 900ms delay appends a plausible AI reply based on the feature domain
-- The input must accept real keyboard input — use \`<input type="text"\` or \`<textarea\`, never a fake div
-- Once a message is sent, starter chips disappear and the conversation thread is shown
-
-**Starter chips (if spec describes them):**
-- Each chip is a real \`<button>\` that, when clicked, fills the prompt with the chip text and immediately sends it (same as pressing Enter)
-- Chips must be in a single horizontal scrollable row — never stacked
-
-**Auth / sign-in flow:**
-- "Sign in" button/chip opens the auth sheet overlay directly — no tab switch required
-- The auth sheet slides up with a CSS animation
-- Clicking a SSO button triggers: \`authState = 'loading'\` (1.2s) → \`authState = 'success'\` (0.8s) → sheet closes, user state becomes logged-in
-- Error state: reachable via an "Error" pill, NOT by default behavior
-- The overlay can be dismissed by clicking the backdrop
-
-**State transitions:**
-- All state changes animate: fade-in for new content, slide-up for sheets, opacity transitions for loading/disabled states
-- Logged-out → conversation state happens automatically when the first message is sent
-- The in-conversation nudge appears after the first AI reply, with a working "Sign in" link that opens the auth sheet
-
-**Live conversation:**
-- The messages array drives a scrollable thread
-- New messages animate in with fade-in
-- The thread auto-scrolls to the latest message
-- Agent "typing" indicator (three pulsing dots) appears during the 900ms delay before the AI reply
-
-## Visual fidelity
-
-This is NOT a wireframe — it should look close to the real product. Apply:
-- The exact colors, fonts, and spacing from AUTHORITATIVE BRAND TOKENS and Design Direction sections
-- If a Google Font is specified, load it via a <link> tag
-- Generous whitespace, careful typography, real-looking content (not Lorem Ipsum — use the feature domain)
-- Realistic component states: loading spinners use animated CSS, empty states have an icon and message, error states are visually distinct
-
-## Input fields — always legible
-
-For any text input or textarea:
-- Set explicit text color that contrasts with the input background
-- On dark backgrounds: text-text-primary or text-white. NEVER leave input color as browser default on a dark-bg page — the default is black, which produces black-on-black text.
-
-## Sheets, modals, and auth flows
-
-If the spec describes an auth sheet, login sheet, or bottom sheet that slides up over a screen:
-- It exists as an OVERLAY on the current screen, triggered by user action (clicking Sign in)
-- ALSO give it its OWN named tab in the nav for direct inspection (e.g. "Auth Sheet", "Login")
-- Render its content fully — SSO buttons, dividers, copy, glow effects — exactly as specified
-- Backdrop click dismisses it
-
-Every named screen and state must also be reachable directly from nav tabs and state pills — so the designer can jump to any state without clicking through the flow.
-
-## Phone content area — MANDATORY STRUCTURE
-
-The area inside the phone frame (below the status bar, above the prompt bar) MUST use this exact layout. **Do not use height:100% inside overflow-y:auto — that causes heroes to be zero-height on some browsers and makes position:absolute impossible.**
-
-\`\`\`html
-<!-- Phone content area: flex:1 takes remaining height; position:relative is the stacking context -->
-<!-- overflow:hidden clips content to phone frame bounds — NEVER overflow-y:auto here -->
-<div style="flex:1; position:relative; overflow:hidden;">
-
-  <!-- Hero: position:absolute fills the content area — ALWAYS VISIBLE without JavaScript -->
-  <!-- NEVER use x-show on hero — Alpine hides x-show elements before initialization -->
-  <!-- Use :class to hide hero reactively once Alpine loads — starts visible, hides when msgs appear -->
-  <div id="hero"
-       style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 24px; overflow-y:auto;"
-       :class="{ 'hidden': msgs.length > 0 || typing }">
-    <h1>App Name</h1>
-    <p>Tagline</p>
-    <!-- chips in horizontal row -->
-  </div>
-
-  <!-- Thread: style="display:none" ensures it is hidden BEFORE Alpine loads -->
-  <!-- x-show makes Alpine show it once msgs exist — the display:none is overridden by Alpine -->
-  <div id="thread"
-       style="position:absolute; inset:0; overflow-y:auto; display:none;"
-       x-show="msgs.length > 0 || typing">
-    <!-- messages -->
-  </div>
-
-</div>
-\`\`\`
-
-**Rules that must not be broken:**
-- The wrapper div uses \`flex:1; position:relative; overflow:hidden\` — no exceptions
-- Hero uses \`position:absolute; inset:0\` — NOT \`height:100%\` or \`min-height:100%\`
-- Hero uses \`:class="{ 'hidden': msgs.length > 0 || typing }"\` — NOT \`x-show\`
-- Thread uses BOTH \`style="display:none"\` AND \`x-show\` — the inline style hides it before Alpine, Alpine then shows/hides it reactively
-- Scrolling (overflow-y:auto) is on hero and thread individually — NOT on the wrapper
-- CRITICAL: hero div MUST have \`id="hero"\` — the post-generation sanitizer requires this exact attribute to apply the :class visibility pattern. A hero without \`id="hero"\` cannot be fixed and will trigger a retry. Never omit this attribute.
-- CRITICAL: hero and thread MUST be siblings — never put the hero div inside the thread div. Hero inside thread = hero overlaps messages in conversation state.
-
-## Empty-state hero — REQUIRED for chat/assistant screens
-
-When the spec describes a chat home screen, the default (empty) state MUST show a centered hero section:
-- This hero is a SEPARATE div below the nav bar — it is NOT inside the nav
-- The nav bar contains the app name left-aligned (always visible)
-- Hero content: \`<h1>\` with the app name in gradient text matching the spec, centered
-- Tagline below the h1, centered, in muted text color
-- Glow effect behind the hero (per glow pattern above)
-- Starter chips row: positioned at the **bottom** of the hero layer via \`margin-top: auto\` in the hero flex column — NOT vertically centered with the heading. Layout: heading → tagline → \`margin-top:auto\` spacer → chips row. This anchors chips just above the prompt bar.
-- The prompt bar is always pinned at the bottom of the phone frame
-
-**Static-first hero — REQUIRED:** Follow the Phone content area mandatory structure above. Use \`position:absolute; inset:0\` for hero. Do NOT put the hero behind \`x-show\` — Alpine hides \`x-show\` elements before initialization, leaving the screen blank. Use \`:class="{ 'hidden': msgs.length > 0 || typing }"\` on the hero instead. Thread gets \`style="display:none"\` + \`x-show\`.
-
-## Inspector buttons — REQUIRED base styles
-
-Inspector buttons must be visually correct WITHOUT JavaScript. Do not rely on \`:style\` or Alpine bindings for resting-state colors — these only apply after Alpine initializes.
-
-**Pattern:**
-\`\`\`html
-<!-- Correct: base style has explicit color and border, :style adds active highlight only -->
-<button
-  style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.7); border:1px solid rgba(255,255,255,0.12); border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer; width:100%; text-align:left;"
-  :style="inspectorMode === 'default' ? 'border-color:#8b5cf6; background:rgba(139,92,246,0.15); color:#fff;' : ''"
-  @click="applyMode('default')">
-  Default
-</button>
-\`\`\`
-
-**Rules:**
-- The \`style\` attribute provides the FULL resting appearance (background, color, border)
-- The \`:style\` binding ONLY adds the active/selected highlight on top
-- Never use \`:style\` as the ONLY source of background or text color
-
-## JavaScript string safety — REQUIRED
-
-**All string literals in \`appData()\` and any \`<script>\` block MUST use double quotes.** Never use single quotes for strings that might contain an apostrophe.
-
-**Wrong — causes Alpine initialization failure:**
-\`\`\`javascript
-chips: [
-  'How\\'s my heart rate trend?',  // WRONG even with escape — use double quotes
-  'What\\'s the best time to sleep?'
-]
-\`\`\`
-
-**Correct:**
-\`\`\`javascript
-chips: [
-  "How's my heart rate trend?",
-  "What's the best time to sleep?",
-  "Am I hitting my step goals?"
-]
-\`\`\`
-
-A syntax error anywhere in the \`appData()\` function body causes Alpine to throw on \`x-data="appData()"\`. Alpine's pre-init walk then sets ALL \`x-show\` elements to \`display:none\` and never completes the show pass. Result: every element with \`x-show\` stays hidden permanently — the phone screen is completely blank.`
-
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 32000,
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `${brandBlock}Feature: ${featureName}
-
-${specContent}`,
-      },
-    ],
-  })
-
-  function extractHtml(response: Anthropic.Message): string {
-    const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
-    return text
-      .replace(/^```html\n?/, "")
-      .replace(/^```\n?/, "")
-      .replace(/\n?```$/, "")
-      .trim()
-  }
-
-  // Pass 1: sanitize + validate
-  const raw1 = extractHtml(response)
-  const sanitized1 = sanitizeRenderedHtml(raw1)
-  const { blocking: blocking1, warnings: warnings1 } = validateRenderedHtml(sanitized1, brandContent)
-
-  // If no blocking issues, we're done
-  if (blocking1.length === 0) {
-    const allWarnings = [...warnings1, ...validateTextFidelity(sanitized1, specContent)]
-    return { html: sanitized1, warnings: allWarnings }
-  }
-
-  // Blocking issues remain — retry once. A syntax error or truncated render won't fix itself
-  // via sanitization alone; the second LLM pass has the error list injected as context.
-  const retryPrompt = `${brandBlock}Feature: ${featureName}
-
-${specContent}
-
----
-PREVIOUS RENDER FAILED — fix these issues in your new output:
-${blocking1.map(b => `- ${b}`).join("\n")}
-
-Output a complete, valid HTML file. Start with <!DOCTYPE html>, end with </html>. Use double-quoted strings for ALL JavaScript string literals.`
-
-  const response2 = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 32000,
-    system: SYSTEM,
-    messages: [{ role: "user", content: retryPrompt }],
-  })
-
-  const raw2 = extractHtml(response2)
-  const sanitized2 = sanitizeRenderedHtml(raw2)
-  const { blocking: blocking2, warnings: warnings2 } = validateRenderedHtml(sanitized2, brandContent)
-
-  // If still blocking after retry (e.g. still truncated), throw — the spec is too large
-  if (blocking2.length > 0) {
-    throw new Error(`HTML preview failed after retry: ${blocking2.join("; ")}`)
-  }
-
-  const allWarnings = [...warnings2, ...validateTextFidelity(sanitized2, specContent)]
-  return { html: sanitized2, warnings: allWarnings }
-}
-
-// Applies targeted updates to an existing HTML preview based on the spec sections that changed.
-// Unlike generateDesignPreview (full rewrite from spec), this receives only the changed sections
-// as a patch string — the renderer knows exactly what to update and leaves everything else identical.
-// Use this after apply_design_spec_patch saves so approved inspector states, animations, and
-// brand values are not re-improvised from scratch.
-export async function updateDesignPreview(params: {
-  existingHtml: string
-  specPatch: string      // Only the changed spec sections — not the full spec
-  featureName: string
-  brandContent?: string
-}): Promise<{ html: string; warnings: string[] }> {
-  const { existingHtml, specPatch, featureName, brandContent } = params
-
-  const brandBlock = brandContent
-    ? `AUTHORITATIVE BRAND TOKENS (from BRAND.md — use these exact values):
-${brandContent}
-
----
-
-`
-    : ""
-
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 32000,
-    system: `You are applying targeted updates to an existing HTML design preview.
-
-CRITICAL RULES:
-1. You are given ONLY the spec sections that changed. Do not modify HTML for any other section.
-2. Do NOT restructure the HTML, change CSS class names, or rename Alpine.js properties.
-3. Do NOT add or remove inspector states unless the patch explicitly defines new screens.
-4. Do NOT change animation keyframe names, timing values, or color values unless the patch specifies new values.
-5. Output ONLY the complete updated HTML — no explanation, no markdown fences.
-6. TEXT FIDELITY: Use ONLY the exact text from the patch. Do not paraphrase or substitute. If the patch defines Heading "X", render "X" not any variation. If layout direction changes (e.g. "bottom sheet"), apply it exactly.
-
-The output must be a complete valid HTML file starting with <!DOCTYPE html>.`,
-    messages: [
-      {
-        role: "user",
-        content: `${brandBlock}Feature: ${featureName}
-
-EXISTING HTML (preserve everything not covered by the patch below):
-${existingHtml}
-
-SPEC PATCH — only these sections changed (update ONLY the HTML elements for these sections, leave everything else identical):
-${specPatch}
-
-Apply the patch to the HTML. Return the complete HTML file.`,
-      },
-    ],
-  })
-
-  const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
-  const html = text
-    .replace(/^```html\n?/, "")
-    .replace(/^```\n?/, "")
-    .replace(/\n?```$/, "")
-    .trim()
-
-  if (!html.includes("</html>")) {
-    throw new Error("HTML preview was truncated before </html>")
-  }
-
-  const sanitized = sanitizeRenderedHtml(html)
-  const { warnings: structuralWarnings } = validateRenderedHtml(sanitized, brandContent)
-  const warnings = [...structuralWarnings, ...validateTextFidelity(sanitized, specPatch)]
-  return { html: sanitized, warnings }
 }
