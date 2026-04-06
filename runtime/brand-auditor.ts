@@ -44,31 +44,32 @@ function extractBrandSection(specContent: string): string {
 }
 
 /**
- * Parses animation parameters from BRAND.md's ## Glow section (CSS format).
- * Reads the canonical CSS that the team actually committed — never a platform-invented
- * key-value block. Extracts:
+ * Extracts animation parameters from a raw CSS glow section string.
+ * Used by both BRAND.md parsing (after isolating the ## Glow section)
+ * and spec parsing (after isolating the **Glow...** subsection).
+ * Same parser, same format — no wrapper or synthetic headers needed.
+ *
+ * Extracts:
  *   glow-duration  — from `animation: <name> Xs ...`
  *   glow-blur      — from `filter: blur(Xpx)`
  *   glow-delay     — from `animation-delay: Xs`
  *   glow-opacity-min / glow-opacity-max — from the first @keyframes block (violet glow)
  */
-function extractBrandAnimationParams(brandMd: string): Map<string, string> {
+function extractAnimParamsFromCssSection(section: string): Map<string, string> {
   const params = new Map<string, string>()
-  const glowSection = brandMd.match(/## Glow[^\n]*\n([\s\S]*?)(?=\n## |\n---|$)/)?.[1] ?? ""
-  if (!glowSection) return params
 
-  const durationMatch = glowSection.match(/animation:\s*\S+\s+([\d.]+s)/)
+  const durationMatch = section.match(/animation:\s*\S+\s+([\d.]+s)/)
   if (durationMatch) params.set("glow-duration", durationMatch[1])
 
-  const blurMatch = glowSection.match(/filter:\s*blur\(([\d.]+px)\)/)
+  const blurMatch = section.match(/filter:\s*blur\(([\d.]+px)\)/)
   if (blurMatch) params.set("glow-blur", blurMatch[1])
 
-  const delayMatch = glowSection.match(/animation-delay:\s*([-\d.]+s)/)
+  const delayMatch = section.match(/animation-delay:\s*([-\d.]+s)/)
   if (delayMatch) params.set("glow-delay", delayMatch[1])
 
   // First @keyframes block is the violet glow — canonical source for opacity values.
   // Matches from @keyframes through the closing } on its own line.
-  const keyframeBlock = glowSection.match(/@keyframes[^{]*\{([\s\S]*?)\n\}/)?.[1]
+  const keyframeBlock = section.match(/@keyframes[^{]*\{([\s\S]*?)\n\}/)?.[1]
   if (keyframeBlock) {
     const opacityMinMatch = keyframeBlock.match(/0%\s*\{[^}]*opacity:\s*([\d.]+)/)
     if (opacityMinMatch) params.set("glow-opacity-min", opacityMinMatch[1])
@@ -80,6 +81,15 @@ function extractBrandAnimationParams(brandMd: string): Map<string, string> {
   }
 
   return params
+}
+
+/**
+ * Finds the ## Glow section in a BRAND.md document and delegates to extractAnimParamsFromCssSection.
+ */
+function extractBrandAnimationParams(brandMd: string): Map<string, string> {
+  const glowSection = brandMd.match(/## Glow[^\n]*\n([\s\S]*?)(?=\n## |\n---|$)/)?.[1] ?? ""
+  if (!glowSection) return new Map()
+  return extractAnimParamsFromCssSection(glowSection)
 }
 
 /**
@@ -97,41 +107,11 @@ function extractSpecAnimationSection(specContent: string): string {
 }
 
 /**
- * Extracts a numeric value + optional unit from an animation spec line.
- * e.g. "- Duration: `2.5s ease-in-out`" → "2.5s"
- * Uses a non-greedy match before the value to avoid backtracking past the target value itself.
- */
-function extractSpecAnimValue(section: string, keyword: string): string | undefined {
-  // Avoid greedy [^\n]* before the capture group — it causes backtracking past the target value.
-  // Instead match: keyword ... : whitespace tilde? backtick? captured-value
-  // The tilde prefix (~200px) is common in spec prose and must be stripped before numeric extraction.
-  const re = new RegExp(`${keyword}[^:\\n]*:\\s*~?\`?(-?[\\d.]+(?:px|s|ms))\`?`, "i")
-  const match = section.match(re)
-  return match?.[1]
-}
-
-/**
- * Extracts opacity min and max from the spec's "Opacity cycle: X → Y" line.
- * The design agent writes opacity as a range, not two separate labelled values.
- * e.g. "- Opacity cycle: 0.45 → 0.75" → { min: "0.45", max: "0.75" }
- */
-function extractSpecOpacityRange(section: string): { min: string; max: string } | undefined {
-  const match = section.match(/opacity[^:\n]*:\s*([\d.]+)\s*→\s*([\d.]+)/i)
-  if (!match) return undefined
-  return { min: match[1], max: match[2] }
-}
-
-/**
  * Diffs the design spec's Brand animation section against BRAND.md animation params.
  * Returns any params that exist in both but have different values.
  *
- * Supports two spec formats:
- *   CSS format  — the design agent writes Brand animation as CSS code blocks matching
- *                 BRAND.md's structure (filter, @keyframes, animation, animation-delay).
- *                 Parsed with extractBrandAnimationParams — same parser as BRAND.md.
- *   Prose format — older: "- Glow duration: `2.5s`", "Opacity cycle: X → Y".
- *                 Parsed with extractSpecAnimValue / extractSpecOpacityRange.
- * CSS is tried first; prose is the fallback for older specs.
+ * Both sides use CSS format — the same format BRAND.md uses and the design agent system
+ * prompt prescribes. extractAnimParamsFromCssSection parses both without any wrapping.
  *
  * Pure string operation — no API call, no I/O, no side effects.
  */
@@ -142,48 +122,14 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
   const specAnimSection = extractSpecAnimationSection(specContent)
   if (!specAnimSection) return []
 
+  const specParams = extractAnimParamsFromCssSection(specAnimSection)
   const drifts: AnimationDrift[] = []
-
-  // CSS format — same parser as BRAND.md (the format the design agent currently produces).
-  // Prefix with a synthetic ## Glow heading so extractBrandAnimationParams can find its section root.
-  // specAnimSection is the captured content *after* the **Glow...** heading, not a full document.
-  const specParams = extractBrandAnimationParams(`## Glow\n${specAnimSection}`)
-  if (specParams.size > 0) {
-    for (const [param, brandValue] of brandParams) {
-      const specValue = specParams.get(param)
-      if (specValue && specValue !== brandValue) {
-        drifts.push({ param, specValue, brandValue })
-      }
-    }
-    return drifts
-  }
-
-  // Prose format fallback — older specs that predate the CSS format convention.
-  const checks: Array<{ param: string; keyword: string }> = [
-    { param: "glow-duration", keyword: "duration" },
-    { param: "glow-blur", keyword: "blur" },
-    { param: "glow-delay", keyword: "delay" },
-  ]
-  for (const { param, keyword } of checks) {
-    const brandValue = brandParams.get(param)
-    if (!brandValue) continue
-    const specValue = extractSpecAnimValue(specAnimSection, keyword)
+  for (const [param, brandValue] of brandParams) {
+    const specValue = specParams.get(param)
     if (specValue && specValue !== brandValue) {
       drifts.push({ param, specValue, brandValue })
     }
   }
-  const opacityRange = extractSpecOpacityRange(specAnimSection)
-  if (opacityRange) {
-    const minBrand = brandParams.get("glow-opacity-min")
-    if (minBrand && opacityRange.min !== minBrand) {
-      drifts.push({ param: "glow-opacity-min", specValue: opacityRange.min, brandValue: minBrand })
-    }
-    const maxBrand = brandParams.get("glow-opacity-max")
-    if (maxBrand && opacityRange.max !== maxBrand) {
-      drifts.push({ param: "glow-opacity-max", specValue: opacityRange.max, brandValue: maxBrand })
-    }
-  }
-
   return drifts
 }
 

@@ -196,11 +196,28 @@ describe("auditAnimationTokens — section header format resilience", () => {
   // section extractor breaks on a variant the model starts producing.
   // Tests run via auditAnimationTokens (public API) — a parse failure means
   // zero drifts returned when drifts exist.
+  // Values use CSS format (the format the design agent produces and the parser expects).
 
-  const DRIFTED_VALUES = "- Glow duration: `2.5s` ease-in-out\n- Blur radius: `80px`\n- Opacity cycle: 0.55 → 1.00\n- Animation delay: `-0.5s`"
+  const DRIFTED_CSS = [
+    "**Violet glow:**",
+    "```css",
+    "filter: blur(200px);",
+    "@keyframes h {",
+    "  0%   { opacity: 0.45; }",
+    "  12%  { opacity: 0.75; }",
+    "  100% { opacity: 0.45; }",
+    "}",
+    "animation: h 2.5s linear infinite;",
+    "```",
+    "",
+    "**Teal glow:**",
+    "```css",
+    "animation-delay: -0.5s;",
+    "```",
+  ].join("\n")
 
   function specWithHeader(header: string): string {
-    return `## Brand\n\n**Color Palette**\n- \`--violet:\` \`#7C6FCD\`\n\n${header}\n${DRIFTED_VALUES}\n`
+    return `## Brand\n\n**Color Palette**\n- \`--violet:\` \`#7C6FCD\`\n\n${header}\n${DRIFTED_CSS}\n`
   }
 
   it("**Animation & Glow** (standard format — must never regress)", () => {

@@ -12,8 +12,25 @@
 Font family: system-ui
 Font sizes: text-sm / text-base / text-lg
 
-**Animation & Glow**
-- Glow duration: `4s` ease-in-out
-- Blur radius: `80px`
-- Opacity cycle: 0.55 → 1.00
-- Animation delay: `-1.8s`
+**Glow (Signature Effect)**
+
+Two independent radial glows — violet and teal — rendered separately and animated asynchronously.
+
+**Violet glow:**
+```css
+filter: blur(80px);
+
+@keyframes heartbeat-violet {
+  0%   { opacity: 0.55; transform: scale(0.97); }
+  12%  { opacity: 1.00; transform: scale(1.20); }
+  36%  { opacity: 0.90; transform: scale(1.13); }
+  60%  { opacity: 0.58; transform: scale(0.98); }
+  100% { opacity: 0.55; transform: scale(0.97); }
+}
+animation: heartbeat-violet 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+```
+
+**Teal glow:**
+```css
+animation-delay: -1.8s;
+```
