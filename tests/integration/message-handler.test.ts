@@ -284,3 +284,57 @@ describe("gap detection", () => {
 })
 
 // History integrity tests live in tests/regression/history-integrity.test.ts
+
+// ─── Design state query — quality section ────────────────────────────────────
+
+describe("design state query — quality section", () => {
+  // This test guards against the wiring bug where quality checks were only injected
+  // into the design agent LLM path but state queries take an early-return path
+  // (buildDesignStateResponse) and never reached them. The fix: wire quality checks
+  // into buildDesignStateResponse directly via qualityIssues[]. This test asserts
+  // the *── QUALITY ──* section surfaces on a state query without any trigger phrase.
+
+  it("surfaces QUALITY section with redundant branding and copy findings on state query", async () => {
+    const { readFileSync } = await import("fs")
+    const fixtureContent = readFileSync(
+      "tests/fixtures/agent-output/onboarding-design-full.md",
+      "utf-8"
+    )
+
+    // Return the fixture spec from the design branch path
+    mockOctokitGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.design.md")) {
+        return Promise.resolve({
+          data: { content: Buffer.from(fixtureContent).toString("base64"), type: "file" },
+        })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // State query path: isOffTopicForAgent + isSpecStateQuery (2 Haiku calls)
+    // isOffTopicForAgent: returns true when text === "off-topic"; "on-topic" → false (keep going)
+    // isSpecStateQuery: returns true when text === "yes"
+    // No Sonnet call — returns early via buildDesignStateResponse
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] }) // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })       // isSpecStateQuery
+
+    const params = makeParams({ userMessage: "what is the current state" })
+
+    await withConfirmedAgent("ux-design", async () => {
+      await handleFeatureChannelMessage(params)
+    })
+
+    const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const lastUpdate = updateCalls.at(-1)?.[0]?.text ?? ""
+
+    // Quality section must be present — this is the wiring invariant
+    expect(lastUpdate).toContain("*── QUALITY ──*")
+
+    // Redundant branding: "Sign in to Health360" repeats the app name already in the wordmark
+    expect(lastUpdate).toContain("Sign in to Health360")
+
+    // Copy completeness: tagline missing terminal punctuation
+    expect(lastUpdate).toContain("One conversation")
+  })
+})

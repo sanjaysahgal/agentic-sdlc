@@ -600,7 +600,6 @@ export function buildDesignStateResponse(params: {
     lines.push("")
     lines.push("*── QUALITY ──*")
     qualityIssues.forEach((issue, i) => lines.push(`  ${i + 1}. ${issue}`))
-    lines.push(`Fix these before saying *approved* — say *fix quality* and I'll patch the spec.`)
   }
 
   // ── Section 4: SPEC ──
