@@ -33,6 +33,21 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Renderer parsing tests must use real spec fixtures (fixture rule violation, 2026-04-06)
+
+`tests/unit/html-renderer.test.ts` uses a hand-crafted `MINIMAL_SPEC` with `Heading: "..."`, `Tagline: "..."`, `Placeholder: "..."` syntax. The real onboarding spec uses none of these formats — it uses `wordmark:`, inline `tagline "..."`, `placeholder text "..."`. All 36 tests passed while the parser was silently wrong for every field. Discovered only when the preview was visually inspected.
+
+**Fix:** Add parsing-specific tests that load the real onboarding spec from `tests/fixtures/agent-output/onboarding-design-brand-section.md` and assert:
+- `wordmark` = "Health360" (not "Sign in to Health360")
+- `tagline` = "All your health. One conversation"
+- `placeholder` = "Ask anything about your health"
+- `authHeading` = "Sign in to Health360"
+- `chips` = 0 (spec has no chip content yet — TBD placeholder shown)
+
+These tests must fail if a parser regression is introduced. MINIMAL_SPEC can remain for edge-case tests (fallback behavior, apostrophes, cap-at-3) but must NOT be used for format-sensitive parsing assertions.
+
+---
+
 ### Coverage gaps — uncovered paths in critical files (v8 report, 2026-04-06)
 
 Overall: 75.97% stmts / 67.35% branch / 71.07% funcs / 76.93% lines. Critical gaps:
