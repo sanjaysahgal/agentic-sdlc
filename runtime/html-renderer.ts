@@ -206,10 +206,18 @@ export function renderFromSpec(
     `border-radius:20px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;">${chip}</button>`
   ).join("\n            ")
 
-  // Placeholder chips shown when spec has none — makes the gap visible without breaking layout
+  // Placeholder chips shown when spec has none — shows correct spec layout (3 pills, proper
+  // dimensions: 44px height, teal 15% border, 40px border-radius) with TBD copy so the row
+  // is structurally reviewable even before chip content is defined.
+  const chipTbdStyle = `background:${surface};color:rgba(248,248,247,0.35);` +
+    `border:1px solid rgba(${tealRgb},0.15);border-radius:40px;` +
+    `padding:0 18px;height:44px;font-size:13px;white-space:nowrap;flex-shrink:0;cursor:default;` +
+    `display:inline-flex;align-items:center;`
   const chipsPlaceholderHtml = values.chips.length === 0
     ? `<!-- OPEN QUESTION: Starter chip content not yet defined in spec -->
-            <button disabled style="background:${surface};color:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:8px 16px;font-size:13px;white-space:nowrap;flex-shrink:0;cursor:default;">[chip content TBD]</button>`
+            <button disabled style="${chipTbdStyle}">[chip 1 — TBD]</button>
+            <button disabled style="${chipTbdStyle}">[chip 2 — TBD]</button>
+            <button disabled style="${chipTbdStyle}">[chip 3 — TBD]</button>`
     : chipsHtml
 
   // Pre-fill first chip for inspector "In Conversation" / "Nudge" states

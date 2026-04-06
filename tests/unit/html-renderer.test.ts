@@ -180,6 +180,17 @@ describe("renderFromSpec — spec value parsing", () => {
     expect(html).toContain("data-chip=")
     expect(html).toContain("How")
   })
+
+  it("shows 3 TBD placeholder pills when spec has no chip content", () => {
+    const noChipsSpec = "## Nav Shell\nHealth360 wordmark: gradient text"
+    const html = renderFromSpec(noChipsSpec, MINIMAL_BRAND, "test")
+    // 3 placeholder pills, not just 1
+    const tbdCount = (html.match(/TBD/g) ?? []).length
+    expect(tbdCount).toBe(3)
+    // Correct spec dimensions — 44px height, 40px border-radius (rounded pill)
+    expect(html).toContain("height:44px")
+    expect(html).toContain("border-radius:40px")
+  })
 })
 
 // ─── renderFromSpec: brand color substitution ─────────────────────────────────

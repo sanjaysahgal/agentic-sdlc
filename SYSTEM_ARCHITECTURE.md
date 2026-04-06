@@ -208,7 +208,7 @@ The principle: **the specialist surfaces all violations proactively**. The human
 - `authHeading` — first `Heading: "..."` match (auth sheet heading, e.g. "Sign in to Health360")
 - `tagline` — matches both `tagline "..."` (inline format) and `Tagline: "..."` (colon format)
 - `placeholder` — matches both `placeholder text "..."` and `Placeholder: "..."` formats
-- `chips` — extracted from Starter Chips section quoted strings (≤3); shows "[chip content TBD]" placeholder if none found
+- `chips` — extracted from Starter Chips section quoted strings (≤3); shows 3 correctly-dimensioned placeholder pills (44px height, 40px border-radius, teal 15% border) when none found — layout is reviewable before copy is defined
 - Glow animation (`heartbeat-violet` / `heartbeat-teal`) — parsed from spec `## Brand` section; two independent keyframes with 5 control points (0%/12%/36%/60%/100%), scale + opacity, `cubic-bezier(0.4, 0, 0.2, 1)` easing; never read from BRAND.md
 - Color tokens — read from BRAND.md (including `--error` for error state text color)
 
