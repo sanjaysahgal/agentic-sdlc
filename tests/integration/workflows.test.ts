@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { readFileSync } from "fs"
+import { join } from "path"
 
 // End-to-end multi-turn workflow tests.
 //
@@ -1731,5 +1733,130 @@ describe("Scenario 19 — Always-on phase completion audit injection", () => {
     const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
     expect(userMsg?.content).not.toContain("[PLATFORM DESIGN READINESS")
+  })
+})
+
+// ─── Scenario 21: Brand drift hard gate at finalize_design_spec ───────────────
+//
+// finalize_design_spec MUST be blocked (error returned to agent) when
+// auditBrandTokens finds drift vs BRAND.md. The spec cannot be approved with
+// brand token drift — this is a hard gate, not an advisory notice.
+//
+// Call order (design draft found → auditPhaseCompletion fires at [2]):
+//   [0] isOffTopicForAgent       → false
+//   [1] isSpecStateQuery         → false
+//   [2] auditPhaseCompletion     → PASS (no readiness gaps)
+//   [3] runAgent                 → tool_use: finalize_design_spec
+//   [4] auditSpecDecisions       → "" (no corrections)
+//   [5] runAgent                 → end_turn (agent sees tool error, explains block)
+//
+// finalize_design_spec calls readFile(designFilePath, designBranchName) independently
+// of loadDesignAgentContext — both are covered by the path-routed mockGetContent.
+
+const S21_FIXTURE_DIR = join(__dirname, "../fixtures/agent-output")
+const S21_BRAND_MD = readFileSync(join(S21_FIXTURE_DIR, "brand-md.md"), "utf-8")
+const S21_DRIFTED_DRAFT = readFileSync(join(S21_FIXTURE_DIR, "design-brand-section-drifted.md"), "utf-8")
+const S21_CANONICAL_DRAFT = readFileSync(join(S21_FIXTURE_DIR, "design-brand-section-canonical.md"), "utf-8")
+
+describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => {
+  const THREAD = "workflow-s21"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("blocks finalization when brand token drift detected — spec NOT saved to GitHub", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Design draft on branch has drifted tokens (--bg, --violet wrong vs BRAND.md).
+    // BRAND.md is present on main — triggers hard gate in finalize_design_spec handler.
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_DRIFTED_DRAFT).toString("base64"), type: "file" } })
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_BRAND_MD).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
+    // [3] runAgent → tool_use: finalize_design_spec,
+    //     auditSpecDecisions skips LLM (history.length < 2 → returns "ok" immediately),
+    //     auditBrandTokens fires (pure) → drift found → tool returns error,
+    // [4] runAgent → end_turn (agent sees tool error, explains block)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditPhaseCompletion
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
+      })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Finalization blocked — brand token drift detected. Please patch --bg and --violet to match BRAND.md before approving." }],
+      })                                                                                    // runAgent: end_turn after tool error
+
+    const client = makeClient()
+    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "approve the design spec", client))
+
+    // Hard gate fired — spec was NOT written to GitHub
+    expect(mockCreateOrUpdate).not.toHaveBeenCalled()
+
+    // Tool result delivered to the agent contained the brand drift error
+    const runAgentAfterToolCall = mockAnthropicCreate.mock.calls[4][0]
+    const toolResultMsg = (runAgentAfterToolCall.messages as Array<{ role: string; content: unknown }>)
+      .findLast((m: { role: string }) => m.role === "user")
+    const toolResultContent = toolResultMsg?.content
+    const toolResultText = Array.isArray(toolResultContent)
+      ? (toolResultContent as Array<{ type: string; content?: string }>).find(b => b.type === "tool_result")?.content ?? ""
+      : ""
+    expect(toolResultText).toContain("Finalization blocked")
+    expect(toolResultText).toContain("brand token drift")
+
+    // 5 Anthropic calls total
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+  })
+
+  it("allows finalization when no brand drift — spec saved to GitHub", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Design draft on branch has canonical tokens matching BRAND.md — no drift.
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_CANONICAL_DRAFT).toString("base64"), type: "file" } })
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_BRAND_MD).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
+    // [3] runAgent → tool_use: finalize_design_spec,
+    //     auditSpecDecisions skips LLM (history.length < 2 → returns "ok" immediately),
+    //     auditBrandTokens fires (pure) → no drift → saveApprovedDesignSpec called,
+    // [4] runAgent → end_turn (spec approved)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditPhaseCompletion
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
+      })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Design spec approved and saved to GitHub." }],
+      })                                                                                    // runAgent: end_turn after spec saved
+
+    const client = makeClient()
+    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "approve the design spec", client))
+
+    // No drift → spec WAS saved
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    // 5 Anthropic calls total
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 })
