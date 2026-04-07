@@ -14,7 +14,7 @@ vi.mock("../../../runtime/workspace-config", () => ({
 }))
 vi.mock("@anthropic-ai/sdk", () => ({ default: vi.fn() }))
 
-import { buildActionMenu } from "../../../interfaces/slack/handlers/message"
+import { buildActionMenu, splitQualityIssue } from "../../../interfaces/slack/handlers/message"
 
 const item = (issue: string, fix: string) => ({ issue, fix })
 
@@ -75,5 +75,25 @@ describe("buildActionMenu", () => {
       { emoji: ":art:", label: "Brand Drift", issues: [item("x", "y")] },
     ])
     expect(result).toMatch(/^\n\n---/)
+  })
+})
+
+describe("splitQualityIssue", () => {
+  it("splits on first ' — ' separator", () => {
+    const result = splitQualityIssue("Copy literal contains placeholder: \"TBD\" — must be replaced with final text")
+    expect(result.issue).toBe("Copy literal contains placeholder: \"TBD\"")
+    expect(result.fix).toBe("must be replaced with final text")
+  })
+
+  it("uses fallback fix when no separator present", () => {
+    const result = splitQualityIssue("some issue with no separator")
+    expect(result.issue).toBe("some issue with no separator")
+    expect(result.fix).toBe("fix before approval")
+  })
+
+  it("splits on first ' — ' only when multiple separators present", () => {
+    const result = splitQualityIssue("issue part — fix part — extra info")
+    expect(result.issue).toBe("issue part")
+    expect(result.fix).toBe("fix part — extra info")
   })
 })

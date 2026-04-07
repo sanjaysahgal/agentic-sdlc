@@ -63,6 +63,16 @@ function buildCheckpointFooter(
 // Format is stable: numbered issues across categories, single CTA so user can say "fix 1 3 5".
 export type ActionItem = { issue: string; fix: string }
 
+// Splits a quality issue string on the first " — " separator.
+// Quality auditor strings use this delimiter: "<concise issue> — <recommendation>".
+// Exported for unit testing.
+export function splitQualityIssue(s: string): ActionItem {
+  const sep = s.indexOf(" — ")
+  return sep === -1
+    ? { issue: s, fix: "fix before approval" }
+    : { issue: s.slice(0, sep), fix: s.slice(sep + 3) }
+}
+
 // Builds a deterministic, platform-enforced structured action menu from pre-computed audit data.
 // Exported for unit testing.
 // Each item renders as: "N. [issue] — *Fix:* [fix]" so the user can say "fix 1 3 5".
@@ -1022,15 +1032,6 @@ async function runDesignAgent(params: {
   // Platform-enforced structured action menu — built from pre-computed audit data, appended
   // after the agent prose. This is structural (not a system prompt instruction) so it appears
   // on every response that has open issues regardless of how the agent phrased things.
-  // Quality issue strings use " — " to separate the concise issue from its explanation/recommendation.
-  // Split on the first " — " to surface a crisp issue + explicit fix label.
-  function splitQualityIssue(s: string): ActionItem {
-    const sep = s.indexOf(" — ")
-    return sep === -1
-      ? { issue: s, fix: "fix before approval" }
-      : { issue: s.slice(0, sep), fix: s.slice(sep + 3) }
-  }
-
   const actionMenu = buildActionMenu([
     {
       emoji: ":art:",

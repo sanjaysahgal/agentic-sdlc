@@ -539,6 +539,49 @@ Heading: "Sign in to Health360Pro"`
   })
 })
 
+// ─── splitQualityIssue delimiter contract ─────────────────────────────────────
+// auditCopyCompleteness and auditRedundantBranding must return strings that
+// contain " — " so splitQualityIssue can always produce a crisp issue + fix.
+
+describe("auditCopyCompleteness — output contains ' — ' delimiter", () => {
+  let auditCopyCompleteness: (spec: string) => string[]
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import("../../runtime/spec-auditor")
+    auditCopyCompleteness = mod.auditCopyCompleteness
+  })
+
+  it("placeholder issue string contains ' — ' delimiter", () => {
+    const issues = auditCopyCompleteness(`Heading: "[TBD]"`)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues[0]).toContain(" — ")
+  })
+
+  it("missing punctuation issue string contains ' — ' delimiter", () => {
+    const issues = auditCopyCompleteness(`Tagline: "All your health. One conversation"`)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues[0]).toContain(" — ")
+  })
+})
+
+describe("auditRedundantBranding — output contains ' — ' delimiter", () => {
+  let auditRedundantBranding: (spec: string) => string[]
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import("../../runtime/spec-auditor")
+    auditRedundantBranding = mod.auditRedundantBranding
+  })
+
+  it("redundant branding issue string contains ' — ' delimiter", () => {
+    const spec = `- Health360 wordmark: top-left\nHeading: "Sign in to Health360"`
+    const issues = auditRedundantBranding(spec)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues[0]).toContain(" — ")
+  })
+})
+
 // ─── findUndefinedScreenReferences — cross-line false positive regression ──────
 
 describe("findUndefinedScreenReferences — cross-line match regression", () => {

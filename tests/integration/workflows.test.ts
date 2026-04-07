@@ -1865,3 +1865,80 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 })
+
+// ─── Scenario 22: Action menu appended after design agent LLM response ────────
+//
+// When brand drift is detected on the design draft, the platform-structural action
+// menu must appear in the final Slack update — regardless of how the agent phrased
+// its response. This tests that buildActionMenu output is appended structurally,
+// not via prompt instruction.
+//
+// Setup: drifted design draft on branch + BRAND.md on main → auditBrandTokens finds
+// drift → action menu with "Brand Drift" category + "Fix:" labels + sequential numbers
+// + "OPEN ITEMS" header + CTA appended after agent prose.
+//
+// Call order:
+//   [0] isOffTopicForAgent       → false
+//   [1] isSpecStateQuery         → false
+//   [2] auditPhaseCompletion     → PASS (no readiness gaps)
+//   [3] runAgent                 → end_turn (short agent prose)
+//   [4] identifyUncommittedDecisions → none
+
+describe("Scenario 22 — Action menu appended after design agent LLM response", () => {
+  const THREAD = "workflow-s22"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("action menu with Brand Drift entries appears in final update when drift detected", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Drifted draft on branch + BRAND.md on main — mockImplementation handles multiple calls
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_DRIFTED_DRAFT).toString("base64"), type: "file" } })
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_BRAND_MD).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // auditPhaseCompletion is cache-hit from Scenario 21 (same spec fingerprint + same featureName).
+    // The module-level phaseEntryAuditCache persists across tests in the same module run.
+    // So the call sequence has 4 calls, not 5 — no auditPhaseCompletion API call here.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "The spec looks good. Anything else to review?" }],
+      })                                                                                    // runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })               // identifyUncommittedDecisions
+
+    const params = makeParams(THREAD, "feature-onboarding", "how does the onboarding flow look?")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+
+    // Agent prose is present
+    expect(text).toContain("The spec looks good.")
+
+    // Action menu structural elements
+    expect(text).toContain("*── OPEN ITEMS ──*")
+    expect(text).toContain("Brand Drift")
+
+    // At least one drifted token from the fixture appears with Fix label
+    expect(text).toContain("--bg")
+    expect(text).toContain("*Fix:*")
+
+    // CTA for applying fixes
+    expect(text).toContain("Say *fix 1 2 3* (or *fix all*)")
+
+    // Separator before action menu
+    expect(text).toMatch(/---/)
+
+    // 4 Anthropic calls total (auditPhaseCompletion is a cache hit — no API call)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+  })
+})
