@@ -841,11 +841,13 @@ describe("Scenario 12 — State query preview freshness", () => {
       .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // 1. design draft
       .mockRejectedValue(new Error("Not Found")) // 2+ brand, productVision, systemArchitecture, etc.
 
-    // Anthropic: [0] identifyUncommittedDecisions → pending, [1] auditSpecRenderAmbiguity → [] findings
+    // Anthropic: [0] identifyUncommittedDecisions → pending, [1] auditSpecRenderAmbiguity → [] findings,
+    // [2] auditPhaseCompletion → PASS
     // (generateDesignPreview is template-based, no LLM call)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode: Archon palette agreed\n2. Chip fade timing: 150ms agreed" }] }) // identifyUncommittedDecisions
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // auditPhaseCompletion
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -857,9 +859,9 @@ describe("Scenario 12 — State query preview freshness", () => {
     expect(uploadCall?.title).toContain("committed spec")
     expect(uploadCall?.content).toBeTruthy() // template-rendered HTML
 
-    // 2 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity
+    // 3 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity + auditPhaseCompletion
     // (generateDesignPreview is template-based, no LLM call)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
 
     // Response text tells user the preview reflects the committed spec only
     const text = lastUpdateText(client)
@@ -880,10 +882,12 @@ describe("Scenario 12 — State query preview freshness", () => {
       .mockRejectedValueOnce(new Error("Not Found")) // 4. systemArchitecture
       .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // 5. saved preview HTML
 
-    // Anthropic: [0] identifyUncommittedDecisions → none, [1] auditSpecRenderAmbiguity → [] findings
+    // Anthropic: [0] identifyUncommittedDecisions → none, [1] auditSpecRenderAmbiguity → [] findings,
+    // auditPhaseCompletion may be a cache hit from the first Scenario 12 test (same spec + featureName).
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // auditPhaseCompletion (if cache miss)
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -895,9 +899,10 @@ describe("Scenario 12 — State query preview freshness", () => {
     expect(uploadCall?.title).not.toContain("committed spec")
     expect(uploadCall?.content).toBe(SAVED_HTML)
 
-    // 2 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity
+    // 2-3 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity always fire;
+    // auditPhaseCompletion fires only on cache miss (may be populated by previous Scenario 12 test).
     // (generateDesignPreview was NOT called — saved GitHub file served directly)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    expect(mockAnthropicCreate.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
   it("state query completes with preview when uncommitted decisions exist", async () => {
@@ -909,9 +914,12 @@ describe("Scenario 12 — State query preview freshness", () => {
       .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } })
       .mockRejectedValue(new Error("Not Found"))
 
-    // Anthropic: only identifyUncommittedDecisions — generateDesignPreview is template-based (no LLM call)
+    // Anthropic: identifyUncommittedDecisions + auditSpecRenderAmbiguity + auditPhaseCompletion
+    // generateDesignPreview is template-based (no LLM call)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode: Archon palette agreed" }] }) // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // auditPhaseCompletion
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -1940,6 +1948,160 @@ describe("Scenario 22 — Action menu appended after design agent LLM response",
 
     // 4 Anthropic calls total (auditPhaseCompletion is a cache hit — no API call)
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+  })
+})
+
+// ─── Scenario 23: State path shows all 4 action menu categories ───────────────
+//
+// The state query path (Path A) must produce the same 4-category buildActionMenu
+// output as the LLM path (Path B). This test would have caught the original bug
+// where the state card was missing readiness gaps, missing tokens, and used a
+// different CTA format.
+//
+// Setup: drifted design draft (S21_DRIFTED_DRAFT) + BRAND.md (S21_BRAND_MD) on
+// branch/main. Thread is fresh (0 history messages) so identifyUncommittedDecisions
+// is skipped.
+//
+// Anthropic call sequence for "hi" (check-in → state path, no isOffTopicForAgent
+// or isSpecStateQuery calls):
+//   [0] auditSpecRenderAmbiguity → "[]"
+//   [1] auditPhaseCompletion     → "PASS" (no readiness gaps)
+//   Total: 2 calls
+
+describe("Scenario 23 — State path shows all 4 action menu categories", () => {
+  const THREAD = "workflow-s23"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("state card includes OPEN ITEMS action menu with Brand Drift entries", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_DRIFTED_DRAFT).toString("base64"), type: "file" } })
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return Promise.resolve({ data: { content: Buffer.from(S21_BRAND_MD).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Fresh thread (0 history messages) — identifyUncommittedDecisions is skipped.
+    // auditSpecRenderAmbiguity fires first. auditPhaseCompletion may be a cache hit from
+    // Scenario 21 (same spec fingerprint + featureName) — the module-level cache persists
+    // across tests. Provide the mock in case it's not a cache hit; if it is, only 1 call fires.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })        // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })      // auditPhaseCompletion (if cache miss)
+
+    const params = makeParams(THREAD, "feature-onboarding", "hi")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+
+    // State card informational sections are present
+    expect(text).toContain("PENDING")
+
+    // Action menu structural elements — same as LLM path
+    expect(text).toContain("*── OPEN ITEMS ──*")
+    expect(text).toContain("Brand Drift")
+
+    // At least one drifted token from the fixture appears with Fix label
+    expect(text).toContain("--bg")
+    expect(text).toContain("*Fix:*")
+
+    // CTA for applying fixes
+    expect(text).toContain("Say *fix 1 2 3* (or *fix all*)")
+
+    // auditSpecRenderAmbiguity always fires (1 call minimum); auditPhaseCompletion
+    // fires only on cache miss (may be populated by Scenario 21 in the same test run).
+    expect(mockAnthropicCreate.mock.calls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("state card exercises animation drift, missing tokens, and readiness findings paths", async () => {
+    // Uses a unique featureName to avoid cache interference from other tests.
+    // Spec: missing the --teal token entirely (→ missingTokensState) and has drifted
+    // glow-duration (→ animationDrifts). auditPhaseCompletion returns a finding
+    // (→ readinessFindingsState). This test covers the remaining arrow-function paths
+    // in stateActionMenu that the first Scenario 23 test cannot reach.
+    const FEATURE = "billing"
+    clearHistory(FEATURE)
+
+    setConfirmedAgent(FEATURE, "ux-design")
+
+    const BRAND_WITH_ANIM = [
+      "## Color Palette",
+      "```",
+      "--bg:    #0A0A0F",
+      "--teal:  #4FAFA8",
+      "```",
+      "## Glow",
+      "```css",
+      "@keyframes glow-pulse { 0% { opacity: 0.1 } 100% { opacity: 0.15 } }",
+      "filter: blur(80px);",
+      "animation: glow-pulse 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;",
+      "animation-delay: -2s;",
+      "```",
+    ].join("\n")
+
+    // Spec has --bg but NOT --teal (missing token), and glow-duration 2.5s (drifted vs 4s).
+    const SPEC_WITH_ANIM_DRIFT = [
+      "## Brand",
+      "- `--bg:` `#0A0A0F`",
+      "",
+      "**Glow (Animation)**",
+      "```css",
+      "@keyframes glow-pulse { 0% { opacity: 0.1 } 100% { opacity: 0.15 } }",
+      "filter: blur(80px);",
+      "animation: glow-pulse 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;",
+      "animation-delay: -2s;",
+      "```",
+      "",
+      "### Screen 1: Home",
+      "Main content.",
+      "",
+      "## Open Questions",
+      "None.",
+    ].join("\n")
+
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("billing.design.md") && ref === "spec/billing-design") {
+        return Promise.resolve({ data: { content: Buffer.from(SPEC_WITH_ANIM_DRIFT).toString("base64"), type: "file" } })
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return Promise.resolve({ data: { content: Buffer.from(BRAND_WITH_ANIM).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // auditSpecRenderAmbiguity → [] (no quality issues), auditPhaseCompletion → readiness finding
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })  // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "FINDING: Screen coverage incomplete | Add error state screens" }],
+      })  // auditPhaseCompletion
+
+    const params = makeParams("workflow-s23b", "feature-billing", "hi")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+
+    // Action menu structural elements present
+    expect(text).toContain("*── OPEN ITEMS ──*")
+
+    // animationDrifts.map() path exercised — glow-duration is drifted
+    expect(text).toContain("glow-duration")
+
+    // missingTokensState.map() path exercised — --teal not in spec
+    expect(text).toContain("--teal")
+    expect(text).toContain("Missing Brand Tokens")
+
+    // readinessFindingsState.map() path exercised — finding returned by auditPhaseCompletion
+    expect(text).toContain("Design Readiness Gaps")
+    expect(text).toContain("Screen coverage incomplete")
+
+    clearHistory(FEATURE)
   })
 })
 

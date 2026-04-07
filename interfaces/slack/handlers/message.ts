@@ -638,10 +638,60 @@ async function runDesignAgent(params: {
       const stateQualityIssues = draftContent
         ? await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
         : []
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, animationDrifts, specGap, uncommittedDecisions, qualityIssues: stateQualityIssues })
+
+      // Missing brand tokens — same computation as LLM path.
+      const missingTokensState = brandContent && draftContent ? auditMissingBrandTokens(draftContent, brandContent) : []
+
+      // Readiness gaps — same cache as LLM path so repeated state queries are free.
+      let readinessFindingsState: Array<{ issue: string; recommendation: string }> = []
+      if (draftContent) {
+        const dfp = specFingerprint(draftContent)
+        const stateCacheKey = `design-phase:${featureName}:${dfp}`
+        if (designReadinessFindingsCache.has(stateCacheKey)) {
+          readinessFindingsState = designReadinessFindingsCache.get(stateCacheKey) ?? []
+        } else {
+          const result = await auditPhaseCompletion({
+            specContent: draftContent,
+            rubric: buildDesignRubric(targetFormFactors),
+            featureName,
+          }).catch(() => null)
+          readinessFindingsState = result && !result.ready ? result.findings : []
+          phaseEntryAuditCache.set(stateCacheKey, readinessFindingsState.length > 0 ? "[PLATFORM DESIGN READINESS]" : "")
+          designReadinessFindingsCache.set(stateCacheKey, readinessFindingsState)
+        }
+      }
+
+      // Build the same 4-category action menu used by the LLM path — unified format.
+      const stateActionMenu = buildActionMenu([
+        {
+          emoji: ":art:",
+          label: "Brand Drift",
+          issues: [
+            ...brandDrifts.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+            ...animationDrifts.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+          ],
+        },
+        {
+          emoji: ":jigsaw:",
+          label: "Missing Brand Tokens",
+          issues: missingTokensState.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
+        },
+        {
+          emoji: ":mag:",
+          label: "Design Quality",
+          issues: stateQualityIssues.map(splitQualityIssue),
+        },
+        {
+          emoji: ":white_check_mark:",
+          label: "Design Readiness Gaps",
+          issues: readinessFindingsState.map(f => ({ issue: f.issue, fix: f.recommendation })),
+        },
+      ])
+
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: msg })
-      await update(msg)
+      await update(msg + stateActionMenu)
       return
     }
 

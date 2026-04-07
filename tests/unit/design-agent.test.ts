@@ -461,43 +461,6 @@ None.
     expect(result).not.toContain("Committed decisions")
   })
 
-  it("shows DRIFT section with color drifts when brandDrifts are provided", () => {
-    const drifts = [
-      { token: "--violet", specValue: "#8B7FE8", brandValue: "#7C6FCD" },
-      { token: "--bg", specValue: "#0A0E27", brandValue: "#0A0A0F" },
-    ]
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drifts })
-    expect(result).toContain("DRIFT")
-    expect(result).toContain("--violet")
-    expect(result).toContain("#8B7FE8")
-    expect(result).toContain("#7C6FCD")
-    expect(result).toContain("fix drift")
-  })
-
-  it("shows animation drifts in DRIFT section when animationDrifts are provided", () => {
-    const animDrifts = [
-      { param: "glow-blur", specValue: "200px", brandValue: "80px" },
-      { param: "glow-duration", specValue: "2.5s", brandValue: "4s" },
-    ]
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, animationDrifts: animDrifts })
-    expect(result).toContain("Animation:")
-    expect(result).toContain("glow-blur")
-    expect(result).toContain("200px")
-    expect(result).toContain("80px")
-    expect(result).toContain("fix drift")
-  })
-
-  it("shows no DRIFT section when both brandDrifts and animationDrifts are empty", () => {
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: [], animationDrifts: [] })
-    expect(result).not.toContain("DRIFT")
-    expect(result).not.toContain("fix drift")
-  })
-
-  it("shows no DRIFT section when drift params are omitted", () => {
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
-    expect(result).not.toContain("DRIFT")
-  })
-
   it("PENDING section always present — shows 'No open items' when nothing uncommitted", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL })
     expect(result).toContain("PENDING")
@@ -515,14 +478,7 @@ None.
     expect(result).not.toContain("Say *approved*")
   })
 
-  it("CTA gates on drift when no uncommitted decisions but drift exists", () => {
-    const drifts = [{ token: "--violet", specValue: "#8B7FE8", brandValue: "#7C6FCD" }]
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drifts })
-    expect(result).toContain("Fix the drift above first")
-    expect(result).not.toContain("Say *approved*")
-  })
-
-  it("CTA gates on blocking questions when no uncommitted and no drift", () => {
+  it("CTA gates on blocking questions when no uncommitted decisions", () => {
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithBlocking, specUrl: SPEC_URL })
     expect(result).toContain("Resolve the blocking question")
     expect(result).not.toContain("Say *approved*")
@@ -551,37 +507,6 @@ None.
     expect(result).not.toContain("Spec gap")
   })
 
-  it("shows QUALITY section when qualityIssues provided", () => {
-    const issues = [
-      'Auth heading "Sign in to Health360" repeats the app name already shown in the nav wordmark — redundant.',
-      'Narrative copy missing terminal punctuation: "All your health. One conversation"',
-    ]
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, qualityIssues: issues })
-    expect(result).toContain("*── QUALITY ──*")
-    expect(result).toContain("Sign in to Health360")
-    expect(result).toContain("One conversation")
-    expect(result).toContain("fix quality")
-  })
-
-  it("omits QUALITY section when qualityIssues is empty", () => {
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, qualityIssues: [] })
-    expect(result).not.toContain("QUALITY")
-  })
-
-  it("CTA prioritises drift over quality — shows fix drift when both present", () => {
-    const drift = [{ token: "--accent", specValue: "#000", brandValue: "#7C6FCD" }]
-    const issues = ["Redundant branding issue"]
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, brandDrifts: drift, qualityIssues: issues })
-    expect(result).toContain("fix drift")
-    expect(result).not.toContain("fix quality")
-  })
-
-  it("CTA shows fix quality when no drift but quality issues present", () => {
-    const issues = ["Redundant branding issue"]
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithNonBlockingOnly, specUrl: SPEC_URL, qualityIssues: issues })
-    expect(result).toContain("fix quality")
-    expect(result).not.toContain("*approved*")
-  })
 })
 
 describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {

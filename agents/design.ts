@@ -533,13 +533,10 @@ export function buildDesignStateResponse(params: {
   draftContent: string
   specUrl: string
   previewNote?: string | null
-  brandDrifts?: BrandDrift[]
-  animationDrifts?: AnimationDrift[]
   specGap?: string | null
   uncommittedDecisions?: string
-  qualityIssues?: string[]
 }): string {
-  const { featureName, draftContent, specUrl, previewNote, brandDrifts = [], animationDrifts = [], specGap, uncommittedDecisions, qualityIssues = [] } = params
+  const { featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions } = params
 
   if (!draftContent) {
     const pendingSection = uncommittedDecisions
@@ -579,9 +576,7 @@ export function buildDesignStateResponse(params: {
     }
   }
 
-  const totalDrift = brandDrifts.length + animationDrifts.length
   const hasUncommitted = !!uncommittedDecisions
-  const hasQualityIssues = qualityIssues.length > 0
 
   const lines: string[] = []
 
@@ -600,31 +595,7 @@ export function buildDesignStateResponse(params: {
     lines.push("No open items from prior conversations — everything discussed is in the committed spec.")
   }
 
-  // ── Section 2: DRIFT ──
-  if (totalDrift > 0) {
-    lines.push("")
-    lines.push("*── DRIFT (spec vs BRAND.md) ──*")
-    if (brandDrifts.length > 0) {
-      lines.push("Color:")
-      brandDrifts.forEach((d, i) => lines.push(`  ${i + 1}. ${d.token}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``))
-    }
-    if (animationDrifts.length > 0) {
-      lines.push("Animation:")
-      animationDrifts.forEach((d, i) => lines.push(`  ${i + 1}. ${d.param}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``))
-    }
-    lines.push(`Say *fix drift* and I'll patch the spec to match BRAND.md. This also corrects the HTML preview.`)
-  }
-
-  // ── Section 3: QUALITY ──
-  // Design quality issues caught by deterministic platform audits — these are
-  // 10/10 review failures that must be fixed before approval, same as drift.
-  if (hasQualityIssues) {
-    lines.push("")
-    lines.push("*── QUALITY ──*")
-    qualityIssues.forEach((issue, i) => lines.push(`  ${i + 1}. ${issue}`))
-  }
-
-  // ── Section 4: SPEC ──
+  // ── Section 2: SPEC ──
   lines.push("")
   lines.push("*── SPEC ──*")
   if (keyDecisions.length > 0) {
@@ -656,15 +627,11 @@ export function buildDesignStateResponse(params: {
   }
 
   // ── Conditional CTA — one clear next step, priority-ordered ──
-  // Uncommitted decisions > drift > quality issues > blocking questions > all-clear.
+  // Uncommitted decisions > blocking questions > all-clear.
   // Approval is not offered until all gates are clear.
   lines.push("")
   if (hasUncommitted) {
     lines.push(`Save the pending decisions above first — say *save those*, then come back to approve.`)
-  } else if (totalDrift > 0) {
-    lines.push(`Fix the drift above first — say *fix drift*, then approve.`)
-  } else if (hasQualityIssues) {
-    lines.push(`Fix the quality issues above — say *fix quality* and I'll patch the spec, then approve.`)
   } else if (blocking.length > 0) {
     lines.push(`Resolve the blocking question${blocking.length !== 1 ? "s" : ""} above, then say *approved* to move to engineering.`)
   } else {
