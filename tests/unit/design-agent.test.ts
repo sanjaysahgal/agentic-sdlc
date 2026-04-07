@@ -388,7 +388,36 @@ describe("buildDesignStateResponse", () => {
     expect(result).toContain("save those")
   })
 
-  it("shows committed Design Direction as key decisions when section is present", () => {
+  it("shows bold summary statement from Design Direction — not raw bullet lists", () => {
+    // Design Direction: bold statements are the intentional high-level summary.
+    // Bullet lists (color tokens, rules) are implementation detail — they belong in the spec link.
+    const draftWithDirection = `# Onboarding — Design Spec
+
+## Design Direction
+**Dark mode primary — Archon Labs aesthetic.** Visual language: minimal, high negative space.
+**Color palette:**
+- \`--bg: #0A0A0F\` — deep near-black
+- \`--accent: #7C6FCD\` — violet
+
+### Screen 1: Landing
+
+## Open Questions
+None.
+`
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithDirection, specUrl: SPEC_URL })
+    // Bold summary statement is shown
+    expect(result).toContain("Committed decisions")
+    expect(result).toContain("Dark mode primary")
+    expect(result).toContain("Archon Labs aesthetic")
+    // Bullet list items are NOT in the response — they're in the spec link
+    expect(result).not.toContain("--bg: #0A0A0F")
+    expect(result).not.toContain("--accent: #7C6FCD")
+    // Pointer to full spec is shown
+    expect(result).toContain("see spec link above")
+  })
+
+  it("omits committed decisions block when Design Direction has no bold summary statements", () => {
+    // A Direction section with only bullet lists and no bold sentence produces no key decisions.
     const draftWithDirection = `# Onboarding — Design Spec
 
 ## Design Direction
@@ -401,32 +430,8 @@ High contrast, minimal, single-metric-forward.
 None.
 `
     const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithDirection, specUrl: SPEC_URL })
-    expect(result).toContain("Committed decisions")
-    expect(result).toContain("Archon Labs")
-  })
-
-  it("shows full multi-line color palette in Design Direction — not truncated after header", () => {
-    // Regression: slice(0, 2) previously cut off after the header line, leaving
-    // "**Color palette (extracted from getarchon.dev):**" with no values below it.
-    const draftWithColorPalette = `# Onboarding — Design Spec
-
-## Design Direction
-**Dark mode primary — Archon Labs aesthetic.** Visual language: minimal, high negative space.
-**Color palette (extracted from getarchon.dev):**
-- \`--bg: #0A0A0F\` — deep near-black
-- \`--accent: #7C6FCD\` — violet
-- \`--text: #E8E8F0\` — off-white
-
-### Screen 1: Landing
-
-## Open Questions
-None.
-`
-    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithColorPalette, specUrl: SPEC_URL })
-    expect(result).toContain("Color palette")
-    expect(result).toContain("--bg: #0A0A0F")
-    expect(result).toContain("--accent: #7C6FCD")
-    expect(result).toContain("--text: #E8E8F0")
+    // No bold sentences → no committed decisions block shown
+    expect(result).not.toContain("Committed decisions")
   })
 
   it("omits committed decisions block when no Design Direction section in spec", () => {

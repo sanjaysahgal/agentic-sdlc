@@ -538,3 +538,51 @@ Heading: "Sign in to Health360Pro"`
     expect(issues.length).toBeGreaterThanOrEqual(0)
   })
 })
+
+// ─── findUndefinedScreenReferences — cross-line false positive regression ──────
+
+describe("findUndefinedScreenReferences — cross-line match regression", () => {
+  // Regression: [\w\s-] in capture group matched \n, producing false positives like
+  // "up from logged-out session\nAuth" from a flow header + next-line "Auth Sheet".
+  // Fix: replaced \s with [ \t] so the name capture never crosses line boundaries.
+
+  let auditSpecRenderAmbiguity: (spec: string, opts?: { formFactors?: string[] }) => Promise<string[]>
+
+  beforeEach(async () => {
+    vi.resetModules()
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const mod = await import("../../runtime/spec-auditor")
+    auditSpecRenderAmbiguity = mod.auditSpecRenderAmbiguity
+  })
+
+  it("does NOT flag a cross-line fragment as an undefined screen", async () => {
+    // Simulates the US-6 flow header + next-line "Auth Sheet" that triggered the bug.
+    const spec = [
+      "## Screens",
+      "### Screen 1: Chat Home (Logged-Out Default)",
+      "Home content.",
+      "### Screen 2: Auth Sheet",
+      "Auth content.",
+      "## User Flows",
+      "### Flow: US-6 — Conversation preserved on sign-up from logged-out session",
+      "Auth Sheet (opened from any nudge) → Landing (logged-in) → conversation preserved",
+    ].join("\n")
+    const issues = await auditSpecRenderAmbiguity(spec)
+    const falsePositive = issues.find(i => i.includes("logged-out session"))
+    expect(falsePositive).toBeUndefined()
+  })
+
+  it("still flags a genuinely undefined screen reference", async () => {
+    const spec = [
+      "## Screens",
+      "### Screen 1: Home",
+      "Home content.",
+      "## User Flows",
+      "### Flow: US-1",
+      "User goes to Settings Screen which is not defined.",
+    ].join("\n")
+    const issues = await auditSpecRenderAmbiguity(spec)
+    const truePositive = issues.find(i => i.toLowerCase().includes("settings"))
+    expect(truePositive).toBeDefined()
+  })
+})

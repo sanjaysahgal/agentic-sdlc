@@ -130,7 +130,7 @@ function findUndefinedScreenReferences(spec: string): string[] {
   if (!flowsSection) return []
 
   const refs = new Map<string, string>() // lowercased name → original name
-  for (const match of flowsSection.matchAll(/\b([\w][\w\s-]{1,30}?)\s+(screen|sheet|modal|overlay)\b/gi)) {
+  for (const match of flowsSection.matchAll(/\b([\w][\w \t-]{1,30}?)\s+(screen|sheet|modal|overlay)\b/gi)) {
     refs.set(match[1].trim().toLowerCase(), match[1].trim())
   }
 

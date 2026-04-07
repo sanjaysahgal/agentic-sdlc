@@ -553,8 +553,17 @@ export function buildDesignStateResponse(params: {
   const designDirectionSection = extractSection(draftContent, "Design Direction")
   const keyDecisions: string[] = []
   if (designDirectionSection) {
-    const decisionLines = designDirectionSection.split("\n").filter(l => l.trim() && !l.startsWith("#"))
-    keyDecisions.push(...decisionLines)
+    // Show only the bold opening statements — the high-level direction, not the detailed
+    // bullet lists. Bold paragraphs (lines starting with **) are the author's intentional
+    // summary. Filter out bare section labels (ending with **:**) — those are subheadings,
+    // not summaries. Bullet lists are implementation detail that belongs in the spec link.
+    const boldStatements = designDirectionSection
+      .split("\n")
+      .filter(l => /^\*\*/.test(l.trim()) && !/\*\*:$/.test(l.trim()) && l.includes("."))
+    keyDecisions.push(...boldStatements)
+    if (keyDecisions.length > 0) {
+      keyDecisions.push(`_Full design direction: see spec link above._`)
+    }
   }
 
   const totalDrift = brandDrifts.length + animationDrifts.length
