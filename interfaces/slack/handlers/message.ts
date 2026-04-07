@@ -28,6 +28,10 @@ const summarizationWarnedFeatures = new Set<string>()
 // In-memory only: intentionally lost on restart so first message after deployment always re-audits.
 const phaseEntryAuditCache = new Map<string, string>()
 
+// Parallel cache storing raw findings arrays for design readiness — used to build the structured
+// action menu on cache hits without re-parsing the notice string.
+const designReadinessFindingsCache = new Map<string, Array<{ issue: string; recommendation: string }>>()
+
 // Lightweight content fingerprint — fast, no crypto dependency.
 // Detects any edit to spec content including manual edits mid-phase.
 function specFingerprint(content: string): string {
@@ -50,6 +54,26 @@ function buildCheckpointFooter(
     ? `\n\n⚠️ *Discussed in this thread but not yet committed:*\n${checkpoint.notCommitted}\n_Reply with the numbers you want to lock in and I'll update the spec._`
     : `\n\n_Discussed in this thread but not yet committed: nothing — everything is in the spec above._`
   return `\n\n✓ *Draft committed to GitHub*  ·  ${specLink}\n\n${committedSection}${notCommittedSection}`
+}
+
+// Builds a deterministic, platform-enforced structured action menu from pre-computed audit data.
+// Exported for unit testing.
+// Appended AFTER the agent's prose response — not a system prompt instruction (probabilistic),
+// but structural output the platform constructs regardless of what the agent said.
+// Format is stable: numbered issues across categories, single CTA so user can say "fix 1 3 5".
+export function buildActionMenu(categories: Array<{ emoji: string; label: string; issues: string[] }>): string {
+  const filled = categories.filter(c => c.issues.length > 0)
+  if (filled.length === 0) return ""
+  let n = 0
+  const lines: string[] = ["---", "*── OPEN ITEMS ──*"]
+  for (const cat of filled) {
+    lines.push(`\n*${cat.emoji} ${cat.label} (${cat.issues.length}):*`)
+    for (const issue of cat.issues) {
+      lines.push(`${++n}. ${issue}`)
+    }
+  }
+  lines.push(`\nSay *fix 1 2 3* (or *fix all*) to apply the recommended fixes.`)
+  return "\n\n" + lines.join("\n")
 }
 
 function getFeatureName(channelName: string): string {
@@ -684,6 +708,7 @@ async function runDesignAgent(params: {
   // Content-addressed cache on spec fingerprint: any edit to the draft invalidates automatically.
   // Principle 7: this check runs always, not when the user asks a readiness-adjacent phrase.
   let designReadinessNotice = ""
+  let designReadinessFindings: Array<{ issue: string; recommendation: string }> = []
   const designSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const designDraftContent = await readFile(designSpecDraftPath, `spec/${featureName}-design`).catch(() => null)
 
@@ -701,6 +726,7 @@ async function runDesignAgent(params: {
     const designCacheKey = `design-phase:${featureName}:${dfp}`
     if (phaseEntryAuditCache.has(designCacheKey)) {
       designReadinessNotice = phaseEntryAuditCache.get(designCacheKey)!
+      designReadinessFindings = designReadinessFindingsCache.get(designCacheKey) ?? []
     } else {
       const designAuditResult = await auditPhaseCompletion({
         specContent: designDraftContent,
@@ -708,12 +734,14 @@ async function runDesignAgent(params: {
         featureName,
       }).catch(() => null)
       if (designAuditResult && !designAuditResult.ready) {
+        designReadinessFindings = designAuditResult.findings
         const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. You MUST surface each finding with your concrete recommendation. For design gaps you own, provide the recommendation directly. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation.\n${findingLines}]`
       } else if (designAuditResult?.ready) {
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
       }
       phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
+      designReadinessFindingsCache.set(designCacheKey, designReadinessFindings)
     }
   }
 
@@ -985,7 +1013,37 @@ async function runDesignAgent(params: {
   }
 
   appendMessage(featureName, { role: "assistant", content: response })
-  await update(`${prefix}${response}${uncommittedNote}`)
+
+  // Platform-enforced structured action menu — built from pre-computed audit data, appended
+  // after the agent prose. This is structural (not a system prompt instruction) so it appears
+  // on every response that has open issues regardless of how the agent phrased things.
+  const actionMenu = buildActionMenu([
+    {
+      emoji: ":art:",
+      label: "Brand Drift",
+      issues: [
+        ...brandDriftsDesign.map(d => `${d.token}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``),
+        ...animDriftsDesign.map(d => `${d.param}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``),
+      ],
+    },
+    {
+      emoji: ":jigsaw:",
+      label: "Missing Brand Tokens",
+      issues: missingTokensDesign.map(m => `${m.token}: not referenced in spec (BRAND.md value: \`${m.brandValue}\`)`),
+    },
+    {
+      emoji: ":mag:",
+      label: "Design Quality",
+      issues: qualityIssues,
+    },
+    {
+      emoji: ":white_check_mark:",
+      label: "Design Readiness Gaps",
+      issues: designReadinessFindings.map(f => `${f.issue} — ${f.recommendation}`),
+    },
+  ])
+
+  await update(`${prefix}${response}${uncommittedNote}${actionMenu}`)
 }
 
 async function runArchitectAgent(params: {
