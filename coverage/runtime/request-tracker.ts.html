@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">27.77% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>5/18</span>
+                <span class='fraction'>18/18</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/8</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">33.33% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/6</span>
+                <span class='fraction'>6/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">29.41% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>5/17</span>
+                <span class='fraction'>17/17</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -109,40 +109,40 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">8x</span>
-<span class="cline-any cline-yes">8x</span>
-<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">18x</span>
+<span class="cline-any cline-yes">18x</span>
+<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">71x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">92x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">89x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">3603x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -163,28 +163,28 @@ export function decrementActiveRequests(): void {
   activeRequests = Math.max(0, activeRequests - 1)
 }
 &nbsp;
-export function <span class="fstat-no" title="function not covered" >getActiveRequestCount(): number {</span>
-<span class="cstat-no" title="statement not covered" >  return activeRequests</span>
+export function getActiveRequestCount(): number {
+  return activeRequests
 }
 &nbsp;
 // Resolves when all in-flight requests complete, or after the timeout.
-export function <span class="fstat-no" title="function not covered" >waitForDrain(): Promise&lt;void&gt; {</span>
-<span class="cstat-no" title="statement not covered" >  if (activeRequests === 0) <span class="cstat-no" title="statement not covered" >return Promise.resolve()</span></span>
+export function waitForDrain(): Promise&lt;void&gt; {
+  if (activeRequests === 0) return Promise.resolve()
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  console.log(`Waiting for ${activeRequests} in-flight request(s) to complete before shutting down...`)</span>
+  console.log(`Waiting for ${activeRequests} in-flight request(s) to complete before shutting down...`)
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return new <span class="fstat-no" title="function not covered" >Promise((r</span>esolve) =&gt; {</span>
-    const deadline = <span class="cstat-no" title="statement not covered" >Date.now() + DRAIN_TIMEOUT_MS</span>
+  return new Promise((resolve) =&gt; {
+    const deadline = Date.now() + DRAIN_TIMEOUT_MS
 &nbsp;
-    const poll = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >setInterval(() =&gt; {</span></span>
-<span class="cstat-no" title="statement not covered" >      if (activeRequests === 0 || Date.now() &gt;= deadline) {</span>
-<span class="cstat-no" title="statement not covered" >        clearInterval(poll)</span>
-<span class="cstat-no" title="statement not covered" >        if (activeRequests &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >          console.log(`Shutdown timeout reached with ${activeRequests} request(s) still active — exiting anyway`)</span>
+    const poll = setInterval(() =&gt; {
+      if (activeRequests === 0 || Date.now() &gt;= deadline) {
+        clearInterval(poll)
+        if (activeRequests &gt; 0) {
+          console.log(`Shutdown timeout reached with ${activeRequests} request(s) still active — exiting anyway`)
         } else {
-<span class="cstat-no" title="statement not covered" >          console.log("All requests completed — shutting down cleanly")</span>
+          console.log("All requests completed — shutting down cleanly")
         }
-<span class="cstat-no" title="statement not covered" >        resolve()</span>
+        resolve()
       }
     }, DRAIN_POLL_MS)
   })
@@ -196,7 +196,7 @@ export function <span class="fstat-no" title="function not covered" >waitForDrai
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-07T03:10:01.221Z
+                at 2026-04-07T04:29:54.407Z
             </div>
         <script src="../prettify.js"></script>
         <script>
