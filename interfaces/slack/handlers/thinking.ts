@@ -23,19 +23,31 @@ export async function withThinking(params: {
 
   const messageTs = placeholder.ts
 
-  // Slack's text limit is 40,000 chars. Truncate long responses at a paragraph
-  // boundary rather than letting chat.update fail with msg_too_long.
-  const SLACK_MAX_CHARS = 12_000  // Slack's practical limit is lower than the documented 40k in busy threads
-  function truncateForSlack(text: string): string {
-    if (text.length <= SLACK_MAX_CHARS) return text
-    const cutoff = text.lastIndexOf("\n\n", SLACK_MAX_CHARS)
-    const end = cutoff > 0 ? cutoff : SLACK_MAX_CHARS
-    return text.slice(0, end) + "\n\n_[Response truncated — see the spec link above for full details.]_"
+  // Slack's practical text limit per message is ~4,000 chars in busy threads
+  // (the documented 40k limit is never reached in practice with mrkdwn formatting).
+  // For responses longer than this, post the first part as the main update and
+  // overflow as thread replies — no content is ever truncated or lost.
+  const SLACK_SAFE_CHARS = 3_800
+
+  function splitForSlack(text: string): string[] {
+    if (text.length <= SLACK_SAFE_CHARS) return [text]
+    const parts: string[] = []
+    let remaining = text
+    while (remaining.length > SLACK_SAFE_CHARS) {
+      // Prefer splitting at a major section boundary (---), then paragraph, then line
+      let cutoff = remaining.lastIndexOf("\n---\n", SLACK_SAFE_CHARS)
+      if (cutoff < 100) cutoff = remaining.lastIndexOf("\n\n", SLACK_SAFE_CHARS)
+      if (cutoff < 100) cutoff = remaining.lastIndexOf("\n", SLACK_SAFE_CHARS)
+      if (cutoff < 100) cutoff = SLACK_SAFE_CHARS
+      parts.push(remaining.slice(0, cutoff).trimEnd())
+      remaining = remaining.slice(cutoff).trimStart()
+    }
+    if (remaining) parts.push(remaining)
+    return parts
   }
 
-  // update() replaces the placeholder with the real content.
-  // Agent label is prepended so the user always knows who is responding.
-  // If chat.update rejects with msg_too_long, retry with progressively shorter content.
+  // update() replaces the placeholder with the first chunk, then posts overflow
+  // as thread replies. Agent label prepended to first chunk only.
   const agentPrefix = agent ? `*${agent}*\n\n` : ""
 
   // Heartbeat: cycle trailing dots on the last status text every 8s so the user
@@ -58,21 +70,13 @@ export async function withThinking(params: {
   const update = async (text: string) => {
     lastStatusText = text
     heartbeatStep = 0
-    let truncated = truncateForSlack(`${agentPrefix}${text}`)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await client.chat.update({ channel: channelId, ts: messageTs, text: truncated })
-        return
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        if (!msg.includes("msg_too_long")) throw err
-        // Halve the limit and retry
-        const limit = Math.floor(truncated.length / 2)
-        const cutoff = truncated.lastIndexOf("\n\n", limit)
-        truncated = truncated.slice(0, cutoff > 0 ? cutoff : limit) + "\n\n_[Response truncated.]_"
-      }
+    const parts = splitForSlack(`${agentPrefix}${text}`)
+    // First chunk replaces the placeholder
+    await client.chat.update({ channel: channelId, ts: messageTs, text: parts[0] })
+    // Overflow chunks posted as thread replies — nothing is ever lost
+    for (const part of parts.slice(1)) {
+      await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: part }).catch(() => {})
     }
-    await client.chat.update({ channel: channelId, ts: messageTs, text: truncated })
   }
 
   incrementActiveRequests()

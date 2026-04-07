@@ -173,35 +173,40 @@ describe("withThinking", () => {
     )
   })
 
-  it("on msg_too_long from chat.update: retries with shorter content", async () => {
-    const tooLongError = Object.assign(new Error("msg_too_long"), {})
-    const client = {
-      chat: {
-        postMessage: vi.fn().mockResolvedValue({ ts: "1234.5678" }),
-        update: vi.fn()
-          .mockRejectedValueOnce(tooLongError)  // first attempt fails
-          .mockResolvedValue({}),               // retry succeeds
-      },
-    }
-    await withThinking({
-      client, channelId: "C123", threadTs: "1000.0",
-      run: async (update) => { await update("A".repeat(500)) },
-    })
-    expect(client.chat.update).toHaveBeenCalledTimes(2)
-  })
-
-  it("truncates responses over 12000 chars at paragraph boundary", async () => {
+  it("splits long responses into multiple messages — first via update, overflow via postMessage", async () => {
     const client = makeClient()
-    const longText = "A".repeat(11_000) + "\n\n" + "B".repeat(2000)
+    // Use \n---\n as the section boundary (highest-priority split point in splitForSlack)
+    const part1 = "A".repeat(3_800)
+    const part2 = "Section two content here"
+    const longText = part1 + "\n---\n" + part2
 
     await withThinking({
       client, channelId: "C123", threadTs: "1000.0",
       run: async (update) => { await update(longText) },
     })
 
-    const updated = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls[0][0].text
-    expect(updated.length).toBeLessThan(13_000)
-    expect(updated).toContain("[Response truncated")
+    // First chunk replaces the placeholder
+    expect(client.chat.update).toHaveBeenCalled()
+    const firstChunk = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0].text ?? ""
+    expect(firstChunk.length).toBeLessThanOrEqual(3_900) // safe Slack limit
+    // Overflow posted as thread reply — nothing lost
+    const postCalls = (client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    // postMessage[0] is the placeholder; postMessage[1+] are overflow chunks
+    const overflowCalls = postCalls.slice(1)
+    expect(overflowCalls.length).toBeGreaterThan(0)
+    const overflowText = overflowCalls.map((c: any) => c[0].text).join("")
+    expect(overflowText).toContain("Section two")
+  })
+
+  it("short responses use a single update with no overflow postMessage", async () => {
+    const client = makeClient()
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async (update) => { await update("Short response.") },
+    })
+    const postCalls = (client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    // Only the initial placeholder postMessage — no overflow
+    expect(postCalls).toHaveLength(1)
   })
 
   it("always calls decrementActiveRequests in finally — even on error", async () => {
