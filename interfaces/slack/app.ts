@@ -169,6 +169,7 @@ app.message(async ({ message, client, body }) => {
 
   if (channelName.startsWith("feature-")) {
     const channelState = getChannelState(channelName)
+    const userId = (body as any).event?.user ?? ""
     await handleFeatureChannelMessage({
       channelName,
       threadTs,
@@ -177,6 +178,7 @@ app.message(async ({ message, client, body }) => {
       channelId: msg.channel,
       client,
       channelState,
+      userId,
     })
   } else {
     await handleGeneralChannelMessage({

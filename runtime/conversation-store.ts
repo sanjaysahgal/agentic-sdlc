@@ -22,6 +22,14 @@ export type PendingEscalation = {
   designContext: string // current design draft — gives them instant context
 }
 
+// Escalation notification — set after the PM/Architect @mention is posted.
+// Cleared when the PM/Architect replies in the thread, at which point the design agent resumes.
+// Distinct from PendingEscalation (which gates the user "yes" confirmation).
+export type EscalationNotification = {
+  targetAgent: "pm" | "architect"
+  question: string
+}
+
 // Pending spec approval — set when the agent detects approval intent.
 // The spec content is cached here so we can save it on explicit user confirmation.
 // Cleared when the user confirms (spec saved) or sends any non-affirmative message.
@@ -33,9 +41,10 @@ export type PendingApproval = {
 }
 
 const store = new Map<string, Message[]>()
-const confirmedAgents = new Map<string, string>()         // threadTs → confirmed agent type
-const pendingEscalations = new Map<string, PendingEscalation>() // threadTs → pending escalation
-const pendingApprovals = new Map<string, PendingApproval>()     // threadTs → pending spec approval
+const confirmedAgents = new Map<string, string>()                       // threadTs → confirmed agent type
+const pendingEscalations = new Map<string, PendingEscalation>()         // threadTs → pending escalation
+const pendingApprovals = new Map<string, PendingApproval>()             // threadTs → pending spec approval
+const escalationNotifications = new Map<string, EscalationNotification>() // featureName → active notification
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
@@ -169,4 +178,16 @@ export function setPendingApproval(threadTs: string, approval: PendingApproval):
 
 export function clearPendingApproval(threadTs: string): void {
   pendingApprovals.delete(threadTs)
+}
+
+export function getEscalationNotification(featureName: string): EscalationNotification | null {
+  return escalationNotifications.get(featureName) ?? null
+}
+
+export function setEscalationNotification(featureName: string, notification: EscalationNotification): void {
+  escalationNotifications.set(featureName, notification)
+}
+
+export function clearEscalationNotification(featureName: string): void {
+  escalationNotifications.delete(featureName)
 }

@@ -1,6 +1,6 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
-import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, Message } from "../../../runtime/conversation-store"
+import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getEscalationNotification, setEscalationNotification, clearEscalationNotification, Message } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
@@ -190,8 +190,9 @@ export async function handleFeatureChannelMessage(params: {
   channelId: string
   client: any
   channelState: ChannelState
+  userId?: string
 }): Promise<void> {
-  const { channelName, threadTs, userMessage, userImages, channelId, client, channelState } = params
+  const { channelName, threadTs, userMessage, userImages, channelId, client, channelState, userId } = params
   const featureName = getFeatureName(channelName)
 
   const confirmedAgent = getConfirmedAgent(featureName)
@@ -215,6 +216,7 @@ export async function handleFeatureChannelMessage(params: {
         `*"${pendingEscalation.question}"*\n\n` +
         `_Reply here to unblock design._`
       await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: escalationMsg })
+      setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: `Escalated to ${pausedRole}: "${pendingEscalation.question}". Design is paused until they respond.` })
       return
@@ -228,6 +230,24 @@ export async function handleFeatureChannelMessage(params: {
         text: `Design is paused — the PM needs to resolve a blocking gap before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring the PM into this thread.`,
       })
       return
+    }
+
+    // Escalation notification active — detect PM/Architect reply and inject it into the design agent.
+    const escalationNotification = getEscalationNotification(featureName)
+    if (escalationNotification) {
+      const { roles } = loadWorkspaceConfig()
+      const isPmReply = userId && roles.pmUser && userId === roles.pmUser
+      const isArchitectReply = userId && roles.architectUser && userId === roles.architectUser
+      const isEscalationReply = isPmReply || isArchitectReply || (!roles.pmUser && !roles.architectUser)
+      if (isEscalationReply) {
+        clearEscalationNotification(featureName)
+        const respondingRole = isArchitectReply ? "Architect" : "PM"
+        const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed.`
+        await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
+          await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
+        }})
+        return
+      }
     }
 
     // If the design spec is now approved, route to the architect.

@@ -3299,3 +3299,95 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
     expect(getPendingEscalation("onboarding")).not.toBeNull()
   })
 })
+
+// ─── Scenario N16: PM reply auto-routes to design agent ──────────────────────
+//
+// After the escalation notification is set (PM @mentioned), the PM's reply in the
+// thread should be detected by userId match, clear the notification, and resume
+// the design agent with the answer injected as the user message.
+
+describe("Scenario N16 — PM reply in thread resumes design agent", () => {
+  const THREAD = "workflow-n16"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "What happens to the guest session when the user signs up mid-conversation?",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("PM reply clears notification and resumes design agent with injected answer", async () => {
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "Great — with the PM's answer I can now finalize the auth flow screen." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 20 },
+    })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Guest sessions are cleared on sign-up."), userId: "U_PM_123" }
+    // Simulate PM userId matching roles.pmUser
+    process.env.SLACK_PM_USER = "U_PM_123"
+
+    await handleFeatureChannelMessage(params)
+
+    // Design agent was called (Anthropic called at least once for routing + agent)
+    expect(mockAnthropicCreate).toHaveBeenCalled()
+
+    // Notification cleared
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).toBeNull()
+  })
+})
+
+// ─── Scenario N17: Non-PM reply during active notification is not auto-routed ──
+//
+// When an escalation notification is active but the message comes from a user who is
+// neither PM nor Architect (and roles ARE configured), the message should fall
+// through to the normal design agent flow — not be treated as the PM answer.
+
+describe("Scenario N17 — Non-PM message during active notification falls through to design agent", () => {
+  const THREAD = "workflow-n17"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "What happens to the guest session when the user signs up mid-conversation?",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("non-PM userId does not clear notification and runs design agent normally", async () => {
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "Here is my design update." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 20 },
+    })
+
+    // userId is a regular user, not the PM (U_PM_123)
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Let me add a small design update"), userId: "U_OTHER_456" }
+    process.env.SLACK_PM_USER = "U_PM_123"
+
+    await handleFeatureChannelMessage(params)
+
+    // Design agent ran (Anthropic called)
+    expect(mockAnthropicCreate).toHaveBeenCalled()
+
+    // Notification still active — not cleared by non-PM message
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).not.toBeNull()
+  })
+})
