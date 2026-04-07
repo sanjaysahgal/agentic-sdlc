@@ -59,6 +59,14 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 
 ---
 
+### Escalation brief pollutes design conversation history (2026-04-07)
+
+When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it appends the escalation brief (`"The UX Designer is blocked on these product questions..."`) and the PM agent's recommendations to the design feature's conversation history. These are PM-context messages in a design-context history — they'll appear in subsequent design agent turns as prior context, which is slightly polluting.
+
+**Fix:** Either (a) run the PM agent against a separate ephemeral history (not `getHistory(featureName)`) during escalation runs, or (b) clear the two appended messages immediately after the agent returns. Option (a) is cleaner — the escalation recommendation pass should not bleed into the design conversation.
+
+---
+
 ### N16/N17 escalation reply tests validate via fallback, not real userId match (2026-04-07)
 
 N16 sets `process.env.SLACK_PM_USER` but `loadWorkspaceConfig()` reads from the workspace config struct — the env var may not be wired through in test, so N16 passes via the `!roles.pmUser && !roles.architectUser` fallback (any user counts as a valid reply when roles aren't configured). In production with real roles, the `userId === roles.pmUser` path is what fires. The correct test would inject a mock `WorkspaceConfig` with `roles.pmUser = "U_PM_123"` to exercise the actual userId match branch.
