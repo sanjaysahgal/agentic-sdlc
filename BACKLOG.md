@@ -39,6 +39,12 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+~~### PM agent must run on escalation confirmation — not raw question dump~~ ✅ Done (2026-04-07)
+
+Escalation confirmation now runs `runPmAgent` (or `runArchitectAgent`) with the blocking questions as its brief (`readOnly: true`). The agent produces concrete recommendations, then a separate `postMessage` @mentions the human PM/Architect: "review the recommendations above and reply here to confirm or adjust." S4 Turn 2 and S18 Turn 2 updated to reflect the new behavior.
+
+---
+
 ### PM agent must run on escalation confirmation — not raw question dump (2026-04-07)
 
 When the user confirms escalation ("yes"), the platform currently posts the raw blocking questions directly to Slack and returns. The PM agent never runs. The human PM receives a cold list of questions with zero analysis or recommendations. This violates Principle 6 (never bypass an agent) and the recommendation-first rule.

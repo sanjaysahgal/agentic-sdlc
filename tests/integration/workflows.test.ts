@@ -420,7 +420,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(text).toContain("escalated")
   })
 
-  it("Turn 2: user says yes → PM is @mentioned in thread, design paused", async () => {
+  it("Turn 2: user says yes → PM agent runs with brief, then @mention posted for human review", async () => {
     setConfirmedAgent("onboarding", "ux-design")
     appendMessage("onboarding", { role: "user", content: "should we support social login?" })
     appendMessage("onboarding", { role: "assistant", content: "I've escalated this to the PM — design is paused until they respond." })
@@ -433,23 +433,35 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
       designContext: "Onboarding design in progress.",
     })
 
-    // No Anthropic calls — escalation confirmation posts a Slack message directly
+    // PM agent runs — mock any Anthropic calls with a valid response
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "Recommendation: Yes, support Google OAuth as the primary social login method — it covers the majority of users and Health360 already uses Google Workspace." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 30 },
+    })
+
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // PM was notified via postMessage
+    // PM agent was called
+    expect(mockAnthropicCreate).toHaveBeenCalled()
+
+    // Human PM notified via separate postMessage to review recommendations
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const escalationPost = postCalls.find((c: any) => c[0]?.text?.includes("blocking product question"))
-    expect(escalationPost).toBeDefined()
-    expect(escalationPost[0].text).toContain("Should social login be supported?")
-    expect(escalationPost[0].text).toContain("Reply here to unblock design")
+    const reviewPost = postCalls.find((c: any) => c[0]?.text?.includes("review the recommendations above"))
+    expect(reviewPost).toBeDefined()
+    expect(reviewPost[0].text).toContain("Product Manager")
+    expect(reviewPost[0].text).toContain("reply here to confirm or adjust")
 
     // Pending escalation cleared after confirmation
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // No AI call — escalation confirmation is handled purely by the platform
-    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+    // EscalationNotification set — waiting for human PM reply to resume design
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notif = getEscalationNotification("onboarding")
+    expect(notif).not.toBeNull()
+    expect(notif?.question).toBe("Should social login be supported?")
   })
 })
 
@@ -1547,7 +1559,7 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     expect(text).toContain("architect")
   })
 
-  it("Turn 2: user says yes → architect @mentioned (not PM), message contains 'blocking architecture question'", async () => {
+  it("Turn 2: user says yes → architect agent runs with brief, then @mention posted for human review", async () => {
     setConfirmedAgent("onboarding", "ux-design")
     // Override env so architectUser is set to a known Slack ID
     process.env.SLACK_ARCHITECT_USER = "U_ARCHITECT"
@@ -1561,27 +1573,35 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
       designContext: "Onboarding design in progress.",
     })
 
-    // No Anthropic calls — escalation confirmation is handled entirely by the platform
+    // Architect agent runs — mock any Anthropic calls with a valid response
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "Recommendation: Store the session conversation as a draft Conversation entity linked to a device token, then migrate it to the user account on sign-up." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 30 },
+    })
+
     const params = makeParams(THREAD, "feature-onboarding", "yes please escalate")
     await handleFeatureChannelMessage(params)
 
-    // Architect was notified — NOT the PM
-    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const escalationPost = postCalls.find((c: any) => c[0]?.text?.includes("blocking architecture question"))
-    expect(escalationPost).toBeDefined()
-    expect(escalationPost[0].text).toContain("<@U_ARCHITECT>")
-    expect(escalationPost[0].text).toContain("Where is user state persisted")
-    expect(escalationPost[0].text).not.toContain("blocking product question")
+    // Architect agent was called
+    expect(mockAnthropicCreate).toHaveBeenCalled()
 
-    // PM was NOT mentioned
-    expect(escalationPost[0].text).not.toContain("Product Manager")
+    // Human architect notified via separate postMessage — @mentions <@U_ARCHITECT>, NOT PM
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const reviewPost = postCalls.find((c: any) => c[0]?.text?.includes("review the recommendations above"))
+    expect(reviewPost).toBeDefined()
+    expect(reviewPost[0].text).toContain("<@U_ARCHITECT>")
+    expect(reviewPost[0].text).not.toContain("Product Manager")
 
     // Pending cleared
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // No AI call
-    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+    // EscalationNotification set for architect reply
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notif = getEscalationNotification("onboarding")
+    expect(notif).not.toBeNull()
+    expect(notif?.targetAgent).toBe("architect")
   })
 })
 

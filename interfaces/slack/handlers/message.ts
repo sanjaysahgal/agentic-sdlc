@@ -209,16 +209,23 @@ export async function handleFeatureChannelMessage(params: {
       const mention = isArchitectEscalation
         ? (roles.architectUser ? `<@${roles.architectUser}>` : `*Architect*`)
         : (roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`)
-      const questionType = isArchitectEscalation ? "blocking architecture question" : "blocking product question"
-      const pausedRole = isArchitectEscalation ? "Architect" : "PM"
-      const escalationMsg =
-        `${mention} — UX Designer has a ${questionType} that needs a decision before the design spec can continue:\n\n` +
-        `*"${pendingEscalation.question}"*\n\n` +
-        `_Reply here to unblock design._`
-      await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: escalationMsg })
+      const agentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
+      // Run the PM/Architect agent with the blocking questions as a brief so it produces
+      // concrete recommendations before the human is notified — not a raw question dump.
+      const brief = `The UX Designer is blocked on these ${isArchitectEscalation ? "architecture" : "product"} questions before the design spec can continue. Provide a concrete recommendation for each — what should the answer be, and why:\n\n${pendingEscalation.question}`
+      await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
+        if (isArchitectEscalation) {
+          await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update })
+        } else {
+          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update, readOnly: true })
+        }
+      }})
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `${mention} — review the recommendations above and reply here to confirm or adjust. Design will resume automatically once you reply.`,
+      })
       setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question })
-      appendMessage(featureName, { role: "user", content: userMessage })
-      appendMessage(featureName, { role: "assistant", content: `Escalated to ${pausedRole}: "${pendingEscalation.question}". Design is paused until they respond.` })
       return
     }
     // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
