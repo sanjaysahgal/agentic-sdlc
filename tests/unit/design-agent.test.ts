@@ -623,6 +623,16 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("My recommendation")
   })
 
+  it("escalation rule — consolidate all PM gaps into single tool call and stop after CTA", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    // Single consolidated call — not multiple
+    expect(prompt).toContain("exactly once")
+    expect(prompt).toContain("ALL blocking questions consolidated")
+    // Hard stop after CTA — no roadmap preview
+    expect(prompt).toContain("Then stop")
+    expect(prompt).toContain("do NOT list brand drift items")
+  })
+
   it("save tool descriptions mention renderAmbiguities return value", () => {
     const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
     const saveToolIdx = prompt.indexOf("save_design_spec_draft")
