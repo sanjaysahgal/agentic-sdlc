@@ -33,6 +33,18 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### `buildDesignStateResponse` test must assert Slack char limit and content shape (2026-04-06)
+
+Current unit tests use short inline specs and only assert that content *appears* — not that the response is appropriately shaped. Two production bugs slipped through: (1) raw Design Direction bullet lists blew Slack's 4000-char limit, (2) false positive from cross-line regex in `findUndefinedScreenReferences`. Neither was caught because tests didn't assert the right invariants.
+
+**Fix:** Add a test that loads `onboarding-design-full.md` (the real full-length spec) and asserts:
+- Response length ≤ 4000 chars (Slack hard limit)
+- Response contains the bold summary statement from Design Direction
+- Response does NOT contain `--bg:` or other bullet-list implementation detail
+- No finding mentioning "logged-out session" (cross-line false positive regression)
+
+---
+
 ### Renderer parsing tests must use real spec fixtures (fixture rule violation, 2026-04-06)
 
 `tests/unit/html-renderer.test.ts` uses a hand-crafted `MINIMAL_SPEC` with `Heading: "..."`, `Tagline: "..."`, `Placeholder: "..."` syntax. The real onboarding spec uses none of these formats — it uses `wordmark:`, inline `tagline "..."`, `placeholder text "..."`. All 36 tests passed while the parser was silently wrong for every field. Discovered only when the preview was visually inspected.
