@@ -14,7 +14,7 @@ vi.mock("../../../runtime/workspace-config", () => ({
 }))
 vi.mock("@anthropic-ai/sdk", () => ({ default: vi.fn() }))
 
-import { buildActionMenu, splitQualityIssue } from "../../../interfaces/slack/handlers/message"
+import { buildActionMenu, splitQualityIssue, getChannelState, setChannelState, channelStateStore } from "../../../interfaces/slack/handlers/message"
 
 const item = (issue: string, fix: string) => ({ issue, fix })
 
@@ -75,6 +75,33 @@ describe("buildActionMenu", () => {
       { emoji: ":art:", label: "Brand Drift", issues: [item("x", "y")] },
     ])
     expect(result).toMatch(/^\n\n---/)
+  })
+})
+
+describe("getChannelState / setChannelState", () => {
+  it("getChannelState returns default state when channel not set", () => {
+    const state = getChannelState("channel-not-set")
+    expect(state.productSpecApproved).toBe(false)
+    expect(state.engineeringSpecApproved).toBe(false)
+    expect(state.pendingAgent).toBeNull()
+    expect(state.pendingMessage).toBeNull()
+    expect(state.pendingThreadTs).toBeNull()
+  })
+
+  it("setChannelState stores state and getChannelState retrieves it", () => {
+    const newState = {
+      productSpecApproved: true,
+      engineeringSpecApproved: false,
+      pendingAgent: null,
+      pendingMessage: null,
+      pendingThreadTs: null,
+    }
+    setChannelState("feature-test", newState)
+    const retrieved = getChannelState("feature-test")
+    expect(retrieved.productSpecApproved).toBe(true)
+    expect(retrieved.engineeringSpecApproved).toBe(false)
+    // cleanup
+    channelStateStore.delete("feature-test")
   })
 })
 

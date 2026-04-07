@@ -629,3 +629,258 @@ describe("findUndefinedScreenReferences — cross-line match regression", () => 
     expect(truePositive).toBeDefined()
   })
 })
+
+// ─── auditSpecDecisions ────────────────────────────────────────────────────────
+
+describe("auditSpecDecisions", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("returns ok immediately when history has fewer than 2 messages — no API call", async () => {
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "# Spec",
+      history: [{ role: "user", content: "hello" }],
+    })
+    expect(result).toEqual({ status: "ok" })
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("returns ok when Claude responds OK", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 10%",
+      history: [
+        { role: "user", content: "let's lock glow opacity at 10%" },
+        { role: "assistant", content: "Locked. Glow opacity: 10%" },
+      ],
+    })
+    expect(result).toEqual({ status: "ok" })
+  })
+
+  it("returns ok when Claude responds with text that doesn't include MISMATCH:", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "No issues found." }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 10%",
+      history: [
+        { role: "user", content: "lock glow opacity 10%" },
+        { role: "assistant", content: "Locked." },
+      ],
+    })
+    expect(result).toEqual({ status: "ok" })
+  })
+
+  it("returns corrections when Claude returns MISMATCH lines", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "MISMATCH: Glow opacity | glow opacity: 15% | 10%" }],
+    })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 15%",
+      history: [
+        { role: "user", content: "lock glow opacity at 10%" },
+        { role: "assistant", content: "Locked. Glow opacity: 10%" },
+      ],
+    })
+    expect(result.status).toBe("corrections")
+    if (result.status === "corrections") {
+      expect(result.corrections).toHaveLength(1)
+      expect(result.corrections[0].description).toBe("Glow opacity")
+      expect(result.corrections[0].found).toBe("glow opacity: 15%")
+      expect(result.corrections[0].correct).toBe("10%")
+    }
+  })
+
+  it("returns ok when MISMATCH lines have wrong format (not 3 parts)", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "MISMATCH: only two | parts" }],
+    })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 15%",
+      history: [
+        { role: "user", content: "lock it" },
+        { role: "assistant", content: "Locked." },
+      ],
+    })
+    // Malformed MISMATCH lines are skipped; 0 corrections → ok
+    expect(result).toEqual({ status: "ok" })
+  })
+
+  it("handles multiple MISMATCH lines in one response", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "MISMATCH: Glow | old-glow | new-glow\nMISMATCH: Color | old-color | new-color" }],
+    })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "old-glow old-color",
+      history: [
+        { role: "user", content: "lock both" },
+        { role: "assistant", content: "Locked." },
+      ],
+    })
+    expect(result.status).toBe("corrections")
+    if (result.status === "corrections") {
+      expect(result.corrections).toHaveLength(2)
+    }
+  })
+
+  it("uses claude-haiku-4-5-20251001 model", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await auditSpecDecisions({
+      specContent: "spec content",
+      history: [
+        { role: "user", content: "msg1" },
+        { role: "assistant", content: "msg2" },
+      ],
+    })
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
+  })
+})
+
+// ─── extractLockedDecisions ───────────────────────────────────────────────────
+
+describe("extractLockedDecisions", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("returns empty string when history has fewer than 6 messages — no API call", async () => {
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = [
+      { role: "user", content: "a" },
+      { role: "assistant", content: "b" },
+      { role: "user", content: "c" },
+      { role: "assistant", content: "d" },
+      { role: "user", content: "e" },
+    ]
+    const result = await extractLockedDecisions(history)
+    expect(result).toBe("")
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("returns empty string when Claude responds with 'none'", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array(6).fill(null).map((_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg${i}` }))
+    const result = await extractLockedDecisions(history)
+    expect(result).toBe("")
+  })
+
+  it("returns empty string when Claude responds without bullet points", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "No decisions found." }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array(6).fill(null).map((_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg${i}` }))
+    const result = await extractLockedDecisions(history)
+    expect(result).toBe("")
+  })
+
+  it("returns bullet list when Claude responds with decisions", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "• Dark mode primary\n• Glow opacity: 10%" }],
+    })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array(6).fill(null).map((_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg${i}` }))
+    const result = await extractLockedDecisions(history)
+    expect(result).toContain("•")
+    expect(result).toContain("Dark mode primary")
+  })
+
+  it("uses claude-haiku-4-5-20251001 model", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array(6).fill(null).map((_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg${i}` }))
+    await extractLockedDecisions(history)
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
+  })
+})
+
+// ─── filterDesignContent ──────────────────────────────────────────────────────
+
+describe("filterDesignContent", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("returns extracted design tokens from Claude", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "--bg: #0A0A0F\n--violet: #8B5CF6" }] })
+    const { filterDesignContent } = await import("../../runtime/spec-auditor")
+    const result = await filterDesignContent("<html>...<style>--bg: #0A0A0F</style></html>")
+    expect(result).toContain("--bg")
+  })
+
+  it("returns raw input slice when Claude responds with non-text block", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "tool_use", id: "x", name: "y", input: {} }] })
+    const { filterDesignContent } = await import("../../runtime/spec-auditor")
+    const input = "<style>body { color: red; }</style>"
+    const result = await filterDesignContent(input)
+    // Falls back to input (sliced to 150_000)
+    expect(result).toBe(input)
+  })
+
+  it("uses claude-haiku-4-5-20251001 model", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "--bg: #000" }] })
+    const { filterDesignContent } = await import("../../runtime/spec-auditor")
+    await filterDesignContent("<style>body { color: red; }</style>")
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
+  })
+})
+
+// ─── applyDecisionCorrections ─────────────────────────────────────────────────
+
+describe("applyDecisionCorrections", () => {
+  let applyDecisionCorrections: (specContent: string, corrections: Array<{ description: string; found: string; correct: string }>) => { corrected: string; applied: Array<{ description: string; found: string; correct: string }> }
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import("../../runtime/spec-auditor")
+    applyDecisionCorrections = mod.applyDecisionCorrections
+  })
+
+  it("replaces found text with correct value", () => {
+    const { corrected, applied } = applyDecisionCorrections("Glow opacity: 15%", [
+      { description: "Glow opacity", found: "15%", correct: "10%" },
+    ])
+    expect(corrected).toBe("Glow opacity: 10%")
+    expect(applied).toHaveLength(1)
+  })
+
+  it("skips corrections where found text is not in spec", () => {
+    const { corrected, applied } = applyDecisionCorrections("Glow opacity: 10%", [
+      { description: "Color", found: "old-color", correct: "new-color" },
+    ])
+    expect(corrected).toBe("Glow opacity: 10%")
+    expect(applied).toHaveLength(0)
+  })
+
+  it("replaces all occurrences of found text", () => {
+    const { corrected, applied } = applyDecisionCorrections("opacity: 15% and opacity: 15%", [
+      { description: "Opacity", found: "15%", correct: "10%" },
+    ])
+    expect(corrected).toBe("opacity: 10% and opacity: 10%")
+    expect(applied).toHaveLength(1)
+  })
+
+  it("applies multiple corrections in sequence", () => {
+    const { corrected, applied } = applyDecisionCorrections("color: red; opacity: 15%", [
+      { description: "Color", found: "red", correct: "blue" },
+      { description: "Opacity", found: "15%", correct: "10%" },
+    ])
+    expect(corrected).toBe("color: blue; opacity: 10%")
+    expect(applied).toHaveLength(2)
+  })
+
+  it("returns original spec unchanged when no corrections provided", () => {
+    const spec = "Glow opacity: 10%"
+    const { corrected, applied } = applyDecisionCorrections(spec, [])
+    expect(corrected).toBe(spec)
+    expect(applied).toHaveLength(0)
+  })
+})

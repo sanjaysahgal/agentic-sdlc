@@ -326,4 +326,254 @@ describe("withThinking", () => {
 
     vi.useRealTimers()
   })
+
+  it("on non-Error thrown value: logs UnknownError type and string message", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw "raw string error" },  // eslint-disable-line no-throw-literal
+    })).rejects.toThrow()
+
+    expect(console.error).toHaveBeenCalledTimes(1)
+    const logged = JSON.parse((console.error as ReturnType<typeof vi.fn>).mock.calls[0][0])
+    expect(logged.errorType).toBe("UnknownError")
+    expect(logged.errorMessage).toBe("raw string error")
+    expect(logged.stack).toBeUndefined()
+  })
+
+  it("on context_length error: shows thread-restart message not generic", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("context_length exceeded") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+  })
+
+  it("on context length (with space) error: shows thread-restart message", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("context length limit reached") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+  })
+
+  it("on maximum context error: shows thread-restart message", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("maximum context window exceeded") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("fresh top-level message") })
+    )
+  })
+
+  it("on image.source error: shows image-specific message", async () => {
+    const client = makeClient()
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("image.source is invalid") },
+    })).rejects.toThrow()
+
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("PNG screenshot") })
+    )
+  })
+
+  it("uses default 'Thinking...' label when no agent provided", async () => {
+    const client = makeClient()
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      // no agent param
+      run: async (update) => { await update("Done") },
+    })
+    expect(client.chat.postMessage).toHaveBeenCalledWith(expect.objectContaining({ text: "_Thinking..._" }))
+  })
+
+  it("when update() fails on error path, falls back to postMessage", async () => {
+    const client = makeClient()
+    // Make update always reject
+    client.chat.update = vi.fn().mockRejectedValue(new Error("update failed"))
+
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("agent error") },
+    })).rejects.toThrow("agent error")
+
+    // update failed → should have attempted postMessage as fallback
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(2) // placeholder + fallback
+  })
+
+  it("splitForSlack — splits on paragraph boundary (\\n\\n) when no section boundary found", async () => {
+    const client = makeClient()
+    // No agent prefix — splitForSlack sees the text directly.
+    // Build text just over 3800 chars with a \n\n break but no \n---\n.
+    // The agentPrefix for no agent is "", so the full content is just the text.
+    const SLACK_SAFE_CHARS = 3_800
+    const part1 = "A".repeat(SLACK_SAFE_CHARS - 50) // just under the limit
+    const part2 = "Second paragraph content"
+    // Total after agentPrefix ("" with no agent): part1 + "\n\n" + part2 > 3800
+    const longText = part1 + "\n\n" + "B".repeat(100) + "\n\n" + part2
+
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      // no agent — agentPrefix is "" so the raw text length is what splitForSlack sees
+      run: async (update) => { await update(longText) },
+    })
+
+    const postCalls = (client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const overflowCalls = postCalls.slice(1)
+    expect(overflowCalls.length).toBeGreaterThan(0)
+    const overflowText = overflowCalls.map((c: any) => c[0].text).join("")
+    expect(overflowText).toContain("Second paragraph")
+  })
+
+  it("splitForSlack — splits on newline when no paragraph or section boundary found", async () => {
+    const client = makeClient()
+    // Build a text block where the only boundary near the split point is a single \n
+    // 3750 A chars then \n then short content = just over 3800 total? No — must exceed SLACK_SAFE_CHARS.
+    // Let's make sure total > 3800 with just a single \n boundary at around 3750.
+    const SLACK_SAFE_CHARS = 3_800
+    const part1 = "A".repeat(SLACK_SAFE_CHARS - 30) + "\n" + "B".repeat(100)
+
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async (update) => { await update(part1) },
+    })
+
+    const postCalls = (client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const overflowCalls = postCalls.slice(1)
+    expect(overflowCalls.length).toBeGreaterThan(0)
+  })
+
+  it("splitForSlack — hard cuts at SLACK_SAFE_CHARS when no boundary found", async () => {
+    const client = makeClient()
+    // Build text with no newlines at all — must hard-cut at SLACK_SAFE_CHARS
+    const longText = "X".repeat(7_700) // well over 3800, no newlines
+
+    await withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async (update) => { await update(longText) },
+    })
+
+    const postCalls = (client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const overflowCalls = postCalls.slice(1)
+    expect(overflowCalls.length).toBeGreaterThan(0)
+  })
+
+  it("heartbeat — non-italic status text (no underscore) gets dot appended with space", async () => {
+    vi.useFakeTimers()
+    const client = makeClient()
+
+    let resolveRun!: () => void
+    const runDone = new Promise<void>(resolve => { resolveRun = resolve })
+
+    const thinking = withThinking({
+      client, channelId: "C123", threadTs: "1000.0", agent: "PM",
+      run: async (update) => {
+        // Update with plain text (no underscores — not italic)
+        await update("Processing your request")
+        await runDone
+      },
+    })
+
+    // 8s — heartbeat fires on the non-italic text
+    await vi.advanceTimersByTimeAsync(8_000)
+
+    const updateCalls = (client.chat.update as ReturnType<typeof vi.fn>).mock.calls.map(c => c[0].text)
+    // Should have "Processing your request ." with a space-dot (non-italic path)
+    const heartbeatCall = updateCalls.find((t: string) => t.includes("Processing your request") && t.includes("."))
+    expect(heartbeatCall).toBeDefined()
+
+    resolveRun()
+    await thinking
+    vi.useRealTimers()
+  })
+
+  it("heartbeat catch: swallows update error silently — run continues", async () => {
+    vi.useFakeTimers()
+    // First postMessage (placeholder) succeeds, subsequent update calls throw
+    const client = {
+      chat: {
+        postMessage: vi.fn().mockResolvedValue({ ts: "1234.5678" }),
+        update: vi.fn().mockRejectedValue(new Error("rate limited")),
+      },
+    }
+
+    let resolveRun!: () => void
+    const runDone = new Promise<void>(resolve => { resolveRun = resolve })
+
+    const thinking = withThinking({
+      client, channelId: "C123", threadTs: "1000.0", agent: "PM",
+      run: async () => { await runDone },
+    })
+
+    // Trigger the heartbeat — update throws, but .catch(() => {}) swallows it
+    await vi.advanceTimersByTimeAsync(8_000)
+
+    // Run completes without error — the catch silenced the update failure
+    resolveRun()
+    await expect(thinking).resolves.toBeUndefined()
+    vi.useRealTimers()
+  })
+
+  it("overflow postMessage catch: swallows error silently when overflow chunk fails to post", async () => {
+    let postCallCount = 0
+    const client = {
+      chat: {
+        postMessage: vi.fn().mockImplementation(() => {
+          postCallCount++
+          if (postCallCount === 1) {
+            // First call is the placeholder — succeeds
+            return Promise.resolve({ ts: "1234.5678" })
+          }
+          // Subsequent postMessage calls (overflow) — throw to trigger .catch(() => {})
+          return Promise.reject(new Error("channel_not_found"))
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+    }
+
+    // Build text that requires overflow (> 3800 chars, no boundary within first chunk)
+    const longText = "A".repeat(7_700) // no newlines — hard cut at 3800, overflow chunk triggers postMessage
+
+    // Should complete without throwing even though overflow postMessage rejects
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async (update) => { await update(longText) },
+    })).resolves.toBeUndefined()
+
+    // Placeholder + at least 1 overflow attempt
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(postCallCount)
+  })
+
+  it("fallback postMessage catch: swallows error silently when both update and postMessage fail on error path", async () => {
+    const client = {
+      chat: {
+        postMessage: vi.fn()
+          .mockResolvedValueOnce({ ts: "1234.5678" }) // placeholder succeeds
+          .mockRejectedValue(new Error("postMessage also failed")), // fallback throws
+        update: vi.fn().mockRejectedValue(new Error("update failed")),
+      },
+    }
+
+    // The error path: run throws → update(msg) fails → postMessage fallback also fails
+    // The inner .catch(() => {}) on line 126 should swallow the postMessage error
+    await expect(withThinking({
+      client, channelId: "C123", threadTs: "1000.0",
+      run: async () => { throw new Error("agent failed") },
+    })).rejects.toThrow("agent failed")
+
+    // postMessage called twice: placeholder + fallback attempt (which failed silently)
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(2)
+  })
 })

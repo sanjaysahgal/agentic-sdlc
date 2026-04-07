@@ -129,6 +129,13 @@ describe("getPriorContext", () => {
     await getPriorContext("t3", history, 20)
     expect(mockCreate).toHaveBeenCalledTimes(1)
   })
+
+  it("returns empty string when summarizeUnlockedDiscussion throws — .catch(() => '') swallows error", async () => {
+    mockCreate.mockRejectedValue(new Error("Haiku unavailable"))
+    const history = Array.from({ length: 25 }, (_, i) => ({ role: "user" as const, content: `msg ${i}` }))
+    const result = await getPriorContext("t4", history, 20)
+    expect(result).toBe("")
+  })
 })
 
 describe("identifyUncommittedDecisions", () => {

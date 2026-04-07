@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "fs"
 import { resolve, dirname } from "path"
 import { fileURLToPath } from "url"
-import { renderFromSpec, generateDesignPreview, validateRenderedHtml } from "../../runtime/html-renderer"
+import { renderFromSpec, generateDesignPreview, validateRenderedHtml, validateTextFidelity } from "../../runtime/html-renderer"
 
 const dir = dirname(fileURLToPath(import.meta.url))
 const fixturesDir = resolve(dir, "../fixtures/agent-output")
@@ -324,5 +324,89 @@ describe("validateRenderedHtml — blocking: hero nested inside thread", () => {
     const result = validateRenderedHtml(html)
     const nestingIssues = result.blocking.filter(b => b.toLowerCase().includes("nested") || b.toLowerCase().includes("sibling"))
     expect(nestingIssues).toHaveLength(0)
+  })
+})
+
+// ─── validateRenderedHtml — brandContent --bg token check ─────────────────────
+
+describe("validateRenderedHtml — brand token warning", () => {
+  it("warns when brandContent has --bg token not present in HTML", () => {
+    const html = `<!DOCTYPE html><html><body style="background-color: #FFFFFF"><style>@keyframes glow {} body { background-color: #FFFFFF; }</style><div id="hero"></div></body></html>`
+    const brandContent = "--bg: #1A1A2E"
+    const result = validateRenderedHtml(html, brandContent)
+    expect(result.warnings.some(w => w.includes("#1A1A2E") && w.includes("--bg"))).toBe(true)
+  })
+
+  it("does NOT warn when brandContent --bg token IS present in HTML", () => {
+    const html = `<!DOCTYPE html><html><body><style>@keyframes glow {} body { background-color: #1A1A2E; }</style><div id="hero"></div></body></html>`
+    const brandContent = "--bg: #1A1A2E"
+    const result = validateRenderedHtml(html, brandContent)
+    expect(result.warnings.some(w => w.includes("#1A1A2E"))).toBe(false)
+  })
+
+  it("skips brand token check when brandContent is not provided", () => {
+    const html = `<!DOCTYPE html><html><body><style>@keyframes glow {} body { background-color: #1A1A2E; }</style><div id="hero"></div></body></html>`
+    const result = validateRenderedHtml(html)
+    // No brand warning possible without brandContent
+    expect(result.warnings.some(w => w.includes("--bg"))).toBe(false)
+  })
+
+  it("skips brand token check when brandContent has no --bg token", () => {
+    const html = `<!DOCTYPE html><html><body><style>@keyframes glow {} body { background-color: #1A1A2E; }</style><div id="hero"></div></body></html>`
+    const brandContent = "--violet: #8B5CF6" // no --bg
+    const result = validateRenderedHtml(html, brandContent)
+    expect(result.warnings.some(w => w.includes("--bg"))).toBe(false)
+  })
+
+  it("warns when HTML has no @keyframes animation", () => {
+    const html = `<!DOCTYPE html><html><body><style>body { background-color: #1A1A2E; }</style><div id="hero"></div></body></html>`
+    const result = validateRenderedHtml(html)
+    expect(result.warnings.some(w => w.toLowerCase().includes("keyframe"))).toBe(true)
+  })
+
+  it("warns when body has no explicit background-color CSS", () => {
+    const html = `<!DOCTYPE html><html><body><style>@keyframes glow {} p { color: red; }</style><div id="hero"></div></body></html>`
+    const result = validateRenderedHtml(html)
+    expect(result.warnings.some(w => w.toLowerCase().includes("background"))).toBe(true)
+  })
+})
+
+// ─── validateTextFidelity ─────────────────────────────────────────────────────
+
+describe("validateTextFidelity", () => {
+  it("returns no issues when all spec text literals are present in HTML", () => {
+    const html = `<div><h1>My App</h1><p>All your health. One conversation.</p><input placeholder="Ask anything about your health"></div>`
+    const spec = `Heading: "My App"\nTagline: "All your health. One conversation."\nPlaceholder: "Ask anything about your health"`
+    const issues = validateTextFidelity(html, spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("flags spec text not found in HTML", () => {
+    const html = `<div><h1>Wrong App Name</h1></div>`
+    const spec = `Heading: "My App"\nTagline: "All your health."`
+    const issues = validateTextFidelity(html, spec)
+    expect(issues.some(i => i.includes("My App"))).toBe(true)
+  })
+
+  it("returns empty array when spec has no quoted text literals matching the pattern", () => {
+    const html = `<div>Hello world</div>`
+    const spec = `## Screens\n### Chat Home\nContent goes here.`
+    const issues = validateTextFidelity(html, spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("skips short quoted strings (under 4 chars) that are not real spec literals", () => {
+    // Pattern requires 4+ chars inside quotes
+    const html = `<div>Hello</div>`
+    const spec = `Heading: "Hi"` // 2 chars — below threshold
+    const issues = validateTextFidelity(html, spec)
+    expect(issues).toHaveLength(0)
+  })
+
+  it("flags multiple missing spec texts", () => {
+    const html = `<div>Nothing here</div>`
+    const spec = `Heading: "Missing Heading"\nTagline: "Missing tagline text"\nPlaceholder: "Missing placeholder"`
+    const issues = validateTextFidelity(html, spec)
+    expect(issues.length).toBeGreaterThanOrEqual(2)
   })
 })

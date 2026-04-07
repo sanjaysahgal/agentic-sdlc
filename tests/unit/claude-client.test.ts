@@ -174,3 +174,185 @@ describe("runAgent", () => {
     expect(contents).toContain("latest")
   })
 })
+
+// ─── runAgent tool-use loop ────────────────────────────────────────────────────
+
+describe("runAgent — tool-use loop", () => {
+  it("calls tool handler and loops when stop_reason is tool_use", async () => {
+    const toolUseResponse = {
+      stop_reason: "tool_use",
+      content: [
+        { type: "tool_use", id: "call_1", name: "my_tool", input: { key: "value" } },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    }
+    const finalResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Tool result processed" }],
+      usage: { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    }
+    mockCreate
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse)
+
+    const toolHandler = vi.fn().mockResolvedValue({ result: { success: true } })
+
+    const result = await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Call the tool",
+      tools: [{ name: "my_tool", description: "A test tool", input_schema: { type: "object" as const, properties: {} } }],
+      toolHandler,
+    })
+
+    expect(toolHandler).toHaveBeenCalledWith("my_tool", { key: "value" })
+    expect(result).toBe("Tool result processed")
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it("records tool calls in toolCallsOut when provided", async () => {
+    const toolUseResponse = {
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "call_1", name: "save_spec", input: { content: "spec content" } }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    const finalResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Done" }],
+      usage: { input_tokens: 20, output_tokens: 10 },
+    }
+    mockCreate
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse)
+
+    const toolHandler = vi.fn().mockResolvedValue({ result: {} })
+    const toolCallsOut: Array<{ name: string; input: Record<string, unknown> }> = []
+
+    await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Save the spec",
+      tools: [{ name: "save_spec", description: "Saves spec", input_schema: { type: "object" as const, properties: {} } }],
+      toolHandler,
+      toolCallsOut,
+    })
+
+    expect(toolCallsOut).toHaveLength(1)
+    expect(toolCallsOut[0].name).toBe("save_spec")
+    expect(toolCallsOut[0].input).toEqual({ content: "spec content" })
+  })
+
+  it("returns error result when no toolHandler provided but agent calls a tool", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const toolUseResponse = {
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "call_1", name: "my_tool", input: {} }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    const finalResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Completed" }],
+      usage: { input_tokens: 20, output_tokens: 10 },
+    }
+    mockCreate
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse)
+
+    // No toolHandler provided
+    const result = await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Call the tool",
+      tools: [{ name: "my_tool", description: "A test tool", input_schema: { type: "object" as const, properties: {} } }],
+    })
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("No toolHandler provided"))
+    expect(result).toBe("Completed")
+    errorSpy.mockRestore()
+  })
+
+  it("handles tool handler throwing — returns error content and continues loop", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const toolUseResponse = {
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "call_1", name: "bad_tool", input: {} }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    const finalResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Handled error" }],
+      usage: { input_tokens: 20, output_tokens: 10 },
+    }
+    mockCreate
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse)
+
+    const toolHandler = vi.fn().mockRejectedValue(new Error("Tool exploded"))
+
+    const result = await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Run bad tool",
+      tools: [{ name: "bad_tool", description: "Throws", input_schema: { type: "object" as const, properties: {} } }],
+      toolHandler,
+    })
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("bad_tool"))
+    expect(result).toBe("Handled error")
+    errorSpy.mockRestore()
+  })
+
+  it("returns empty string when tool_use response has no tool_use blocks (stop_reason mismatch)", async () => {
+    const weirdResponse = {
+      stop_reason: "tool_use",
+      content: [{ type: "text", text: "Weird response" }], // no tool_use blocks
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    mockCreate.mockResolvedValueOnce(weirdResponse)
+
+    const result = await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Test",
+      tools: [{ name: "my_tool", description: "Tool", input_schema: { type: "object" as const, properties: {} } }],
+    })
+
+    expect(result).toBe("Weird response")
+  })
+
+  it("tool handler returning error object surfaces error message in tool result content", async () => {
+    const toolUseResponse = {
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "call_1", name: "save_spec", input: { content: "bad spec" } }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    const finalResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Error surfaced to agent" }],
+      usage: { input_tokens: 20, output_tokens: 10 },
+    }
+    mockCreate
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse)
+
+    const toolHandler = vi.fn().mockResolvedValue({ error: "Conflict detected — spec not saved" })
+
+    await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Save spec",
+      tools: [{ name: "save_spec", description: "Save spec", input_schema: { type: "object" as const, properties: {} } }],
+      toolHandler,
+    })
+
+    // Verify the second API call — the messages array should contain a user message with tool_result content
+    // Structure: [user(original), assistant(tool_use response), user(tool_results)]
+    const secondCall = mockCreate.mock.calls[1][0]
+    // The last user message is the tool results
+    const userMessages = secondCall.messages.filter((m: { role: string }) => m.role === "user")
+    const lastUserMsg = userMessages[userMessages.length - 1]
+    const toolResults = Array.isArray(lastUserMsg?.content) ? lastUserMsg.content : []
+    const errorResult = toolResults.find((r: { is_error?: boolean }) => r.is_error === true)
+    expect(errorResult).toBeDefined()
+  })
+})

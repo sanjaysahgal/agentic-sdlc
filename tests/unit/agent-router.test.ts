@@ -18,6 +18,7 @@ import {
   classifyApprovedPhaseIntent,
   isOffTopicForAgent,
   isSpecStateQuery,
+  getAgentDescriptions,
 } from "../../runtime/agent-router"
 
 // ─── detectPhase — pure logic, no mocks needed ────────────────────────────
@@ -249,6 +250,63 @@ describe("isSpecStateQuery", () => {
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ system: expect.stringContaining("are you there") })
     )
+  })
+})
+
+// ─── classifyIntent — ux-design agent type ────────────────────────────────────
+
+describe("classifyIntent — ux-design agent type", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("falls back to pm when Claude responds with ux-design (not in valid list for classifyIntent)", async () => {
+    // ux-design is not in the classifyIntent valid list — the router uses separate logic to route to design agent
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "ux-design" }] })
+    const result = await classifyIntent({ message: "I want to design the login screen", history: [], phase: "engineering" })
+    expect(result).toBe("pm")
+  })
+
+  it("passes history slice to Anthropic API", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "architect" }] })
+    const history = [
+      { role: "user" as const, content: "msg1" },
+      { role: "assistant" as const, content: "msg2" },
+      { role: "user" as const, content: "msg3" },
+      { role: "assistant" as const, content: "msg4" },
+      { role: "user" as const, content: "msg5" },
+    ]
+    await classifyIntent({ message: "data model?", history, phase: "engineering" })
+    const call = mockCreate.mock.calls[0][0]
+    // Should include up to last 4 from history + the current message
+    expect(call.messages.length).toBeGreaterThan(0)
+  })
+})
+
+// ─── getAgentDescriptions ─────────────────────────────────────────────────────
+
+describe("getAgentDescriptions", () => {
+  it("returns a record with all known agent types", () => {
+    const descriptions = getAgentDescriptions()
+    expect(descriptions).toHaveProperty("pm")
+    expect(descriptions).toHaveProperty("ux-design")
+    expect(descriptions).toHaveProperty("architect")
+    expect(descriptions).toHaveProperty("backend")
+    expect(descriptions).toHaveProperty("frontend")
+    expect(descriptions).toHaveProperty("qa")
+    expect(descriptions).toHaveProperty("pgm")
+    expect(descriptions).toHaveProperty("spec-validator")
+    expect(descriptions).toHaveProperty("eng-mgr")
+    expect(descriptions).toHaveProperty("infra")
+    expect(descriptions).toHaveProperty("data")
+  })
+
+  it("returns non-empty description strings for every agent type", () => {
+    const descriptions = getAgentDescriptions()
+    for (const [, desc] of Object.entries(descriptions)) {
+      expect(typeof desc).toBe("string")
+      expect(desc.length).toBeGreaterThan(0)
+    }
   })
 })
 

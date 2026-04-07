@@ -1942,3 +1942,370 @@ describe("Scenario 22 — Action menu appended after design agent LLM response",
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 })
+
+// ─── Scenario 22: Architect read_approved_specs tool ─────────────────────────
+//
+// When the architect agent calls read_approved_specs tool, the handler reads
+// engineering specs for the specified features from GitHub main branch.
+
+describe("Scenario 22 — Architect read_approved_specs tool", () => {
+  const THREAD = "workflow-s22"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("read_approved_specs with empty featureNames returns early without GitHub read", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // Architect Anthropic call sequence: isOffTopicForAgent → isSpecStateQuery → runAgent (tool_use with empty featureNames) → runAgent (end_turn)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "read_approved_specs", input: { featureNames: [] } }],
+      })                                                                          // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "No additional specs needed." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "are there any related approved specs I should check?")
+    await handleFeatureChannelMessage(params)
+
+    // Agent response was relayed
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("No additional specs needed.")
+  })
+
+  it("read_approved_specs with featureNames reads specs from GitHub main", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    const DASHBOARD_SPEC = "# Dashboard Engineering Spec\n\n## Data Model\nUser sessions table."
+    // GitHub: read_approved_specs will try to read specs/features/dashboard/dashboard.engineering.md on main
+    mockGetContent.mockImplementation(async ({ path }: { path: string }) => {
+      if (path && path.includes("dashboard.engineering.md")) {
+        return { data: { content: Buffer.from(DASHBOARD_SPEC).toString("base64"), type: "file" } }
+      }
+      throw new Error("Not Found")
+    })
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "read_approved_specs", input: { featureNames: ["dashboard"] } }],
+      })                                                                          // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "The dashboard uses a sessions table." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "how does the dashboard's data model work?")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("dashboard")
+  })
+})
+
+// ─── Scenario 22b: read_approved_specs — readFile throws for a feature ────────
+//
+// When readFile throws for a requested feature (e.g., spec not yet merged),
+// the .catch(() => null) swallows the error and the feature is excluded from specs.
+
+describe("Scenario 22b — read_approved_specs: readFile throws — feature excluded silently", () => {
+  const THREAD = "workflow-s22b"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("when readFile throws for a requested feature, that feature is excluded and agent continues", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // GitHub: all reads throw (spec not found on main)
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "read_approved_specs", input: { featureNames: ["missing-feature"] } }],
+      })                                                                          // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "No spec found for that feature." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "check the missing-feature spec")
+    await handleFeatureChannelMessage(params)
+
+    // Agent response was relayed — the error was swallowed silently
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("No spec found for that feature.")
+  })
+})
+
+// ─── Scenario 23: Architect finalize_engineering_spec tool ────────────────────
+//
+// When the architect agent calls finalize_engineering_spec tool, the handler
+// saves the engineering spec to main branch after checking for blocking questions.
+
+describe("Scenario 23 — Architect finalize_engineering_spec tool", () => {
+  const THREAD = "workflow-s23"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("finalize_engineering_spec returns error when no draft exists", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // No draft on branch
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
+      })                                                                          // runAgent: tool_use
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Need to save a draft first." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "finalize the engineering spec")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Need to save a draft first.")
+    // createOrUpdateFileContents should NOT have been called since finalize failed
+    expect(mockCreateOrUpdate).not.toHaveBeenCalled()
+  })
+
+  it("finalize_engineering_spec saves draft to main when no blocking questions", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    const DRAFT = "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.\n\n## Open Questions\n- What is the API rate limit? [type: engineering] [blocking: no]"
+
+    // Draft exists on branch — read it during finalize_engineering_spec
+    mockGetContent.mockImplementation(async ({ path, ref }: { path: string; ref?: string }) => {
+      if (path && path.includes("onboarding.engineering.md") && ref && ref.includes("engineering")) {
+        return { data: { content: Buffer.from(DRAFT).toString("base64"), type: "file" } }
+      }
+      throw new Error("Not Found")
+    })
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // auditPhaseCompletion (engDraftContent found)
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
+      })                                                                          // runAgent: tool_use — finalize
+      // auditSpecDecisions skips API call when history < 2 messages (empty history)
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Engineering spec finalized and ready for build." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "the spec is ready, finalize it")
+    await handleFeatureChannelMessage(params)
+
+    // spec was saved to main branch
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("finalized")
+  })
+})
+
+// ─── Scenario 24: Architect state query path ──────────────────────────────────
+//
+// When architect agent receives a state query ("where are we"), it returns
+// a formatted summary of the engineering draft without calling Sonnet.
+
+describe("Scenario 24 — Architect state query path", () => {
+  const THREAD = "workflow-s24"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("state query with no engineering draft replies with 'no draft yet' message", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // No branch draft
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })      // isSpecStateQuery — returns true
+
+    const params = makeParams(THREAD, "feature-onboarding", "where are we with the engineering spec?")
+    await handleFeatureChannelMessage(params)
+
+    // No Sonnet call — fast path
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("No engineering draft yet")
+  })
+
+  it("state query with engineering draft returns structured summary", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    const DRAFT = `# Onboarding Engineering Spec
+
+## Open Questions
+- Should we use cursor pagination? [type: engineering] [blocking: yes]
+- Which CDN provider? [type: engineering] [blocking: no]
+`
+
+    mockGetContent.mockImplementation(async ({ path, ref }: { path: string; ref?: string }) => {
+      if (path && path.includes("onboarding.engineering.md") && ref && ref.includes("engineering")) {
+        return { data: { content: Buffer.from(DRAFT).toString("base64"), type: "file" } }
+      }
+      throw new Error("Not Found")
+    })
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })      // isSpecStateQuery
+
+    const params = makeParams(THREAD, "feature-onboarding", "where are we?")
+    await handleFeatureChannelMessage(params)
+
+    // No Sonnet call
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("engineering spec")
+    // Blocking question should be surfaced
+    expect(text).toContain("Blocking")
+  })
+})
+
+// ─── Scenario 25: Architect off-topic redirect ────────────────────────────────
+
+describe("Scenario 25 — Architect off-topic redirect", () => {
+  const THREAD = "workflow-s25"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("off-topic message redirects to main channel with concierge note", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "off-topic" }] })  // isOffTopicForAgent → true
+
+    const params = makeParams(THREAD, "feature-onboarding", "what features are in progress across the platform?")
+    await handleFeatureChannelMessage(params)
+
+    // Only 1 Anthropic call — isOffTopicForAgent short-circuits
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Architect")
+  })
+})
+
+// ─── Scenario 26: Architect engineering spec approval ─────────────────────────
+
+describe("Scenario 26 — Architect engineering spec approval", () => {
+  const THREAD = "workflow-s26"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("user confirms engineering spec approval → spec saved and approved message shown", async () => {
+    setPendingApproval("onboarding", {
+      specType: "engineering",
+      specContent: "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      featureName: "onboarding",
+    })
+    setConfirmedAgent("onboarding", "architect")
+
+    const params = makeParams(THREAD, "feature-onboarding", "confirmed")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("engineering spec is saved and approved")
+    expect(text).toContain("engineer agents")
+  })
+
+  it("user rejects engineering spec approval → pending cleared, falls through to agent", async () => {
+    setPendingApproval("onboarding", {
+      specType: "engineering",
+      specContent: "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      featureName: "onboarding",
+    })
+    setConfirmedAgent("onboarding", "architect")
+
+    // Not affirmative — falls through to full architect flow
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "What would you like to change?" }] }) // runAgent
+
+    const params = makeParams(THREAD, "feature-onboarding", "actually wait, let me review again")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("What would you like to change?")
+  })
+})
+
+// ─── Scenario 27: Architect finalize with decision corrections ────────────────
+
+describe("Scenario 27 — Architect finalize with decision corrections", () => {
+  const THREAD = "workflow-s27"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("finalize_engineering_spec applies decision corrections when audit finds mismatches", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // Seed history with 2+ messages so auditSpecDecisions makes an API call
+    appendMessage("onboarding", { role: "user", content: "lock pagination at 50 items per page" })
+    appendMessage("onboarding", { role: "assistant", content: "Locked. 50 items per page." })
+
+    const DRAFT = "# Onboarding Engineering Spec\n\n## API Design\nGET /api/v1/onboarding — 100 items per page.\n\n## Open Questions\n"
+
+    mockGetContent.mockImplementation(async ({ path, ref }: { path: string; ref?: string }) => {
+      if (path && path.includes("onboarding.engineering.md") && ref && ref.includes("engineering")) {
+        return { data: { content: Buffer.from(DRAFT).toString("base64"), type: "file" } }
+      }
+      throw new Error("Not Found")
+    })
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // auditPhaseCompletion
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
+      })                                                                          // runAgent: tool_use — finalize
+      // auditSpecDecisions: history has 2 msgs → API call made → returns correction
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "MISMATCH: Page size | 100 items per page | 50 items per page" }] }) // auditSpecDecisions
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Finalized with correction applied." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "finalize the spec")
+    await handleFeatureChannelMessage(params)
+
+    // Spec saved after correction
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Finalized with correction applied.")
+  })
+
+  it("architect tool handler returns error for unknown tool name", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "unknown_tool_xyz", input: {} }],
+      })                                                                          // runAgent: tool_use — unknown
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "I cannot call that tool." }] }) // runAgent: end_turn
+
+    const params = makeParams(THREAD, "feature-onboarding", "do something weird")
+    await handleFeatureChannelMessage(params)
+
+    // Agent response shows error was surfaced
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("I cannot call that tool.")
+  })
+})
