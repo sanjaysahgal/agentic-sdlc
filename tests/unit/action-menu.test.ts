@@ -16,6 +16,8 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: vi.fn() }))
 
 import { buildActionMenu } from "../../../interfaces/slack/handlers/message"
 
+const item = (issue: string, fix: string) => ({ issue, fix })
+
 describe("buildActionMenu", () => {
   it("returns empty string when all categories have zero issues", () => {
     const result = buildActionMenu([
@@ -27,8 +29,8 @@ describe("buildActionMenu", () => {
 
   it("numbers issues sequentially across all categories", () => {
     const result = buildActionMenu([
-      { emoji: ":art:", label: "Brand Drift", issues: ["token-a: spec red → brand blue", "token-b: spec 2s → brand 4s"] },
-      { emoji: ":mag:", label: "Quality", issues: ["TBD placeholder in copy"] },
+      { emoji: ":art:", label: "Brand Drift", issues: [item("token-a: spec red", "change to blue"), item("token-b: spec 2s", "change to 4s")] },
+      { emoji: ":mag:", label: "Quality", issues: [item("TBD placeholder in copy", "replace with final text")] },
     ])
     expect(result).toContain("1. token-a")
     expect(result).toContain("2. token-b")
@@ -37,9 +39,16 @@ describe("buildActionMenu", () => {
     expect(result).not.toMatch(/^1\. TBD/m)
   })
 
+  it("each item renders issue and Fix label", () => {
+    const result = buildActionMenu([
+      { emoji: ":art:", label: "Brand Drift", issues: [item("glow-duration: spec `2.5s`", "change to `4s`")] },
+    ])
+    expect(result).toContain("glow-duration: spec `2.5s` — *Fix:* change to `4s`")
+  })
+
   it("includes category header with emoji and issue count", () => {
     const result = buildActionMenu([
-      { emoji: ":art:", label: "Brand Drift", issues: ["issue one", "issue two"] },
+      { emoji: ":art:", label: "Brand Drift", issues: [item("a", "fix a"), item("b", "fix b")] },
     ])
     expect(result).toContain("*:art: Brand Drift (2):*")
   })
@@ -47,7 +56,7 @@ describe("buildActionMenu", () => {
   it("omits categories with zero issues — no empty header", () => {
     const result = buildActionMenu([
       { emoji: ":art:", label: "Brand Drift", issues: [] },
-      { emoji: ":mag:", label: "Quality", issues: ["real issue"] },
+      { emoji: ":mag:", label: "Quality", issues: [item("real issue", "do this")] },
     ])
     expect(result).not.toContain("Brand Drift")
     expect(result).toContain("Quality")
@@ -55,7 +64,7 @@ describe("buildActionMenu", () => {
 
   it("includes OPEN ITEMS header and fix CTA", () => {
     const result = buildActionMenu([
-      { emoji: ":art:", label: "Brand Drift", issues: ["x"] },
+      { emoji: ":art:", label: "Brand Drift", issues: [item("x", "y")] },
     ])
     expect(result).toContain("*── OPEN ITEMS ──*")
     expect(result).toContain("Say *fix 1 2 3* (or *fix all*)")
@@ -63,7 +72,7 @@ describe("buildActionMenu", () => {
 
   it("starts with separator and newlines", () => {
     const result = buildActionMenu([
-      { emoji: ":art:", label: "Brand Drift", issues: ["x"] },
+      { emoji: ":art:", label: "Brand Drift", issues: [item("x", "y")] },
     ])
     expect(result).toMatch(/^\n\n---/)
   })

@@ -61,18 +61,23 @@ function buildCheckpointFooter(
 // Appended AFTER the agent's prose response — not a system prompt instruction (probabilistic),
 // but structural output the platform constructs regardless of what the agent said.
 // Format is stable: numbered issues across categories, single CTA so user can say "fix 1 3 5".
-export function buildActionMenu(categories: Array<{ emoji: string; label: string; issues: string[] }>): string {
+export type ActionItem = { issue: string; fix: string }
+
+// Builds a deterministic, platform-enforced structured action menu from pre-computed audit data.
+// Exported for unit testing.
+// Each item renders as: "N. [issue] — *Fix:* [fix]" so the user can say "fix 1 3 5".
+export function buildActionMenu(categories: Array<{ emoji: string; label: string; issues: ActionItem[] }>): string {
   const filled = categories.filter(c => c.issues.length > 0)
   if (filled.length === 0) return ""
   let n = 0
   const lines: string[] = ["---", "*── OPEN ITEMS ──*"]
   for (const cat of filled) {
     lines.push(`\n*${cat.emoji} ${cat.label} (${cat.issues.length}):*`)
-    for (const issue of cat.issues) {
-      lines.push(`${++n}. ${issue}`)
+    for (const item of cat.issues) {
+      lines.push(`${++n}. ${item.issue} — *Fix:* ${item.fix}`)
     }
   }
-  lines.push(`\nSay *fix 1 2 3* (or *fix all*) to apply the recommended fixes.`)
+  lines.push(`\nSay *fix 1 2 3* (or *fix all*) to apply.`)
   return "\n\n" + lines.join("\n")
 }
 
@@ -1017,29 +1022,38 @@ async function runDesignAgent(params: {
   // Platform-enforced structured action menu — built from pre-computed audit data, appended
   // after the agent prose. This is structural (not a system prompt instruction) so it appears
   // on every response that has open issues regardless of how the agent phrased things.
+  // Quality issue strings use " — " to separate the concise issue from its explanation/recommendation.
+  // Split on the first " — " to surface a crisp issue + explicit fix label.
+  function splitQualityIssue(s: string): ActionItem {
+    const sep = s.indexOf(" — ")
+    return sep === -1
+      ? { issue: s, fix: "fix before approval" }
+      : { issue: s.slice(0, sep), fix: s.slice(sep + 3) }
+  }
+
   const actionMenu = buildActionMenu([
     {
       emoji: ":art:",
       label: "Brand Drift",
       issues: [
-        ...brandDriftsDesign.map(d => `${d.token}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``),
-        ...animDriftsDesign.map(d => `${d.param}: spec \`${d.specValue}\` → BRAND.md \`${d.brandValue}\``),
+        ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+        ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
       ],
     },
     {
       emoji: ":jigsaw:",
       label: "Missing Brand Tokens",
-      issues: missingTokensDesign.map(m => `${m.token}: not referenced in spec (BRAND.md value: \`${m.brandValue}\`)`),
+      issues: missingTokensDesign.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
     },
     {
       emoji: ":mag:",
       label: "Design Quality",
-      issues: qualityIssues,
+      issues: qualityIssues.map(splitQualityIssue),
     },
     {
       emoji: ":white_check_mark:",
       label: "Design Readiness Gaps",
-      issues: designReadinessFindings.map(f => `${f.issue} — ${f.recommendation}`),
+      issues: designReadinessFindings.map(f => ({ issue: f.issue, fix: f.recommendation })),
     },
   ])
 
