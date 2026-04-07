@@ -219,8 +219,16 @@ export async function handleFeatureChannelMessage(params: {
       appendMessage(featureName, { role: "assistant", content: `Escalated to ${pausedRole}: "${pendingEscalation.question}". Design is paused until they respond.` })
       return
     }
-    // User declined escalation or sent a new message — clear pending and continue normally
-    if (pendingEscalation) clearPendingEscalation(featureName)
+    // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
+    if (pendingEscalation) {
+      const q = pendingEscalation.question
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `Design is paused — the PM needs to resolve a blocking gap before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring the PM into this thread.`,
+      })
+      return
+    }
 
     // If the design spec is now approved, route to the architect.
     const currentPhaseForDesign = await getFeaturePhase(getFeatureName(channelName))
@@ -819,6 +827,8 @@ async function runDesignAgent(params: {
   const designBranchName = `spec/${featureName}-design`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutDesign: ToolCallRecord[] = []
+  // Snapshot escalation state before agent runs — used after to detect if escalation was just offered
+  const escalationBeforeRun = getPendingEscalation(featureName)
 
   // Extract the approved product spec from context for use in the audit.
   const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
@@ -1079,10 +1089,14 @@ async function runDesignAgent(params: {
 
   appendMessage(featureName, { role: "assistant", content: response })
 
+  // If escalation was just offered this turn, suppress the action menu — showing 20 fixable
+  // design items when the user cannot act on them until PM gaps close is actively misleading.
+  const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureName)
+
   // Platform-enforced structured action menu — built from pre-computed audit data, appended
   // after the agent prose. This is structural (not a system prompt instruction) so it appears
   // on every response that has open issues regardless of how the agent phrased things.
-  const actionMenu = buildActionMenu([
+  const actionMenu = escalationJustOffered ? "" : buildActionMenu([
     {
       emoji: ":art:",
       label: "Brand Drift",

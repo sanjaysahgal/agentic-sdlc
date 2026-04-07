@@ -62,7 +62,7 @@ Reads the approved product spec fully before asking a single question. Works wit
 - `apply_design_spec_patch` — incremental update; same audits + preview regeneration
 - `generate_design_preview` — preview-only, no GitHub save
 - `fetch_url` — fetches a reference URL to extract brand tokens
-- `offer_pm_escalation` — escalates blocking **product** questions (user-facing behavior, acceptance criteria, user story scope). Stores via `setPendingEscalation(targetAgent: "pm")`; platform prompts user to confirm, then posts PM notification. Called immediately — no permission-seeking.
+- `offer_pm_escalation` — escalates blocking **product** questions (user-facing behavior, acceptance criteria, user story scope). Stores via `setPendingEscalation(targetAgent: "pm")`; platform posts reminder and holds on any non-affirmative message until user confirms with "yes". After calling, agent lists each blocking gap and asserts "Say *yes* and I'll bring the PM in now." — no question, no optionality. Action menu suppressed on the turn escalation is offered.
 - `offer_architect_escalation` — escalates blocking **architecture or data design** questions (storage, system design, backend implementation). Stores via `setPendingEscalation(targetAgent: "architect")`. Design agent does NOT escalate visual definition gaps it can resolve with design judgment.
 - `finalize_design_spec` — blocked if unresolved `[blocking: yes]` questions exist
 

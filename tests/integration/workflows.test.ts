@@ -2474,51 +2474,46 @@ describe("Scenario 27 — Architect finalize with decision corrections", () => {
   })
 })
 
-// ─── NEW: Scenario N1 — Design escalation rejection path ─────────────────────
+// ─── NEW: Scenario N1 — Non-affirmative during PM escalation → reminder + hold ─
 //
-// When a pending design escalation exists and the user says "no", the escalation
-// is cleared and the design agent proceeds normally (not the escalation path).
+// When a pending PM escalation exists and the user says "no" (non-affirmative),
+// the platform posts a reminder and holds — does NOT clear the escalation or run
+// the design agent. The escalation is a hard block until the user says "yes".
 
-describe("Scenario N1 — Design escalation rejection path", () => {
+describe("Scenario N1 — Non-affirmative during PM escalation → reminder, escalation holds", () => {
   const THREAD = "workflow-n1"
 
   beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+  })
 
-  it("user says 'no' to pending escalation → escalation cleared, design agent continues", async () => {
+  it("user says 'no' → reminder posted, escalation NOT cleared, no agent call", async () => {
     setConfirmedAgent("onboarding", "ux-design")
-    appendMessage("onboarding", { role: "user", content: "should we support social login?" })
-    appendMessage("onboarding", { role: "assistant", content: "I've flagged this for the PM — design is paused." })
 
-    // Store pending escalation as if design agent offered it
     setPendingEscalation("onboarding", {
       targetAgent: "pm",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
     })
 
-    // "no" is not affirmative — escalation cleared, design agent runs normally
-    // No design draft on branch → auditPhaseCompletion skipped
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })        // isSpecStateQuery
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "No problem, let's continue the design without the PM." }] }) // runAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })         // identifyUncommittedDecisions
-
+    // No Anthropic calls — platform returns early with reminder
     const params = makeParams(THREAD, "feature-onboarding", "no, let's continue without them")
     await handleFeatureChannelMessage(params)
 
-    // Pending escalation was cleared before running design agent
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    // No AI calls
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
 
-    // Design agent ran (not the escalation confirmation path which uses postMessage)
-    const text = lastUpdateText(params.client)
-    expect(text).toContain("continue the design without the PM")
-
-    // PM was NOT pinged via postMessage — escalation was rejected
+    // Reminder posted via postMessage
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const escalationPost = postCalls.find((c: any) => c[0]?.text?.includes("blocking product question"))
-    expect(escalationPost).toBeUndefined()
+    const reminder = postCalls.find((c: any) => c[0]?.text?.includes("Design is paused"))
+    expect(reminder).toBeDefined()
+    expect(reminder[0].text).toContain("Should social login be supported?")
+    expect(reminder[0].text).toContain("Say *yes*")
+
+    // Escalation still pending — not cleared
+    expect(getPendingEscalation("onboarding")).not.toBeNull()
   })
 })
 
@@ -2527,16 +2522,17 @@ describe("Scenario N1 — Design escalation rejection path", () => {
 // When a pending architect escalation exists (targetAgent: "architect") and user
 // says "no", the escalation is cleared and design agent continues normally.
 
-describe("Scenario N2 — Architect escalation rejection path", () => {
+describe("Scenario N2 — Non-affirmative during architect escalation → reminder, escalation holds", () => {
   const THREAD = "workflow-n2"
 
   beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+  })
 
-  it("user says 'no' to pending architect escalation → escalation cleared, design agent runs", async () => {
+  it("user says 'no' to pending architect escalation → reminder posted, escalation NOT cleared", async () => {
     setConfirmedAgent("onboarding", "ux-design")
-    appendMessage("onboarding", { role: "user", content: "how should we handle session carry-over?" })
-    appendMessage("onboarding", { role: "assistant", content: "I've flagged this for the architect." })
 
     setPendingEscalation("onboarding", {
       targetAgent: "architect",
@@ -2544,27 +2540,21 @@ describe("Scenario N2 — Architect escalation rejection path", () => {
       designContext: "Onboarding design in progress.",
     })
 
-    // "no" is not affirmative — escalation cleared, design agent runs
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isSpecStateQuery
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "No problem, let's continue without escalating to the architect." }] }) // runAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })          // identifyUncommittedDecisions
-
+    // No Anthropic calls — platform returns early with reminder
     const params = makeParams(THREAD, "feature-onboarding", "no, skip the architect")
     await handleFeatureChannelMessage(params)
 
-    // Escalation cleared
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    // No AI calls
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
 
-    // Design agent ran — response contains prose
-    const text = lastUpdateText(params.client)
-    expect(text).toContain("continue without escalating")
-
-    // Architect was NOT notified
+    // Reminder posted
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const escalationPost = postCalls.find((c: any) => c[0]?.text?.includes("blocking architecture question"))
-    expect(escalationPost).toBeUndefined()
+    const reminder = postCalls.find((c: any) => c[0]?.text?.includes("Design is paused"))
+    expect(reminder).toBeDefined()
+    expect(reminder[0].text).toContain("Where is user state persisted")
+
+    // Escalation still pending — not cleared
+    expect(getPendingEscalation("onboarding")).not.toBeNull()
   })
 })
 
@@ -3211,5 +3201,101 @@ describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design ph
 
     // Exactly 3 Anthropic calls — NO brand audit calls (PM doesn't touch brand)
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+  })
+})
+
+// ─── Scenario N14: Action menu suppressed when escalation offered this turn ───
+//
+// When the design agent calls offer_pm_escalation, a pendingEscalation is stored.
+// The platform detects the null→set transition and suppresses the action menu so
+// the user is not shown 20 fixable design items they cannot act on.
+
+describe("Scenario N14 — Action menu suppressed when escalation just offered", () => {
+  const THREAD = "workflow-n14"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("action menu absent from response when offer_pm_escalation called this turn", async () => {
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] runAgent (tool_use)      → offer_pm_escalation
+    //   [3] runAgent (end_turn)      → assertive blocking message
+    // No design draft on branch → auditPhaseCompletion skipped, no brand audit
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: "What happens to the guest session when the user signs up mid-conversation?" } }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Design cannot move forward until the PM closes this gap. Say *yes* and I'll bring the PM into this thread now." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "let's work on the session handoff")
+    await handleFeatureChannelMessage(params)
+
+    // Escalation was stored
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).not.toBeNull()
+
+    // Action menu must NOT appear — no "OPEN ITEMS" in the response
+    const text = lastUpdateText(params.client)
+    expect(text).not.toContain("OPEN ITEMS")
+    expect(text).not.toContain("Say *fix")
+
+    // Agent's assertive message is present
+    expect(text).toContain("Design cannot move forward")
+  })
+})
+
+// ─── Scenario N15: Non-affirmative message during pending escalation ──────────
+//
+// Once escalation is pending, any non-affirmative message should get a reminder
+// and NOT trigger a full agent run. The escalation must remain stored (not cleared).
+
+describe("Scenario N15 — Non-affirmative message during pending escalation → reminder only", () => {
+  const THREAD = "workflow-n15"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setPendingEscalation } = await import("../../../runtime/conversation-store")
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "What happens to the guest session when the user signs up mid-conversation?",
+      designContext: "Design in progress.",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("sends reminder message, does not call runAgent, does not clear pending escalation", async () => {
+    // No Anthropic calls expected — platform returns early before classifiers
+    const params = makeParams(THREAD, "feature-onboarding", "what about the animation tokens?")
+    await handleFeatureChannelMessage(params)
+
+    // No AI calls at all
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+
+    // Reminder posted via postMessage (not update — no withThinking started)
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const reminder = postCalls.find((c: any) => c[0]?.text?.includes("Design is paused"))
+    expect(reminder).toBeDefined()
+    expect(reminder[0].text).toContain("What happens to the guest session")
+    expect(reminder[0].text).toContain("Say *yes*")
+
+    // Escalation still stored — not cleared
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).not.toBeNull()
   })
 })
