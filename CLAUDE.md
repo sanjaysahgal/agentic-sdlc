@@ -150,6 +150,7 @@ A task is NOT done until the following are updated to reflect the change:
 | What changed | What must be updated |
 |---|---|
 | New agent built or modified | `AGENTS.md` — persona, capabilities, inputs/outputs |
+| New branch or path added to `message.ts` or `agent-router.ts` | `tests/integration/workflows.test.ts` — new scenario in the **same commit**; `--coverage` alone is insufficient (lines executed ≠ behavior verified) |
 | New runtime behavior, routing, or data flow | `SYSTEM_ARCHITECTURE.md` — architecture section |
 | New backlog item completed | `BACKLOG.md` — move to Completed |
 | New solo-team shortcut taken | `DECISIONS.md` — add entry with scale gap |
