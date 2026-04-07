@@ -135,6 +135,21 @@ describe("buildDesignSystemPrompt", () => {
     expect(prompt).toContain("Save after every agreed decision")
   })
 
+  it("response format constraint — ≤3 sentences when applying fixes", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("≤3 sentences")
+  })
+
+  it("response format constraint — prohibits restating platform notice content", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Do NOT restate, reformat, or list any [PLATFORM NOTICE] content")
+  })
+
+  it("response format constraint — ≤1 question when applying fixes", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("ask at most ONE")
+  })
+
   it("short reply re-read rule — re-read last question before interpreting a short reply", () => {
     const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("re-read the last question you asked")

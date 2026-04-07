@@ -664,7 +664,7 @@ async function runDesignAgent(params: {
         ...brandDriftsDesign.map(d => `${d.token} spec=${d.specValue} brand=${d.brandValue}`),
         ...animDriftsDesign.map(d => `${d.param} spec=${d.specValue} brand=${d.brandValue}`),
         ...missingTokensDesign.map(d => `${d.token} MISSING from spec (brand=${d.brandValue})`),
-      ].join(", ")}. You MUST surface this in your response and offer to patch the spec to align with BRAND.md.]`
+      ].join(", ")}. The platform displays these in a structured block. DO NOT restate or list them in your response. Apply any drift fixes the user requested and keep your prose to ≤3 sentences.]`
     : ""
 
   // Extract committed text literals from the spec and inject as PLATFORM SPEC FACTS.
@@ -719,7 +719,7 @@ async function runDesignAgent(params: {
   const copyCompletenessIssues = designDraftContent ? auditCopyCompleteness(designDraftContent) : []
   const qualityIssues = [...redundantBrandingIssues, ...copyCompletenessIssues]
   const qualityNotice = qualityIssues.length > 0
-    ? `\n\n[PLATFORM NOTICE — DESIGN QUALITY: ${qualityIssues.length} issue${qualityIssues.length === 1 ? "" : "s"} must be fixed before approval:\n${qualityIssues.map((i, n) => `${n + 1}. ${i}`).join("\n")}\nYou MUST surface each issue with your concrete recommendation and offer to patch.]`
+    ? `\n\n[PLATFORM NOTICE — DESIGN QUALITY: ${qualityIssues.length} issue${qualityIssues.length === 1 ? "" : "s"} blocking approval:\n${qualityIssues.map((i, n) => `${n + 1}. ${i}`).join("\n")}\nThe platform displays these in a structured block. DO NOT restate them in your response. Apply any quality fixes the user requested and keep your prose to ≤3 sentences.]`
     : ""
   if (designDraftContent) {
     const dfp = specFingerprint(designDraftContent)
@@ -736,7 +736,7 @@ async function runDesignAgent(params: {
       if (designAuditResult && !designAuditResult.ready) {
         designReadinessFindings = designAuditResult.findings
         const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. You MUST surface each finding with your concrete recommendation. For design gaps you own, provide the recommendation directly. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation.\n${findingLines}]`
+        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. The platform displays these in a structured block — DO NOT restate or list them in your response. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation. For design gaps you own, fix them when the user asks. Keep your prose to ≤3 sentences.\n${findingLines}]`
       } else if (designAuditResult?.ready) {
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
       }
