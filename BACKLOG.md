@@ -83,6 +83,16 @@ Overall: 75.97% stmts / 67.35% branch / 71.07% funcs / 76.93% lines. Critical ga
 
 ---
 
+### Refactor: extract named functions from `runDesignAgent` and `runArchitectAgent` tool handler closures in `message.ts`
+
+`message.ts` functions coverage sits at 58.82% because the tool handler logic for both agents (`finalize_design_spec`, `apply_design_spec_patch`, `generate_design_preview`, and their architect equivalents) lives inside nested closures that cannot be unit tested in isolation. The closures capture outer scope (agent context, Slack client, etc.) in a way that makes them unreachable without a full end-to-end test harness.
+
+**Fix:** Extract each tool handler closure into a named, exported function that receives its dependencies as arguments. Wire the named function back into the existing tool handler registration in `message.ts`. Each extracted function gets a corresponding unit test. This is a mechanical refactor with no behavior change — the goal is testability.
+
+**Expected outcome:** `message.ts` functions% moves from ~59% toward 80%+, eliminating the last major coverage gap in the critical path.
+
+---
+
 ### Gap: Pre-commit new-agent gate has no smoke test
 
 The pre-commit hook in `.claude/settings.json` that blocks new `run[X]Agent()` function exports without an always-on audit block (`[X]ReadinessNotice` or `ALWAYS-ON-AUDIT-JUSTIFIED:` comment) has never been triggered in a real commit. The hook logic is live but unverified. If the regex is wrong, a new agent could ship without the required audit block and the gate would silently pass.
