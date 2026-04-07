@@ -39,6 +39,14 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### N16/N17 escalation reply tests validate via fallback, not real userId match (2026-04-07)
+
+N16 sets `process.env.SLACK_PM_USER` but `loadWorkspaceConfig()` reads from the workspace config struct — the env var may not be wired through in test, so N16 passes via the `!roles.pmUser && !roles.architectUser` fallback (any user counts as a valid reply when roles aren't configured). In production with real roles, the `userId === roles.pmUser` path is what fires. The correct test would inject a mock `WorkspaceConfig` with `roles.pmUser = "U_PM_123"` to exercise the actual userId match branch.
+
+**Fix:** Update N16/N17 to mock `loadWorkspaceConfig` and verify the userId === roles.pmUser path specifically, separate from the no-roles fallback path.
+
+---
+
 ### `buildDesignStateResponse` test must assert Slack char limit and content shape (2026-04-06)
 
 Current unit tests use short inline specs and only assert that content *appears* — not that the response is appropriately shaped. Two production bugs slipped through: (1) raw Design Direction bullet lists blew Slack's 4000-char limit, (2) false positive from cross-line regex in `findUndefinedScreenReferences`. Neither was caught because tests didn't assert the right invariants.
