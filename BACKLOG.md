@@ -33,6 +33,21 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Escalation reply auto-routing — PM/Architect reply in thread should re-trigger design agent
+
+When the platform posts an escalation notification (`@PM — UX Designer has a blocking question...`), the PM or Architect types their answer in that Slack thread. Currently that reply is a dead end: the bot receives it as a raw thread message with no special framing, the design agent sees it as a random message with no connection to the blocked question, and the designer must manually relay the answer. This is a manual handoff in the middle of an automated workflow.
+
+**What needs to happen:** When a reply arrives in a thread where an escalation was posted, and the reply is from the expected role user (`pmUser` / `architectUser` from WorkspaceConfig), the platform should:
+1. Detect it as an escalation reply (track the escalation thread `ts` when posting the notification)
+2. Inject it into the design agent conversation as: `"PM responded to your question '[question]': [answer]"`
+3. Resume the design agent so it can incorporate the answer and continue
+
+**Why it matters:** The platform's core promise is eliminating manual handoffs. A PM escalation that ends with "read the Slack thread yourself" is not a closed loop.
+
+**Implementation notes:** Requires storing the `ts` of the escalation postMessage alongside the `pendingEscalation` record, subscribing to thread reply events, and matching incoming messages against stored escalation threads.
+
+---
+
 ### `buildDesignStateResponse` test must assert Slack char limit and content shape (2026-04-06)
 
 Current unit tests use short inline specs and only assert that content *appears* — not that the response is appropriately shaped. Two production bugs slipped through: (1) raw Design Direction bullet lists blew Slack's 4000-char limit, (2) false positive from cross-line regex in `findUndefinedScreenReferences`. Neither was caught because tests didn't assert the right invariants.
