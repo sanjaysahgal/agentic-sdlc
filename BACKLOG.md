@@ -39,6 +39,20 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### PM agent must run on escalation confirmation — not raw question dump (2026-04-07)
+
+When the user confirms escalation ("yes"), the platform currently posts the raw blocking questions directly to Slack and returns. The PM agent never runs. The human PM receives a cold list of questions with zero analysis or recommendations. This violates Principle 6 (never bypass an agent) and the recommendation-first rule.
+
+**What should happen:**
+1. User says "yes" → platform calls `runPmAgent` with the blocking questions as its opening brief
+2. PM agent produces recommendations for each gap (its recommendation-first rule applies here too)
+3. Platform posts that PM agent response + @mentions the human PM for approval/correction
+4. Human PM replies → auto-routed back to design agent with the answer
+
+**Implementation:** Replace the raw `postMessage` in the escalation confirmation path with a `withThinking` PM agent run. The `offer_pm_escalation` question string becomes the PM agent's `userMessage`. The PM agent's response is posted as the escalation notification (with @mention appended).
+
+---
+
 ### N16/N17 escalation reply tests validate via fallback, not real userId match (2026-04-07)
 
 N16 sets `process.env.SLACK_PM_USER` but `loadWorkspaceConfig()` reads from the workspace config struct — the env var may not be wired through in test, so N16 passes via the `!roles.pmUser && !roles.architectUser` fallback (any user counts as a valid reply when roles aren't configured). In production with real roles, the `userId === roles.pmUser` path is what fires. The correct test would inject a mock `WorkspaceConfig` with `roles.pmUser = "U_PM_123"` to exercise the actual userId match branch.
