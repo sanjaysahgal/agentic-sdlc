@@ -290,11 +290,11 @@ describe("gap detection", () => {
 describe("design state query — quality section", () => {
   // This test guards against the wiring bug where quality checks were only injected
   // into the design agent LLM path but state queries take an early-return path
-  // (buildDesignStateResponse) and never reached them. The fix: wire quality checks
-  // into buildDesignStateResponse directly via qualityIssues[]. This test asserts
-  // the *── QUALITY ──* section surfaces on a state query without any trigger phrase.
+  // (buildDesignStateResponse) and never reached them. Quality issues now appear
+  // in the action menu under "Design Quality" (same as the LLM path). This test
+  // asserts quality findings surface on a state query without any trigger phrase.
 
-  it("surfaces QUALITY section with redundant branding and copy findings on state query", async () => {
+  it("surfaces Design Quality entries in action menu with redundant branding and copy findings on state query", async () => {
     const { readFileSync } = await import("fs")
     const fixtureContent = readFileSync(
       "tests/fixtures/agent-output/onboarding-design-full.md",
@@ -311,15 +311,17 @@ describe("design state query — quality section", () => {
       return Promise.reject(new Error("Not Found"))
     })
 
-    // State query path: isOffTopicForAgent + isSpecStateQuery + auditSpecRenderAmbiguity (3 Haiku calls)
+    // State query path: isOffTopicForAgent + isSpecStateQuery + auditSpecRenderAmbiguity + auditPhaseCompletion (4 Haiku calls)
     // isOffTopicForAgent: returns true when text === "off-topic"; "on-topic" → false (keep going)
     // isSpecStateQuery: returns true when text === "yes"
     // auditSpecRenderAmbiguity: returns JSON array of quality findings
-    // No Sonnet call — returns early via buildDesignStateResponse
+    // auditPhaseCompletion: returns PASS (no readiness gaps)
+    // No Sonnet call — returns early via buildDesignStateResponse + buildActionMenu
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })                // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: '["Scrollbar treatment not defined for chip row"]' }] }) // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // auditPhaseCompletion
 
     const params = makeParams({ userMessage: "what is the current state" })
 
@@ -330,8 +332,9 @@ describe("design state query — quality section", () => {
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const lastUpdate = updateCalls.at(-1)?.[0]?.text ?? ""
 
-    // Quality section must be present — this is the wiring invariant
-    expect(lastUpdate).toContain("*── QUALITY ──*")
+    // Action menu with Design Quality category must be present — this is the wiring invariant
+    expect(lastUpdate).toContain("*── OPEN ITEMS ──*")
+    expect(lastUpdate).toContain("Design Quality")
 
     // Redundant branding (deterministic, from auditSpecRenderAmbiguity internal check)
     expect(lastUpdate).toContain("Sign in to Health360")
