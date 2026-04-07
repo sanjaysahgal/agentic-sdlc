@@ -841,9 +841,11 @@ describe("Scenario 12 — State query preview freshness", () => {
       .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // 1. design draft
       .mockRejectedValue(new Error("Not Found")) // 2+ brand, productVision, systemArchitecture, etc.
 
-    // Anthropic: [0] identifyUncommittedDecisions → pending (generateDesignPreview is template-based, no LLM call)
+    // Anthropic: [0] identifyUncommittedDecisions → pending, [1] auditSpecRenderAmbiguity → [] findings
+    // (generateDesignPreview is template-based, no LLM call)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "1. Dark mode: Archon palette agreed\n2. Chip fade timing: 150ms agreed" }] }) // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -855,8 +857,9 @@ describe("Scenario 12 — State query preview freshness", () => {
     expect(uploadCall?.title).toContain("committed spec")
     expect(uploadCall?.content).toBeTruthy() // template-rendered HTML
 
-    // Only 1 Anthropic call — generateDesignPreview is template-based, no LLM call
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
+    // 2 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity
+    // (generateDesignPreview is template-based, no LLM call)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
 
     // Response text tells user the preview reflects the committed spec only
     const text = lastUpdateText(client)
@@ -877,9 +880,10 @@ describe("Scenario 12 — State query preview freshness", () => {
       .mockRejectedValueOnce(new Error("Not Found")) // 4. systemArchitecture
       .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // 5. saved preview HTML
 
-    // Anthropic: only identifyUncommittedDecisions — no generateDesignPreview call
+    // Anthropic: [0] identifyUncommittedDecisions → none, [1] auditSpecRenderAmbiguity → [] findings
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -891,8 +895,9 @@ describe("Scenario 12 — State query preview freshness", () => {
     expect(uploadCall?.title).not.toContain("committed spec")
     expect(uploadCall?.content).toBe(SAVED_HTML)
 
-    // Only 1 Anthropic call — generateDesignPreview was NOT called
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
+    // 2 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity
+    // (generateDesignPreview was NOT called — saved GitHub file served directly)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 
   it("state query completes with preview when uncommitted decisions exist", async () => {

@@ -311,13 +311,15 @@ describe("design state query — quality section", () => {
       return Promise.reject(new Error("Not Found"))
     })
 
-    // State query path: isOffTopicForAgent + isSpecStateQuery (2 Haiku calls)
+    // State query path: isOffTopicForAgent + isSpecStateQuery + auditSpecRenderAmbiguity (3 Haiku calls)
     // isOffTopicForAgent: returns true when text === "off-topic"; "on-topic" → false (keep going)
     // isSpecStateQuery: returns true when text === "yes"
+    // auditSpecRenderAmbiguity: returns JSON array of quality findings
     // No Sonnet call — returns early via buildDesignStateResponse
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] }) // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })       // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }] })                // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Scrollbar treatment not defined for chip row"]' }] }) // auditSpecRenderAmbiguity
 
     const params = makeParams({ userMessage: "what is the current state" })
 
@@ -331,10 +333,13 @@ describe("design state query — quality section", () => {
     // Quality section must be present — this is the wiring invariant
     expect(lastUpdate).toContain("*── QUALITY ──*")
 
-    // Redundant branding: "Sign in to Health360" repeats the app name already in the wordmark
+    // Redundant branding (deterministic, from auditSpecRenderAmbiguity internal check)
     expect(lastUpdate).toContain("Sign in to Health360")
 
-    // Copy completeness: tagline missing terminal punctuation
+    // Copy completeness (deterministic, from auditSpecRenderAmbiguity internal check)
     expect(lastUpdate).toContain("One conversation")
+
+    // Haiku semantic finding surfaced in the same section
+    expect(lastUpdate).toContain("Scrollbar treatment not defined for chip row")
   })
 })

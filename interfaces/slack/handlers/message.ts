@@ -593,9 +593,11 @@ async function runDesignAgent(params: {
         }
       }
 
-      // Deterministic design quality checks — zero LLM cost, always run alongside drift audit.
+      // Full 4-pass quality audit — deterministic checks + Haiku semantic pass.
+      // Runs on every state query regardless of how it's phrased — same audit that runs
+      // on the design agent LLM path, now consistent across both paths (Principle 7).
       const stateQualityIssues = draftContent
-        ? [...auditRedundantBranding(draftContent), ...auditCopyCompleteness(draftContent)]
+        ? await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
         : []
       const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, brandDrifts, animationDrifts, specGap, uncommittedDecisions, qualityIssues: stateQualityIssues })
       appendMessage(featureName, { role: "user", content: userMessage })
