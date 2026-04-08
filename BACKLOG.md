@@ -39,6 +39,10 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+~~### Design agent escalation must be platform-enforced, not prompt-dependent~~ ✅ Done (2026-04-07)
+
+After `runDesignAgent`, if `designReadinessFindings` contains any finding tagged `[type: product]` and the agent did not call `offer_pm_escalation` (checked via `getPendingEscalation`), the platform auto-triggers escalation: consolidates product findings, calls `setPendingEscalation`, overrides the response with the hard assertion. N18 integration test covers the bug case.
+
 ~~### PM agent must run on escalation confirmation — not raw question dump~~ ✅ Done (2026-04-07)
 
 Escalation confirmation now runs `runPmAgent` (or `runArchitectAgent`) with the blocking questions as its brief (`readOnly: true`). The agent produces concrete recommendations, then a separate `postMessage` @mentions the human PM/Architect: "review the recommendations above and reply here to confirm or adjust." S4 Turn 2 and S18 Turn 2 updated to reflect the new behavior.

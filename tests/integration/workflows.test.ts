@@ -3411,3 +3411,76 @@ describe("Scenario N17 — Non-PM message during active notification falls throu
     expect(getEscalationNotification("onboarding")).not.toBeNull()
   })
 })
+
+// ─── Scenario N18: Platform auto-escalates when agent has product findings but skips tool ──
+//
+// When designReadinessFindings includes [type: product] findings and the agent does NOT
+// call offer_pm_escalation, the platform enforces escalation structurally — regardless of
+// what the agent chose to say in prose. This makes the escalation gate deterministic.
+
+describe("Scenario N18 — Platform auto-triggers escalation when agent skips offer_pm_escalation", () => {
+  const THREAD = "workflow-n18"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("agent gives prose without calling offer_pm_escalation → platform sets pending escalation from product findings", async () => {
+    // Mock GitHub to return a design spec draft so auditPhaseCompletion fires.
+    // Path: specs/features/onboarding/onboarding.design.md on branch spec/onboarding-design.
+    const draftContent = `## Open Questions\n- [type: product] [blocking: yes] SSO failure handling unspecified`
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(draftContent).toString("base64"), encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] auditPhaseCompletion     → product finding detected
+    //   [3] runAgent (end_turn)      → prose without tool call (the bug case)
+    //   [4] identifyUncommittedDecisions → none
+    // The agent gives wishy-washy prose without calling the tool.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isSpecStateQuery
+      .mockResolvedValueOnce({
+        // auditPhaseCompletion → returns product finding
+        content: [{ type: "text", text: "FINDING: [type: product] [blocking: yes] SSO failure handling unspecified | Specify the recovery behavior when SSO token is valid but no account found" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 20, output_tokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        // runAgent → prose without calling offer_pm_escalation (the bug case)
+        content: [{ type: "text", text: "Want to escalate these to the PM now, or continue shaping the spec first?" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 50, output_tokens: 20 },
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // identifyUncommittedDecisions
+
+    const params = makeParams(THREAD, "feature-onboarding", "what can I do next?")
+    await handleFeatureChannelMessage(params)
+
+    // Platform must have set pending escalation — agent skipped the tool
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.targetAgent).toBe("pm")
+    expect(pending?.question).toContain("[type: product]")
+    expect(pending?.question).toContain("SSO failure handling")
+
+    // Response must assert the block, not ask a passive question
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
+    expect(text).not.toContain("or continue shaping")
+  })
+})

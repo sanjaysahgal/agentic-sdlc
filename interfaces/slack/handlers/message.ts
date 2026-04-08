@@ -1114,6 +1114,21 @@ async function runDesignAgent(params: {
     }
   }
 
+  // Platform enforcement: if there are [type: product] blocking findings and the agent did NOT
+  // call offer_pm_escalation, auto-trigger escalation. Prompt rules are probabilistic — this
+  // makes product gap escalation structurally deterministic regardless of agent prose choices.
+  const productFindings = designReadinessFindings.filter(f => f.issue.toLowerCase().includes("[type: product]"))
+  const agentCalledEscalation = !!getPendingEscalation(featureName)
+  if (productFindings.length > 0 && !agentCalledEscalation) {
+    const consolidated = productFindings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
+    setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
+    const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
+    const escalationResponse = `${consolidated}\n\n${assertionText}`
+    appendMessage(featureName, { role: "assistant", content: escalationResponse })
+    await update(`${prefix}${escalationResponse}`)
+    return
+  }
+
   appendMessage(featureName, { role: "assistant", content: response })
 
   // If escalation was just offered this turn, suppress the action menu — showing 20 fixable
