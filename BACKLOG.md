@@ -91,6 +91,39 @@ Prompt-rule-to-platform-check conversions keep happening because there's no auto
 
 ---
 
+### `auditSpecDecisions` and `extractLockedDecisions` have zero tests — critical gap (2026-04-07)
+
+Systematic audit of all LLM-dependent gates revealed that the producer–consumer chain rule exposed a second category of gap: some gates have neither consumer NOR producer tests. Two critical ones:
+
+**`auditSpecDecisions`** (`runtime/spec-auditor.ts` lines 267–327): Parses Haiku output for `MISMATCH: description | found | correct` pipe-delimited lines. If Haiku format drifts or the pipe parsing is wrong, locked decisions silently fail to enforce. Zero tests of any kind.
+
+**`extractLockedDecisions`** (`runtime/spec-auditor.ts` lines 333–363): Detects `•` bullet characters in Haiku output to identify locked design decisions. Used in both design and PM agent enriched messages. Zero tests of any kind.
+
+**Fix:** Add consumer tests (mock Haiku → verify parsing) and a fixture showing real Haiku output for each. `auditSpecDecisions` is higher priority — a silent failure here means committed decisions aren't enforced, which is a data integrity issue.
+
+---
+
+### Producer tests missing for all 13 LLM-dependent gates (systematic gap) (2026-04-07)
+
+Every gate in the platform that pattern-matches on LLM output has consumer tests (mock Anthropic → verify gate fires) but zero producer tests (verify the LLM prompt actually generates the expected tag/format). The N18 gate was the first production failure from this pattern — the rubric had no criterion to generate `[type: product]` tags, so the gate was unreachable.
+
+**Full list of gates with no producer test:**
+- `auditSpecDraft` — CONFLICT/GAP prefix (Haiku)
+- `auditPhaseCompletion` — FINDING/PASS prefix (Sonnet)
+- `auditSpecRenderAmbiguity` — JSON array (Haiku)
+- `identifyUncommittedDecisions` — "none" or numbered list (Haiku)
+- `generateSaveCheckpoint` — COMMITTED:/NOT_COMMITTED: sections (Haiku)
+- `classifyIntent` — one of 10 valid agent names (Haiku)
+- `classifyMessageScope` — "product-context" or "feature-specific" (Haiku)
+- `isOffTopicForAgent` — "off-topic" or "on-topic" (Haiku)
+- `isSpecStateQuery` — "yes" or "no" (Haiku)
+- `classifyApprovedPhaseIntent` — one of 4 intents (Haiku)
+- `summarizeUnlockedDiscussion` — bullet summary (Haiku)
+
+**Priority order:** `auditSpecDraft` and `auditPhaseCompletion` first (highest blast radius — directly gate spec approval); classifier gates last (simple prompts + fallbacks reduce risk). Producer tests require capturing real Haiku/Sonnet output for each prompt and committing as fixtures — see fixture sourcing rule.
+
+---
+
 ### N16/N17 escalation reply tests validate via fallback, not real userId match (2026-04-07)
 
 N16 sets `process.env.SLACK_PM_USER` but `loadWorkspaceConfig()` reads from the workspace config struct — the env var may not be wired through in test, so N16 passes via the `!roles.pmUser && !roles.architectUser` fallback (any user counts as a valid reply when roles aren't configured). In production with real roles, the `userId === roles.pmUser` path is what fires. The correct test would inject a mock `WorkspaceConfig` with `roles.pmUser = "U_PM_123"` to exercise the actual userId match branch.
