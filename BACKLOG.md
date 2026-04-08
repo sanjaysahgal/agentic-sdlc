@@ -41,7 +41,9 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ~~### Design agent escalation must be platform-enforced, not prompt-dependent~~ ✅ Done (2026-04-07)
 
-After `runDesignAgent`, if `designReadinessFindings` contains any finding tagged `[type: product]` and the agent did not call `offer_pm_escalation` (checked via `getPendingEscalation`), the platform auto-triggers escalation: consolidates product findings, calls `setPendingEscalation`, overrides the response with the hard assertion. N18 integration test covers the bug case.
+Two-layer platform enforcement in `runDesignAgent`:
+1. **Pre-run structural gate** (primary): After loading the design spec draft, `extractProductBlockingQuestions` parses for `[type: product] [blocking: yes]` lines. If found and no pending escalation, auto-triggers escalation and returns before calling the agent. Deterministic — no LLM, no Anthropic call. N19 covers this gate independently.
+2. **Post-run rubric gate** (belt-and-suspenders): If `designReadinessFindings` contains `[type: product]` tagged findings after the agent runs, platform overrides the response and sets pending escalation. `buildDesignRubric` criterion 10 instructs Haiku to output `[type: product]` prefixed findings for unresolved product questions. N18 covers this path.
 
 ~~### PM agent must run on escalation confirmation — not raw question dump~~ ✅ Done (2026-04-07)
 
@@ -68,6 +70,24 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it appends the escalation brief (`"The UX Designer is blocked on these product questions..."`) and the PM agent's recommendations to the design feature's conversation history. These are PM-context messages in a design-context history — they'll appear in subsequent design agent turns as prior context, which is slightly polluting.
 
 **Fix:** Either (a) run the PM agent against a separate ephemeral history (not `getHistory(featureName)`) during escalation runs, or (b) clear the two appended messages immediately after the agent returns. Option (a) is cleaner — the escalation recommendation pass should not bleed into the design conversation.
+
+---
+
+### Pre-commit hook: statically detect behavioral instructions in agent system prompts without platform checks (2026-04-07)
+
+Prompt-rule-to-platform-check conversions keep happening because there's no automated gate. When a developer adds a behavioral instruction to a system prompt in `agents/` (e.g. "call X when Y happens"), there's no check that a corresponding platform enforcement exists in `runtime/` or `message.ts`.
+
+**What this needs to do:**
+- Parse `agents/*.ts` system prompts for imperative behavioral instructions (patterns: "call X when Y", "if Z happens, do W", "you must X", "always X before Y")
+- For each detected instruction, check whether a corresponding platform-side enforcement exists (function reference, check, or gate in `runtime/` or `interfaces/slack/handlers/message.ts`)
+- If an instruction has no platform enforcement, block the commit and list the unmatched instructions
+
+**Design challenges:**
+- False positive rate is high — many prompt instructions are informational, not behavioral (e.g., "tools are listed above", "the spec format is...")
+- "Corresponding platform check" is hard to define statically — a behavioral instruction for tool A might be enforced via a post-run check on state B
+- Needs to be specific enough to catch real gaps (escalation trigger, finalization gate, brand drift) without flagging every sentence in the system prompt
+
+**Approach to evaluate:** Instead of full static analysis, define an explicit allowlist of known-enforced behaviors in a manifest file (e.g., `.platform-gates.json`). The hook checks: for every behavioral instruction pattern found, does a matching entry exist in the manifest? If a developer adds a prompt rule, they must also add it to the manifest with a pointer to the enforcement code — or the commit is blocked. The manifest itself becomes the audit trail.
 
 ---
 

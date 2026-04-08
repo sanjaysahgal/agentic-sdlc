@@ -125,7 +125,9 @@ export function buildDesignRubric(formFactors: string[]): string {
 
 8. NO TBD/TODO/PLACEHOLDER — The spec must contain zero instances of "TBD", "TODO", "PLACEHOLDER", "to be determined", "to be decided", "to come", "to be defined", or any equivalent deferral. Every such occurrence is a blocking gap.
 
-9. FORM FACTOR COVERAGE — Every screen must define layout behavior for all target form factors: ${formFactorList}. For each form factor, the spec must describe at minimum how key elements are arranged or sized at that viewport (e.g. single-column vs two-column, full-width vs fixed-width container, stacked vs side-by-side). A screen that defines layout for only one form factor without addressing the others is incomplete. The only acceptable exception is an explicit exclusion in ## Non-Goals (e.g. "Desktop layout is out of scope for this feature").`
+9. FORM FACTOR COVERAGE — Every screen must define layout behavior for all target form factors: ${formFactorList}. For each form factor, the spec must describe at minimum how key elements are arranged or sized at that viewport (e.g. single-column vs two-column, full-width vs fixed-width container, stacked vs side-by-side). A screen that defines layout for only one form factor without addressing the others is incomplete. The only acceptable exception is an explicit exclusion in ## Non-Goals (e.g. "Desktop layout is out of scope for this feature").
+
+10. NO UNRESOLVED PRODUCT QUESTIONS — The spec must contain zero open questions tagged [type: product] AND [blocking: yes]. These are product-scope gaps that the design team cannot resolve — they require PM input before design can proceed. Any such question is a blocking gap. Output findings for this criterion with the exact prefix "[type: product] [blocking: yes]" so the platform can route them to escalation automatically.`
 }
 
 export const DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"])

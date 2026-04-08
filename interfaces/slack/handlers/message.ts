@@ -13,7 +13,7 @@ import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } f
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
-import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
+import { extractBlockingQuestions, extractProductBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
@@ -842,6 +842,26 @@ async function runDesignAgent(params: {
       }
       phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
       designReadinessFindingsCache.set(designCacheKey, designReadinessFindings)
+    }
+  }
+
+  // Pre-run structural gate: if the design spec has [type: product] [blocking: yes] open questions
+  // and no escalation is already pending, auto-trigger escalation before the agent runs.
+  // This is deterministic (pure string match) — no LLM, no Anthropic call. Catches the case
+  // where the rubric-based post-run gate can't fire because the rubric doesn't tag findings
+  // with [type: product]. The spec's own Open Questions section is the authoritative source.
+  if (designDraftContent && !readOnly) {
+    const productBlockingQuestions = extractProductBlockingQuestions(designDraftContent)
+    if (productBlockingQuestions.length > 0 && !getPendingEscalation(featureName)) {
+      const prefix = routingNote ? `${routingNote}\n\n` : ""
+      const consolidated = productBlockingQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
+      const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
+      const escalationResponse = `${consolidated}\n\n${assertionText}`
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: escalationResponse })
+      await update(`${prefix}${escalationResponse}`)
+      return
     }
   }
 

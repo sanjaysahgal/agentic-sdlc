@@ -3412,6 +3412,75 @@ describe("Scenario N17 — Non-PM message during active notification falls throu
   })
 })
 
+// ─── Scenario N19: Pre-run structural gate fires on [type: product] [blocking: yes] in spec ──
+//
+// When the design spec draft has [type: product] [blocking: yes] open questions, the platform
+// must auto-trigger escalation BEFORE the agent runs — deterministic string match, no LLM.
+// This gate fires even if auditPhaseCompletion returns PASS (rubric has no criterion producing
+// [type: product] findings). The test proves the pre-run gate works independently of the rubric.
+
+describe("Scenario N19 — Pre-run structural gate fires when spec has [type: product] blocking questions", () => {
+  const THREAD = "workflow-n19"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("spec has [type: product] [blocking: yes] question → gate fires before agent, no runAgent Anthropic call", async () => {
+    // Design spec draft has an unresolved product-scope open question.
+    const draftContent = [
+      "## Screens",
+      "### Onboarding Welcome",
+      "Purpose: First screen after signup.",
+      "",
+      "## Open Questions",
+      "- [type: product] [blocking: yes] Which SSO providers must be supported at launch?",
+      "- [type: design] [blocking: no] Should the welcome illustration be static or animated?",
+    ].join("\n")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(draftContent).toString("base64"), encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic mock sequence: only isOffTopicForAgent, isSpecStateQuery, auditPhaseCompletion.
+    // auditPhaseCompletion returns PASS — rubric finds no issues. Pre-run gate fires regardless.
+    // runAgent is NOT mocked — if it's called, the test will hang or fail.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })   // auditPhaseCompletion → PASS (rubric finds nothing)
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's next for the welcome screen?")
+    await handleFeatureChannelMessage(params)
+
+    // Pre-run gate must have set pending escalation without calling runAgent.
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.targetAgent).toBe("pm")
+    expect(pending?.question).toContain("SSO providers")
+
+    // Response must assert the block with the "say yes" CTA.
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
+    expect(text).toContain("SSO providers")
+
+    // The non-product design question must NOT appear in the escalation
+    // (it's [type: design], not [type: product]) — gate is selective.
+    expect(pending?.question).not.toContain("welcome illustration")
+  })
+})
+
 // ─── Scenario N18: Platform auto-escalates when agent has product findings but skips tool ──
 //
 // When designReadinessFindings includes [type: product] findings and the agent does NOT

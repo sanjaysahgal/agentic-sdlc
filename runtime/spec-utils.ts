@@ -22,3 +22,14 @@ export function extractBlockingQuestions(specContent: string): string[] {
     .map(line => line.replace(/^[-*]\s*/, "").trim())
 }
 
+// Extracts open questions tagged [type: product] AND [blocking: yes] from a design spec.
+// Used by the pre-run structural gate in runDesignAgent — deterministic string match, no LLM.
+// If any such questions exist and no pending escalation, the platform auto-triggers escalation
+// before the agent runs, skipping the Anthropic call entirely.
+export function extractProductBlockingQuestions(specContent: string): string[] {
+  const lines = specContent.split("\n")
+  return lines
+    .filter(line => line.includes("[type: product]") && line.includes("[blocking: yes]"))
+    .map(line => line.replace(/^[-*]\s*/, "").trim())
+}
+
