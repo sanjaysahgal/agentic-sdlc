@@ -149,6 +149,22 @@ The brand auditor bug (March 2026) was caused by a regex that matched the assume
 
 **Enforcement:** Every new parser that ships without a real-agent-output fixture is considered incomplete. A "behavior with no real fixture" is the same failure class as "a behavior with no test." A PR that adds a parser without a sourced fixture will be flagged.
 
+### Producer–Consumer Chain Rule (Non-Negotiable)
+
+**When a platform gate depends on a specific tag or pattern appearing in LLM output, there must be a test that exercises the full producer → consumer chain — not just the consumer in isolation.**
+
+The fixture rule catches: "test format doesn't match real format." This rule catches: "test assumes the producer generates X, but producer was never verified to generate X."
+
+**The rule:**
+- If a gate fires when string S appears in LLM output, there must be a test that verifies the LLM prompt (rubric, system prompt, or classifier) actually instructs the model to produce S
+- Mocking the LLM to return S directly is valid for testing the consumer (gate logic) — it is NOT a substitute for testing the producer (prompt contains the instruction)
+- When a prompt is updated to add a new instruction or tag, add a fixture showing real LLM output that demonstrates the instruction is followed
+
+**Why this rule exists:**
+The N18 escalation gate (April 2026) was tested by injecting `[type: product]` directly into the mocked Anthropic response. The gate logic was correct. But `buildDesignRubric` criteria 1–9 contained no instruction to produce `[type: product]` tagged output — so the real Haiku run never generated that tag. The gate was tested in isolation from the rubric that was supposed to feed it. The fix required adding a pre-run deterministic gate that doesn't depend on LLM tagging at all, plus a new rubric criterion 10.
+
+**Enforcement:** Any gate that pattern-matches on LLM output must have: (1) a consumer test (mocked LLM, validates gate logic) AND (2) a producer test (real or fixture-verified LLM output, validates that the prompt generates the expected tag/pattern).
+
 ---
 
 ## Subagent Strategy
