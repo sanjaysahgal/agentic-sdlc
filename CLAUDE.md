@@ -48,6 +48,38 @@ The reason is correctness, not performance: agents hold conversation context tha
 ### 5. Extensibility by default
 Every agent, function, and data structure should be built assuming more agents and more teams are coming. The pattern established for the pm agent is the pattern for all future agents. Build it right the first time.
 
+### 8. Platform enforcement first — prompt rules are a last resort, never a primary mechanism
+
+**Every agent behavior that must reliably occur must be enforced by the platform, not instructed in a prompt.**
+
+Prompt rules are probabilistic. The model can ignore them, reinterpret them, or deprioritize them under competing instructions. A behavior that "usually works" is not a behavior you can ship. If the system's correctness depends on the model reading an instruction and choosing to comply, it will fail in production.
+
+**The decision gate — before writing any code that governs agent behavior:**
+1. Does this behavior need to happen reliably, not just usually?
+2. Can the platform detect whether it happened (by checking state, reading tool call output, or inspecting the response)?
+3. If both: **implement the platform check first**. The prompt instruction is a redundant backup, not the mechanism.
+
+**What "platform enforcement" means:**
+- After the agent runs, the platform reads state and verifies the required behavior occurred
+- If it didn't, the platform corrects it — overrides the response, sets state, triggers the right path — regardless of what the agent said
+- Examples: escalation gate (auto-triggers if agent skips `offer_pm_escalation`), brand finalization gate (blocks `finalize_design_spec` if drift detected), approval gate (clears `pendingApproval` before saving)
+
+**What is NOT platform enforcement:**
+- A system prompt instruction: "When you see X, call tool Y" — probabilistic
+- A notice injected into the user message: "For product gaps, call offer_pm_escalation" — probabilistic
+- A tool description: "Call this when Z occurs" — probabilistic
+
+**Delivery requirement:** When any change touches `agents/*.ts`, the self-rating must explicitly enumerate:
+- Which behaviors are platform-enforced (structural) and where the enforcement code lives
+- Which behaviors are prompt-dependent (probabilistic) and why platform enforcement isn't possible for each
+
+A prompt-dependent behavior with no justification is a delivery gap, same as a missing test.
+
+**Historical violations that were fixed:**
+- Escalation trigger: was a prompt instruction ("call offer_pm_escalation when you see product gaps"), now a platform gate in `runDesignAgent` that auto-triggers when `[type: product]` findings exist and `getPendingEscalation` is null
+- Brand drift: was a prompt instruction, now `auditBrandTokens()` runs deterministically on every response
+- Finalization gate: was a prompt instruction ("don't approve if questions remain"), now `extractBlockingQuestions()` hard-blocks the `finalize_*` tool handler
+
 ### 7. Zero human errors of omission — the specialist always surfaces violations proactively
 
 **This is the founding premise of Archon. It is not a feature. It cannot be added later.**
