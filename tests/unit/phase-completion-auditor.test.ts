@@ -202,3 +202,62 @@ describe("buildDesignRubric — form factor injection", () => {
     expect(rubric.length).toBeGreaterThan(0)
   })
 })
+
+// ─── auditPhaseCompletion — producer tests (system prompt format instructions) ─
+//
+// Producer-consumer chain rule: consumer tests (above) verify the gate parses FINDING/PASS
+// correctly when given those strings. These producer tests verify the system prompt actually
+// instructs the LLM to produce that format.
+
+describe("auditPhaseCompletion — producer tests (system prompt contains format instruction)", () => {
+  it("system prompt instructs Sonnet to output 'FINDING: <issue> | <recommendation>' per failing criterion", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+    await auditPhaseCompletion({ specContent: "spec", rubric: PM_RUBRIC, featureName: "test" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("FINDING:")
+    expect(systemPrompt).toContain("|")
+  })
+
+  it("system prompt instructs Sonnet to output exactly 'PASS' when all criteria pass", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+    await auditPhaseCompletion({ specContent: "spec", rubric: PM_RUBRIC, featureName: "test" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("PASS")
+  })
+
+  it("system prompt instructs Sonnet to output no preamble — only FINDING lines or PASS", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+    await auditPhaseCompletion({ specContent: "spec", rubric: PM_RUBRIC, featureName: "test" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must explicitly forbid explanation/preamble — otherwise the FINDING: prefix match fails
+    expect(systemPrompt.toLowerCase()).toMatch(/no preamble|only finding|output only/i)
+  })
+})
+
+// ─── buildDesignRubric criterion 10 — producer test ──────────────────────────
+//
+// Criterion 10 was added to make the post-run N18 gate reachable: Haiku must tag
+// unresolved product questions with "[type: product] [blocking: yes]" so the gate
+// can detect and escalate them. This test verifies criterion 10 contains that instruction.
+
+describe("buildDesignRubric criterion 10 — [type: product] tag instruction", () => {
+  it("criterion 10 exists and instructs Haiku to prefix product findings with [type: product] [blocking: yes]", () => {
+    const rubric = buildDesignRubric(["mobile", "desktop"])
+    expect(rubric).toContain("10.")
+    expect(rubric).toContain("[type: product]")
+    expect(rubric).toContain("[blocking: yes]")
+  })
+
+  it("criterion 10 is present in all buildDesignRubric outputs regardless of form factors", () => {
+    const mobile = buildDesignRubric(["mobile"])
+    const both = buildDesignRubric(["mobile", "desktop", "tablet"])
+    expect(mobile).toContain("[type: product]")
+    expect(both).toContain("[type: product]")
+  })
+
+  it("DESIGN_RUBRIC default export includes criterion 10 (regression guard)", () => {
+    // DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"]) — must include the new criterion
+    // Use the statically imported DESIGN_RUBRIC
+    expect(DESIGN_RUBRIC).toContain("[type: product]")
+  })
+})

@@ -884,3 +884,331 @@ describe("applyDecisionCorrections", () => {
     expect(applied).toHaveLength(0)
   })
 })
+
+// ─── auditSpecDecisions — ZERO TESTS EXISTED — consumer + producer ────────────
+//
+// Producer-consumer chain rule: consumer tests verify the gate parses correctly;
+// producer tests verify the system prompt contains the format instruction that
+// causes Haiku to output that format.
+
+describe("auditSpecDecisions — consumer tests (MISMATCH parsing)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("returns status: ok when Haiku responds OK", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 10%",
+      history: [
+        { role: "user", content: "let's do 10% opacity" },
+        { role: "assistant", content: "Locked. Glow opacity 10%." },
+        { role: "user", content: "perfect" },
+      ],
+    })
+    expect(result.status).toBe("ok")
+  })
+
+  it("returns status: ok when no MISMATCH: prefix in response", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "No mismatches found in the spec." }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 10%",
+      history: [{ role: "user", content: "fine" }, { role: "assistant", content: "ok" }, { role: "user", content: "done" }],
+    })
+    expect(result.status).toBe("ok")
+  })
+
+  it("parses a single MISMATCH line into one correction", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "MISMATCH: glow opacity wrong | opacity: 5% | 10%" }],
+    })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 5%",
+      history: [
+        { role: "user", content: "lock glow opacity at 10%" },
+        { role: "assistant", content: "Locked. Glow opacity: 10%." },
+        { role: "user", content: "confirmed" },
+      ],
+    })
+    expect(result.status).toBe("corrections")
+    if (result.status === "corrections") {
+      expect(result.corrections).toHaveLength(1)
+      expect(result.corrections[0].description).toBe("glow opacity wrong")
+      expect(result.corrections[0].found).toBe("opacity: 5%")
+      expect(result.corrections[0].correct).toBe("10%")
+    }
+  })
+
+  it("parses multiple MISMATCH lines into multiple corrections", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{
+        type: "text",
+        text: "MISMATCH: opacity wrong | opacity: 5% | 10%\nMISMATCH: duration wrong | duration: 2s | 2.5s",
+      }],
+    })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "Glow opacity: 5%\nAnimation duration: 2s",
+      history: [
+        { role: "user", content: "lock it: 10% opacity, 2.5s duration" },
+        { role: "assistant", content: "Locked." },
+        { role: "user", content: "yes" },
+      ],
+    })
+    expect(result.status).toBe("corrections")
+    if (result.status === "corrections") {
+      expect(result.corrections).toHaveLength(2)
+      expect(result.corrections[0].found).toBe("opacity: 5%")
+      expect(result.corrections[1].found).toBe("duration: 2s")
+    }
+  })
+
+  it("skips malformed MISMATCH line with fewer than 3 pipe parts — does not crash", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "MISMATCH: malformed line without enough pipes | only-two-parts" }],
+    })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "some spec",
+      history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    })
+    // Malformed line skipped → no corrections → status ok
+    expect(result.status).toBe("ok")
+  })
+
+  it("returns status: ok immediately when history has fewer than 2 messages — no API call", async () => {
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecDecisions({
+      specContent: "spec",
+      history: [{ role: "user", content: "hi" }],
+    })
+    expect(result.status).toBe("ok")
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("uses claude-haiku-4-5-20251001 model", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await auditSpecDecisions({
+      specContent: "spec",
+      history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    })
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
+  })
+})
+
+describe("auditSpecDecisions — producer tests (system prompt contains format instruction)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to output 'MISMATCH: description | found | correct'", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await auditSpecDecisions({
+      specContent: "spec",
+      history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("MISMATCH:")
+    expect(systemPrompt).toContain("|")
+  })
+
+  it("system prompt instructs Haiku to output 'OK' when no mismatches", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await auditSpecDecisions({
+      specContent: "spec",
+      history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("OK")
+  })
+
+  it("system prompt instructs Haiku to look for 'locked' or 'confirmed' decisions", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await auditSpecDecisions({
+      specContent: "spec",
+      history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must instruct Haiku to look for explicitly confirmed/locked values
+    expect(systemPrompt.toLowerCase()).toMatch(/locked|confirmed|agreed/)
+  })
+
+  it("user message contains both spec content and conversation history", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await auditSpecDecisions({
+      specContent: "Glow opacity: MY_SPEC_MARKER",
+      history: [
+        { role: "user", content: "MY_HISTORY_MARKER" },
+        { role: "assistant", content: "Locked." },
+        { role: "user", content: "yes" },
+      ],
+    })
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userContent).toContain("MY_SPEC_MARKER")
+    expect(userContent).toContain("MY_HISTORY_MARKER")
+  })
+})
+
+// ─── extractLockedDecisions — ZERO TESTS EXISTED — consumer + producer ────────
+
+describe("extractLockedDecisions — consumer tests", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("returns empty string immediately when history has fewer than 6 messages — no API call", async () => {
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const result = await extractLockedDecisions([
+      { role: "user", content: "a" },
+      { role: "assistant", content: "b" },
+    ])
+    expect(result).toBe("")
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it("returns empty string when Haiku responds 'none'", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    const result = await extractLockedDecisions(history)
+    expect(result).toBe("")
+  })
+
+  it("returns empty string when response has no bullet character", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "Some vague text without bullets" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    const result = await extractLockedDecisions(history)
+    expect(result).toBe("")
+  })
+
+  it("returns bullet text when Haiku returns bullet-prefixed decisions", async () => {
+    const bulletText = "• Dark mode primary, light secondary\n• Glow opacity: 10%"
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: bulletText }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    const result = await extractLockedDecisions(history)
+    expect(result).toBe(bulletText)
+    expect(result).toContain("Dark mode")
+    expect(result).toContain("Glow opacity")
+  })
+
+  it("uses claude-haiku-4-5-20251001 model", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await extractLockedDecisions(history)
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-haiku-4-5-20251001" }))
+  })
+})
+
+describe("extractLockedDecisions — producer tests (system prompt contains format instruction)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to output bullet character '•' per locked decision", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await extractLockedDecisions(history)
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("•")
+  })
+
+  it("system prompt instructs Haiku to output 'none' when fewer than 2 decisions are locked", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await extractLockedDecisions(history)
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("none")
+  })
+
+  it("system prompt restricts to explicitly confirmed decisions — not proposals or open questions", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await extractLockedDecisions(history)
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toMatch(/confirmed|explicitly|locked/)
+  })
+})
+
+// ─── auditSpecDraft — producer tests (format instruction in system prompt) ─────
+
+describe("auditSpecDraft — producer tests (system prompt contains output format)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to output 'CONFLICT:' prefix for conflicts", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await auditSpecDraft({ draft: "spec", productVision: "vision", systemArchitecture: "arch", featureName: "f" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("CONFLICT:")
+  })
+
+  it("system prompt instructs Haiku to output 'GAP:' prefix for gaps", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await auditSpecDraft({ draft: "spec", productVision: "vision", systemArchitecture: "arch", featureName: "f" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("GAP:")
+  })
+
+  it("system prompt instructs Haiku to output 'OK' when no issues", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await auditSpecDraft({ draft: "spec", productVision: "vision", systemArchitecture: "arch", featureName: "f" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("OK")
+  })
+})
+
+// ─── auditSpecRenderAmbiguity — producer tests (JSON array instruction) ────────
+
+describe("auditSpecRenderAmbiguity — producer tests (system prompt instructs JSON array output)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to return a JSON array of strings", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toMatch(/json array/)
+  })
+
+  it("system prompt instructs Haiku to return '[]' when spec is fully specified", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("[]")
+  })
+
+  it("system prompt instructs Haiku to return ONLY the array — no preamble", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toMatch(/only.*array|array.*only|no preamble|return only/i)
+  })
+})

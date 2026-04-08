@@ -311,3 +311,102 @@ describe("getAgentDescriptions", () => {
 })
 
 
+
+// ─── Producer tests: all classifiers — system prompt contains output format ────
+//
+// Producer-consumer chain rule: for every gate that fires on an LLM-output tag,
+// there must be a producer test verifying the system prompt contains the format instruction.
+// Consumer tests (above) verify the gate logic. These tests verify the prompt is wired.
+
+describe("classifyIntent — producer test (system prompt lists valid agent names)", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("system prompt or user message lists 'pm' as a valid output value", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "pm" }] })
+    await classifyIntent({ message: "add a feature", history: [], phase: "briefing" })
+    const call = mockCreate.mock.calls[0][0]
+    const fullPrompt = [call.system, ...call.messages.map((m: any) => m.content)].join(" ")
+    expect(fullPrompt.toLowerCase()).toContain("pm")
+  })
+
+  it("system prompt instructs Haiku to respond with exactly one agent name", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "pm" }] })
+    await classifyIntent({ message: "add a feature", history: [], phase: "briefing" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toMatch(/one agent|exactly one|respond with/)
+  })
+})
+
+describe("classifyMessageScope — producer test", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to respond with 'product-context' or 'feature-specific'", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "product-context" }] })
+    await classifyMessageScope("what is the product vision?")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("product-context")
+    expect(systemPrompt).toContain("feature-specific")
+  })
+
+  it("system prompt restricts to exactly one of two values", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "feature-specific" }] })
+    await classifyMessageScope("what screen is next?")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toMatch(/exactly one|respond with one|one of/)
+  })
+})
+
+describe("isOffTopicForAgent — producer test", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to respond with 'off-topic' or 'on-topic'", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "on-topic" }] })
+    await isOffTopicForAgent("what screen is next?", "design")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("off-topic")
+    expect(systemPrompt).toContain("on-topic")
+  })
+})
+
+describe("isSpecStateQuery — producer test", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("system prompt instructs Haiku to respond with 'yes' or 'no'", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "no" }] })
+    await isSpecStateQuery("let's add a loading state")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toContain("yes")
+    expect(systemPrompt.toLowerCase()).toContain("no")
+  })
+})
+
+describe("classifyApprovedPhaseIntent — producer test", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("system prompt lists all four valid intent values", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "status" }] })
+    await classifyApprovedPhaseIntent("where are we?")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("start-design")
+    expect(systemPrompt).toContain("spec-query")
+    expect(systemPrompt).toContain("proposal")
+    expect(systemPrompt).toContain("status")
+  })
+
+  it("system prompt restricts Haiku to exactly one value", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "status" }] })
+    await classifyApprovedPhaseIntent("where are we?")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt.toLowerCase()).toMatch(/exactly one|classify.*one|one of/)
+  })
+})

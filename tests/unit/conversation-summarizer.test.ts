@@ -314,3 +314,50 @@ describe("generateSaveCheckpoint", () => {
     expect(result.notCommitted).toBe("")
   })
 })
+
+// ─── Producer tests: identifyUncommittedDecisions + generateSaveCheckpoint ────
+//
+// Producer-consumer chain rule: consumer tests (above) verify gate logic.
+// These tests verify the system prompt/user message contains the format instruction.
+
+describe("identifyUncommittedDecisions — producer tests", () => {
+  it("prompt instructs Haiku to respond with 'none' when nothing uncommitted", async () => {
+    mockCreate.mockResolvedValue(haiku("none"))
+    await identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec")
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(prompt.toLowerCase()).toContain("none")
+  })
+
+  it("prompt instructs Haiku to output a numbered list for uncommitted decisions", async () => {
+    mockCreate.mockResolvedValue(haiku("none"))
+    await identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec")
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(prompt.toLowerCase()).toContain("numbered list")
+  })
+})
+
+describe("generateSaveCheckpoint — producer tests", () => {
+  // generateSaveCheckpoint puts the format instruction in the user message (not system prompt)
+  // — confirmed by reading the source: messages[0].content contains the full prompt + format spec.
+
+  it("user message instructs Haiku to output 'COMMITTED:' section header", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• Dark mode\nNOT_COMMITTED:\nnothing"))
+    await generateSaveCheckpoint("spec", [])
+    const userMessage = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userMessage).toContain("COMMITTED:")
+  })
+
+  it("user message instructs Haiku to output 'NOT_COMMITTED:' section header", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• Dark mode\nNOT_COMMITTED:\nnothing"))
+    await generateSaveCheckpoint("spec", [])
+    const userMessage = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userMessage).toContain("NOT_COMMITTED:")
+  })
+
+  it("user message specifies exact format with no preamble — prevents Haiku from adding explanation that breaks section header parsing", async () => {
+    mockCreate.mockResolvedValue(haiku("COMMITTED:\n• Dark mode\nNOT_COMMITTED:\nnothing"))
+    await generateSaveCheckpoint("spec", [])
+    const userMessage = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userMessage.toUpperCase()).toMatch(/EXACTLY|NO PREAMBLE|NO EXTRA/)
+  })
+})
