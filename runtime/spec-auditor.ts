@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk"
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+// 60s timeout, no retries — audit calls process spec content but must not hang.
+// A stall surfaces as an error (audits fail-safe to "ok"), not a silent hang.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 0 })
 
 export type AuditResult =
   | { status: "ok" }

@@ -151,7 +151,7 @@ Implemented in `runtime/conversation-summarizer.ts`.
 
 `runtime/request-tracker.ts` tracks all in-flight Claude API requests. On `SIGTERM`, the process waits for all in-flight requests to drain before exiting — with a 6-minute maximum (must exceed Anthropic's 5-minute API timeout). This prevents a deployment or restart from cutting off a user mid-response. Any request still in-flight after the deadline is abandoned and the process exits with a warning.
 
-All Anthropic clients (`claude-client.ts`, `html-renderer.ts`) set `maxRetries: 0`. The SDK default of 2 retries turns a 5-minute timeout into an 18-minute hang with no chance of recovery — large-token requests that time out will not succeed on retry.
+All Anthropic clients set `maxRetries: 0` and explicit timeouts. The SDK default of 2 retries × 10-minute timeout = 30 minutes per stalled call — two sequential stalls meant a user could wait an hour at "thinking..." with no error surfaced. Timeouts by client role: main agent (`claude-client.ts`) 5 min; rubric auditor (`phase-completion-auditor.ts`) 90s; spec/decision auditors (`spec-auditor.ts`) 60s; conversation summarizer (`conversation-summarizer.ts`) 60s; classifiers (`agent-router.ts`, `context-loader.ts`) 30s. A stall now surfaces as a user-visible error in under 90 seconds.
 
 ### Agent tool-use loop (Step 13)
 

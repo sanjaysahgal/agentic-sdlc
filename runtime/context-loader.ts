@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk"
 import { readFile, listSubdirectories } from "./github-client"
 import { loadWorkspaceConfig } from "./workspace-config"
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+// 30s timeout, no retries — relevance filtering is a fast classification call.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 30_000, maxRetries: 0 })
 
 // Loads the context an agent needs from the target repo.
 // Called fresh on every message so agents always see current specs.

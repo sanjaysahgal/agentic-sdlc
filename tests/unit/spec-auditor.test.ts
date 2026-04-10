@@ -1212,3 +1212,50 @@ describe("auditSpecRenderAmbiguity — producer tests (system prompt instructs J
     expect(systemPrompt.toLowerCase()).toMatch(/only.*array|array.*only|no preamble|return only/i)
   })
 })
+
+// ─── Network failure resilience — spec-auditor clients ────────────────────────
+//
+// spec-auditor.ts Anthropic clients are configured with maxRetries: 0 and 60s timeout.
+// Errors propagate to the caller (message.ts calls these with .catch() for non-blocking audits).
+// These tests verify no silent retry swallowing — exactly one API call per error.
+
+describe("spec-auditor — network failure propagates immediately, no retries", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("auditSpecDraft propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await expect(auditSpecDraft({ draft: "spec", productVision: "vision", systemArchitecture: "arch", featureName: "f" }))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("auditSpecDecisions propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    await expect(auditSpecDecisions({
+      specContent: "spec",
+      history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }],
+    })).rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("extractLockedDecisions propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await expect(extractLockedDecisions(history)).rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("auditSpecRenderAmbiguity propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await expect(auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome"))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})

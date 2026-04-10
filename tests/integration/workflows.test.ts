@@ -3553,3 +3553,41 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
     expect(text).not.toContain("or continue shaping")
   })
 })
+
+// ─── N20: Haiku classifier API error surfaces as user-visible error, not silent hang ──
+//
+// agent-router.ts Anthropic client now has timeout: 30_000, maxRetries: 0.
+// When a classifier (isOffTopicForAgent) throws due to a network stall or timeout,
+// the error propagates through handleDesignPhase → withThinking's catch block,
+// which posts a user-visible error message. Previously, the default 10min × 2retries
+// = 30min hang meant the user saw "thinking..." for up to an hour with no error surfaced.
+
+describe("Scenario N20 — Haiku classifier timeout surfaces as user-visible error", () => {
+  const THREAD = "workflow-n20"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+  })
+
+  it("isOffTopicForAgent timeout → user sees error message, not infinite 'thinking'", async () => {
+    // First Anthropic call (isOffTopicForAgent) throws a timeout error.
+    // withThinking catches it, posts the user-facing error message, then re-throws.
+    // The test must handle the re-throw and verify the error message was posted.
+    mockAnthropicCreate
+      .mockRejectedValueOnce(new Error("APITimeoutError: Request timed out after 30000ms"))
+
+    const params = makeParams(THREAD, "feature-onboarding", "what is the next step for this feature")
+
+    // withThinking re-throws after posting the error message — catch it here
+    await handleFeatureChannelMessage(params).catch(() => {})
+
+    // The error must be surfaced as a user-visible message, not left at "thinking..."
+    const text = lastUpdateText(params.client)
+    expect(text).toMatch(/went wrong|try again|overloaded|Something/i)
+  })
+})

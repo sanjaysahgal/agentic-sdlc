@@ -14,7 +14,9 @@ export type AgentType =
   | "infra"
   | "data"
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+// 30s timeout, no retries — classifiers return a single word; a stall is a failure,
+// not a reason to wait 10 min × 2 retries and hang the user at "thinking" for an hour.
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 30_000, maxRetries: 0 })
 
 const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
   pm: "Product Manager — shapes feature briefs into product specs",

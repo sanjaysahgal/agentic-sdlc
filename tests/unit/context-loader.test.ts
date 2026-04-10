@@ -327,3 +327,25 @@ describe("context-loader", () => {
     })
   })
 })
+
+// ─── Network failure resilience — context-loader Anthropic client ──────────────
+//
+// context-loader.ts Anthropic client is configured with maxRetries: 0 and 30s timeout.
+// Verify errors propagate immediately (not retried or swallowed to empty string).
+
+describe("context-loader — network failure propagates immediately, no retries", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+    mockReadFile.mockResolvedValue("Some non-empty content to trigger relevance filtering")
+    mockListSubdirectories.mockResolvedValue([])
+  })
+
+  it("loadAgentContextForQuery propagates Haiku API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    const { loadAgentContextForQuery } = await import("../../runtime/context-loader")
+    // Verify error is not swallowed to an empty string result
+    await expect(loadAgentContextForQuery("what tech stack?"))
+      .rejects.toThrow()
+    // loadAgentContextForQuery fires parallel Haiku calls — assert error propagates, not exact call count
+  })
+})

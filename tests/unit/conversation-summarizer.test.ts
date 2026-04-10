@@ -361,3 +361,31 @@ describe("generateSaveCheckpoint — producer tests", () => {
     expect(userMessage.toUpperCase()).toMatch(/EXACTLY|NO PREAMBLE|NO EXTRA/)
   })
 })
+
+// ─── Network failure resilience — conversation-summarizer clients ──────────────
+//
+// conversation-summarizer.ts Anthropic client is configured with maxRetries: 0 and 60s timeout.
+// These tests verify errors propagate immediately with exactly one API call.
+
+describe("conversation-summarizer — network failure propagates immediately, no retries", () => {
+  it("identifyUncommittedDecisions propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(identifyUncommittedDecisions([{ role: "user", content: "hi" }], "spec"))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("generateSaveCheckpoint propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(generateSaveCheckpoint("spec", []))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("summarizeUnlockedDiscussion propagates API error immediately — no retry", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(summarizeUnlockedDiscussion([{ role: "user", content: "hi" }]))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})

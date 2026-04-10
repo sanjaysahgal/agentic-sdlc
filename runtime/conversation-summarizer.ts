@@ -10,7 +10,9 @@
 import Anthropic from "@anthropic-ai/sdk"
 import type { Message } from "./conversation-store"
 
-const anthropic = new Anthropic()
+// 60s timeout, no retries — summaries and checkpoint calls process moderate context
+// but must not hang indefinitely. A stall should surface as an error, not a silent wait.
+const anthropic = new Anthropic({ timeout: 60_000, maxRetries: 0 })
 
 // Cache key: `${threadTs}:${olderMessageCount}`
 const summaryCache = new Map<string, string>()

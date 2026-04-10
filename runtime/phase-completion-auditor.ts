@@ -19,7 +19,9 @@ import Anthropic from "@anthropic-ai/sdk"
 //
 // 5. Add tests to tests/unit/phase-completion-auditor.test.ts following the vi.hoisted/vi.mock pattern.
 
-const client = new Anthropic({ maxRetries: 0 })
+// 90s timeout — Sonnet rubric evaluations can be moderately long but must not
+// hang indefinitely. No retries: a stall is a failure, not a recoverable transient.
+const client = new Anthropic({ maxRetries: 0, timeout: 90_000 })
 
 export type PhaseCompletionAuditResult = {
   ready: boolean

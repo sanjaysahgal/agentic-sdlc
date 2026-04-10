@@ -410,3 +410,51 @@ describe("classifyApprovedPhaseIntent — producer test", () => {
     expect(systemPrompt.toLowerCase()).toMatch(/exactly one|classify.*one|one of/)
   })
 })
+
+// ─── Network failure resilience (timeout / API error behavior) ─────────────────
+//
+// The Anthropic client is configured with maxRetries: 0 and explicit timeouts.
+// These tests verify: (1) errors propagate immediately — no silent swallowing,
+// (2) mockCreate is called exactly once — no retries hiding multiple round-trips.
+
+describe("agent-router — network failure propagates immediately, no retries", () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it("classifyIntent propagates API error immediately — no retry, no swallow", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(classifyIntent({ message: "add a feature", history: [], phase: "briefing" }))
+      .rejects.toThrow("APITimeoutError")
+    // maxRetries: 0 — called exactly once, not retried
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("isOffTopicForAgent propagates API error immediately — not swallowed to false", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(isOffTopicForAgent("something", "design"))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("isSpecStateQuery propagates API error immediately — not swallowed to false", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(isSpecStateQuery("current state?"))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("classifyMessageScope propagates API error immediately", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(classifyMessageScope("what is the product vision?"))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("classifyApprovedPhaseIntent propagates API error immediately", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(classifyApprovedPhaseIntent("where are we?"))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})

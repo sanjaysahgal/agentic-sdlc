@@ -261,3 +261,17 @@ describe("buildDesignRubric criterion 10 — [type: product] tag instruction", (
     expect(DESIGN_RUBRIC).toContain("[type: product]")
   })
 })
+
+// ─── Network failure resilience — phase-completion-auditor ────────────────────
+//
+// phase-completion-auditor.ts already had maxRetries: 0; timeout was added.
+// Verify errors propagate immediately with exactly one API call.
+
+describe("auditPhaseCompletion — network failure propagates immediately, no retries", () => {
+  it("propagates API error immediately — not swallowed to ready: true", async () => {
+    mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
+    await expect(auditPhaseCompletion({ specContent: "spec", rubric: PM_RUBRIC, featureName: "test" }))
+      .rejects.toThrow()
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})
