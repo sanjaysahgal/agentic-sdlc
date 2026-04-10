@@ -240,12 +240,28 @@ describe("auditPhaseCompletion — producer tests (system prompt contains format
 // unresolved product questions with "[type: product] [blocking: yes]" so the gate
 // can detect and escalate them. This test verifies criterion 10 contains that instruction.
 
-describe("buildDesignRubric criterion 10 — [type: product] tag instruction", () => {
-  it("criterion 10 exists and instructs Haiku to prefix product findings with [type: product] [blocking: yes]", () => {
+describe("buildDesignRubric criterion 10 — open-loop product assumption check", () => {
+  // Criterion 10 must be an OPEN-LOOP check: compare design decisions against the product spec
+  // context and flag assumptions without PM backing — NOT a closed-loop check that only finds
+  // pre-tagged questions already written into the design spec.
+
+  it("criterion 10 instructs Sonnet to compare design decisions against the product spec context", () => {
     const rubric = buildDesignRubric(["mobile", "desktop"])
     expect(rubric).toContain("10.")
+    // Must instruct comparing design decisions against product spec — not just scanning for tags
+    expect(rubric.toLowerCase()).toMatch(/compare|against.*product spec|product spec.*context/)
+  })
+
+  it("criterion 10 instructs Sonnet to output [type: product] [blocking: yes] prefix per gap", () => {
+    const rubric = buildDesignRubric(["mobile", "desktop"])
     expect(rubric).toContain("[type: product]")
     expect(rubric).toContain("[blocking: yes]")
+  })
+
+  it("criterion 10 identifies design assumptions without PM backing — not just pre-tagged questions", () => {
+    const rubric = buildDesignRubric(["mobile", "desktop"])
+    // Must mention "assumption" or "assumes" — open-loop detection of implicit product decisions
+    expect(rubric.toLowerCase()).toMatch(/assum/)
   })
 
   it("criterion 10 is present in all buildDesignRubric outputs regardless of form factors", () => {
@@ -256,9 +272,8 @@ describe("buildDesignRubric criterion 10 — [type: product] tag instruction", (
   })
 
   it("DESIGN_RUBRIC default export includes criterion 10 (regression guard)", () => {
-    // DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"]) — must include the new criterion
-    // Use the statically imported DESIGN_RUBRIC
     expect(DESIGN_RUBRIC).toContain("[type: product]")
+    expect(DESIGN_RUBRIC.toLowerCase()).toMatch(/assum/)
   })
 })
 
