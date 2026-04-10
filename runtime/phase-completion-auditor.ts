@@ -34,12 +34,14 @@ export async function auditPhaseCompletion(params: {
   featureName: string
   productVision?: string
   systemArchitecture?: string
+  approvedProductSpec?: string
 }): Promise<PhaseCompletionAuditResult> {
-  const { specContent, rubric, featureName, productVision, systemArchitecture } = params
+  const { specContent, rubric, featureName, productVision, systemArchitecture, approvedProductSpec } = params
 
   const contextSection = [
     productVision ? `## Product Vision\n${productVision}` : "",
     systemArchitecture ? `## System Architecture\n${systemArchitecture}` : "",
+    approvedProductSpec ? `## Approved Product Spec\n${approvedProductSpec}` : "",
   ].filter(Boolean).join("\n\n")
 
   const response = await client.messages.create({
@@ -129,7 +131,7 @@ export function buildDesignRubric(formFactors: string[]): string {
 
 9. FORM FACTOR COVERAGE — Every screen must define layout behavior for all target form factors: ${formFactorList}. For each form factor, the spec must describe at minimum how key elements are arranged or sized at that viewport (e.g. single-column vs two-column, full-width vs fixed-width container, stacked vs side-by-side). A screen that defines layout for only one form factor without addressing the others is incomplete. The only acceptable exception is an explicit exclusion in ## Non-Goals (e.g. "Desktop layout is out of scope for this feature").
 
-10. NO UNRESOLVED PRODUCT ASSUMPTIONS — Compare every significant design decision in this spec against the approved product spec context provided. Identify any design decision that assumes a product answer not explicitly stated or approved in the product spec — for example: a UI flow that assumes a specific auth provider was chosen when the product spec only says "SSO"; a screen that assumes a feature is available on all tiers when scope was never defined; a copy decision that assumes a brand tone not specified in the product spec. Each such assumption is a product-scope gap that the design team cannot resolve unilaterally. Output one finding per gap with the exact prefix "[type: product] [blocking: yes]" followed by a concise description of the assumption and what PM decision is needed. If all design decisions are grounded in explicit product spec decisions, output nothing for this criterion.`
+10. NO UNRESOLVED PRODUCT ASSUMPTIONS — Compare every significant design decision in this spec against the ## Approved Product Spec and ## Product Vision provided in context. Identify any design decision that assumes a product answer not explicitly stated or approved in those documents — for example: an error UX that assumes a specific recovery flow when the PM spec only says "handle gracefully"; a UI flow that assumes a specific auth provider when the PM spec says "SSO" without naming a provider; acceptance criteria using subjective language like "soft" or "ambient" that the PM spec never defined measurably; a screen that assumes a feature is available on all tiers when scope was never defined. Each such assumption is a product-scope gap that the design team cannot resolve unilaterally. Output one finding per gap with the exact prefix "[type: product] [blocking: yes]" followed by a concise description of the assumption and what PM decision is needed to resolve it. If all design decisions are grounded in explicit product spec decisions, output nothing for this criterion.`
 }
 
 export const DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"])

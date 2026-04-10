@@ -888,13 +888,14 @@ describe("Scenario 12 — State query preview freshness", () => {
 
     // GitHub call order in state query path:
     // 1. design draft (on design branch), 2. brand (main), 3. productVision (main),
-    // 4. systemArchitecture (main), 5. htmlFilePath (on design branch)
+    // 4. systemArchitecture (main), 5. approvedProductSpec (main), 6. htmlFilePath (on design branch)
     mockGetContent
       .mockResolvedValueOnce({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } }) // 1. design draft
       .mockRejectedValueOnce(new Error("Not Found")) // 2. brand
       .mockRejectedValueOnce(new Error("Not Found")) // 3. productVision
       .mockRejectedValueOnce(new Error("Not Found")) // 4. systemArchitecture
-      .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // 5. saved preview HTML
+      .mockRejectedValueOnce(new Error("Not Found")) // 5. approvedProductSpec
+      .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // 6. saved preview HTML
 
     // Anthropic: [0] identifyUncommittedDecisions → none, [1] auditSpecRenderAmbiguity → [] findings,
     // auditPhaseCompletion may be a cache hit from the first Scenario 12 test (same spec + featureName).
@@ -3592,15 +3593,18 @@ describe("Scenario N20 — Haiku classifier timeout surfaces as user-visible err
   })
 })
 
-// ─── N21: productVision is passed to auditPhaseCompletion — criterion 10 findings surface ──
+// ─── N21: approvedProductSpec is passed to auditPhaseCompletion — criterion 10 fires ──
 //
-// Before this fix, all 4 auditPhaseCompletion(buildDesignRubric(...)) calls omitted
-// productVision. Criterion 10 instructs Sonnet to compare design decisions against
-// the approved product spec context — but with no context passed, Sonnet had nothing
-// to compare against. This test verifies: when productVision is in GitHub, it reaches
-// auditPhaseCompletion and criterion 10 findings appear in the Design Readiness Gaps block.
+// Criterion 10 compares design decisions against the APPROVED PRODUCT SPEC (feature-level)
+// and product vision. The prior version only passed productVision. Without the approved PM
+// spec, criterion 10 could not catch gaps like vague error paths ("handle gracefully") or
+// subjective acceptance criteria ("soft", "ambient") — because those gaps only show up when
+// you read the feature-level PM spec, not the platform-level product vision.
+//
+// This test verifies: when the approved PM spec is in GitHub, it reaches auditPhaseCompletion,
+// and criterion 10 findings appear in the Design Readiness Gaps action menu block.
 
-describe("Scenario N21 — Design readiness audit criterion 10 findings surface when productVision is available", () => {
+describe("Scenario N21 — Design readiness audit criterion 10 fires when approvedProductSpec is available", () => {
   const THREAD = "workflow-n21"
 
   beforeEach(() => {
@@ -3612,22 +3616,28 @@ describe("Scenario N21 — Design readiness audit criterion 10 findings surface 
     clearHistory("onboarding")
   })
 
-  it("criterion 10 [type: product] finding appears in action menu when productVision is passed", async () => {
+  it("criterion 10 [type: product] finding appears in action menu when approvedProductSpec is passed", async () => {
     const designDraft = [
       "## Screens",
       "### Onboarding Welcome",
       "Purpose: First screen after signup.",
       "Auth: Users sign in via Google OAuth2.",
+      "## Acceptance Criteria",
+      "1. Sign-in indicator is soft and non-intrusive.",
     ].join("\n")
 
-    const productVision = "# Product Vision\n\nSSO provider: to be determined by PM."
+    const approvedProductSpec = "## Acceptance Criteria\n1. SSO sign-in required. Provider TBD by PM.\n2. Logged-out indicator must be present but unobtrusive — no measurable threshold defined."
+    const productVision = "# Product Vision\n\nHealth app for conversations."
 
-    // GitHub: design draft on branch, product vision on main.
-    // Without the fix, productVision would NOT be passed to auditPhaseCompletion —
-    // criterion 10 would return PASS because there is nothing to compare against.
+    // GitHub: design draft on branch, approved PM spec + product vision on main.
+    // Without the fix, approvedProductSpec was never passed — criterion 10 returned PASS
+    // because it had no PM spec to compare against for vague acceptance criteria.
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
         return { data: { type: "file", content: Buffer.from(designDraft).toString("base64"), encoding: "base64" } }
+      }
+      if (path === "specs/features/onboarding/onboarding.product.md") {
+        return { data: { type: "file", content: Buffer.from(approvedProductSpec).toString("base64"), encoding: "base64" } }
       }
       if (path === "specs/product/PRODUCT_VISION.md") {
         return { data: { type: "file", content: Buffer.from(productVision).toString("base64"), encoding: "base64" } }
@@ -3640,14 +3650,14 @@ describe("Scenario N21 — Design readiness audit criterion 10 findings surface 
     //   [1] isSpecStateQuery           → yes (routes to state path, no agent run)
     //   [2] auditSpecDraft             → OK
     //   [3] auditSpecRenderAmbiguity   → [] (no render issues)
-    //   [4] auditPhaseCompletion       → criterion 10 finding: OAuth2 assumed, PM never confirmed
+    //   [4] auditPhaseCompletion       → criterion 10: OAuth2 assumed, "soft" has no measurable threshold
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "OK" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } })
       .mockResolvedValueOnce({
-        content: [{ type: "text", text: "FINDING: [type: product] [blocking: yes] Design assumes Google OAuth2 as auth provider | PM must confirm which SSO providers are required before UI can be finalized" }],
+        content: [{ type: "text", text: "FINDING: [type: product] [blocking: yes] Design assumes Google OAuth2 but PM spec says provider TBD | PM must name the SSO providers before auth UI can be finalized" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 50, output_tokens: 30 },
       })

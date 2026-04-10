@@ -595,10 +595,13 @@ async function runDesignAgent(params: {
       let specGap: string | null = null
       let pvContent = ""
       let saContent = ""
+      let approvedPmSpecContent = ""
       if (draftContent) {
-        ;[pvContent, saContent] = await Promise.all([
+        const pmSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
+        ;[pvContent, saContent, approvedPmSpecContent] = await Promise.all([
           readFile(paths.productVision, "main").catch(() => ""),
           readFile(paths.systemArchitecture, "main").catch(() => ""),
+          readFile(pmSpecPath, "main").catch(() => ""),
         ])
         if (pvContent || saContent) {
           await update("_Auditing spec for gaps..._")
@@ -693,6 +696,7 @@ async function runDesignAgent(params: {
             featureName,
             productVision: pvContent,
             systemArchitecture: saContent,
+            approvedProductSpec: approvedPmSpecContent,
           }).catch(() => null)
           readinessFindingsState = result && !result.ready ? result.findings : []
           phaseEntryAuditCache.set(stateCacheKey, readinessFindingsState.length > 0 ? "[PLATFORM DESIGN READINESS]" : "")
@@ -838,6 +842,7 @@ async function runDesignAgent(params: {
         featureName,
         productVision: context.productVision,
         systemArchitecture: context.systemArchitecture,
+        approvedProductSpec: context.approvedProductSpec,
       }).catch(() => null)
       if (designAuditResult && !designAuditResult.ready) {
         designReadinessFindings = designAuditResult.findings
@@ -1056,6 +1061,7 @@ async function runDesignAgent(params: {
           featureName,
           productVision: context.productVision,
           systemArchitecture: context.systemArchitecture,
+          approvedProductSpec: context.approvedProductSpec,
         })
         return { result }
       }
@@ -1326,7 +1332,7 @@ async function runArchitectAgent(params: {
         ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
         : null,
       designSpecContentArch
-        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
+        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture, approvedProductSpec: pmSpecContentArch ?? undefined }).catch(() => null)
         : null,
     ])
     const archFindings: string[] = []

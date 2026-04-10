@@ -13,6 +13,7 @@ export type AgentContext = {
   featureConventions: string
   systemArchitecture: string
   currentDraft: string
+  approvedProductSpec?: string      // Feature-level approved PM spec — separate from currentDraft for criterion 10
   designSystem?: string             // Design system doc — injected into design agent
   brand?: string                    // Brand tokens (colors, typography, animation) — injected into design agent
   approvedFeatureSpecs?: string     // All approved specs in this agent's domain (cross-feature coherence)
@@ -110,7 +111,7 @@ export async function loadDesignAgentContext(featureName: string): Promise<Agent
     designDraft ? `## Current Design Draft\n${designDraft}` : "",
   ].filter(Boolean).join("\n\n")
 
-  return { productVision, featureConventions, systemArchitecture, currentDraft, designSystem, brand, approvedFeatureSpecs }
+  return { productVision, featureConventions, systemArchitecture, currentDraft, approvedProductSpec: approvedProductSpec ?? undefined, designSystem, brand, approvedFeatureSpecs }
 }
 
 // Loads context for the Architect agent.

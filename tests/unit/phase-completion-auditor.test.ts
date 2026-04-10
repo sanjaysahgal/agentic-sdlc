@@ -150,7 +150,23 @@ describe("auditPhaseCompletion", () => {
     expect(userMessage).toContain("React Native, tRPC.")
   })
 
-  it("does not include context section when productVision and systemArchitecture are absent", async () => {
+  it("includes approvedProductSpec in the user message when provided", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditPhaseCompletion({
+      specContent: "spec",
+      rubric: DESIGN_RUBRIC,
+      featureName: "test",
+      approvedProductSpec: "## Acceptance Criteria\n1. SSO sign-in via Google or Apple.",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    const userMessage = call.messages[0].content as string
+    expect(userMessage).toContain("Approved Product Spec")
+    expect(userMessage).toContain("SSO sign-in via Google or Apple")
+  })
+
+  it("does not include context section when productVision, systemArchitecture, and approvedProductSpec are absent", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
 
     await auditPhaseCompletion({ specContent: "spec", rubric: PM_RUBRIC, featureName: "test" })
@@ -159,6 +175,7 @@ describe("auditPhaseCompletion", () => {
     const userMessage = call.messages[0].content as string
     expect(userMessage).not.toContain("Product Vision")
     expect(userMessage).not.toContain("System Architecture")
+    expect(userMessage).not.toContain("Approved Product Spec")
   })
 })
 
@@ -245,11 +262,18 @@ describe("buildDesignRubric criterion 10 — open-loop product assumption check"
   // context and flag assumptions without PM backing — NOT a closed-loop check that only finds
   // pre-tagged questions already written into the design spec.
 
-  it("criterion 10 instructs Sonnet to compare design decisions against the product spec context", () => {
+  it("criterion 10 instructs Sonnet to compare against both Approved Product Spec and Product Vision", () => {
     const rubric = buildDesignRubric(["mobile", "desktop"])
     expect(rubric).toContain("10.")
-    // Must instruct comparing design decisions against product spec — not just scanning for tags
-    expect(rubric.toLowerCase()).toMatch(/compare|against.*product spec|product spec.*context/)
+    // Must name both context sources — the feature-level PM spec is the primary one
+    expect(rubric).toContain("Approved Product Spec")
+    expect(rubric).toContain("Product Vision")
+  })
+
+  it("criterion 10 includes concrete examples of PM-scope gaps (error UX, subjective language)", () => {
+    const rubric = buildDesignRubric(["mobile", "desktop"])
+    // Must include examples that match the real failures: vague error paths, subjective acceptance criteria
+    expect(rubric.toLowerCase()).toMatch(/handle gracefully|soft|ambient|subjective/)
   })
 
   it("criterion 10 instructs Sonnet to output [type: product] [blocking: yes] prefix per gap", () => {
