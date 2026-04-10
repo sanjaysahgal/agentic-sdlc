@@ -171,6 +171,15 @@ Tool results carry structured data (spec URL, audit findings, preview URL) back 
 
 **Post-response uncommitted decisions audit (design agent only):** After every design agent turn where no save tool was called, the platform calls `identifyUncommittedDecisions` on the 2-message current turn (user message + agent response). If the Haiku finds decisions the user actively agreed to that are not in the committed spec, the platform appends a "save those" note to the Slack response. Not cached (caching per thread_ts caused stale results across turns). Haiku prompt counts only agreed decisions — not proposed options, unanswered questions, or clarifying exchanges.
 
+**PM-gap escalation cascade (design agent, four gates):** After the design agent responds, `message.ts` runs four gates in sequence to catch PM-scope gaps that require escalation, regardless of how the agent expresses them:
+
+1. **Pre-run structural gate** — `auditPhaseCompletion(buildDesignRubric(...))` criterion 10 runs before the agent; if FINDING lines contain `[type: product] [blocking: yes]`, `offer_pm_escalation` is called before the agent even runs.
+2. **N18 gate** — post-run: if criterion 10 FINDING lines exist in the readiness audit result, `offer_pm_escalation` is auto-triggered.
+3. **Fallback prose gate** — `extractPmEscalationFromAgentResponse`: detects numbered PM-gap lists with "say yes", "bring the PM", "want me to escalate to PM", or "cannot move forward" patterns; sets `pendingEscalation` without tool call.
+4. **Haiku classifier** (`runtime/pm-gap-classifier.ts`) — final safety net; sends agent response to Haiku with a focused system prompt that identifies PM-scope gaps (undefined requirements, missing error states, scope decisions, unmeasurable qualitative criteria). Returns `GAP: <sentence>` lines or `NONE`. Fires only when no escalation is pending, no spec was saved, and agent is not seeking confirmation.
+
+When any gate sets `pendingEscalation` this turn (`escalationJustOffered`): (a) the platform overrides passive prose with assertive CTA ("Design cannot move forward. Say *yes*..."), and (b) the action menu is suppressed. The only exit from pending-escalation state is user affirmation ("yes") → PM @mentioned, escalation cleared.
+
 ### Proactive constraint audit pattern
 
 Every agent in the platform runs a deterministic audit for its domain-specific constraints on every response. This is not prompt-based — it is platform-enforced, pure code, no API call.

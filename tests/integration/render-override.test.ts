@@ -156,7 +156,7 @@ describe("post-response uncommitted decisions audit", () => {
 
     const text = lastUpdateText(client)
     expect(text).not.toContain("save those")
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 
   it("skips uncommitted note when save tool was called", async () => {

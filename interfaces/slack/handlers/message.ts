@@ -15,6 +15,7 @@ import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, ge
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractProductBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
+import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -1223,9 +1224,25 @@ async function runDesignAgent(params: {
     }
   }
 
-  // If escalation was just offered this turn (either via tool call, N18 gate, or the fallback
-  // prose-detection gate above), suppress the action menu — showing fixable design items when
-  // the user cannot act on them until PM gaps close is actively misleading.
+  // Haiku PM-gap classifier: catches prose responses that describe PM gaps without any
+  // recognizable pattern (no numbered list, no CTA language, no "escalate to PM" phrasing).
+  // Final safety net — only runs when all earlier gates passed and no escalation is set.
+  // Skipped when the agent saved the spec (no PM gap prose to classify in a save response).
+  // Fail-safe at call site: .catch returns empty gaps, never blocks the response.
+  if (!agentCalledEscalation && !getPendingEscalation(featureName) && !didSave && !agentStillSeeking) {
+    const classification = await classifyForPmGaps({
+      agentResponse: response,
+      approvedProductSpec: context.approvedProductSpec ?? undefined,
+    }).catch(() => ({ gaps: [] }))
+    if (classification.gaps.length > 0) {
+      const consolidated = classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
+      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
+    }
+  }
+
+  // If escalation was just offered this turn (via tool call, N18 gate, fallback prose-detection
+  // gate, or Haiku classifier above), suppress the action menu — showing fixable design items
+  // when the user cannot act on them until PM gaps close is actively misleading.
   const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureName)
 
   // Platform-enforced assertive escalation text: when escalation was just offered this turn

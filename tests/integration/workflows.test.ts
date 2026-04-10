@@ -174,6 +174,15 @@ beforeEach(() => {
   mockCreateRef.mockResolvedValue({})
   mockDeleteRef.mockResolvedValue({})
   mockCreateOrUpdate.mockResolvedValue({})
+  // Default Anthropic response: NONE — used as fallback when Once queue is exhausted.
+  // Prevents the Haiku PM-gap classifier (added as final safety net after the design agent
+  // responds) from crashing tests that don't explicitly mock its call. Tests that need specific
+  // responses use mockResolvedValueOnce chains; this default catches any overflow calls.
+  mockAnthropicCreate.mockResolvedValue({
+    content: [{ type: "text", text: "NONE" }],
+    stop_reason: "end_turn",
+    usage: { input_tokens: 5, output_tokens: 5 },
+  })
 })
 
 afterEach(() => {
@@ -570,10 +579,10 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
     const params = makeParams(THREAD, "feature-onboarding", "another design question")
     await handleFeatureChannelMessage(params)
 
-    // 4 calls: isOffTopicForAgent, isSpecStateQuery, runAgent, post-turn identifyUncommittedDecisions
-    // (history grows to 4 messages after this turn: 2 seeded + 1 user + 1 assistant > threshold of 2)
-    // classifyIntent was NOT called — that would add a 5th call
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // 5 calls: isOffTopicForAgent, isSpecStateQuery, runAgent, post-turn identifyUncommittedDecisions,
+    // + Haiku PM-gap classifier (final safety net, returns NONE — no escalation triggered).
+    // classifyIntent was NOT called — that would add a 6th call
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
   })
 })
@@ -1131,7 +1140,8 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Auth Sheet\nEnters from bottom." } }],
       })                                                                            // runAgent: tool_use
-      .mockRejectedValueOnce(new Error("Input too long: request exceeds context window")) // runAgent: end_turn FAILS
+      .mockRejectedValueOnce(new Error("Input too long: request exceeds context window")) // [3] generateDesignPreview (non-fatal, caught inside saveDesignDraft)
+      .mockRejectedValueOnce(new Error("Input too long: request exceeds context window")) // [4] runAgent: end_turn FAILS → caught by try-catch → shows spec-saved message
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -1223,7 +1233,7 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
     expect(text).toContain("⚠️")
     expect(text).toContain("Heads up")
     expect(text).toContain("save those")
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5) // +1 for Haiku PM-gap classifier
   })
 
   it("generate_design_preview uses context.currentDraft from GitHub, not agent's stale in-memory specContent", async () => {
@@ -1416,8 +1426,10 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "give me the latest preview"), client })
 
-    // 5 Anthropic calls — no LLM renderer call (that would add a 6th)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // 6 Anthropic calls: isOffTopicForAgent, isSpecStateQuery, runAgent tool_use, runAgent
+    // end_turn, identifyUncommittedDecisions, + Haiku PM-gap classifier (returns NONE).
+    // generate_design_preview is not a save tool → didSave=false → classifier runs.
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
 
     // uploadV2 received the cached HTML, not a freshly generated one
     const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
@@ -1743,8 +1755,8 @@ describe("Scenario 19 — Always-on phase completion audit injection", () => {
     expect(userMsg?.content).toContain("[PLATFORM DESIGN READINESS")
     expect(userMsg?.content).toContain("Chip row has no concrete position anchor")
 
-    // 5 total Anthropic calls
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // 6 total Anthropic calls (+1 for Haiku PM-gap classifier, returns NONE)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 
   it("auditPhaseCompletion is skipped when no design draft exists on branch", async () => {
@@ -1764,8 +1776,8 @@ describe("Scenario 19 — Always-on phase completion audit injection", () => {
 
     await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "how does dark mode look?"))
 
-    // auditPhaseCompletion never ran — only 4 calls total
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // auditPhaseCompletion never ran — 5 calls total (+1 Haiku PM-gap classifier, returns NONE)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
     // runAgent call (index 2) does NOT contain audit notice
     const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
@@ -1971,8 +1983,8 @@ describe("Scenario 22 — Action menu appended after design agent LLM response",
     // Separator before action menu
     expect(text).toMatch(/---/)
 
-    // 4 Anthropic calls total (auditPhaseCompletion is a cache hit — no API call)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // 5 Anthropic calls total: auditPhaseCompletion is a cache hit (no call) + Haiku PM-gap classifier
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 })
 
@@ -3108,7 +3120,7 @@ describe("Scenario N11 — Cache isolation between concurrent features", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions (A)
 
     await handleFeatureChannelMessage(makeParams(THREAD, "feature-cache-feat-a", "how is the spec?"))
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6) // +1 Haiku PM-gap classifier
 
     vi.clearAllMocks()
 
@@ -3125,8 +3137,8 @@ describe("Scenario N11 — Cache isolation between concurrent features", () => {
 
     await handleFeatureChannelMessage(makeParams(THREAD, "feature-cache-feat-b", "how is the spec?"))
 
-    // auditPhaseCompletion fired for feature-B (5 total calls — not 4, which would mean skip)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // auditPhaseCompletion fired for feature-B (6 total calls — not 5, which would mean skip; +1 PM-gap classifier)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 })
 
@@ -3164,8 +3176,8 @@ describe("Scenario N12 — Unknown design agent tool name handled gracefully", (
     expect(text).toContain("That tool is not available.")
     expect(text).not.toContain("Something went wrong")
 
-    // 5 calls total — platform did not short-circuit on the unknown tool
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // 6 calls total: platform did not short-circuit on the unknown tool; +1 Haiku PM-gap classifier
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 })
 
@@ -3826,6 +3838,72 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
     expect(text).toContain("Session expiry")
     // The passive question must NOT appear — platform overrode it
     expect(text).not.toContain("Want to address these now")
+
+    // Action menu must be suppressed
+    expect(text).not.toContain("OPEN ITEMS")
+  })
+})
+
+// ─── Scenario N25 — Haiku classifier catches PM gaps in flat prose ─────────────
+//
+// Agent writes PM gaps as a flat paragraph — no numbered list, no escalation offer
+// language, no "say yes", no tool call. None of the existing gates fire. The Haiku
+// classifier detects PM-scope gaps from prose, sets pendingEscalation, and the
+// platform overrides with the assertive CTA.
+
+describe("Scenario N25 — Haiku classifier catches PM gaps buried in flat prose — no gate pattern fires", () => {
+  const THREAD = "workflow-n25"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("flat prose PM gaps — classifier fires, pendingEscalation set, assertive text shown, action menu absent", async () => {
+    // No design draft — keeps mock sequence minimal (no auditPhaseCompletion)
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Prose with PM gaps but no numbered list, no escalation offer, no CTA patterns.
+    // This is the failure class the classifier is the safety net for.
+    const agentResponse = [
+      "Looking at the onboarding flow, there are a few product-level questions that need answers before the design can be locked in.",
+      "The spec says to handle the SSO failure state gracefully but does not define what gracefully means in this context.",
+      "It is also unclear whether the feature applies to free-tier users or only paid accounts.",
+      "The acceptance criteria reference ambient awareness but do not provide a measurable threshold.",
+      "Once those are resolved the design can move forward.",
+    ].join(" ")
+
+    // Mock sequence (no draft, no auditPhaseCompletion):
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] runAgent (end_turn)           → flat prose with PM gaps
+    //   [3] identifyUncommittedDecisions  → none
+    //   [4] classifyForPmGaps             → GAP lines (classifier catches prose)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 60 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "GAP: SSO failure state behavior is undefined — what should the user see when SSO account creation fails?\nGAP: Free-tier vs paid-tier eligibility for this feature is unspecified.\nGAP: 'Ambient awareness' acceptance criterion lacks a measurable threshold." }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 30 } })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what else needs PM input before we design?")
+    await handleFeatureChannelMessage(params)
+
+    // Classifier must have fired — pendingEscalation set
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.targetAgent).toBe("pm")
+
+    // Platform override must have replaced flat prose with assertive CTA
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
 
     // Action menu must be suppressed
     expect(text).not.toContain("OPEN ITEMS")
