@@ -225,13 +225,40 @@ export async function handleFeatureChannelMessage(params: {
         : (roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`)
       const agentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
       // Run the PM/Architect agent with the blocking questions as a brief so it produces
-      // concrete recommendations before the human is notified — not a raw question dump.
-      const brief = `The UX Designer is blocked on these ${isArchitectEscalation ? "architecture" : "product"} questions before the design spec can continue. Provide a concrete recommendation for each — what should the answer be, and why:\n\n${pendingEscalation.question}`
+      // concrete decisions before the human is notified — not a raw question dump.
+      // Brief is forceful and decision-framed: the agent must make calls, not present options.
+      const pmBrief = `DESIGN TEAM ESCALATION — PRODUCT DECISIONS NEEDED.
+
+You are the product decision-maker. The UX Designer cannot continue the design spec until you make a call on each item below.
+
+For each item, output:
+→ Decision: [specific answer — one concrete choice, no conditionals, no "it depends"]
+→ Rationale: [one sentence grounded in the product vision or system architecture]
+
+Do not ask for more context. Do not present options. Do not defer to the human PM. You ARE the PM — these are your product calls to make. The design team needs decisions, not recommendations.
+
+BLOCKING QUESTIONS:
+${pendingEscalation.question}`
+
+      const archBrief = `DESIGN TEAM ESCALATION — ARCHITECTURE DECISIONS NEEDED.
+
+You are the system architect. The UX Designer cannot continue the design spec until you make a call on each item below.
+
+For each item, output:
+→ Decision: [specific answer — one concrete technical choice, no conditionals]
+→ Rationale: [one sentence grounded in the system architecture]
+
+Do not ask for more context. Do not present options. Make the call.
+
+BLOCKING QUESTIONS:
+${pendingEscalation.question}`
+
+      const brief = isArchitectEscalation ? archBrief : pmBrief
       await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
         if (isArchitectEscalation) {
           await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update })
         } else {
-          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update, readOnly: true })
+          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update })
         }
       }})
       await client.chat.postMessage({
