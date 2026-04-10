@@ -165,6 +165,22 @@ The N18 escalation gate (April 2026) was tested by injecting `[type: product]` d
 
 **Enforcement:** Any gate that pattern-matches on LLM output must have: (1) a consumer test (mocked LLM, validates gate logic) AND (2) a producer test (real or fixture-verified LLM output, validates that the prompt generates the expected tag/pattern).
 
+### Call-Site Context Rule (Non-Negotiable)
+
+**Any rubric criterion that says "compare against [X]" must have a call-site test that verifies [X] is actually passed as a non-empty parameter at every call site.**
+
+The producer-consumer chain rule catches: "test format doesn't match real format" and "producer never generates the expected tag." This rule catches: "the criterion references context that is never provided to the function."
+
+**The rule:**
+- When a rubric criterion references external context (e.g. "compare against the approved product spec"), enumerate every call site of the audit function
+- For each call site, verify in a test that the relevant context parameter (e.g. `approvedProductSpec`) is non-empty when the criterion is expected to fire
+- A criterion that references context not present in the params is silently a no-op — it will return PASS even when gaps exist
+
+**Why this rule exists:**
+Criterion 10 of `buildDesignRubric` was updated to compare design decisions against the approved product spec. Tests verified the rubric text and the gate's parsing. But `approvedProductSpec` was never added to the `auditPhaseCompletion` params — so criterion 10 always evaluated against an empty context and returned PASS. The design agent then caught the same gaps in prose but didn't call `offer_pm_escalation` (prompt-dependent), so the N18 gate never fired. Discovered only via Slack testing, not proactively.
+
+**Enforcement:** When any rubric criterion is added or modified to reference external context, immediately: (1) add `approvedXxx?: string` to the audit function's param type, (2) inject it into the context section, (3) add a unit test asserting the param appears in the user message, (4) verify every call site passes the param.
+
 ---
 
 ## Subagent Strategy
