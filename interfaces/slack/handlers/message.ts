@@ -686,7 +686,8 @@ async function runDesignAgent(params: {
       let readinessFindingsState: Array<{ issue: string; recommendation: string }> = []
       if (draftContent) {
         const dfp = specFingerprint(draftContent)
-        const stateCacheKey = `design-phase:${featureName}:${dfp}`
+        const ctxFp = specFingerprint(pvContent + saContent + approvedPmSpecContent)
+        const stateCacheKey = `design-phase:${featureName}:${dfp}:${ctxFp}`
         if (designReadinessFindingsCache.has(stateCacheKey)) {
           readinessFindingsState = designReadinessFindingsCache.get(stateCacheKey) ?? []
         } else {
@@ -831,7 +832,8 @@ async function runDesignAgent(params: {
     : ""
   if (designDraftContent) {
     const dfp = specFingerprint(designDraftContent)
-    const designCacheKey = `design-phase:${featureName}:${dfp}`
+    const designCtxFp = specFingerprint((context.productVision ?? "") + (context.systemArchitecture ?? "") + (context.approvedProductSpec ?? ""))
+    const designCacheKey = `design-phase:${featureName}:${dfp}:${designCtxFp}`
     if (phaseEntryAuditCache.has(designCacheKey)) {
       designReadinessNotice = phaseEntryAuditCache.get(designCacheKey)!
       designReadinessFindings = designReadinessFindingsCache.get(designCacheKey) ?? []
