@@ -270,10 +270,13 @@ describe("buildDesignRubric criterion 10 — open-loop product assumption check"
     expect(rubric).toContain("Product Vision")
   })
 
-  it("criterion 10 includes concrete examples of PM-scope gaps (error UX, subjective language)", () => {
+  it("criterion 10 PART B — scans PM spec for vague requirements that block design (handle gracefully, preserve)", () => {
     const rubric = buildDesignRubric(["mobile", "desktop"])
-    // Must include examples that match the real failures: vague error paths, subjective acceptance criteria
-    expect(rubric.toLowerCase()).toMatch(/handle gracefully|soft|ambient|subjective/)
+    // Must instruct scanning PM spec for vague language — the Slack test failure class
+    expect(rubric.toLowerCase()).toMatch(/handle gracefully|preserve conversations|vague/)
+    // Must cover the two-part structure: design assumptions AND pm spec vagueness
+    expect(rubric).toContain("PART A")
+    expect(rubric).toContain("PART B")
   })
 
   it("criterion 10 instructs Sonnet to output [type: product] [blocking: yes] prefix per gap", () => {
