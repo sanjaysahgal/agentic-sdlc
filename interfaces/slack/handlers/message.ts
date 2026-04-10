@@ -593,8 +593,10 @@ async function runDesignAgent(params: {
       // using the same mechanism and same framing. Without this, gaps only appear after a save and
       // show up differently from the non-blocking questions parsed out of the spec text.
       let specGap: string | null = null
+      let pvContent = ""
+      let saContent = ""
       if (draftContent) {
-        const [pvContent, saContent] = await Promise.all([
+        ;[pvContent, saContent] = await Promise.all([
           readFile(paths.productVision, "main").catch(() => ""),
           readFile(paths.systemArchitecture, "main").catch(() => ""),
         ])
@@ -689,6 +691,8 @@ async function runDesignAgent(params: {
             specContent: draftContent,
             rubric: buildDesignRubric(targetFormFactors),
             featureName,
+            productVision: pvContent,
+            systemArchitecture: saContent,
           }).catch(() => null)
           readinessFindingsState = result && !result.ready ? result.findings : []
           phaseEntryAuditCache.set(stateCacheKey, readinessFindingsState.length > 0 ? "[PLATFORM DESIGN READINESS]" : "")
@@ -832,6 +836,8 @@ async function runDesignAgent(params: {
         specContent: designDraftContent,
         rubric: buildDesignRubric(targetFormFactors),
         featureName,
+        productVision: context.productVision,
+        systemArchitecture: context.systemArchitecture,
       }).catch(() => null)
       if (designAuditResult && !designAuditResult.ready) {
         designReadinessFindings = designAuditResult.findings
@@ -1048,6 +1054,8 @@ async function runDesignAgent(params: {
           specContent: draft,
           rubric: buildDesignRubric(targetFormFactors),
           featureName,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
         })
         return { result }
       }
@@ -1318,7 +1326,7 @@ async function runArchitectAgent(params: {
         ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
         : null,
       designSpecContentArch
-        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName }).catch(() => null)
+        ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
         : null,
     ])
     const archFindings: string[] = []

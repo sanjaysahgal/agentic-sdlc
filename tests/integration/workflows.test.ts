@@ -3591,3 +3591,73 @@ describe("Scenario N20 — Haiku classifier timeout surfaces as user-visible err
     expect(text).toMatch(/went wrong|try again|overloaded|Something/i)
   })
 })
+
+// ─── N21: productVision is passed to auditPhaseCompletion — criterion 10 findings surface ──
+//
+// Before this fix, all 4 auditPhaseCompletion(buildDesignRubric(...)) calls omitted
+// productVision. Criterion 10 instructs Sonnet to compare design decisions against
+// the approved product spec context — but with no context passed, Sonnet had nothing
+// to compare against. This test verifies: when productVision is in GitHub, it reaches
+// auditPhaseCompletion and criterion 10 findings appear in the Design Readiness Gaps block.
+
+describe("Scenario N21 — Design readiness audit criterion 10 findings surface when productVision is available", () => {
+  const THREAD = "workflow-n21"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+  })
+
+  it("criterion 10 [type: product] finding appears in action menu when productVision is passed", async () => {
+    const designDraft = [
+      "## Screens",
+      "### Onboarding Welcome",
+      "Purpose: First screen after signup.",
+      "Auth: Users sign in via Google OAuth2.",
+    ].join("\n")
+
+    const productVision = "# Product Vision\n\nSSO provider: to be determined by PM."
+
+    // GitHub: design draft on branch, product vision on main.
+    // Without the fix, productVision would NOT be passed to auditPhaseCompletion —
+    // criterion 10 would return PASS because there is nothing to compare against.
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(designDraft).toString("base64"), encoding: "base64" } }
+      }
+      if (path === "specs/product/PRODUCT_VISION.md") {
+        return { data: { type: "file", content: Buffer.from(productVision).toString("base64"), encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic call sequence — state query path (isSpecStateQuery → yes):
+    //   [0] isOffTopicForAgent         → false
+    //   [1] isSpecStateQuery           → yes (routes to state path, no agent run)
+    //   [2] auditSpecDraft             → OK
+    //   [3] auditSpecRenderAmbiguity   → [] (no render issues)
+    //   [4] auditPhaseCompletion       → criterion 10 finding: OAuth2 assumed, PM never confirmed
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "OK" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "FINDING: [type: product] [blocking: yes] Design assumes Google OAuth2 as auth provider | PM must confirm which SSO providers are required before UI can be finalized" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 50, output_tokens: 30 },
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what is the current state of the design?")
+    await handleFeatureChannelMessage(params)
+
+    // Criterion 10 finding must appear in the Design Readiness Gaps section of the action menu.
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("[type: product]")
+    expect(text).toContain("Google OAuth2")
+  })
+})
