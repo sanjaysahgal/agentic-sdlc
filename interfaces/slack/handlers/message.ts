@@ -38,6 +38,20 @@ function specFingerprint(content: string): string {
   return `${content.length}:${content.slice(0, 100)}:${content.slice(-50)}`
 }
 
+// Detects when the design agent correctly identified PM gaps in prose but did not call
+// offer_pm_escalation. Signals: response contains "say yes" CTA AND PM-escalation language
+// ("bring the PM", "PM spec", "cannot move forward"). Returns the numbered questions extracted
+// from the response (for pendingEscalation.question), or null if no escalation intent detected.
+// This is a structural check on the agent's own controlled output pattern — not LLM judgment.
+function extractPmEscalationFromAgentResponse(response: string): string | null {
+  const hasSayYes = /\bsay\s+\*?yes\*?\b/i.test(response)
+  const hasPmContext = /\bbring the PM\b|\bPM into this thread\b|\bcannot move forward\b|\bPM spec\b|\bproduct spec gap\b/i.test(response)
+  if (!hasSayYes || !hasPmContext) return null
+  const lines = response.match(/^\d+\.\s+\S.+/gm)
+  if (!lines || lines.length === 0) return null
+  return lines.join("\n")
+}
+
 // Formats a save checkpoint into the Slack footer shown after every DRAFT or PATCH save.
 // Shows what key decisions were just committed and flags anything still only in the thread.
 // Non-fatal: callers pass a null checkpoint and fall back to the simple CTA.
@@ -1165,10 +1179,24 @@ async function runDesignAgent(params: {
     return
   }
 
+  // Deterministic fallback escalation gate: agent correctly identified PM gaps in prose
+  // ("say *yes*" + PM context appears) but did not call offer_pm_escalation.
+  // Unlike the N18 gate above (which requires criterion 10 to generate [type: product] findings),
+  // this gate is purely structural — it matches the agent's own controlled output pattern.
+  // The agent's prose is preserved (not overridden); we only record the pending escalation
+  // so the action menu is suppressed and the "yes" → PM flow can proceed.
+  if (!agentCalledEscalation) {
+    const pmQuestions = extractPmEscalationFromAgentResponse(response)
+    if (pmQuestions) {
+      setPendingEscalation(featureName, { targetAgent: "pm", question: pmQuestions, designContext: "" })
+    }
+  }
+
   appendMessage(featureName, { role: "assistant", content: response })
 
-  // If escalation was just offered this turn, suppress the action menu — showing 20 fixable
-  // design items when the user cannot act on them until PM gaps close is actively misleading.
+  // If escalation was just offered this turn (either via tool call, N18 gate, or the fallback
+  // prose-detection gate above), suppress the action menu — showing fixable design items when
+  // the user cannot act on them until PM gaps close is actively misleading.
   const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureName)
 
   // Platform-enforced structured action menu — built from pre-computed audit data, appended

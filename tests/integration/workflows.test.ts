@@ -3671,3 +3671,83 @@ describe("Scenario N21 — Design readiness audit criterion 10 fires when approv
     expect(text).toContain("Google OAuth2")
   })
 })
+
+// ─── N22: Fallback prose-detection gate — agent writes "say yes" without calling tool ──
+//
+// The N18 gate requires criterion 10 to generate [type: product] findings. When criterion 10
+// returns PASS (e.g. PM spec gaps are vague requirements, not explicit design assumptions),
+// N18 never fires — even if the agent correctly identifies the gaps in prose and writes
+// "say yes and I'll bring the PM into this thread."
+//
+// This gate is purely structural: it matches the agent's own controlled output pattern
+// ("say yes" + PM escalation context + numbered questions) and auto-sets pendingEscalation,
+// suppressing the action menu without replacing the agent's prose.
+
+describe("Scenario N22 — Fallback prose-detection gate suppresses action menu when agent writes 'say yes' without calling offer_pm_escalation", () => {
+  const THREAD = "workflow-n22"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("agent prose 'say yes' + 'bring the PM' → pendingEscalation set, action menu absent", async () => {
+    // Draft exists — triggers always-on readiness audit path.
+    const draftContent = "## Screens\n### Welcome\nPurpose: First screen."
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(draftContent).toString("base64"), encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic call sequence (matches N18 5-call pattern — history empty so extractLockedDecisions
+    // returns early; auditSpecRenderAmbiguity only runs in state query path, not agent path):
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false (goes to agent path)
+    //   [2] auditPhaseCompletion     → PASS (criterion 10 returns nothing — the gap we're fixing)
+    //   [3] runAgent (end_turn)      → prose with "say yes" + "bring the PM" but no tool call
+    //   [4] identifyUncommittedDecisions → none
+    const agentResponse = [
+      "Three PM-level gaps must be resolved before design can proceed:",
+      "",
+      "1. **SSO error path** — The PM spec says 'handle gracefully' but doesn't define the actual error UX.",
+      "2. **Conversation preservation** — What exactly is preserved when a session transfers?",
+      "3. **Ephemeral session spec** — What fields does the unauthenticated session entity have?",
+      "",
+      "Say yes and I'll bring the PM into this thread to close these gaps.",
+    ].join("\n")
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 40 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's blocking us from finishing this design?")
+    await handleFeatureChannelMessage(params)
+
+    // Platform must have set pending escalation from prose detection
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.targetAgent).toBe("pm")
+    expect(pending?.question).toContain("SSO error path")
+
+    // Action menu must be suppressed — escalation just offered this turn
+    const text = lastUpdateText(params.client)
+    expect(text).not.toContain("── OPEN ITEMS ──")
+    expect(text).not.toContain("Brand Drift")
+    expect(text).not.toContain("Design Readiness Gaps")
+
+    // Agent prose is preserved — not replaced by the platform assertion
+    expect(text).toMatch(/say yes/i)
+    expect(text).toMatch(/bring the PM/i)
+  })
+})
