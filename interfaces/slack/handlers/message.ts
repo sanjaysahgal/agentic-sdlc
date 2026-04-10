@@ -1192,12 +1192,28 @@ async function runDesignAgent(params: {
     }
   }
 
-  appendMessage(featureName, { role: "assistant", content: response })
-
   // If escalation was just offered this turn (either via tool call, N18 gate, or the fallback
   // prose-detection gate above), suppress the action menu — showing fixable design items when
   // the user cannot act on them until PM gaps close is actively misleading.
   const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureName)
+
+  // Platform-enforced assertive escalation text: when the agent called offer_pm_escalation this
+  // turn but wrote passive prose (asked a question instead of asserting the block), override
+  // with the assertive CTA built from pendingEscalation.question.
+  // Scoped to PM escalation only (not architect escalation, which has different language).
+  // Only applies when the tool was explicitly called — when the fallback prose-detection gate
+  // fires instead, the agent's prose is preserved as-is (it already contains escalation intent).
+  const agentCalledPmEscalationTool = toolCallsOutDesign.some(t => t.name === "offer_pm_escalation")
+  let finalResponse = response
+  if (agentCalledPmEscalationTool) {
+    const pending = getPendingEscalation(featureName)!
+    const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
+    if (!response.includes("Design cannot move forward")) {
+      finalResponse = `${pending.question}\n\n${assertionText}`
+    }
+  }
+
+  appendMessage(featureName, { role: "assistant", content: finalResponse })
 
   // Platform-enforced structured action menu — built from pre-computed audit data, appended
   // after the agent prose. This is structural (not a system prompt instruction) so it appears
@@ -1228,7 +1244,7 @@ async function runDesignAgent(params: {
     },
   ])
 
-  await update(`${prefix}${response}${uncommittedNote}${actionMenu}`)
+  await update(`${prefix}${finalResponse}${uncommittedNote}${actionMenu}`)
 }
 
 async function runArchitectAgent(params: {

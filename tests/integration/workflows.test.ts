@@ -415,15 +415,17 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(pending).not.toBeNull()
     expect(pending?.question).toBe("Should chips be permanent for authenticated users?")
 
-    // Agent's response text passed through to Slack
+    // Platform enforces assertive escalation text — agent prose ("I've escalated to the PM") is
+    // factually wrong (escalation is PENDING, PM not yet notified) and replaced by the platform.
     const text = lastUpdateText(params.client)
-    expect(text).toContain("escalated")
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
   })
 
   it("Turn 2: user says yes → PM agent runs with brief, then @mention posted for human review", async () => {
     setConfirmedAgent("onboarding", "ux-design")
     appendMessage("onboarding", { role: "user", content: "should we support social login?" })
-    appendMessage("onboarding", { role: "assistant", content: "I've escalated this to the PM — design is paused until they respond." })
+    appendMessage("onboarding", { role: "assistant", content: "Should chips be permanent for authenticated users?\n\nDesign cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now." })
 
     // Set up the pending escalation as the tool handler would have (no shortcut)
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
@@ -3749,5 +3751,83 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
     // Agent prose is preserved — not replaced by the platform assertion
     expect(text).toMatch(/say yes/i)
     expect(text).toMatch(/bring the PM/i)
+  })
+})
+
+// ─── N23: Platform overrides passive prose when agent calls tool but writes wrong text ──
+//
+// The agent called offer_pm_escalation correctly (right tool, right questions) but then
+// wrote passive prose ("Want to address these now?") instead of the assertive CTA.
+// The platform must detect that escalation was just offered (tool called this turn),
+// verify the prose lacks "Design cannot move forward", and override with:
+//   pending.question + "\n\nDesign cannot move forward..."
+// This is structural enforcement — the agent's tool call expressed the right intent.
+
+describe("Scenario N23 — Platform overrides passive prose when agent calls offer_pm_escalation but writes passive question", () => {
+  const THREAD = "workflow-n23"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("passive prose is replaced with assertive escalation text built from pendingEscalation.question", async () => {
+    // No design draft → auditPhaseCompletion skipped, no brand audit
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    const toolQuestions = [
+      "1. Session expiry — PM spec says 'expires after inactivity' without defining the duration.",
+      "2. Conversation persistence — 'preserve conversations' is undefined; design cannot specify the data model.",
+      "3. SSO error handling — PM spec says 'handle gracefully' without naming the error states.",
+    ].join("\n")
+
+    const passiveProse = "Want to address these now, or continue shaping the spec first?"
+
+    // Mock sequence (no design draft → 5 calls):
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] runAgent (tool_use)      → offer_pm_escalation with consolidated questions
+    //   [3] runAgent (end_turn)      → passive prose (agent did not write assertive text)
+    //   [4] identifyUncommittedDecisions → "none"
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: toolQuestions } }],
+        usage: { input_tokens: 50, output_tokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: passiveProse }],
+        usage: { input_tokens: 50, output_tokens: 15 },
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's blocking design?")
+    await handleFeatureChannelMessage(params)
+
+    // Platform must have stored pending escalation from the tool call
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.question).toContain("Session expiry")
+
+    // Platform must override passive prose with assertive text
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
+    // The questions from the tool call must appear
+    expect(text).toContain("Session expiry")
+    // The passive question must NOT appear — platform overrode it
+    expect(text).not.toContain("Want to address these now")
+
+    // Action menu must be suppressed
+    expect(text).not.toContain("OPEN ITEMS")
   })
 })
