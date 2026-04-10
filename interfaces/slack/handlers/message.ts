@@ -39,14 +39,18 @@ function specFingerprint(content: string): string {
 }
 
 // Detects when the design agent correctly identified PM gaps in prose but did not call
-// offer_pm_escalation. Signals: response contains "say yes" CTA AND PM-escalation language
-// ("bring the PM", "PM spec", "cannot move forward"). Returns the numbered questions extracted
-// from the response (for pendingEscalation.question), or null if no escalation intent detected.
-// This is a structural check on the agent's own controlled output pattern — not LLM judgment.
+// offer_pm_escalation. Signals: response contains PM-escalation language — either an explicit
+// "say yes" CTA ("bring the PM", "PM into this thread", "cannot move forward") OR an offer to
+// escalate ("want me to escalate", "escalate to PM", "call the PM agent"). Returns the numbered
+// questions extracted from the response (for pendingEscalation.question), or null if no
+// escalation intent detected. Structural check on the agent's own output — not LLM judgment.
 function extractPmEscalationFromAgentResponse(response: string): string | null {
+  // Explicit CTA path: "say yes" + PM context ("bring the PM", "cannot move forward", etc.)
   const hasSayYes = /\bsay\s+\*?yes\*?\b/i.test(response)
-  const hasPmContext = /\bbring the PM\b|\bPM into this thread\b|\bcannot move forward\b|\bPM spec\b|\bproduct spec gap\b/i.test(response)
-  if (!hasSayYes || !hasPmContext) return null
+  const hasPmCta = /\bbring the PM\b|\bPM into this thread\b|\bcannot move forward\b|\bPM spec\b|\bproduct spec gap\b/i.test(response)
+  // Offer path: agent is ASKING if it should escalate ("want me to escalate to PM", "call the PM")
+  const hasPmEscalationOffer = /\bescalat\w+\s+to\s+(the\s+)?PM\b|\bwant\s+me\s+to\s+escalat|\bcall\s+the\s+PM\b|\bbring\s+(in|the)\s+(the\s+)?PM\b/i.test(response)
+  if (!hasSayYes && !hasPmCta && !hasPmEscalationOffer) return null
   const lines = response.match(/^\d+\.\s+\S.+/gm)
   if (!lines || lines.length === 0) return null
   return lines.join("\n")
@@ -1224,19 +1228,25 @@ async function runDesignAgent(params: {
   // the user cannot act on them until PM gaps close is actively misleading.
   const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureName)
 
-  // Platform-enforced assertive escalation text: when the agent called offer_pm_escalation this
-  // turn but wrote passive prose (asked a question instead of asserting the block), override
-  // with the assertive CTA built from pendingEscalation.question.
-  // Scoped to PM escalation only (not architect escalation, which has different language).
-  // Only applies when the tool was explicitly called — when the fallback prose-detection gate
-  // fires instead, the agent's prose is preserved as-is (it already contains escalation intent).
+  // Platform-enforced assertive escalation text: when escalation was just offered this turn
+  // (via tool call, N18 gate, or fallback prose-detection gate) but the agent's prose is passive
+  // (asked a question instead of asserting the block), override with the assertive CTA.
+  // "Assertive" means the prose already contains the required escalation language — "bring the PM"
+  // or "Design cannot move forward" — in which case it is preserved. Passive prose ("Want me to
+  // escalate?", "Would you like to call the PM?") is always overridden.
+  // Scoped: only overrides PM escalation (not architect escalation, which has different language).
   const agentCalledPmEscalationTool = toolCallsOutDesign.some(t => t.name === "offer_pm_escalation")
   let finalResponse = response
-  if (agentCalledPmEscalationTool) {
-    const pending = getPendingEscalation(featureName)!
-    const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
-    if (!response.includes("Design cannot move forward")) {
-      finalResponse = `${pending.question}\n\n${assertionText}`
+  if (escalationJustOffered && (agentCalledPmEscalationTool || !agentCalledEscalation)) {
+    // agentCalledPmEscalationTool: tool was explicitly called this turn (PM-specific)
+    // !agentCalledEscalation: fallback gate fired (agent didn't call any escalation tool)
+    const pending = getPendingEscalation(featureName)
+    if (pending?.targetAgent === "pm") {
+      const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
+      const isAlreadyAssertive = response.includes("Design cannot move forward") || response.includes("bring the PM")
+      if (!isAlreadyAssertive) {
+        finalResponse = `${pending.question}\n\n${assertionText}`
+      }
     }
   }
 

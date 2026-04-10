@@ -3831,3 +3831,75 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
     expect(text).not.toContain("OPEN ITEMS")
   })
 })
+
+// ─── N24: Fallback gate catches "want me to escalate to PM?" passive offer pattern ──
+//
+// The agent correctly identified PM gaps and listed them as numbered items, but asked
+// "Want me to escalate to PM with all three now?" instead of calling offer_pm_escalation.
+// The extended fallback gate must detect "escalate to PM" offer language, set pendingEscalation,
+// and override the passive question with the assertive CTA.
+// This is the Slack failure pattern (Apr 2026) that triggered the gate extension.
+
+describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' offer pattern and overrides passive prose", () => {
+  const THREAD = "workflow-n24"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("agent 'want me to escalate to PM?' + numbered PM gaps → pendingEscalation set, assertive text shown, action menu absent", async () => {
+    // No design draft — keeps mock sequence to minimum (no auditPhaseCompletion)
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Exact pattern from the Apr 2026 Slack failure: agent lists PM gaps then asks passive question
+    const agentResponse = [
+      "**Product spec gaps** — Three unresolved gaps that directly affect what design can specify:",
+      "",
+      "1. SSO failure path during initial sign-up is not defined — what state should the user land in if account creation fails?",
+      "2. Acceptance criteria 15 and 3 are qualitative (\"minimal path\", \"ambient awareness\") — need measurable definitions.",
+      "3. Conversation carry-over (US-8) doesn't specify how logged-out session data is stored, keyed, or merged on sign-up.",
+      "",
+      "These three gaps are blocking — the design cannot be complete without PM clarity.",
+      "",
+      "Want me to escalate to PM with all three now?",
+    ].join("\n")
+
+    // Mock sequence (no draft, no auditPhaseCompletion):
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] runAgent (end_turn)           → passive offer prose
+    //   [3] identifyUncommittedDecisions  → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 60 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's blocking us from moving to engineering?")
+    await handleFeatureChannelMessage(params)
+
+    // Fallback gate must have fired — pendingEscalation set with extracted PM questions
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending?.targetAgent).toBe("pm")
+    expect(pending?.question).toContain("SSO failure path")
+    expect(pending?.question).toContain("Acceptance criteria")
+    expect(pending?.question).toContain("Conversation carry-over")
+
+    // Passive offer question must be replaced with assertive escalation text
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
+    expect(text).not.toContain("Want me to escalate")
+
+    // Action menu must be suppressed
+    expect(text).not.toContain("OPEN ITEMS")
+  })
+})
