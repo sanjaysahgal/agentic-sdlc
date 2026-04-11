@@ -130,6 +130,7 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
       drifts.push({ param, specValue, brandValue })
     }
   }
+  console.log(`[AUDITOR] auditAnimationTokens: ${drifts.length === 0 ? "clean" : `${drifts.length} drift(s)`}`)
   return drifts
 }
 
@@ -165,11 +166,13 @@ export function auditBrandTokens(specContent: string, brandMd: string): BrandDri
     }
   }
 
-  return Array.from(driftMap.entries()).map(([token, specValue]) => ({
+  const drifts = Array.from(driftMap.entries()).map(([token, specValue]) => ({
     token,
     specValue,
     brandValue: brandTokens.get(token)!,
   }))
+  console.log(`[AUDITOR] auditBrandTokens: ${drifts.length === 0 ? "clean" : `${drifts.length} drift(s)`}`)
+  return drifts
 }
 
 /**
@@ -193,5 +196,6 @@ export function auditMissingBrandTokens(specContent: string, brandMd: string): A
       missing.push({ token, brandValue })
     }
   }
+  console.log(`[AUDITOR] auditMissingBrandTokens: ${missing.length === 0 ? "all tokens present" : `${missing.length} missing`}`)
   return missing
 }

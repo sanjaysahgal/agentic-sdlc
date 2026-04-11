@@ -71,7 +71,10 @@ ${specContent}`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "PASS"
 
-  if (text === "PASS") return { ready: true, findings: [] }
+  if (text === "PASS") {
+    console.log(`[AUDITOR] auditPhaseCompletion: feature=${featureName} rubricCriteria=${rubric.split(/^\d+\./m).length - 1} → ready=true`)
+    return { ready: true, findings: [] }
+  }
 
   const findings: Array<{ issue: string; recommendation: string }> = []
 
@@ -87,8 +90,12 @@ ${specContent}`,
   }
 
   // Unexpected format (no PASS, no valid FINDING lines) — fail-safe, don't block
-  if (findings.length === 0) return { ready: true, findings: [] }
+  if (findings.length === 0) {
+    console.log(`[AUDITOR] auditPhaseCompletion: feature=${featureName} → ready=true (no parseable findings)`)
+    return { ready: true, findings: [] }
+  }
 
+  console.log(`[AUDITOR] auditPhaseCompletion: feature=${featureName} → ready=false findings=${findings.length}`)
   return { ready: false, findings }
 }
 

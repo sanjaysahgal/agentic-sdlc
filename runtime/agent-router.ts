@@ -55,7 +55,9 @@ Respond with exactly one agent name, nothing else.`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "pm"
   const valid: AgentType[] = ["pm", "architect", "backend", "frontend", "qa", "pgm", "spec-validator", "eng-mgr", "infra", "data"]
-  return valid.includes(text as AgentType) ? (text as AgentType) : "pm"
+  const selected = valid.includes(text as AgentType) ? (text as AgentType) : "pm"
+  console.log(`[ROUTER] classifyIntent: "${message.slice(0, 80)}" → agent=${selected}`)
+  return selected
 }
 
 // Classifies whether a message is a product-level question (vision, architecture, principles)
@@ -97,7 +99,9 @@ Respond with exactly one word: start-design, spec-query, proposal, or status`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "status"
   const valid = ["start-design", "spec-query", "proposal", "status"] as const
-  return valid.includes(text as (typeof valid)[number]) ? (text as (typeof valid)[number]) : "status"
+  const intent = valid.includes(text as (typeof valid)[number]) ? (text as (typeof valid)[number]) : "status"
+  console.log(`[ROUTER] classifyApprovedPhaseIntent → intent=${intent}`)
+  return intent
 }
 
 // Detects whether a message is off-topic for a specialist agent (design or architect).
@@ -124,7 +128,9 @@ Respond with exactly one word: off-topic or on-topic`,
   })
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "on-topic"
-  return text === "off-topic"
+  const result = text === "off-topic"
+  console.log(`[ROUTER] isOffTopicForAgent(${agentDomain}): ${result}`)
+  return result
 }
 
 // Detects high-level "where are we" overview requests — not specific section queries.
@@ -145,7 +151,9 @@ Respond with exactly one word: yes or no`,
   })
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "no"
-  return text === "yes"
+  const result = text === "yes"
+  console.log(`[ROUTER] isSpecStateQuery: ${result}`)
+  return result
 }
 
 
@@ -153,9 +161,9 @@ export function detectPhase(params: {
   productSpecApproved: boolean
   engineeringSpecApproved: boolean
 }): "briefing" | "engineering" | "implementation" | "qa" {
-  if (!params.productSpecApproved) return "briefing"
-  if (!params.engineeringSpecApproved) return "engineering"
-  return "implementation"
+  const phase = !params.productSpecApproved ? "briefing" : !params.engineeringSpecApproved ? "engineering" : "implementation"
+  console.log(`[ROUTER] detectPhase: productSpecApproved=${params.productSpecApproved} engineeringSpecApproved=${params.engineeringSpecApproved} → phase=${phase}`)
+  return phase
 }
 
 export function getAgentDescriptions(): Record<AgentType, string> {

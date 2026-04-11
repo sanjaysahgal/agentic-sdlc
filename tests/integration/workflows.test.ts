@@ -18,6 +18,11 @@ import { join } from "path"
 //   channelName "feature-onboarding" → featureName "onboarding"
 //   channelName "feature-dashboard"  → featureName "dashboard"
 // THREAD constants are retained as threadTs values for Slack API calls only.
+//
+// Logging note (chore: add comprehensive runtime logging):
+// console.log calls were added to existing routing branches in message.ts and agent-router.ts.
+// No new routing paths or state transitions were introduced — all existing scenarios continue
+// to cover every branch. No new scenario was required.
 
 // Minimal HTML that satisfies all blocking validators (id="hero" present as sibling of id="thread")
 const VALID_MOCK_HTML = `<!DOCTYPE html><html><head><style>@keyframes glow-pulse {} body { background-color: #0A0A0F; color: #fff; }</style></head><body><div id="hero" :class="{ 'hidden': msgs.length > 0 || typing }" style="position:absolute;inset:0"></div><div id="thread" style="display:none;position:absolute;inset:0" x-show="msgs.length > 0 || typing"></div></body></html>`

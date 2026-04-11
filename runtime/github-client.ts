@@ -16,8 +16,11 @@ export async function readFile(path: string, ref?: string): Promise<string> {
   try {
     const response = await octokit.repos.getContent({ owner, repo, path, ...(ref ? { ref } : {}) })
     const data = response.data as { content: string }
-    return Buffer.from(data.content, "base64").toString("utf-8")
+    const content = Buffer.from(data.content, "base64").toString("utf-8")
+    console.log(`[GITHUB] readFile: ${path}${ref ? ` (ref=${ref})` : ""} → hit (${content.length} chars)`)
+    return content
   } catch {
+    console.log(`[GITHUB] readFile: ${path}${ref ? ` (ref=${ref})` : ""} → 404`)
     return ""
   }
 }
@@ -72,12 +75,18 @@ export async function saveDraftSpec(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
-  await saveDraftFile({
-    branch: `spec/${featureName}-product`,
-    filePath,
-    content,
-    commitMessage: `[DRAFT] ${featureName} · product.md`,
-  })
+  try {
+    await saveDraftFile({
+      branch: `spec/${featureName}-product`,
+      filePath,
+      content,
+      commitMessage: `[DRAFT] ${featureName} · product.md`,
+    })
+    console.log(`[GITHUB] saveDraftSpec: ${filePath} → saved`)
+  } catch (err) {
+    console.log(`[GITHUB] saveDraftSpec: ${filePath} → error: ${err}`)
+    throw err
+  }
 }
 
 // Save a draft design spec to the feature branch without opening a PR.
@@ -87,12 +96,18 @@ export async function saveDraftDesignSpec(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
-  await saveDraftFile({
-    branch: `spec/${featureName}-design`,
-    filePath,
-    content,
-    commitMessage: `[DRAFT] ${featureName} · design.md`,
-  })
+  try {
+    await saveDraftFile({
+      branch: `spec/${featureName}-design`,
+      filePath,
+      content,
+      commitMessage: `[DRAFT] ${featureName} · design.md`,
+    })
+    console.log(`[GITHUB] saveDraftDesignSpec: ${filePath} → saved`)
+  } catch (err) {
+    console.log(`[GITHUB] saveDraftDesignSpec: ${filePath} → error: ${err}`)
+    throw err
+  }
 }
 
 // Returns the current status of all features in flight.
@@ -179,12 +194,14 @@ export async function saveApprovedSpec(params: {
       sha: mainFileSha,
     })
     await deleteSpecBranch(branch)
+    console.log(`[GITHUB] saveApprovedSpec: ${filePath} → updated on main`)
     return "already-on-main"
   }
 
   // Save to branch then commit directly to main
   await saveDraftSpec({ featureName, filePath, content })
   await deleteSpecBranch(branch)
+  console.log(`[GITHUB] saveApprovedSpec: ${filePath} → saved`)
   return "saved"
 }
 
@@ -244,11 +261,13 @@ export async function saveApprovedDesignSpec(params: {
       sha: mainFileSha,
     })
     await deleteSpecBranch(branch)
+    console.log(`[GITHUB] saveApprovedDesignSpec: ${filePath} → updated on main`)
     return "already-on-main"
   }
 
   await saveDraftDesignSpec({ featureName, filePath, content })
   await deleteSpecBranch(branch)
+  console.log(`[GITHUB] saveApprovedDesignSpec: ${filePath} → saved`)
   return "saved"
 }
 
@@ -259,12 +278,18 @@ export async function saveDraftEngineeringSpec(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
-  await saveDraftFile({
-    branch: `spec/${featureName}-engineering`,
-    filePath,
-    content,
-    commitMessage: `[DRAFT] ${featureName} · engineering.md`,
-  })
+  try {
+    await saveDraftFile({
+      branch: `spec/${featureName}-engineering`,
+      filePath,
+      content,
+      commitMessage: `[DRAFT] ${featureName} · engineering.md`,
+    })
+    console.log(`[GITHUB] saveDraftEngineeringSpec: ${filePath} → saved`)
+  } catch (err) {
+    console.log(`[GITHUB] saveDraftEngineeringSpec: ${filePath} → error: ${err}`)
+    throw err
+  }
 }
 
 // Saves the final approved engineering spec. Updates in place if already on main.
@@ -293,11 +318,13 @@ export async function saveApprovedEngineeringSpec(params: {
       sha: mainFileSha,
     })
     await deleteSpecBranch(branch)
+    console.log(`[GITHUB] saveApprovedEngineeringSpec: ${filePath} → updated on main`)
     return "already-on-main"
   }
 
   await saveDraftEngineeringSpec({ featureName, filePath, content })
   await deleteSpecBranch(branch)
+  console.log(`[GITHUB] saveApprovedEngineeringSpec: ${filePath} → saved`)
   return "saved"
 }
 
@@ -309,12 +336,18 @@ export async function saveDraftHtmlPreview(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
-  await saveDraftFile({
-    branch: `spec/${featureName}-design`,
-    filePath,
-    content,
-    commitMessage: `[PREVIEW] ${featureName} · design preview`,
-  })
+  try {
+    await saveDraftFile({
+      branch: `spec/${featureName}-design`,
+      filePath,
+      content,
+      commitMessage: `[PREVIEW] ${featureName} · design preview`,
+    })
+    console.log(`[GITHUB] saveDraftHtmlPreview: ${filePath} → saved`)
+  } catch (err) {
+    console.log(`[GITHUB] saveDraftHtmlPreview: ${filePath} → error: ${err}`)
+    throw err
+  }
 }
 
 // Builds the htmlpreview.github.io URL for a design preview file on a branch.
@@ -388,6 +421,7 @@ export async function createSpecPR(params: {
     base: "main",
   })
 
+  console.log(`[GITHUB] createSpecPR: ${featureName} → PR created: ${pr.data.html_url}`)
   return pr.data.html_url
 }
 

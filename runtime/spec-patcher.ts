@@ -8,6 +8,7 @@
  * If the existing spec is empty/blank, the patch is returned as-is (initial full save).
  */
 export function applySpecPatch(existing: string, patch: string): string {
+  console.log(`[PATCHER] applySpecPatch: existing=${existing.trim() ? existing.length + " chars" : "empty (initial save)"}`)
   if (!existing.trim()) return patch.trim()
 
   function split(text: string): { preamble: string; sections: Array<{ heading: string; body: string }> } {
@@ -53,5 +54,7 @@ export function applySpecPatch(existing: string, patch: string): string {
     parts.push(body ? `${s.heading}\n${body}` : s.heading)
   }
 
-  return parts.join('\n\n').trim()
+  const result = parts.join('\n\n').trim()
+  console.log(`[PATCHER] applySpecPatch: result=${result.length} chars (${merged.length} sections)`)
+  return result
 }

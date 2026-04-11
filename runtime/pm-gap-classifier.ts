@@ -43,7 +43,10 @@ export async function classifyForPmGaps(params: {
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "NONE"
 
-  if (text === "NONE") return { gaps: [] }
+  if (text === "NONE") {
+    console.log(`[CLASSIFIER] classifyForPmGaps: 0 gaps found`)
+    return { gaps: [] }
+  }
 
   const gaps: string[] = []
   for (const line of text.split("\n")) {
@@ -52,5 +55,9 @@ export async function classifyForPmGaps(params: {
     if (gap) gaps.push(gap)
   }
 
+  console.log(`[CLASSIFIER] classifyForPmGaps: ${gaps.length} gap(s) found`)
+  if (gaps.length > 0) {
+    gaps.forEach((g, i) => console.log(`[CLASSIFIER]   gap ${i + 1}: ${g.slice(0, 100)}`))
+  }
   return { gaps }
 }

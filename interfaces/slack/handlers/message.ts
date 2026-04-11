@@ -215,6 +215,7 @@ export async function handleFeatureChannelMessage(params: {
   const featureName = getFeatureName(channelName)
 
   const confirmedAgent = getConfirmedAgent(featureName)
+  console.log(`[ROUTER] handleFeatureChannelMessage: feature=${featureName} confirmedAgent=${confirmedAgent ?? "(none)"} msg="${userMessage.slice(0, 100)}"`)
 
   // Confirmed agent — check phase first, then run
   if (confirmedAgent === "ux-design") {
@@ -222,6 +223,8 @@ export async function handleFeatureChannelMessage(params: {
     // run the PM agent with the blocking question as its opening brief.
     const pendingEscalation = getPendingEscalation(featureName)
     if (pendingEscalation && isAffirmative(userMessage)) {
+      console.log(`[ROUTER] branch=pending-escalation-confirmed targetAgent=${pendingEscalation.targetAgent} question="${pendingEscalation.question.slice(0, 100)}"`)
+
       clearPendingEscalation(featureName)
       const { roles } = loadWorkspaceConfig()
       const isArchitectEscalation = pendingEscalation.targetAgent === "architect"
@@ -276,6 +279,8 @@ ${pendingEscalation.question}`
     }
     // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
     if (pendingEscalation) {
+      console.log(`[ROUTER] branch=pending-escalation-hold targetAgent=${pendingEscalation.targetAgent}`)
+
       const q = pendingEscalation.question
       await client.chat.postMessage({
         channel: channelId,
@@ -320,6 +325,7 @@ ${pendingEscalation.question}`
   }
 
   if (confirmedAgent === "architect") {
+    console.log(`[ROUTER] branch=confirmed-architect feature=${featureName}`)
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
     }})
@@ -330,12 +336,14 @@ ${pendingEscalation.question}`
     // If the product spec is already approved, route to the design phase.
     const currentPhase = await getFeaturePhase(getFeatureName(channelName))
     if (currentPhase === "product-spec-approved-awaiting-design") {
+      console.log(`[ROUTER] branch=confirmed-pm-phase-advance feature=${featureName} → routing to ux-design (product spec approved)`)
       setConfirmedAgent(featureName, "ux-design")
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       }})
       return
     }
+    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}`)
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
       await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update })
     }})
@@ -353,18 +361,21 @@ ${pendingEscalation.question}`
 
   // New thread — check phase first, then classify and run
   const currentPhase = await getFeaturePhase(getFeatureName(channelName))
+  console.log(`[ROUTER] branch=new-thread feature=${featureName} currentPhase=${currentPhase}`)
   const thinkingLabel =
     currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress" ? "UX Designer" :
     currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress" ? "Architect" :
     undefined
   await withThinking({ client, channelId, threadTs, agent: thinkingLabel, run: async (update) => {
     if (currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress") {
+      console.log(`[ROUTER] branch=new-thread-design feature=${featureName}`)
       setConfirmedAgent(featureName, "ux-design")
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
     }
 
     if (currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress") {
+      console.log(`[ROUTER] branch=new-thread-architect feature=${featureName}`)
       setConfirmedAgent(featureName, "architect")
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       return
@@ -408,6 +419,7 @@ async function runPmAgent(params: {
   // Pending spec approval — check before anything else
   const pendingApproval = getPendingApproval(featureName)
   if (pendingApproval && pendingApproval.specType === "product") {
+    console.log(`[ROUTER] runPmAgent: pending product approval found for feature=${featureName}`)
     if (isAffirmative(userMessage)) {
       clearPendingApproval(featureName)
       await update("_Saving the final product spec..._")
@@ -578,6 +590,7 @@ async function runDesignAgent(params: {
   // Pending spec approval — check before fast paths
   const pendingDesignApproval = getPendingApproval(featureName)
   if (pendingDesignApproval && pendingDesignApproval.specType === "design") {
+    console.log(`[ROUTER] runDesignAgent: pending design approval found for feature=${featureName}`)
     if (isAffirmative(userMessage)) {
       clearPendingApproval(featureName)
       await update("_Saving the final design spec..._")

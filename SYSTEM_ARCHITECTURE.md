@@ -153,6 +153,22 @@ Implemented in `runtime/conversation-summarizer.ts`.
 
 All Anthropic clients set `maxRetries: 0` and explicit timeouts. The SDK default of 2 retries × 10-minute timeout = 30 minutes per stalled call — two sequential stalls meant a user could wait an hour at "thinking..." with no error surfaced. Timeouts by client role: main agent (`claude-client.ts`) 5 min; rubric auditor (`phase-completion-auditor.ts`) 90s; spec/decision auditors (`spec-auditor.ts`) 60s; conversation summarizer (`conversation-summarizer.ts`) 60s; classifiers (`agent-router.ts`, `context-loader.ts`) 30s. A stall now surfaces as a user-visible error in under 90 seconds.
 
+### Structured runtime logging
+
+Every decision point in the platform emits a single `console.log` line using a consistent `[COMPONENT] message` format. No full message content is logged (privacy); user messages are truncated to 100 chars. Components:
+
+| Tag | File | What it logs |
+|---|---|---|
+| `[ROUTER]` | `runtime/agent-router.ts`, `interfaces/slack/handlers/message.ts` | Intent classification result, agent selected, phase detected, off-topic/state-query boolean, routing branch taken |
+| `[CONTEXT]` | `runtime/context-loader.ts`, `runtime/conversation-summarizer.ts` | Feature name, hit/miss per GitHub path, summarizer input/output sizes, uncommitted decision scan result |
+| `[AUDITOR]` | `runtime/phase-completion-auditor.ts`, `runtime/brand-auditor.ts` | Phase completion ready/not-ready + finding count, brand/animation drift count |
+| `[GITHUB]` | `runtime/github-client.ts` | Every file read (hit/404), every draft/approved save (success/error), PR URL on creation |
+| `[STORE]` | `runtime/conversation-store.ts` | Pending escalation set/clear (with targetAgent), pending approval set/clear, disk persistence errors |
+| `[CLASSIFIER]` | `runtime/pm-gap-classifier.ts` | Gap count + first 100 chars of each gap |
+| `[PATCHER]` | `runtime/spec-patcher.ts` | Existing spec size or "initial save", output size and section count |
+
+This is observability infrastructure — no behavioral change. Every log line corresponds to a decision that previously required a screenshot or Slack test to diagnose.
+
 ### Agent tool-use loop (Step 13)
 
 All spec-producing agents (PM, design, architect) use the Anthropic native tool-use API instead of the former hand-rolled text-block protocol. `runAgent()` in `runtime/claude-client.ts` is a tool-use loop:

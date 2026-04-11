@@ -24,6 +24,7 @@ export type AgentContext = {
 // Runs in parallel with other context fetches — minimal latency impact.
 async function summarizeForContext(doc: string, question: string): Promise<string> {
   if (!doc) return ""
+  console.log(`[CONTEXT] summarizeForContext: input=${doc.length} chars`)
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 500,
@@ -34,7 +35,9 @@ If the whole document is relevant, summarize it in 200 words.`,
       { role: "user", content: `Question: ${question}\n\nDocument:\n${doc}` },
     ],
   })
-  return response.content[0].type === "text" ? response.content[0].text.trim() : doc.slice(0, 2000)
+  const summary = response.content[0].type === "text" ? response.content[0].text.trim() : doc.slice(0, 2000)
+  console.log(`[CONTEXT] summarizeForContext: output=${summary.length} chars`)
+  return summary
 }
 
 // Loads all approved specs of a given type from the features root on main.
@@ -68,6 +71,7 @@ export async function loadAgentContext(featureName?: string): Promise<AgentConte
   const { paths } = loadWorkspaceConfig()
   const draftPath = featureName ? `${paths.featuresRoot}/${featureName}/${featureName}.product.md` : ""
   const draftBranch = featureName ? `spec/${featureName}-product` : ""
+  console.log(`[CONTEXT] loadAgentContext: feature=${featureName ?? "(none)"}`)
 
   const [productVision, featureConventions, systemArchitecture, currentDraft, approvedFeatureSpecs] = await Promise.all([
     readFile(paths.productVision),
@@ -78,6 +82,7 @@ export async function loadAgentContext(featureName?: string): Promise<AgentConte
     loadApprovedSpecs(paths.featuresRoot, ".product.md", featureName),
   ])
 
+  console.log(`[CONTEXT] loadAgentContext: productVision=${productVision ? "loaded" : "404"} conventions=${featureConventions ? "loaded" : "404"} arch=${systemArchitecture ? "loaded" : "404"} draft=${currentDraft ? "loaded" : "404"}`)
   return { productVision, featureConventions, systemArchitecture, currentDraft, approvedFeatureSpecs }
 }
 
@@ -90,6 +95,7 @@ export async function loadDesignAgentContext(featureName: string): Promise<Agent
   const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
   const designDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
   const designBranch = `spec/${featureName}-design`
+  console.log(`[CONTEXT] loadDesignAgentContext: feature=${featureName}`)
 
   const [productVision, featureConventions, systemArchitecture, approvedProductSpec, designDraft, designSystem, brand, approvedFeatureSpecs] = await Promise.all([
     readFile(paths.productVision),
@@ -111,6 +117,7 @@ export async function loadDesignAgentContext(featureName: string): Promise<Agent
     designDraft ? `## Current Design Draft\n${designDraft}` : "",
   ].filter(Boolean).join("\n\n")
 
+  console.log(`[CONTEXT] loadDesignAgentContext: productSpec=${approvedProductSpec ? "loaded" : "404"} designDraft=${designDraft ? "loaded" : "404"} designSystem=${designSystem ? "loaded" : "404"} brand=${brand ? "loaded" : "404"}`)
   return { productVision, featureConventions, systemArchitecture, currentDraft, approvedProductSpec: approvedProductSpec ?? undefined, designSystem, brand, approvedFeatureSpecs }
 }
 
@@ -123,6 +130,7 @@ export async function loadArchitectAgentContext(featureName: string): Promise<Ag
   const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
   const engineeringDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
   const engineeringBranch = `spec/${featureName}-engineering`
+  console.log(`[CONTEXT] loadArchitectAgentContext: feature=${featureName}`)
 
   const [productVision, systemArchitecture, approvedProductSpec, approvedDesignSpec, engineeringDraft, approvedFeatureSpecs] = await Promise.all([
     readFile(paths.productVision),
@@ -141,6 +149,7 @@ export async function loadArchitectAgentContext(featureName: string): Promise<Ag
     engineeringDraft ? `## Current Engineering Draft\n${engineeringDraft}` : "",
   ].filter(Boolean).join("\n\n")
 
+  console.log(`[CONTEXT] loadArchitectAgentContext: productSpec=${approvedProductSpec ? "loaded" : "404"} designSpec=${approvedDesignSpec ? "loaded" : "404"} engineeringDraft=${engineeringDraft ? "loaded" : "404"}`)
   return { productVision, featureConventions: "", systemArchitecture, currentDraft, approvedFeatureSpecs }
 }
 

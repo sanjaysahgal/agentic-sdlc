@@ -28,6 +28,7 @@ export async function summarizeUnlockedDiscussion(
   cacheKey?: string,
 ): Promise<string> {
   if (olderMessages.length === 0) return ""
+  console.log(`[CONTEXT] summarizeUnlockedDiscussion: ${olderMessages.length} messages, cacheKey=${cacheKey ?? "(none)"}`)
 
   if (cacheKey) {
     const cached = summaryCache.get(cacheKey)
@@ -90,6 +91,7 @@ export async function identifyUncommittedDecisions(
   cacheKey?: string,
 ): Promise<string> {
   if (history.length === 0) return ""
+  console.log(`[CONTEXT] identifyUncommittedDecisions: ${history.length} messages, specLength=${committedSpec.length}`)
 
   if (cacheKey) {
     const cached = summaryCache.get(`uncommitted:${cacheKey}`)
@@ -138,6 +140,7 @@ Otherwise, list each uncommitted agreed decision as a numbered list. For each it
 
   const result_text = result.content[0].type === "text" ? result.content[0].text.trim() : ""
   if (cacheKey) summaryCache.set(`uncommitted:${cacheKey}`, result_text)
+  console.log(`[CONTEXT] identifyUncommittedDecisions: result=${result_text === "none" ? "none" : result_text.slice(0, 80)}`)
   return result_text
 }
 

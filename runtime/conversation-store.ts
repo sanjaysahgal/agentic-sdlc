@@ -62,8 +62,12 @@ function loadConfirmedAgents(): void {
 }
 
 function persistConfirmedAgents(): void {
-  const obj = Object.fromEntries(confirmedAgents)
-  fs.writeFileSync(CONFIRMED_AGENTS_FILE, JSON.stringify(obj, null, 2))
+  try {
+    const obj = Object.fromEntries(confirmedAgents)
+    fs.writeFileSync(CONFIRMED_AGENTS_FILE, JSON.stringify(obj, null, 2))
+  } catch (err) {
+    console.log(`[STORE] persistConfirmedAgents: error writing ${CONFIRMED_AGENTS_FILE}: ${err}`)
+  }
 }
 
 function loadConversationHistory(): void {
@@ -101,8 +105,12 @@ function migrateThreadTsKeys(): void {
 }
 
 function persistConversationHistory(): void {
-  const obj = Object.fromEntries(store)
-  fs.writeFileSync(CONVERSATION_HISTORY_FILE, JSON.stringify(obj, null, 2))
+  try {
+    const obj = Object.fromEntries(store)
+    fs.writeFileSync(CONVERSATION_HISTORY_FILE, JSON.stringify(obj, null, 2))
+  } catch (err) {
+    console.log(`[STORE] persistConversationHistory: error writing ${CONVERSATION_HISTORY_FILE}: ${err}`)
+  }
 }
 
 // Load both from disk on startup, then migrate any old threadTs-keyed entries
@@ -161,10 +169,12 @@ export function getPendingEscalation(threadTs: string): PendingEscalation | null
 }
 
 export function setPendingEscalation(threadTs: string, escalation: PendingEscalation): void {
+  console.log(`[STORE] setPendingEscalation: feature=${threadTs} targetAgent=${escalation.targetAgent}`)
   pendingEscalations.set(threadTs, escalation)
 }
 
 export function clearPendingEscalation(threadTs: string): void {
+  console.log(`[STORE] clearPendingEscalation: feature=${threadTs}`)
   pendingEscalations.delete(threadTs)
 }
 
@@ -173,10 +183,12 @@ export function getPendingApproval(threadTs: string): PendingApproval | null {
 }
 
 export function setPendingApproval(threadTs: string, approval: PendingApproval): void {
+  console.log(`[STORE] setPendingApproval: feature=${threadTs} specType=${approval.specType}`)
   pendingApprovals.set(threadTs, approval)
 }
 
 export function clearPendingApproval(threadTs: string): void {
+  console.log(`[STORE] clearPendingApproval: feature=${threadTs}`)
   pendingApprovals.delete(threadTs)
 }
 
