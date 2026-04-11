@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+logs/
 .confirmed-agents.json
 .bot.pid
 .conversation-history.json

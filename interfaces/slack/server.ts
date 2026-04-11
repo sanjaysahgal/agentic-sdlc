@@ -5,6 +5,23 @@ import app from "./app"
 import { waitForDrain, getActiveRequestCount } from "../../runtime/request-tracker"
 
 const PID_FILE = path.join(process.cwd(), ".bot.pid")
+const LOG_FILE = path.join(process.cwd(), "logs", "bot.log")
+
+// Redirect all console output to both stdout and a rotating log file so logs
+// are readable after the fact without keeping a terminal open.
+function setupFileLogging(): void {
+  fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true })
+  const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" })
+  const origLog = console.log.bind(console)
+  const origError = console.error.bind(console)
+  const origWarn = console.warn.bind(console)
+  const ts = () => new Date().toISOString()
+  console.log = (...args) => { const line = `${ts()} ${args.join(" ")}`; origLog(line); logStream.write(line + "\n") }
+  console.error = (...args) => { const line = `${ts()} ERROR ${args.join(" ")}`; origError(line); logStream.write(line + "\n") }
+  console.warn = (...args) => { const line = `${ts()} WARN ${args.join(" ")}`; origWarn(line); logStream.write(line + "\n") }
+}
+
+setupFileLogging()
 
 // Prevent multiple instances — a second startup kills the file's recorded process.
 // Eliminates duplicate Slack responses and file-write races on disk persistence.
