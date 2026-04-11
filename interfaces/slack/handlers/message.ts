@@ -894,9 +894,15 @@ async function runDesignAgent(params: {
       }).catch(() => null)
       if (designAuditResult && !designAuditResult.ready) {
         designReadinessFindings = designAuditResult.findings
+        const productFindingsPreRun = designAuditResult.findings.filter(f => f.issue.toLowerCase().includes("[type: product]"))
+        console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: ${designAuditResult.findings.length} total findings, ${productFindingsPreRun.length} [type: product]`)
+        if (productFindingsPreRun.length > 0) {
+          console.log(`[ESCALATION] Gate 1 [type: product] findings:\n${productFindingsPreRun.map(f => f.issue).join("\n")}`)
+        }
         const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. The platform displays these in a structured block — DO NOT restate or list them in your response. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation. For design gaps you own, fix them when the user asks. Keep your prose to ≤3 sentences.\n${findingLines}]`
       } else if (designAuditResult?.ready) {
+        console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: PASS — no findings`)
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
       }
       phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
@@ -1066,6 +1072,8 @@ async function runDesignAgent(params: {
         }
       }
       if (name === "offer_pm_escalation") {
+        console.log(`[ESCALATION] offer_pm_escalation tool called for ${featureName}`)
+        console.log(`[ESCALATION] tool question param:\n${input.question}`)
         setPendingEscalation(featureName, {
           targetAgent: "pm",
           question: input.question as string,
@@ -1201,7 +1209,9 @@ async function runDesignAgent(params: {
   // makes product gap escalation structurally deterministic regardless of agent prose choices.
   const productFindings = designReadinessFindings.filter(f => f.issue.toLowerCase().includes("[type: product]"))
   const agentCalledEscalation = !!getPendingEscalation(featureName)
+  console.log(`[ESCALATION] gate check for ${featureName}: productFindings=${productFindings.length}, agentCalledEscalation=${agentCalledEscalation}, toolCalls=${toolCallsOutDesign.map(t => t.name).join(",") || "none"}`)
   if (productFindings.length > 0 && !agentCalledEscalation) {
+    console.log(`[ESCALATION] Gate 2 (N18) fired — productFindings:\n${productFindings.map(f => f.issue).join("\n")}`)
     const consolidated = productFindings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
     setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
     const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
@@ -1220,7 +1230,11 @@ async function runDesignAgent(params: {
   if (!agentCalledEscalation) {
     const pmQuestions = extractPmEscalationFromAgentResponse(response)
     if (pmQuestions) {
+      console.log(`[ESCALATION] Gate 3 (fallback prose) fired for ${featureName}`)
+      console.log(`[ESCALATION] extracted questions:\n${pmQuestions}`)
       setPendingEscalation(featureName, { targetAgent: "pm", question: pmQuestions, designContext: "" })
+    } else {
+      console.log(`[ESCALATION] Gate 3 (fallback prose) — no pattern match`)
     }
   }
 
@@ -1230,14 +1244,18 @@ async function runDesignAgent(params: {
   // Skipped when the agent saved the spec (no PM gap prose to classify in a save response).
   // Fail-safe at call site: .catch returns empty gaps, never blocks the response.
   if (!agentCalledEscalation && !getPendingEscalation(featureName) && !didSave && !agentStillSeeking) {
+    console.log(`[ESCALATION] Gate 4 (Haiku classifier) running for ${featureName}`)
     const classification = await classifyForPmGaps({
       agentResponse: response,
       approvedProductSpec: context.approvedProductSpec ?? undefined,
     }).catch(() => ({ gaps: [] }))
+    console.log(`[ESCALATION] Gate 4 result: ${classification.gaps.length} gaps — ${classification.gaps.length === 0 ? "NONE" : classification.gaps.join(" | ")}`)
     if (classification.gaps.length > 0) {
       const consolidated = classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
       setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
     }
+  } else {
+    console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureName)}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}`)
   }
 
   // If escalation was just offered this turn (via tool call, N18 gate, fallback prose-detection
@@ -1263,6 +1281,7 @@ async function runDesignAgent(params: {
       // without listing the actual gaps, leaving the user without actionable content.
       const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
       finalResponse = `${pending.question}\n\n${assertionText}`
+      console.log(`[ESCALATION] Override applied for ${featureName}. pending.question:\n${pending.question}`)
     }
   }
 
