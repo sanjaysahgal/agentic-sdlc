@@ -155,7 +155,9 @@ All Anthropic clients set `maxRetries: 0` and explicit timeouts. The SDK default
 
 ### Structured runtime logging
 
-Every decision point in the platform emits a single `console.log` line using a consistent `[COMPONENT] message` format. No full message content is logged (privacy); user messages are truncated to 100 chars. Components:
+All logging is routed through `runtime/logger.ts` (winston + `winston-daily-rotate-file`). Logs are written to stdout and to `logs/bot-YYYY-MM-DD.log` with 14-day retention, 20MB per-file cap, and gzip compression. Errors are also mirrored to `logs/bot-error-YYYY-MM-DD.log` with 30-day retention. `console.log/error/warn` in `server.ts` are redirected through winston so all `[COMPONENT]` log lines from every runtime file are captured automatically.
+
+Every decision point emits a single line using a consistent `[COMPONENT] message` format. No full message content is logged (privacy); user messages are truncated to 100 chars. Components:
 
 | Tag | File | What it logs |
 |---|---|---|

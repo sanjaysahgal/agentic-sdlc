@@ -3,25 +3,16 @@ import fs from "fs"
 import path from "path"
 import app from "./app"
 import { waitForDrain, getActiveRequestCount } from "../../runtime/request-tracker"
+import logger from "../../runtime/logger"
 
 const PID_FILE = path.join(process.cwd(), ".bot.pid")
-const LOG_FILE = path.join(process.cwd(), "logs", "bot.log")
 
-// Redirect all console output to both stdout and a rotating log file so logs
-// are readable after the fact without keeping a terminal open.
-function setupFileLogging(): void {
-  fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true })
-  const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" })
-  const origLog = console.log.bind(console)
-  const origError = console.error.bind(console)
-  const origWarn = console.warn.bind(console)
-  const ts = () => new Date().toISOString()
-  console.log = (...args) => { const line = `${ts()} ${args.join(" ")}`; origLog(line); logStream.write(line + "\n") }
-  console.error = (...args) => { const line = `${ts()} ERROR ${args.join(" ")}`; origError(line); logStream.write(line + "\n") }
-  console.warn = (...args) => { const line = `${ts()} WARN ${args.join(" ")}`; origWarn(line); logStream.write(line + "\n") }
-}
-
-setupFileLogging()
+// Route all console output through winston so every log line is timestamped,
+// level-tagged, written to stdout, and persisted to rotating daily log files
+// under logs/ with 14-day retention and 20MB per-file cap.
+console.log = (...args) => logger.info(args.join(" "))
+console.error = (...args) => logger.error(args.join(" "))
+console.warn = (...args) => logger.warn(args.join(" "))
 
 // Prevent multiple instances — a second startup kills the file's recorded process.
 // Eliminates duplicate Slack responses and file-write races on disk persistence.

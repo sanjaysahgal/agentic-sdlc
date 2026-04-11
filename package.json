@@ -31,7 +31,9 @@
     "@slack/web-api": "^7.0.0",
     "@types/express": "^5.0.6",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
