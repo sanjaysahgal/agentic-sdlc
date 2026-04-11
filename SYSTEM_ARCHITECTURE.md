@@ -198,6 +198,8 @@ Tool results carry structured data (spec URL, audit findings, preview URL) back 
 
 When any gate sets `pendingEscalation` this turn (`escalationJustOffered`): (a) the platform overrides passive prose with assertive CTA ("Design cannot move forward. Say *yes*..."), and (b) the action menu is suppressed. The only exit from pending-escalation state is user affirmation ("yes") → PM @mentioned, escalation cleared.
 
+`PendingEscalation` carries `productSpec?: string` — the approved product spec content stored at gate call time (when `context.approvedProductSpec` is in scope). When the user confirms ("yes"), the PM brief includes the spec inline as `APPROVED PRODUCT SPEC`. This is required because `loadAgentContext` reads from the draft branch (`spec/{feature}-product`) which 404s after the spec is approved and merged to main — the PM agent would otherwise have no product context.
+
 ### Proactive constraint audit pattern
 
 Every agent in the platform runs a deterministic audit for its domain-specific constraints on every response. This is not prompt-based — it is platform-enforced, pure code, no API call.

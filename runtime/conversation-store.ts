@@ -18,8 +18,9 @@ export type Message = {
 
 export type PendingEscalation = {
   targetAgent: "pm" | "architect"
-  question: string    // the specific blocking question to hand to the PM or architect
-  designContext: string // current design draft — gives them instant context
+  question: string        // the specific blocking question to hand to the PM or architect
+  designContext: string   // current design draft — gives them instant context
+  productSpec?: string    // approved product spec — so PM agent has full context without re-fetching
 }
 
 // Escalation notification — set after the PM/Architect @mention is posted.

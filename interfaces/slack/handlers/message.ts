@@ -235,6 +235,9 @@ export async function handleFeatureChannelMessage(params: {
       // Run the PM/Architect agent with the blocking questions as a brief so it produces
       // concrete decisions before the human is notified — not a raw question dump.
       // Brief is forceful and decision-framed: the agent must make calls, not present options.
+      const productSpecSection = pendingEscalation.productSpec
+        ? `\n\nAPPROVED PRODUCT SPEC (for context):\n${pendingEscalation.productSpec}`
+        : ""
       const pmBrief = `DESIGN TEAM ESCALATION — PROVISIONAL ANSWERS NEEDED TO UNBLOCK DESIGN.
 
 The UX Designer is blocked on the items below and cannot continue until each has a working answer. Your job: provide a specific, concrete provisional answer for each item so design can proceed today. These are working assumptions — not final decisions — that the human PM can review and adjust. You are not overriding anyone. You are unblocking the team with your best expert judgment.
@@ -244,7 +247,7 @@ For each item, output exactly:
 → Rationale: [one sentence grounded in product vision, user needs, or standard practice]
 → Flag: Provisional — human PM to confirm before engineering handoff
 
-Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it.
+Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it.${productSpecSection}
 
 BLOCKING ITEMS:
 ${pendingEscalation.question}`
@@ -1093,6 +1096,7 @@ async function runDesignAgent(params: {
           targetAgent: "pm",
           question: input.question as string,
           designContext: context.currentDraft ?? "",
+          productSpec: context.approvedProductSpec ?? undefined,
         })
         return {
           result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the PM will be notified with your question.",
@@ -1228,7 +1232,7 @@ async function runDesignAgent(params: {
   if (productFindings.length > 0 && !agentCalledEscalation) {
     console.log(`[ESCALATION] Gate 2 (N18) fired — productFindings:\n${productFindings.map(f => f.issue).join("\n")}`)
     const consolidated = productFindings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
-    setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
+    setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
     const escalationResponse = `${consolidated}\n\n${assertionText}`
     appendMessage(featureName, { role: "assistant", content: escalationResponse })
@@ -1247,7 +1251,7 @@ async function runDesignAgent(params: {
     if (pmQuestions) {
       console.log(`[ESCALATION] Gate 3 (fallback prose) fired for ${featureName}`)
       console.log(`[ESCALATION] extracted questions:\n${pmQuestions}`)
-      setPendingEscalation(featureName, { targetAgent: "pm", question: pmQuestions, designContext: "" })
+      setPendingEscalation(featureName, { targetAgent: "pm", question: pmQuestions, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     } else {
       console.log(`[ESCALATION] Gate 3 (fallback prose) — no pattern match`)
     }
@@ -1267,7 +1271,7 @@ async function runDesignAgent(params: {
     console.log(`[ESCALATION] Gate 4 result: ${classification.gaps.length} gaps — ${classification.gaps.length === 0 ? "NONE" : classification.gaps.join(" | ")}`)
     if (classification.gaps.length > 0) {
       const consolidated = classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
-      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
+      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     }
   } else {
     console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureName)}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}`)

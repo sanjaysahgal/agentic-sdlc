@@ -448,6 +448,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
     })
+    // Note: no productSpec set here — verified in separate test below
 
     // PM agent runs — mock any Anthropic calls with a valid response
     mockAnthropicCreate.mockResolvedValue({
@@ -478,6 +479,39 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const notif = getEscalationNotification("onboarding")
     expect(notif).not.toBeNull()
     expect(notif?.question).toBe("Should social login be supported?")
+  })
+
+  it("Turn 2 with productSpec — approved product spec injected into PM brief so agent has full context", async () => {
+    // Root cause of Apr 2026 bug: PM agent replied "I need to see the spec" because
+    // loadAgentContext reads from the draft branch (404 after approval). Fix: store
+    // productSpec in PendingEscalation and inject it directly into the brief.
+    setConfirmedAgent("onboarding", "ux-design")
+    appendMessage("onboarding", { role: "user", content: "what's blocking design?" })
+    appendMessage("onboarding", { role: "assistant", content: "1. SSO failure path undefined.\n\nDesign cannot move forward. Say *yes*..." })
+
+    const { setPendingEscalation } = await import("../../../runtime/conversation-store")
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "1. SSO failure path undefined — what is the recovery path?",
+      designContext: "",
+      productSpec: "## Acceptance Criteria\n1. Users can sign in via SSO.\n2. Handle gracefully.",
+    })
+
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "→ Provisional answer: Show a retry screen with an error message.\n→ Rationale: Standard SSO failure UX.\n→ Flag: Provisional" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 30 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // The PM agent call must have received the product spec content in its messages
+    const pmCall = mockAnthropicCreate.mock.calls[0][0]
+    const userMessage = pmCall.messages[0].content as string
+    expect(userMessage).toContain("APPROVED PRODUCT SPEC")
+    expect(userMessage).toContain("Users can sign in via SSO")
+    expect(userMessage).toContain("SSO failure path undefined")
   })
 })
 

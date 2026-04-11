@@ -111,6 +111,19 @@ describe("conversation-store", () => {
     expect(getPendingEscalation("thread-1")).toEqual(escalation)
   })
 
+  it("setPendingEscalation stores productSpec when provided and retrieves it", async () => {
+    const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
+    const escalation = { targetAgent: "pm" as const, question: "Q?", designContext: "", productSpec: "## Acceptance Criteria\n1. SSO sign-in." }
+    setPendingEscalation("thread-1", escalation)
+    expect(getPendingEscalation("thread-1")?.productSpec).toBe("## Acceptance Criteria\n1. SSO sign-in.")
+  })
+
+  it("setPendingEscalation productSpec is optional — omitting it does not break retrieval", async () => {
+    const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: "Q?", designContext: "" })
+    expect(getPendingEscalation("thread-1")?.productSpec).toBeUndefined()
+  })
+
   it("clearPendingEscalation removes the escalation", async () => {
     const { getPendingEscalation, setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
     setPendingEscalation("thread-1", { targetAgent: "pm", question: "Q", designContext: "" })
