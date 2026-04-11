@@ -235,30 +235,32 @@ export async function handleFeatureChannelMessage(params: {
       // Run the PM/Architect agent with the blocking questions as a brief so it produces
       // concrete decisions before the human is notified — not a raw question dump.
       // Brief is forceful and decision-framed: the agent must make calls, not present options.
-      const pmBrief = `DESIGN TEAM ESCALATION — PRODUCT DECISIONS NEEDED.
+      const pmBrief = `DESIGN TEAM ESCALATION — PROVISIONAL ANSWERS NEEDED TO UNBLOCK DESIGN.
 
-You are the product decision-maker. The UX Designer cannot continue the design spec until you make a call on each item below.
+The UX Designer is blocked on the items below and cannot continue until each has a working answer. Your job: provide a specific, concrete provisional answer for each item so design can proceed today. These are working assumptions — not final decisions — that the human PM can review and adjust. You are not overriding anyone. You are unblocking the team with your best expert judgment.
 
-For each item, output:
-→ Decision: [specific answer — one concrete choice, no conditionals, no "it depends"]
-→ Rationale: [one sentence grounded in the product vision or system architecture]
+For each item, output exactly:
+→ Provisional answer: [one specific, concrete answer — no conditionals, no "it depends", no "the PM should decide"]
+→ Rationale: [one sentence grounded in product vision, user needs, or standard practice]
+→ Flag: Provisional — human PM to confirm before engineering handoff
 
-Do not ask for more context. Do not present options. Do not defer to the human PM. You ARE the PM — these are your product calls to make. The design team needs decisions, not recommendations.
+Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it.
 
-BLOCKING QUESTIONS:
+BLOCKING ITEMS:
 ${pendingEscalation.question}`
 
-      const archBrief = `DESIGN TEAM ESCALATION — ARCHITECTURE DECISIONS NEEDED.
+      const archBrief = `DESIGN TEAM ESCALATION — PROVISIONAL TECHNICAL ANSWERS NEEDED TO UNBLOCK DESIGN.
 
-You are the system architect. The UX Designer cannot continue the design spec until you make a call on each item below.
+The UX Designer is blocked on the items below and cannot continue until each has a working answer. Your job: provide a specific, concrete provisional answer for each item so design can proceed today. These are working assumptions the engineering team can refine — not final architecture decisions.
 
-For each item, output:
-→ Decision: [specific answer — one concrete technical choice, no conditionals]
-→ Rationale: [one sentence grounded in the system architecture]
+For each item, output exactly:
+→ Provisional answer: [one specific, concrete technical answer — no conditionals, no "it depends"]
+→ Rationale: [one sentence grounded in the system architecture or standard practice]
+→ Flag: Provisional — architect to confirm at engineering spec phase
 
-Do not ask for more context. Do not present options. Make the call.
+Do not ask for more context. Do not present multiple options. Pick the best answer and state it.
 
-BLOCKING QUESTIONS:
+BLOCKING ITEMS:
 ${pendingEscalation.question}`
 
       const brief = isArchitectEscalation ? archBrief : pmBrief
