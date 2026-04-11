@@ -3760,9 +3760,9 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
     expect(text).not.toContain("Brand Drift")
     expect(text).not.toContain("Design Readiness Gaps")
 
-    // Agent prose is preserved — not replaced by the platform assertion
-    expect(text).toMatch(/say yes/i)
-    expect(text).toMatch(/bring the PM/i)
+    // Platform always overrides with structured gap list + assertionText — assertive verbs still present
+    expect(text).toContain("Say *yes*")
+    expect(text).toContain("bring the PM")
   })
 })
 

@@ -1259,11 +1259,10 @@ async function runDesignAgent(params: {
     // !agentCalledEscalation: fallback gate fired (agent didn't call any escalation tool)
     const pending = getPendingEscalation(featureName)
     if (pending?.targetAgent === "pm") {
+      // Always replace with the structured format — agent prose may say "bring the PM"
+      // without listing the actual gaps, leaving the user without actionable content.
       const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
-      const isAlreadyAssertive = response.includes("Design cannot move forward") || response.includes("bring the PM")
-      if (!isAlreadyAssertive) {
-        finalResponse = `${pending.question}\n\n${assertionText}`
-      }
+      finalResponse = `${pending.question}\n\n${assertionText}`
     }
   }
 
