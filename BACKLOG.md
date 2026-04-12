@@ -75,6 +75,16 @@ When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it app
 
 ---
 
+### Unit tests for `runtime/pm-escalation-spec-writer.ts` (2026-04-12)
+
+`pm-escalation-spec-writer.ts` ships with no unit tests. Per the producer-consumer chain rule and fixture sourcing rule, the following are required before this is complete:
+
+1. **Consumer test** — mock Anthropic, verify: (a) when `readFile` returns "" (spec not on main), function returns early without calling Anthropic; (b) when Anthropic returns patch with `##` headers, `applySpecPatch` is called and `saveApprovedSpec` is called; (c) when Anthropic returns patch without `##`, `saveApprovedSpec` is NOT called.
+2. **Producer test** — verify the system prompt instructs Haiku to: (a) output only changed `##` sections; (b) encode decisions as concrete measurable entries; (c) place product decisions in `## Acceptance Criteria` and edge cases in `## Edge Cases`; (d) prohibit alternatives ("no alternatives", "no 'or'").
+3. **Real fixture** — capture actual Haiku output for a sample question+recommendations pair and commit to `tests/fixtures/agent-output/pm-spec-patch-haiku.md`.
+
+---
+
 ### Escalation reply: accept only within a timed window (2026-04-11)
 
 `EscalationNotification` currently accepts **any** reply in the thread as the PM/Architect answer — including the human product owner if they jump in before the PM responds. At scale, the escalation reply window should be time-bounded (e.g., ~5 minutes after the @mention) so that a user follow-up message doesn't accidentally get consumed as a PM recommendation. A simple `timestamp` field on `EscalationNotification` plus a check in `message.ts` would close this.
