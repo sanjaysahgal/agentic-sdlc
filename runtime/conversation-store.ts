@@ -170,8 +170,11 @@ export function getPendingEscalation(threadTs: string): PendingEscalation | null
 }
 
 export function setPendingEscalation(threadTs: string, escalation: PendingEscalation): void {
+  // Normalize inline numbered items (e.g. "1. gap one 2. gap two") to newline-separated
+  // so Slack renders each gap on its own line instead of running them together
+  const normalizedQuestion = escalation.question.replace(/(?<=[^\n])(\s+)(\d+\.\s)/g, "\n$2")
   console.log(`[STORE] setPendingEscalation: feature=${threadTs} targetAgent=${escalation.targetAgent}`)
-  pendingEscalations.set(threadTs, escalation)
+  pendingEscalations.set(threadTs, { ...escalation, question: normalizedQuestion })
 }
 
 export function clearPendingEscalation(threadTs: string): void {

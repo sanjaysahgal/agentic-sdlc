@@ -139,6 +139,30 @@ describe("conversation-store", () => {
     expect(getPendingEscalation("thread-1")).toBeNull()
     expect(getPendingEscalation("thread-2")?.question).toBe("Q2")
   })
+
+  // ─── question normalization ───────────────────────────────────────────────
+
+  it("normalizes inline numbered items to newline-separated", async () => {
+    const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
+    const inline = "1. What is the session expiry? 2. Should SSO be supported? 3. Which tiers get access?"
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: inline, designContext: "" })
+    const stored = getPendingEscalation("thread-1")!.question
+    expect(stored).toBe("1. What is the session expiry?\n2. Should SSO be supported?\n3. Which tiers get access?")
+  })
+
+  it("does not double-add newlines when items already newline-separated", async () => {
+    const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
+    const alreadySplit = "1. Gap one.\n2. Gap two.\n3. Gap three."
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: alreadySplit, designContext: "" })
+    expect(getPendingEscalation("thread-1")!.question).toBe("1. Gap one.\n2. Gap two.\n3. Gap three.")
+  })
+
+  it("leaves plain-text question unchanged when no numbered items present", async () => {
+    const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
+    const plain = "Should social login be supported?"
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: plain, designContext: "" })
+    expect(getPendingEscalation("thread-1")!.question).toBe(plain)
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
