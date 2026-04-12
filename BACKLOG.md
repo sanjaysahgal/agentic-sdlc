@@ -43,6 +43,10 @@ Architect now has `offer_upstream_revision(question, targetAgent)` tool (targetA
 
 ---
 
+### Assess: architect upstream escalation runs auditPhaseCompletion inside design brief (2026-04-12)
+
+When the architect calls `offer_upstream_revision` and the user confirms, the platform calls `handleDesignPhase` with the constraint brief. If a design spec draft exists on the branch, `auditPhaseCompletion` fires inside that call — injecting design readiness findings into the upstream brief context. Likely benign (findings would be visible to the design agent responding to the constraint), but not the intent. Assess in production: if the audit noise pollutes the constraint-brief response, refactor to call `runDesignAgent` with a flag that skips the completion audit for upstream-revision briefs.
+
 ---
 
 ~~### Escalation reply auto-routing — PM/Architect reply in thread should re-trigger design agent~~ ✅ Done (2026-04-07)
