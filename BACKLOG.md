@@ -73,6 +73,25 @@ When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it app
 
 ---
 
+### PM escalation: write confirmed recommendations back to product spec (2026-04-12)
+
+When the human PM confirms escalation recommendations (e.g. "i approve all your recommendations"), the platform currently:
+1. Resumes the design agent with the injected answer ✓
+2. Does **not** update the product spec to reflect the confirmed decisions ✗
+
+This means the spec auditor will rediscover the same gaps on the next design run — criterion 10 checks the design spec against the product spec, and if the product spec still has the vague/missing language that triggered the escalation, it will re-flag as a gap.
+
+**What's needed:**
+- After PM confirmation, patch the product spec draft (or open an amendment if spec is already approved on `main`) to encode each confirmed PM decision as a concrete acceptance criterion or edge case entry
+- The PM agent's structured output (`N. My recommendation: ...`) already has the format to drive this
+- The platform needs to: (a) parse confirmed recommendations from the PM response, (b) call `spec-patcher.ts` against the product spec branch (not the design spec), (c) commit the patch to `spec/{feature}-product` (or `main` if approved)
+
+**Complexity:** Product spec may be approved and on `main` (no draft branch). If so, the platform must re-open the product spec for amendment — either by creating a new branch or by writing directly to `main` with PM approval. This is a product decision: should confirmed PM escalation answers automatically amend an approved spec, or require a new human approval cycle?
+
+**Why not now:** Solo-team context — PM is the same person who approved the spec and is actively working with the design agent. The re-discovery risk is real but manageable: the design agent sees the PM recommendations in conversation history and can reference them. At scale, with separate PM and designer roles, this gap becomes blocking.
+
+---
+
 ### Escalation reply: accept only within a timed window (2026-04-11)
 
 `EscalationNotification` currently accepts **any** reply in the thread as the PM/Architect answer — including the human product owner if they jump in before the PM responds. At scale, the escalation reply window should be time-bounded (e.g., ~5 minutes after the @mention) so that a user follow-up message doesn't accidentally get consumed as a PM recommendation. A simple `timestamp` field on `EscalationNotification` plus a check in `message.ts` would close this.
