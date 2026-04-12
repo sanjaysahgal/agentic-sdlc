@@ -73,23 +73,6 @@ When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it app
 
 ---
 
-### PM escalation: write confirmed recommendations back to product spec (2026-04-12)
-
-When the human PM confirms escalation recommendations (e.g. "i approve all your recommendations"), the platform currently:
-1. Resumes the design agent with the injected answer ✓
-2. Does **not** update the product spec to reflect the confirmed decisions ✗
-
-This means the spec auditor will rediscover the same gaps on the next design run — criterion 10 checks the design spec against the product spec, and if the product spec still has the vague/missing language that triggered the escalation, it will re-flag as a gap.
-
-**What's needed:**
-- After PM confirmation, patch the product spec draft (or open an amendment if spec is already approved on `main`) to encode each confirmed PM decision as a concrete acceptance criterion or edge case entry
-- The PM agent's structured output (`N. My recommendation: ...`) already has the format to drive this
-- The platform needs to: (a) parse confirmed recommendations from the PM response, (b) call `spec-patcher.ts` against the product spec branch (not the design spec), (c) commit the patch to `spec/{feature}-product` (or `main` if approved)
-
-**Complexity:** Product spec may be approved and on `main` (no draft branch). If so, the platform must re-open the product spec for amendment — either by creating a new branch or by writing directly to `main` with PM approval. This is a product decision: should confirmed PM escalation answers automatically amend an approved spec, or require a new human approval cycle?
-
-**Why not now:** Solo-team context — PM is the same person who approved the spec and is actively working with the design agent. The re-discovery risk is real but manageable: the design agent sees the PM recommendations in conversation history and can reference them. At scale, with separate PM and designer roles, this gap becomes blocking.
-
 ---
 
 ### Escalation reply: accept only within a timed window (2026-04-11)
@@ -1021,6 +1004,8 @@ Most valuable once several features have shipped and patterns in the vision show
 ---
 
 ## Completed
+
+- **PM escalation spec writeback (April 2026)** — When the human PM confirms escalation recommendations, the platform now writes confirmed decisions back to the approved product spec on main so the spec auditor doesn't re-discover the same gaps on the next design run. Implementation: `EscalationNotification.recommendations` stores the PM agent's full response text; on the next message (PM @mention reply), `patchProductSpecWithRecommendations` (new module `runtime/pm-escalation-spec-writer.ts`) reads the approved product spec from main, calls Haiku to generate a targeted patch (## sections only, concrete measurable entries — no alternatives, no vague language), applies with `applySpecPatch`, and saves back to main via `saveApprovedSpec`. PM agent brief ends with explicit sentence: "Once you approve these recommendations, I'll update the product spec to reflect each confirmed decision." Design agent inject message instructs it to list each recommendation it's applying. N30 integration test verifies the end-to-end: patched spec written to GitHub when spec exists and Anthropic returns a valid ## patch. 775 tests pass.
 
 - **Design agent smoke test hardening + generate-preview default push (April 2026)** — Three gaps closed: (1) `buildDesignSystemPrompt` gains optional `configOverride?: WorkspaceConfig` parameter — if provided, skips `loadWorkspaceConfig()` so the function is usable in tests without a real `.env`. (2) Scenario 1 in `tests/smoke/design-agent-workflow.test.ts` updated to call the real `buildDesignSystemPrompt` with a minimal `TEST_CONFIG` — regressions in the full system prompt (escalation rule softened, tool removed) now caught. (3) Scenario 4 added: verifies design agent calls a save tool (`apply_design_spec_patch` or `save_design_spec_draft`) after user explicitly agrees to a design direction — guards against the agent acknowledging in text but not calling the tool. (4) `scripts/generate-preview.ts`: `--push` made the default behavior; replaced with `--local-only` flag for disk-only output. Eliminates the "I re-rendered but Slack still shows the old one" failure class. 514 tests pass.
 

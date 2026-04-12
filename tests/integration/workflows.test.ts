@@ -59,6 +59,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
+
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import {
   clearHistory,
@@ -3541,6 +3542,79 @@ describe("Scenario N17 — Escalation reply injected message contains question +
     expect(injected).toContain("PM gap is now closed")
     // Design agent must be instructed to list what it applies — so user sees explicit confirmation
     expect(injected).toContain("Begin your response by listing each recommendation you are applying")
+  })
+})
+
+// ─── Scenario N30: Escalation confirmation triggers product spec writeback ──────────────────────
+//
+// After a PM reply when escalationNotification.recommendations is set, the platform invokes
+// patchProductSpecWithRecommendations so confirmed decisions are written to the product spec on main.
+//
+// Verification: when spec exists on main and Anthropic returns a valid patch, saveApprovedSpec
+// fires → mockCreateOrUpdate is called with the product spec path. This is a distinct side-effect
+// from the design agent (which only writes to design spec paths).
+//
+// The negative case (recommendations absent) is a simple guard (`if (recommendations)`) — tested
+// via type-safety and the positive test implicitly. No separate negative integration test needed.
+
+describe("Scenario N30 — Escalation reply triggers product spec writeback when recommendations are stored", () => {
+  const THREAD = "workflow-n30"
+  const SPEC_CONTENT = "# Onboarding Product Spec\n\n## Acceptance Criteria\n- User can onboard."
+  const SPEC_B64 = Buffer.from(SPEC_CONTENT).toString("base64")
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "Should the in-conversation nudge show once per session or repeat after dismissal?",
+      recommendations: "1. My recommendation: Show once per session — does not repeat after dismissal.\n→ Rationale: Repeating erodes trust.",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("writes patched spec to GitHub when product spec exists on main and Anthropic returns a valid patch", async () => {
+    // patchProductSpecWithRecommendations fires BEFORE handleDesignPhase (sequential await in message.ts).
+    // The FIRST getContent call is readFile(productSpec, "main") from patchProductSpecWithRecommendations.
+    // The SECOND getContent call is saveApprovedSpec's SHA lookup on main.
+    // All subsequent calls (loadDesignAgentContext, phase entry audit) get 404.
+    mockGetContent
+      .mockResolvedValueOnce({ data: { content: SPEC_B64, type: "file" } })             // 1st: readFile(productSpec, "main")
+      .mockResolvedValueOnce({ data: { content: SPEC_B64, sha: "abc123", type: "file" } }) // 2nd: saveApprovedSpec SHA lookup
+      .mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))        // all others → 404
+
+    // patchProductSpecWithRecommendations: Anthropic returns valid patch (## headers required)
+    // All subsequent calls (identifyUncommittedDecisions, design agent, Gate 4 classifier): resume text
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "## Acceptance Criteria\n- Nudge shows once per session and does not repeat after dismissal." }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValue({
+        content: [{ type: "text", text: "Applying PM recommendations: 1. Nudge shows once per session. Proceeding with spec updates." }],
+        stop_reason: "end_turn",
+      })
+
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    const params = makeParams(THREAD, "feature-onboarding", "i approve all your recommendations")
+    await handleFeatureChannelMessage(params)
+
+    // saveApprovedSpec must have written the merged product spec to GitHub
+    const productWriteCall = mockCreateOrUpdate.mock.calls.find(
+      (call: any) => call[0]?.path?.includes("onboarding.product.md")
+    )
+    expect(productWriteCall).toBeDefined()
+
+    // Escalation notification cleared — design resumed
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).toBeNull()
   })
 })
 

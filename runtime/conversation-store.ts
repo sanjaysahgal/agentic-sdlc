@@ -26,9 +26,12 @@ export type PendingEscalation = {
 // Escalation notification — set after the PM/Architect @mention is posted.
 // Cleared when the PM/Architect replies in the thread, at which point the design agent resumes.
 // Distinct from PendingEscalation (which gates the user "yes" confirmation).
+// recommendations: the full PM/Architect agent response text, stored so the platform
+// can write confirmed decisions back to the product spec on human confirmation.
 export type EscalationNotification = {
   targetAgent: "pm" | "architect"
   question: string
+  recommendations?: string
 }
 
 // Pending spec approval — set when the agent detects approval intent.

@@ -16,6 +16,7 @@ import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractProductBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
+import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -124,6 +125,7 @@ function isAffirmative(message: string): boolean {
   const lower = message.toLowerCase().trim()
   return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in|confirmed|confirm|approved|approve|lock it in|let's go|lets go)/.test(lower)
 }
+
 
 // Returns the current phase of a feature by reading GitHub state.
 // Falls back to "product-spec-in-progress" if GitHub is unavailable.
@@ -249,7 +251,7 @@ For each numbered item, respond with the same number so the human can follow alo
 → Rationale: [one sentence grounded in product vision, user needs, or standard practice]
 → Note: Pending human PM confirmation before engineering handoff
 
-Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it. End after the last recommendation — do not add a closing sentence, sign-off, or instructions about what to do next. The platform handles that.${productSpecSection}
+Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it. End with exactly this sentence on its own line: "Once you approve these recommendations, I'll update the product spec to reflect each confirmed decision."${productSpecSection}
 
 BLOCKING ITEMS:
 ${pendingEscalation.question}`
@@ -269,11 +271,15 @@ BLOCKING ITEMS:
 ${pendingEscalation.question}`
 
       const brief = isArchitectEscalation ? archBrief : pmBrief
+      // Capture the agent's final response text — stored in EscalationNotification so the platform
+      // can write confirmed decisions back to the product spec when the human confirms.
+      let capturedAgentResponse = ""
       await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
+        const capturingUpdate = async (text: string) => { capturedAgentResponse = text; await update(text) }
         if (isArchitectEscalation) {
-          await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update })
+          await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update: capturingUpdate })
         } else {
-          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update })
+          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
         }
       }})
       await client.chat.postMessage({
@@ -283,7 +289,7 @@ ${pendingEscalation.question}`
       })
       // Clear only after @mention posted — ensures network failures don't silently drop the escalation
       clearPendingEscalation(featureName)
-      setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question })
+      setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined })
       return
     }
     // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
@@ -312,6 +318,18 @@ ${pendingEscalation.question}`
         : "PM"
       console.log(`[ROUTER] branch=escalation-reply targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
       clearEscalationNotification(featureName)
+
+      // Write confirmed PM/Architect recommendations back to the approved product spec
+      // so the spec auditor doesn't re-discover the same gaps on the next design run.
+      if (escalationNotification.recommendations) {
+        await patchProductSpecWithRecommendations({
+          featureName,
+          question: escalationNotification.question,
+          recommendations: escalationNotification.recommendations,
+          humanConfirmation: userMessage,
+        }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+      }
+
       const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed. Begin your response by listing each recommendation you are applying to the spec (e.g. "Applying PM recommendations: 1. ... 2. ..."), then proceed with the spec updates.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
