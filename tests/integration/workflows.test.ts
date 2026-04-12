@@ -4060,11 +4060,13 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
     //   [1] isSpecStateQuery              → false
     //   [2] runAgent (end_turn)           → passive offer prose
     //   [3] identifyUncommittedDecisions  → none
+    //   [4] classifyForPmGaps (Gate 3)    → all 3 items are PM-scope, returned as GAP lines
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 60 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "GAP: SSO failure path during initial sign-up is not defined.\nGAP: Acceptance criteria 15 and 3 are qualitative and need measurable definitions.\nGAP: Conversation carry-over does not specify how session data is stored or merged on sign-up." }] })
 
     const params = makeParams(THREAD, "feature-onboarding", "what's blocking us from moving to engineering?")
     await handleFeatureChannelMessage(params)
@@ -4086,5 +4088,80 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
 
     // Action menu must be suppressed
     expect(text).not.toContain("OPEN ITEMS")
+  })
+})
+
+// ─── Scenario N27: Gate 3 classifies and strips non-PM items from prose ───────
+//
+// Agent writes passive prose listing PM gaps AND design/brand issues together.
+// Gate 3 (fallback prose) fires, extracts the full list, runs classifyForPmGaps
+// to filter, and stores only PM-scope items. Design/brand issues are stripped.
+// This is the exact failure pattern seen in Slack Apr 2026 (glow drift, heading
+// redundancy, tagline punctuation mixed into PM escalation message).
+
+describe("Scenario N27 — Gate 3 strips non-PM items from agent prose before storing", () => {
+  const THREAD = "workflow-n27"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("Gate 3 filters design/brand items — only PM gaps stored in pending question", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Agent lists 3 PM gaps + 2 design/brand issues, ends with passive CTA
+    const agentResponse = [
+      "Here's what's blocking us:",
+      "",
+      "1. SSO failure path is not defined — what happens when token verification fails?",
+      "2. Conversation carryover spec (AC-11) doesn't define which fields are transferred.",
+      "3. 'Soft indicator' (AC-2) has no measurable threshold — 'soft' doesn't pass QA.",
+      "4. Glow animation values drift from BRAND.md — spec has 2.5s, brand says 4s.",
+      "5. Auth sheet heading 'Sign in to Health360' repeats the wordmark — redundant.",
+      "",
+      "Say yes and I'll bring the PM into this thread now.",
+    ].join("\n")
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] runAgent (end_turn)           → mixed PM + design prose
+    //   [3] identifyUncommittedDecisions  → none
+    //   [4] classifyForPmGaps (Gate 3)    → 3 PM gaps, strips items 4 and 5
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn" })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn" })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn" })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn" })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "GAP: SSO failure path is not defined when token verification fails.\nGAP: Conversation carryover spec does not define which fields are transferred.\nGAP: Soft indicator has no measurable threshold." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's blocking us?")
+    await handleFeatureChannelMessage(params)
+
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+
+    // PM-scope gaps stored
+    expect(pending!.question).toContain("SSO failure path")
+    expect(pending!.question).toContain("carryover")
+    expect(pending!.question).toContain("measurable")
+
+    // Design/brand items stripped
+    expect(pending!.question).not.toContain("Glow animation")
+    expect(pending!.question).not.toContain("wordmark")
+
+    // Assertive override applied
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).toContain("Say *yes*")
   })
 })

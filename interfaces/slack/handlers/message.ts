@@ -1271,7 +1271,19 @@ async function runDesignAgent(params: {
     if (pmQuestions) {
       console.log(`[ESCALATION] Gate 3 (fallback prose) fired for ${featureName}`)
       console.log(`[ESCALATION] extracted questions:\n${pmQuestions}`)
-      setPendingEscalation(featureName, { targetAgent: "pm", question: pmQuestions, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+      // Filter through classifier before storing — agent prose may include design/brand items
+      // alongside real PM gaps. Only PM-scope items should reach the PM brief.
+      const g3Classification = await classifyForPmGaps({
+        agentResponse: pmQuestions,
+        approvedProductSpec: context.approvedProductSpec ?? undefined,
+      }).catch(() => ({ gaps: [] }))
+      const g3FilteredQuestion = g3Classification.gaps.length > 0
+        ? g3Classification.gaps.length === 1
+          ? g3Classification.gaps[0]
+          : g3Classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
+        : pmQuestions  // fallback: classifier finds nothing, preserve extracted questions
+      console.log(`[ESCALATION] Gate 3 classifier: ${g3Classification.gaps.length} PM gaps retained (${pmQuestions.split("\n").filter(l => l.trim()).length} lines extracted)`)
+      setPendingEscalation(featureName, { targetAgent: "pm", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     } else {
       console.log(`[ESCALATION] Gate 3 (fallback prose) — no pattern match`)
     }
