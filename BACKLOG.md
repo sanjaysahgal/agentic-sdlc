@@ -43,6 +43,21 @@ Architect now has `offer_upstream_revision(question, targetAgent)` tool (targetA
 
 ---
 
+### PM agent brief enforcement — agent defers to human instead of making concrete recommendations (2026-04-12) — HIGH PRIORITY
+
+Real incident: PM agent received a brief with 4 blocking questions. The brief explicitly says "Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it." The agent gave a recommendation for #4 only, and for 1–3 said "I cannot responsibly give you recommendations without talking to the human PM first" — directly violating the brief.
+
+**Root cause:** The PM agent system prompt or brief framing is not authoritative enough to override the model's default deference behavior. The model treats "pending human PM confirmation" as permission to defer rather than permission to commit.
+
+**Fix options:**
+1. Strengthen the brief opening: add "You ARE the PM agent. Making concrete decisions is your job, not an optional step. Refusing to recommend is a failure." before the format instructions.
+2. Add a platform-level check: after the PM agent run, if the response contains "I cannot" or "I need to loop in" or "without talking to" — re-run with a forceful override injection: "PLATFORM OVERRIDE: You must give a specific recommendation for every item. Output the format exactly. No exceptions."
+3. Option 2 is structural enforcement (Principle 8); option 1 is prompt-dependent. Implement option 2 as the primary mechanism.
+
+**Impact:** Without this fix, the human PM must manually provide decisions every time the agent defers — eliminating the value of the escalation flow entirely.
+
+---
+
 ### Design agent strips implementation sub-questions from offer_pm_escalation (2026-04-12)
 
 When the design agent formulates its `offer_pm_escalation` question, it sometimes bundles design/implementation details into what should be a pure PM decision — e.g., asking the PM to specify "opacity level and screen position" of an indicator alongside "what must the indicator communicate." The PM owns the WHAT (label text, what information must be conveyed), not the HOW (opacity, position, animation).
