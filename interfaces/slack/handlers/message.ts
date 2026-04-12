@@ -299,22 +299,24 @@ ${pendingEscalation.question}`
       return
     }
 
-    // Escalation notification active — detect PM/Architect reply and inject it into the design agent.
+    // Escalation notification active — any reply in the thread resumes design with the answer injected.
+    // The PM/Architect was explicitly @mentioned and invited to reply. Whoever replies next IS the
+    // intended responder. userId matching is skipped — a silent mismatch (wrong SLACK_PM_USER env var)
+    // would cause the notification to be swallowed every time, which is worse than over-accepting.
     const escalationNotification = getEscalationNotification(featureName)
     if (escalationNotification) {
       const { roles } = loadWorkspaceConfig()
-      const isPmReply = userId && roles.pmUser && userId === roles.pmUser
-      const isArchitectReply = userId && roles.architectUser && userId === roles.architectUser
-      const isEscalationReply = isPmReply || isArchitectReply || (!roles.pmUser && !roles.architectUser)
-      if (isEscalationReply) {
-        clearEscalationNotification(featureName)
-        const respondingRole = isArchitectReply ? "Architect" : "PM"
-        const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed.`
-        await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-          await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
-        }})
-        return
-      }
+      const isArchitectEscalation = escalationNotification.targetAgent === "architect"
+      const respondingRole = (isArchitectEscalation && roles.architectUser && userId === roles.architectUser)
+        ? "Architect"
+        : "PM"
+      console.log(`[ROUTER] branch=escalation-reply targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
+      clearEscalationNotification(featureName)
+      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed.`
+      await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
+        await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
+      }})
+      return
     }
 
     // If the design spec is now approved, route to the architect.

@@ -201,9 +201,11 @@ export function getEscalationNotification(featureName: string): EscalationNotifi
 }
 
 export function setEscalationNotification(featureName: string, notification: EscalationNotification): void {
+  console.log(`[STORE] setEscalationNotification: feature=${featureName} targetAgent=${notification.targetAgent}`)
   escalationNotifications.set(featureName, notification)
 }
 
 export function clearEscalationNotification(featureName: string): void {
+  console.log(`[STORE] clearEscalationNotification: feature=${featureName}`)
   escalationNotifications.delete(featureName)
 }

@@ -202,6 +202,8 @@ When any gate sets `pendingEscalation` this turn (`escalationJustOffered`): (a) 
 
 `PendingEscalation` carries `productSpec?: string` — the approved product spec content stored at gate call time (when `context.approvedProductSpec` is in scope). When the user confirms ("yes"), the PM brief includes the spec inline as `APPROVED PRODUCT SPEC`. This is required because `loadAgentContext` reads from the draft branch (`spec/{feature}-product`) which 404s after the spec is approved and merged to main — the PM agent would otherwise have no product context.
 
+**Escalation notification reply routing:** After the PM/Architect is @mentioned, `setEscalationNotification(featureName, { targetAgent, question })` is stored. On the next message in the thread, if an `EscalationNotification` is active, **any reply** is treated as the PM/Architect answer — userId matching is intentionally skipped. The PM was explicitly @mentioned; whoever replies next is the intended responder. A silent userId mismatch (`SLACK_PM_USER` env var wrong) would otherwise cause the notification to be swallowed every time, re-triggering the same escalation instead of resuming design. The platform injects `"PM answered the blocking question: '...' → '...'. Resume design with this answer — the PM gap is now closed."` into the design agent, which then continues from the answered state.
+
 ### Proactive constraint audit pattern
 
 Every agent in the platform runs a deterministic audit for its domain-specific constraints on every response. This is not prompt-based — it is platform-enforced, pure code, no API call.

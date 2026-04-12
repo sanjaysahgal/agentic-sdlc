@@ -3442,13 +3442,15 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
   })
 })
 
-// ─── Scenario N16: PM reply auto-routes to design agent ──────────────────────
+// ─── Scenario N16: Any reply when escalation notification active resumes design ──
 //
-// After the escalation notification is set (PM @mentioned), the PM's reply in the
-// thread should be detected by userId match, clear the notification, and resume
-// the design agent with the answer injected as the user message.
+// After the PM @mention is posted and EscalationNotification is set, ANY reply in
+// the thread clears the notification and resumes the design agent with the answer
+// injected. userId matching is not required — the @mention ensures only the right
+// person is expected to reply, and a silent userId mismatch (wrong SLACK_PM_USER env)
+// would be worse than accepting any reply.
 
-describe("Scenario N16 — PM reply in thread resumes design agent", () => {
+describe("Scenario N16 — Any reply when escalation notification active resumes design agent", () => {
   const THREAD = "workflow-n16"
 
   beforeEach(async () => {
@@ -3466,35 +3468,40 @@ describe("Scenario N16 — PM reply in thread resumes design agent", () => {
     clearEscalationNotification("onboarding")
   })
 
-  it("PM reply clears notification and resumes design agent with injected answer", async () => {
+  it("reply clears notification and resumes design agent with injected PM answer", async () => {
     mockAnthropicCreate.mockResolvedValue({
       content: [{ type: "text", text: "Great — with the PM's answer I can now finalize the auth flow screen." }],
       stop_reason: "end_turn",
       usage: { input_tokens: 10, output_tokens: 20 },
     })
 
-    const params = { ...makeParams(THREAD, "feature-onboarding", "Guest sessions are cleared on sign-up."), userId: "U_PM_123" }
-    // Simulate PM userId matching roles.pmUser
-    process.env.SLACK_PM_USER = "U_PM_123"
+    // Any userId — no role match required
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Guest sessions are cleared on sign-up."), userId: "U_ANY_USER" }
 
     await handleFeatureChannelMessage(params)
 
-    // Design agent was called (Anthropic called at least once for routing + agent)
+    // Design agent was called with injected PM answer
     expect(mockAnthropicCreate).toHaveBeenCalled()
 
     // Notification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     expect(getEscalationNotification("onboarding")).toBeNull()
+
+    // Injected message contains PM answer and original question
+    const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
+      c[0]?.messages?.[0]?.content?.includes?.("Guest sessions are cleared")
+    )
+    expect(agentCall).toBeDefined()
   })
 })
 
-// ─── Scenario N17: Non-PM reply during active notification is not auto-routed ──
+// ─── Scenario N17: Injected message includes question and reply ───────────────
 //
-// When an escalation notification is active but the message comes from a user who is
-// neither PM nor Architect (and roles ARE configured), the message should fall
-// through to the normal design agent flow — not be treated as the PM answer.
+// When escalation notification fires, the design agent receives an injected
+// message combining the original PM question and the user's answer, so the
+// agent has full context to resume without re-asking.
 
-describe("Scenario N17 — Non-PM message during active notification falls through to design agent", () => {
+describe("Scenario N17 — Escalation reply injected message contains question + answer", () => {
   const THREAD = "workflow-n17"
 
   beforeEach(async () => {
@@ -3512,25 +3519,26 @@ describe("Scenario N17 — Non-PM message during active notification falls throu
     clearEscalationNotification("onboarding")
   })
 
-  it("non-PM userId does not clear notification and runs design agent normally", async () => {
+  it("injected message contains original question and PM reply so design agent has full context", async () => {
     mockAnthropicCreate.mockResolvedValue({
-      content: [{ type: "text", text: "Here is my design update." }],
+      content: [{ type: "text", text: "Understood — resuming design with that answer." }],
       stop_reason: "end_turn",
       usage: { input_tokens: 10, output_tokens: 20 },
     })
 
-    // userId is a regular user, not the PM (U_PM_123)
-    const params = { ...makeParams(THREAD, "feature-onboarding", "Let me add a small design update"), userId: "U_OTHER_456" }
-    process.env.SLACK_PM_USER = "U_PM_123"
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Sessions are cleared permanently on sign-up."), userId: "U_PM_123" }
 
     await handleFeatureChannelMessage(params)
 
-    // Design agent ran (Anthropic called)
-    expect(mockAnthropicCreate).toHaveBeenCalled()
-
-    // Notification still active — not cleared by non-PM message
-    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).not.toBeNull()
+    // The agent call must include the injected message with both question and answer
+    const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
+      c[0]?.messages?.[0]?.content?.includes?.("guest session")
+    )
+    expect(agentCall).toBeDefined()
+    const injected = agentCall[0].messages[0].content as string
+    expect(injected).toContain("guest session")
+    expect(injected).toContain("Sessions are cleared permanently on sign-up")
+    expect(injected).toContain("PM gap is now closed")
   })
 })
 
