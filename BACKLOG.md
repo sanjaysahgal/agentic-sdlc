@@ -73,6 +73,24 @@ When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it app
 
 ---
 
+### Parallel PM + architect routing for borderline escalation questions (2026-04-11)
+
+The classifier routes each gap question to either PM or architect — never both. Questions that sit on the PM/architect boundary (e.g. "what conversation data must survive sign-up?" is PM-scope; "how is the session store structured?" is architect-scope) are handled by the classifier's WHAT/HOW decision rule, which is probabilistic.
+
+For genuinely borderline questions — where the WHAT and the HOW are intertwined — the right answer is to route to both PM and architect in parallel, let each agent answer from their domain, and surface both responses before design resumes.
+
+**What this needs:**
+- A `classifyForArchitectGaps` classifier (parallel to `classifyForPmGaps`) that identifies questions requiring architect input
+- Both classifiers run on the extracted question list
+- Questions that match only PM → PM escalation only
+- Questions that match only architect → architect escalation only
+- Questions that match both → parallel escalation: both agents run, both responses shown, design waits for both confirmations
+- `PendingEscalation` extended to support `targetAgent: "pm" | "architect" | "both"`
+
+**Why not now:** Requires a new `classifyForArchitectGaps` classifier, parallel escalation state, and a `"both"` resolution path in the confirmation flow. The WHAT/HOW prompt framing added in Apr 2026 is strong enough to handle most cases correctly — this is a precision improvement, not a blocking gap.
+
+---
+
 ### Pre-commit hook: statically detect behavioral instructions in agent system prompts without platform checks (2026-04-07)
 
 Prompt-rule-to-platform-check conversions keep happening because there's no automated gate. When a developer adds a behavioral instruction to a system prompt in `agents/` (e.g. "call X when Y happens"), there's no check that a corresponding platform enforcement exists in `runtime/` or `message.ts`.
