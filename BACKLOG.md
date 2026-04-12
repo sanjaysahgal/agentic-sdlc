@@ -33,6 +33,20 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### ⚠️ Gate 2 silently drops architect-scope items filtered from PM escalation (2026-04-12) — HIGH PRIORITY
+
+When Gate 2's PM classifier filters items from the agent's `offer_pm_escalation` question as non-PM-scope, those items are **silently discarded** — no architect escalation is offered.
+
+**Real incident (2026-04-12):** Design agent raised 3 blocking gaps. Classifier correctly identified 2 as architect-scope (session storage mechanism, conversation data field specification) and 1 as PM-scope (SSO failure UX). Only the PM gap was stored. The 2 architect gaps were dropped entirely — never offered to the architect, never surfaced to the user.
+
+**What should happen:** When Gate 2 filters N items as architect-scope, the platform should auto-call `offer_architect_escalation` with those items in the same turn. The design agent already called `offer_pm_escalation` — the platform has the filtered items available in the `classifyForPmGaps` result. Splitting the question into PM vs architect routed correctly is the right behavior; dropping the architect items is the bug.
+
+**Implementation:** In the Gate 2 handler in `message.ts`, after storing the PM-scoped `pendingEscalation`, check if the classifier returned any architect-scope items (items present in the original question but absent from the `gaps` array). If yes, call `setPendingEscalation` with `targetAgent: "architect"` for those items — or, since a PM escalation is already pending, queue the architect escalation to fire after the PM one resolves.
+
+**Complexity:** Currently only one `pendingEscalation` can be active at a time. Queuing a second one requires either (a) a `pendingEscalation` array, or (b) offering architect escalation as a follow-up after PM resolves. Option (b) is simpler solo-team: after PM @mention reply resumes design, the next run of Gate 4 will catch the architect gaps as unresolved and escalate then.
+
+---
+
 ~~### Escalation reply auto-routing — PM/Architect reply in thread should re-trigger design agent~~ ✅ Done (2026-04-07)
 
 `EscalationNotification` store added to `conversation-store.ts`. After posting the PM @mention, `setEscalationNotification` records the open question. On the next message, if `userId` matches `roles.pmUser` (or `architectUser`), the platform clears the notification and injects `"PM answered: [question] → [answer]"` as the design agent's user message, resuming the design flow. N16/N17 integration scenarios cover PM reply and non-PM bypass. `app.ts` extracts `userId` from the Slack event and passes it through.
