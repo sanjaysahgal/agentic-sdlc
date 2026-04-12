@@ -406,7 +406,8 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
     //   [2] runAgent (tool_use)      → offer_pm_escalation({ question: "Should chips be permanent for authenticated users?" })
-    //   [3] runAgent (end_turn)      → text response after tool result
+    //   [3] classifyForPmGaps        → single gap (filters & deduplicates any non-PM items)
+    //   [4] runAgent (end_turn)      → text response after tool result
     // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
@@ -415,6 +416,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: "Should chips be permanent for authenticated users?" } }],
       })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "GAP: Should chips be permanent for authenticated users?" }] })
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "I've escalated this to the PM — design is paused until they respond." }],
@@ -3299,7 +3301,8 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
     //   [2] runAgent (tool_use)      → offer_pm_escalation
-    //   [3] runAgent (end_turn)      → assertive blocking message
+    //   [3] classifyForPmGaps        → single gap (filters non-PM items before storing)
+    //   [4] runAgent (end_turn)      → assertive blocking message
     // No design draft on branch → auditPhaseCompletion skipped, no brand audit
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
@@ -3308,6 +3311,7 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: "What happens to the guest session when the user signs up mid-conversation?" } }],
       })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "GAP: What happens to the guest session when the user signs up mid-conversation?" }] })
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Design cannot move forward until the PM closes this gap. Say *yes* and I'll bring the PM into this thread now." }],
@@ -3327,6 +3331,69 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
 
     // Agent's assertive message is present
     expect(text).toContain("Design cannot move forward")
+  })
+})
+
+// ─── Scenario N26: classifier filters non-PM items from offer_pm_escalation tool ───
+//
+// Agent bundles PM gaps + design/brand issues into one offer_pm_escalation call.
+// Platform runs classifyForPmGaps on the raw question before storing — only PM-scope
+// items survive. Brand drift, missing screens, tagline punctuation are stripped.
+
+describe("Scenario N26 — classifier filters non-PM items from offer_pm_escalation question", () => {
+  const THREAD = "workflow-n26"
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("stores only PM-scope gaps — design/brand items stripped from pending question", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Agent passes a mixed question: 2 PM gaps + 2 design issues
+    const mixedQuestion = [
+      "1. What is the session expiry behavior when the user signs up mid-conversation?",
+      "2. Should SSO be required for all user tiers or only premium?",
+      "3. Glow animation values drift from BRAND.md — spec has 2.5s/200px, brand says 4s/80px.",
+      "4. Tagline is missing terminal punctuation.",
+    ].join("\n")
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent        → false
+    //   [1] isSpecStateQuery          → false
+    //   [2] runAgent (tool_use)       → offer_pm_escalation (mixed question)
+    //   [3] classifyForPmGaps         → 2 GAP lines (filters out items 3 and 4)
+    //   [4] runAgent (end_turn)       → agent prose
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: mixedQuestion } }],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "GAP: What is the session expiry behavior when the user signs up mid-conversation?\nGAP: Should SSO be required for all user tiers or only premium?" }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Design is blocked on these PM decisions." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's blocking us?")
+    await handleFeatureChannelMessage(params)
+
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+
+    // Only PM-scope items stored — design/brand items (3 and 4) are stripped
+    expect(pending!.question).toContain("session expiry")
+    expect(pending!.question).toContain("SSO")
+    expect(pending!.question).not.toContain("Glow animation")
+    expect(pending!.question).not.toContain("terminal punctuation")
+
+    // Two gaps → numbered
+    expect(pending!.question).toContain("1.")
+    expect(pending!.question).toContain("2.")
   })
 })
 

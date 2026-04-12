@@ -1096,9 +1096,25 @@ async function runDesignAgent(params: {
       if (name === "offer_pm_escalation") {
         console.log(`[ESCALATION] offer_pm_escalation tool called for ${featureName}`)
         console.log(`[ESCALATION] tool question param:\n${input.question}`)
+        // Platform-filter the agent's question through the PM-gap classifier before storing.
+        // The agent may bundle design/brand issues alongside PM gaps — the classifier keeps
+        // only PM-scope items, so the PM brief and escalation message are clean.
+        const rawQuestion = input.question as string
+        const classification = await classifyForPmGaps({
+          agentResponse: rawQuestion,
+          approvedProductSpec: context.approvedProductSpec ?? undefined,
+        })
+        const filteredQuestion = classification.gaps.length > 0
+          ? classification.gaps.length === 1
+            ? classification.gaps[0]                                           // single gap — no numbering
+            : classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n") // multiple gaps — numbered
+          : rawQuestion  // fallback: classifier found nothing (shouldn't happen), preserve original
+        if (classification.gaps.length > 0 && classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
+          console.log(`[ESCALATION] classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
+        }
         setPendingEscalation(featureName, {
           targetAgent: "pm",
-          question: input.question as string,
+          question: filteredQuestion,
           designContext: context.currentDraft ?? "",
           productSpec: context.approvedProductSpec ?? undefined,
         })
