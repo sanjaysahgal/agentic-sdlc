@@ -249,7 +249,7 @@ For each numbered item, respond with the same number so the human can follow alo
 → Rationale: [one sentence grounded in product vision, user needs, or standard practice]
 → Note: Pending human PM confirmation before engineering handoff
 
-Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it.${productSpecSection}
+Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it. End after the last recommendation — do not add a closing sentence, sign-off, or instructions about what to do next. The platform handles that.${productSpecSection}
 
 BLOCKING ITEMS:
 ${pendingEscalation.question}`
@@ -263,7 +263,7 @@ For each numbered item, respond with the same number so the human can follow alo
 → Rationale: [one sentence grounded in the system architecture or standard practice]
 → Note: Pending architect confirmation at engineering spec phase
 
-Do not ask for more context. Do not present multiple options. Pick the best answer and state it.
+Do not ask for more context. Do not present multiple options. Pick the best answer and state it. End after the last recommendation — do not add a closing sentence, sign-off, or instructions about what to do next. The platform handles that.
 
 BLOCKING ITEMS:
 ${pendingEscalation.question}`
