@@ -3852,12 +3852,22 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
       "Say yes and I'll bring the PM into this thread to close these gaps.",
     ].join("\n")
 
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] auditPhaseCompletion          → PASS (criterion 10 passes — no [type: product])
+    //   [3] runAgent (end_turn)           → prose with "say yes" + "bring the PM"
+    //   [4] identifyUncommittedDecisions  → none
+    //   [5] classifyForPmGaps (Gate 3)    → 3 PM gaps retained
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 40 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "GAP: SSO error path is not defined in the PM spec.\nGAP: Conversation preservation fields are not specified.\nGAP: Ephemeral session entity fields are not defined." }],
+      })
 
     const params = makeParams(THREAD, "feature-onboarding", "what's blocking us from finishing this design?")
     await handleFeatureChannelMessage(params)
@@ -3915,12 +3925,13 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
 
     const passiveProse = "Want to address these now, or continue shaping the spec first?"
 
-    // Mock sequence (no design draft → 5 calls):
-    //   [0] isOffTopicForAgent       → false
-    //   [1] isSpecStateQuery         → false
-    //   [2] runAgent (tool_use)      → offer_pm_escalation with consolidated questions
-    //   [3] runAgent (end_turn)      → passive prose (agent did not write assertive text)
-    //   [4] identifyUncommittedDecisions → "none"
+    // Mock sequence (no design draft → 6 calls):
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] runAgent (tool_use)           → offer_pm_escalation with consolidated questions
+    //   [3] classifyForPmGaps (Gate 2)    → 3 PM gaps retained (all items are PM-scope)
+    //   [4] runAgent (end_turn)           → passive prose (agent did not write assertive text)
+    //   [5] identifyUncommittedDecisions  → "none"
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
@@ -3928,6 +3939,9 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: toolQuestions } }],
         usage: { input_tokens: 50, output_tokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "GAP: Session expiry duration is not defined in PM spec.\nGAP: Conversation persistence fields are undefined.\nGAP: SSO error states are not specified." }],
       })
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
@@ -4171,5 +4185,128 @@ describe("Scenario N27 — Gate 3 strips non-PM items from agent prose before st
     const text = lastUpdateText(params.client)
     expect(text).toContain("Design cannot move forward")
     expect(text).toContain("Say *yes*")
+  })
+})
+
+// ─── Scenario N28: Gate 2 rejects offer_pm_escalation when classifier finds 0 PM gaps ───
+//
+// Agent calls offer_pm_escalation with questions that are purely design/brand concerns
+// (hex value conflicts, animation duration conflicts between spec sections). The
+// classifier returns 0 PM gaps → platform rejects the tool call with a redirect
+// and no pending escalation is stored.
+//
+// Real example: Apr 2026 — agent escalated "which spec holds authoritative values for
+// glow opacity/hex colors?" — classifier correctly returned 0 PM gaps but the platform
+// fell back to rawQuestion and stored it anyway. This test prevents regression.
+
+describe("Scenario N28 — Gate 2 rejects offer_pm_escalation when 0 PM gaps found", () => {
+  const THREAD = "workflow-n28"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("does not store pending escalation when classifier finds 0 PM gaps in tool question", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Agent escalates brand/design conflicts — not PM scope
+    const brandConflictQuestion =
+      "The design spec conflicts with the product spec on: (1) glow opacity 25–35% vs 50–100%, " +
+      "(2) background color #0A0E27 vs #0A0A0F, (3) violet accent #8B7FE8 vs #7C6FCD. " +
+      "Which spec holds authoritative values?"
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent        → false
+    //   [1] isSpecStateQuery          → false
+    //   [2] runAgent (tool_use)       → offer_pm_escalation (brand conflict question)
+    //   [3] classifyForPmGaps         → 0 gaps (brand/design, not PM)
+    //   [4] runAgent (end_turn)       → agent prose after rejection
+    //   [5] identifyUncommittedDecisions → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: brandConflictQuestion } }],
+      })
+      .mockResolvedValueOnce({
+        // classifier returns 0 PM gaps — these are brand/design concerns
+        content: [{ type: "text", text: "No PM-scope gaps found." }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Resolved brand conflicts from BRAND.md. Glow is now 4s/80px as per brand spec." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "there are brand conflicts")
+    await handleFeatureChannelMessage(params)
+
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    // No pending escalation stored — brand conflicts are not PM-scope
+    expect(getPendingEscalation("onboarding")).toBeNull()
+  })
+})
+
+// ─── Scenario N29: Gate 3 suppresses escalation when classifier finds 0 PM gaps ───
+//
+// Agent prose matches the Gate 3 extraction pattern (says "cannot move forward" or
+// "bring the PM"), but the extracted questions are all design/brand concerns.
+// Classifier returns 0 PM gaps → platform suppresses the escalation, no pending stored.
+
+describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in prose", () => {
+  const THREAD = "workflow-n29"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("does not store pending escalation when Gate 3 classifier finds 0 PM gaps", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Agent prose mentions "cannot move forward" but only lists brand/design issues
+    const agentResponse = [
+      "Design cannot move forward without resolving these spec conflicts:",
+      "",
+      "1. Glow duration conflicts: Brand section specifies 4s, Design System says 3.5s, Screen 1 says 2.5s.",
+      "2. Background color: product spec says #0A0E27, BRAND.md says #0A0A0F.",
+      "",
+      "Say yes and I'll bring the PM into this thread now.",
+    ].join("\n")
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] runAgent (end_turn)           → brand conflict prose with "cannot move forward"
+    //   [3] identifyUncommittedDecisions  → none
+    //   [4] classifyForPmGaps (Gate 3)    → 0 gaps (brand conflicts, not PM)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn" })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+      .mockResolvedValueOnce({
+        // classifier returns 0 PM gaps — glow duration and hex color are design/brand concerns
+        content: [{ type: "text", text: "No PM-scope gaps found." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "check brand conflicts")
+    await handleFeatureChannelMessage(params)
+
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    // No pending escalation — brand/design conflicts are not PM-scope
+    expect(getPendingEscalation("onboarding")).toBeNull()
   })
 })

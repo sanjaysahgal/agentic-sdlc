@@ -1106,13 +1106,19 @@ async function runDesignAgent(params: {
           agentResponse: rawQuestion,
           approvedProductSpec: context.approvedProductSpec ?? undefined,
         })
-        const filteredQuestion = classification.gaps.length > 0
-          ? classification.gaps.length === 1
-            ? classification.gaps[0]                                           // single gap — no numbering
-            : classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n") // multiple gaps — numbered
-          : rawQuestion  // fallback: classifier found nothing (shouldn't happen), preserve original
-        if (classification.gaps.length > 0 && classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
-          console.log(`[ESCALATION] classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
+        if (classification.gaps.length === 0) {
+          // Classifier found no PM-scope gaps — the agent escalated for design/brand/architecture
+          // concerns that are not the PM's domain. Reject the tool call and redirect the agent.
+          console.log(`[ESCALATION] Gate 2 classifier: 0 PM gaps — rejecting offer_pm_escalation, redirecting agent`)
+          return {
+            result: "REJECTED: No PM-scope gaps found in your question. These appear to be design, brand, or architecture concerns. Resolve brand token conflicts directly from BRAND.md (it is the authoritative source). For architecture questions, call offer_architect_escalation instead. Do not escalate to PM for hex values, animation durations, or implementation decisions.",
+          }
+        }
+        const filteredQuestion = classification.gaps.length === 1
+          ? classification.gaps[0]                                           // single gap — no numbering
+          : classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n") // multiple gaps — numbered
+        if (classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
+          console.log(`[ESCALATION] Gate 2 classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
         }
         setPendingEscalation(featureName, {
           targetAgent: "pm",
@@ -1279,13 +1285,17 @@ async function runDesignAgent(params: {
         agentResponse: pmQuestions,
         approvedProductSpec: context.approvedProductSpec ?? undefined,
       }).catch(() => ({ gaps: [] }))
-      const g3FilteredQuestion = g3Classification.gaps.length > 0
-        ? g3Classification.gaps.length === 1
+      console.log(`[ESCALATION] Gate 3 classifier: ${g3Classification.gaps.length} PM gaps retained (${pmQuestions.split("\n").filter(l => l.trim()).length} lines extracted)`)
+      if (g3Classification.gaps.length === 0) {
+        // Classifier found no PM-scope gaps — the prose matched the extraction pattern but
+        // the questions are design/brand/architecture concerns, not PM decisions. Drop it.
+        console.log(`[ESCALATION] Gate 3 classifier: 0 PM gaps — suppressing escalation`)
+      } else {
+        const g3FilteredQuestion = g3Classification.gaps.length === 1
           ? g3Classification.gaps[0]
           : g3Classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
-        : pmQuestions  // fallback: classifier finds nothing, preserve extracted questions
-      console.log(`[ESCALATION] Gate 3 classifier: ${g3Classification.gaps.length} PM gaps retained (${pmQuestions.split("\n").filter(l => l.trim()).length} lines extracted)`)
-      setPendingEscalation(featureName, { targetAgent: "pm", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+        setPendingEscalation(featureName, { targetAgent: "pm", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+      }
     } else {
       console.log(`[ESCALATION] Gate 3 (fallback prose) — no pattern match`)
     }
