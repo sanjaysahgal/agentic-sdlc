@@ -53,7 +53,7 @@ RUBRIC:
 ${rubric}
 
 For each rubric criterion the spec FAILS, output exactly one line:
-FINDING: <one sentence naming the specific gap or violation> | <one actionable recommendation to fix it, with specific values>
+FINDING: <one sentence naming the specific gap or violation> | <one specific fix — no alternatives, no "or", no "either/or"; if multiple approaches exist, pick the best one and commit to it>
 
 If the spec passes ALL criteria, output exactly: PASS
 

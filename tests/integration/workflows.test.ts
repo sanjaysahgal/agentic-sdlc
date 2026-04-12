@@ -3539,6 +3539,8 @@ describe("Scenario N17 — Escalation reply injected message contains question +
     expect(injected).toContain("guest session")
     expect(injected).toContain("Sessions are cleared permanently on sign-up")
     expect(injected).toContain("PM gap is now closed")
+    // Design agent must be instructed to list what it applies — so user sees explicit confirmation
+    expect(injected).toContain("Begin your response by listing each recommendation you are applying")
   })
 })
 

@@ -279,7 +279,7 @@ ${pendingEscalation.question}`
       await client.chat.postMessage({
         channel: channelId,
         thread_ts: threadTs,
-        text: `${mention} — review the recommendations above and reply here to confirm or adjust. Design will resume automatically once you reply.`,
+        text: `${mention} — review the recommendations above and reply here to confirm or adjust. Once you reply, the design agent will use each confirmed recommendation to unblock and advance the design spec.`,
       })
       // Clear only after @mention posted — ensures network failures don't silently drop the escalation
       clearPendingEscalation(featureName)
@@ -312,7 +312,7 @@ ${pendingEscalation.question}`
         : "PM"
       console.log(`[ROUTER] branch=escalation-reply targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
       clearEscalationNotification(featureName)
-      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed.`
+      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed. Begin your response by listing each recommendation you are applying to the spec (e.g. "Applying PM recommendations: 1. ... 2. ..."), then proceed with the spec updates.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
       }})

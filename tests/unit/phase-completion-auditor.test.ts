@@ -179,6 +179,24 @@ describe("auditPhaseCompletion", () => {
   })
 })
 
+describe("auditPhaseCompletion — FINDING fix instruction (producer test)", () => {
+  // The system prompt instructs Sonnet to commit to a single specific fix —
+  // no "or" alternatives, no "either/or". This test verifies the instruction
+  // exists so users cannot receive "Fix: X or Y" in the action menu.
+  it("system prompt instructs model to commit to one specific fix — no alternatives", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditPhaseCompletion({ specContent: "spec", rubric: "criterion 1", featureName: "test" })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must prohibit alternatives explicitly
+    expect(systemPrompt).toContain("no alternatives")
+    expect(systemPrompt).toContain(`no "or"`)
+    // Must require committing to one fix
+    expect(systemPrompt).toContain("one specific fix")
+  })
+})
+
 describe("PM_RUBRIC and DESIGN_RUBRIC exports", () => {
   it("PM_RUBRIC is exported as a non-empty string", () => {
     expect(typeof PM_RUBRIC).toBe("string")
