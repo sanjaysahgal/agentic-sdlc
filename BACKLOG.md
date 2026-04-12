@@ -65,6 +65,19 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 
 ---
 
+### ⚠️ Real-agent fixture for `pm-escalation-spec-writer.ts` Haiku prompt (2026-04-12) — HIGH PRIORITY
+
+Consumer and producer unit tests exist for `pm-escalation-spec-writer.ts`, but the producer tests only verify that the system prompt **contains** the right language — they do not prove that Haiku actually produces `##` output in practice. Per the fixture sourcing rule, this is a false-confidence gap.
+
+**What's needed:**
+1. Run `patchProductSpecWithRecommendations` against a real Haiku call with a sample question + recommendations pair (use any approved onboarding product spec as the base)
+2. Capture the actual Haiku response and commit it to `tests/fixtures/agent-output/pm-spec-patch-haiku.md`
+3. Add a producer test that loads the fixture via `readFileSync` and asserts: (a) response contains `##` headers, (b) response does NOT contain preamble prose before the first `##`, (c) entries are concrete (not "handle gracefully"-style vague language)
+
+**Why high priority:** Without this, the `##` guard in `patchProductSpecWithRecommendations` (which skips `saveApprovedSpec` if no `##` in patch) is untested against real Haiku output. If Haiku consistently returns prose without `##` headers, the writeback silently no-ops on every escalation — the same gap that triggered this entire feature.
+
+---
+
 ### Escalation brief pollutes design conversation history (2026-04-07)
 
 When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it appends the escalation brief (`"The UX Designer is blocked on these product questions..."`) and the PM agent's recommendations to the design feature's conversation history. These are PM-context messages in a design-context history — they'll appear in subsequent design agent turns as prior context, which is slightly polluting.
@@ -74,14 +87,6 @@ When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it app
 ---
 
 ---
-
-### Unit tests for `runtime/pm-escalation-spec-writer.ts` (2026-04-12)
-
-`pm-escalation-spec-writer.ts` ships with no unit tests. Per the producer-consumer chain rule and fixture sourcing rule, the following are required before this is complete:
-
-1. **Consumer test** — mock Anthropic, verify: (a) when `readFile` returns "" (spec not on main), function returns early without calling Anthropic; (b) when Anthropic returns patch with `##` headers, `applySpecPatch` is called and `saveApprovedSpec` is called; (c) when Anthropic returns patch without `##`, `saveApprovedSpec` is NOT called.
-2. **Producer test** — verify the system prompt instructs Haiku to: (a) output only changed `##` sections; (b) encode decisions as concrete measurable entries; (c) place product decisions in `## Acceptance Criteria` and edge cases in `## Edge Cases`; (d) prohibit alternatives ("no alternatives", "no 'or'").
-3. **Real fixture** — capture actual Haiku output for a sample question+recommendations pair and commit to `tests/fixtures/agent-output/pm-spec-patch-haiku.md`.
 
 ---
 
