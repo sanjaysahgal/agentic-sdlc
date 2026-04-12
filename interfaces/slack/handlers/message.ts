@@ -4,7 +4,7 @@ import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setCon
 import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile, preseedEngineeringSpec } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
@@ -289,7 +289,7 @@ ${pendingEscalation.question}`
       })
       // Clear only after @mention posted — ensures network failures don't silently drop the escalation
       clearPendingEscalation(featureName)
-      setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined })
+      setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       return
     }
     // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
@@ -354,6 +354,91 @@ ${pendingEscalation.question}`
   }
 
   if (confirmedAgent === "architect") {
+    // Upstream escalation: architect offered to escalate a constraint to PM or Designer.
+    // Mirrors the design agent's pendingEscalation / escalationNotification pattern exactly.
+    const archPendingEscalation = getPendingEscalation(featureName)
+    if (archPendingEscalation && isAffirmative(userMessage)) {
+      const target = archPendingEscalation.targetAgent  // "pm" or "design"
+      console.log(`[ROUTER] branch=arch-upstream-escalation-confirmed target=${target}`)
+      const { roles } = loadWorkspaceConfig()
+      const isDesignTarget = target === "design"
+      const mention = isDesignTarget
+        ? (roles.designerUser ? `<@${roles.designerUser}>` : `*UX Designer*`)
+        : (roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`)
+      const agentLabel = isDesignTarget ? "UX Designer" : "Product Manager"
+      const brief = isDesignTarget
+        ? `ARCHITECT ESCALATION — Design revision needed to unblock engineering.
+
+While specifying the engineering approach, the architect found a constraint that requires the design spec to be revised before implementation can proceed.
+
+Your job: review the constraint below and provide a concrete design decision so engineering can resume.
+
+For each item, respond with:
+[N]. My recommendation: [specific design decision — no conditionals, no "it depends"]
+→ Rationale: [one sentence grounded in UX principles or the approved design system]
+
+Do not ask for more context. Do not present multiple options. End with: "Once you confirm these revisions, the architect will update the engineering spec."
+
+CONSTRAINT REQUIRING DESIGN REVISION:
+${archPendingEscalation.question}`
+        : `ARCHITECT ESCALATION — PM decision needed to unblock engineering.
+
+While specifying the engineering approach, the architect found a constraint that requires a product decision before implementation can proceed.
+
+Your job: give a specific, concrete recommendation for each item below so engineering can resume today.
+
+For each item, respond with:
+[N]. My recommendation: [one specific, concrete answer — no conditionals, no "it depends"]
+→ Rationale: [one sentence grounded in product vision, user needs, or standard practice]
+
+Do not ask for more context. Do not present multiple options.
+
+CONSTRAINT REQUIRING PRODUCT DECISION:
+${archPendingEscalation.question}`
+      let capturedResponse = ""
+      await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
+        const capturingUpdate = async (text: string) => { capturedResponse = text; await update(text) }
+        if (isDesignTarget) {
+          await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: brief, userImages: [], client, update: capturingUpdate })
+        } else {
+          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
+        }
+      }})
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: isDesignTarget
+          ? `${mention} — the architect needs a design revision before engineering can proceed. Review the recommendations above and reply here to confirm or adjust. Once you reply, the architect will resume with your decision applied.`
+          : `${mention} — the architect needs a product decision before engineering can proceed. Review the recommendations above and reply here to confirm or adjust. Once you reply, the architect will resume with your decision applied.`,
+      })
+      clearPendingEscalation(featureName)
+      setEscalationNotification(featureName, { targetAgent: target, question: archPendingEscalation.question, recommendations: capturedResponse || undefined, originAgent: "architect" })
+      return
+    }
+    if (archPendingEscalation) {
+      // Hold — upstream revision pending, user has not confirmed
+      console.log(`[ROUTER] branch=arch-upstream-escalation-hold target=${archPendingEscalation.targetAgent}`)
+      const q = archPendingEscalation.question
+      const holderName = archPendingEscalation.targetAgent === "design" ? "Designer" : "PM"
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `Engineering is paused — the ${holderName} needs to review a constraint before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring the ${holderName} into this thread.`,
+      })
+      return
+    }
+    // Upstream revision reply — Designer or PM responded to architect escalation; resume architect.
+    const archEscalationNotification = getEscalationNotification(featureName)
+    if (archEscalationNotification && archEscalationNotification.originAgent === "architect") {
+      console.log(`[ROUTER] branch=arch-upstream-revision-reply target=${archEscalationNotification.targetAgent}`)
+      clearEscalationNotification(featureName)
+      const respondingRole = archEscalationNotification.targetAgent === "design" ? "Designer" : "PM"
+      const injectedMessage = `${respondingRole} resolved the upstream constraint: "${archEscalationNotification.question}" → "${userMessage}". The upstream spec has been revised. Resume engineering spec development with this revision applied — update the affected sections and continue.`
+      await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
+        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages: [], client, update })
+      }})
+      return
+    }
     console.log(`[ROUTER] branch=confirmed-architect feature=${featureName}`)
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
@@ -1128,6 +1213,13 @@ async function runDesignAgent(params: {
           // Classifier found no PM-scope gaps — the agent escalated for design/brand/architecture
           // concerns that are not the PM's domain. Reject the tool call and redirect the agent.
           console.log(`[ESCALATION] Gate 2 classifier: 0 PM gaps — rejecting offer_pm_escalation, redirecting agent`)
+          // Still pre-seed any architect items before redirecting
+          if (classification.architectItems.length > 0) {
+            const { paths } = loadWorkspaceConfig()
+            const archFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+            await preseedEngineeringSpec({ featureName, filePath: archFilePath, architectItems: classification.architectItems })
+              .catch(err => console.log(`[GATE2] preseedEngineeringSpec failed (non-blocking): ${err}`))
+          }
           return {
             result: "REJECTED: No PM-scope gaps found in your question. These appear to be design, brand, or architecture concerns. Resolve brand token conflicts directly from BRAND.md (it is the authoritative source). For architecture questions, call offer_architect_escalation instead. Do not escalate to PM for hex values, animation durations, or implementation decisions.",
           }
@@ -1144,6 +1236,15 @@ async function runDesignAgent(params: {
           designContext: context.currentDraft ?? "",
           productSpec: context.approvedProductSpec ?? undefined,
         })
+        // Pre-seed architect-scope items filtered out by Gate 2 into the engineering spec draft.
+        // These are not PM gaps — they belong to the architect at engineering phase.
+        // Silent platform action: no user-facing message.
+        if (classification.architectItems.length > 0) {
+          const { paths } = loadWorkspaceConfig()
+          const archFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+          preseedEngineeringSpec({ featureName, filePath: archFilePath, architectItems: classification.architectItems })
+            .catch(err => console.log(`[GATE2] preseedEngineeringSpec failed (non-blocking): ${err}`))
+        }
         return {
           result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the PM will be notified with your question.",
         }
@@ -1670,6 +1771,20 @@ async function runArchitectAgent(params: {
         const { githubOwner, githubRepo } = loadWorkspaceConfig()
         const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${archFilePath}`
         return { result: { url, nextPhase: "build" } }
+      }
+      if (name === "offer_upstream_revision") {
+        const target = input.targetAgent as "pm" | "design"
+        const question = input.question as string
+        console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
+        setPendingEscalation(featureName, {
+          targetAgent: target,
+          question,
+          designContext: "",
+          engineeringContext: context.currentDraft ?? undefined,
+        })
+        return {
+          result: `Upstream revision request stored (target: ${target}). The user will be prompted to confirm. If they say yes, the ${target === "design" ? "Designer" : "PM"} will be notified with your constraint.`,
+        }
       }
       return { error: `Unknown tool: ${name}` }
     },

@@ -328,6 +328,45 @@ export async function saveApprovedEngineeringSpec(params: {
   return "saved"
 }
 
+// Pre-seed the engineering spec draft with architect-scope open questions.
+// Called by Gate 2 when PM classifier filters items as architecture-scope.
+// Creates the draft file if it doesn't exist; appends to ## Open Questions if it does.
+// Silent platform action — no user-facing message.
+export async function preseedEngineeringSpec(params: {
+  featureName: string
+  filePath: string
+  architectItems: string[]
+}): Promise<void> {
+  const { featureName, filePath, architectItems } = params
+  if (architectItems.length === 0) return
+
+  const branch = `spec/${featureName}-engineering`
+  const newLines = architectItems.map(item => `- [open: architecture] ${item}`).join("\n")
+
+  let existing: string | null = null
+  try {
+    existing = await readFile(filePath, branch)
+  } catch {
+    // Branch or file doesn't exist yet — will be created below
+  }
+
+  let merged: string
+  if (!existing) {
+    merged = `# ${featureName} Engineering Spec\n\n## Open Questions\n\n${newLines}\n`
+  } else if (existing.includes("## Open Questions")) {
+    // Append before the next ## heading or at end-of-section
+    merged = existing.replace(
+      /(## Open Questions\n)([\s\S]*?)(\n## |\n*$)/,
+      (_, heading, body, tail) => `${heading}${body.trimEnd()}\n${newLines}\n${tail}`,
+    )
+  } else {
+    merged = `${existing.trimEnd()}\n\n## Open Questions\n\n${newLines}\n`
+  }
+
+  await saveDraftEngineeringSpec({ featureName, filePath, content: merged })
+  console.log(`[GITHUB] preseedEngineeringSpec: ${architectItems.length} item(s) written to ${filePath} on ${branch}`)
+}
+
 // Save a draft HTML preview to the design branch.
 // Saved alongside the design spec — deleted on spec approval (it's a draft artifact).
 export async function saveDraftHtmlPreview(params: {

@@ -127,8 +127,8 @@ describe("buildArchitectSystemPrompt", () => {
 })
 
 describe("ARCHITECT_TOOLS structure", () => {
-  it("exports 4 tools", () => {
-    expect(ARCHITECT_TOOLS).toHaveLength(4)
+  it("exports 5 tools", () => {
+    expect(ARCHITECT_TOOLS).toHaveLength(5)
   })
 
   it("includes save_engineering_spec_draft as first tool", () => {
@@ -165,6 +165,16 @@ describe("ARCHITECT_TOOLS structure", () => {
   it("finalize_engineering_spec requires no parameters", () => {
     const tool = ARCHITECT_TOOLS.find(t => t.name === "finalize_engineering_spec")!
     expect(tool.input_schema.required).toHaveLength(0)
+  })
+
+  it("includes offer_upstream_revision as fifth tool with question and targetAgent required", () => {
+    const tool = ARCHITECT_TOOLS.find(t => t.name === "offer_upstream_revision")!
+    expect(tool).toBeDefined()
+    expect(tool.input_schema.required).toContain("question")
+    expect(tool.input_schema.required).toContain("targetAgent")
+    const targetEnum = (tool.input_schema.properties as any).targetAgent.enum
+    expect(targetEnum).toContain("pm")
+    expect(targetEnum).toContain("design")
   })
 })
 

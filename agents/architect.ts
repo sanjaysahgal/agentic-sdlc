@@ -55,6 +55,25 @@ export const ARCHITECT_TOOLS: Anthropic.Tool[] = [
       required: [],
     },
   },
+  {
+    name: "offer_upstream_revision",
+    description: "Escalate to the PM or Designer when an implementation constraint you discovered requires a previously locked upstream spec (product or design) to be revised. Use this ONLY when a concrete implementation finding invalidates a locked decision — not for open questions you can resolve yourself. The platform will run the appropriate agent with your constraint and @mention the human reviewer.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        question: {
+          type: "string",
+          description: "The specific implementation constraint, framed as: 'While specifying [X], I found that [constraint]. This requires the [product/design] spec to be revised to [what needs to change].'",
+        },
+        targetAgent: {
+          type: "string",
+          enum: ["pm", "design"],
+          description: "Who needs to revise their spec: 'pm' if the product requirement is wrong, 'design' if the UI/UX decision is wrong.",
+        },
+      },
+      required: ["question", "targetAgent"],
+    },
+  },
 ]
 
 // Builds the Architect agent system prompt from the loaded spec chain.

@@ -169,6 +169,7 @@ Operates simultaneously at feature level (engineering spec) and product level (o
 - `apply_engineering_spec_patch` — incremental update; same audit
 - `read_approved_specs` — reads all (or named) approved engineering specs for cross-feature coherence before writing proposals
 - `finalize_engineering_spec` — blocked if unresolved `[blocking: yes]` questions exist
+- `offer_upstream_revision(question, targetAgent)` — escalates an implementation constraint that requires a previously locked upstream spec (product or design) to be revised. `targetAgent` is `"pm"` or `"design"`. Platform runs the appropriate agent with a constraint brief, @mentions the human reviewer, and resumes the architect with the injected revision when the reviewer replies.
 
 The old text-block protocol (`DRAFT_ENGINEERING_SPEC_START/END`, `ENGINEERING_PATCH_START/END`, `INTENT: CREATE_ENGINEERING_SPEC`) is fully removed.
 

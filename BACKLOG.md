@@ -33,17 +33,15 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### ⚠️ Gate 2 silently drops architect-scope items filtered from PM escalation (2026-04-12) — HIGH PRIORITY
+~~### Gate 2 silently drops architect-scope items filtered from PM escalation (2026-04-12)~~ ✅ Done (2026-04-12)
 
-When Gate 2's PM classifier filters items from the agent's `offer_pm_escalation` question as non-PM-scope, those items are **silently discarded** — no architect escalation is offered.
+Architect-scope items filtered by Gate 2 are now pre-seeded into the engineering spec draft as `[open: architecture]` questions. `pm-gap-classifier.ts` extended to return `architectItems[]` alongside `gaps[]`. `preseedEngineeringSpec` writes to the engineering draft branch (creates branch/file if needed). Gate 2 handler calls `preseedEngineeringSpec` for both the "0 PM gaps" rejection path and the normal "PM + arch items" path. N31 integration test covers.
 
-**Real incident (2026-04-12):** Design agent raised 3 blocking gaps. Classifier correctly identified 2 as architect-scope (session storage mechanism, conversation data field specification) and 1 as PM-scope (SSO failure UX). Only the PM gap was stored. The 2 architect gaps were dropped entirely — never offered to the architect, never surfaced to the user.
+~~### Architect-escalates-upstream capability (2026-04-12)~~ ✅ Done (2026-04-12)
 
-**What should happen:** When Gate 2 filters N items as architect-scope, the platform should auto-call `offer_architect_escalation` with those items in the same turn. The design agent already called `offer_pm_escalation` — the platform has the filtered items available in the `classifyForPmGaps` result. Splitting the question into PM vs architect routed correctly is the right behavior; dropping the architect items is the bug.
+Architect now has `offer_upstream_revision(question, targetAgent)` tool (targetAgent: "pm" | "design"). Platform handling in `confirmedAgent === "architect"` block mirrors the design agent's PM escalation flow: pending escalation confirmation, hold, and reply resume all implemented. On "yes": platform runs appropriate agent (design or PM) with constraint brief, @mentions reviewer, sets escalation notification with `originAgent: "architect"`. On reply: architect resumes with injected design/PM decision. N32 integration test covers (2 scenarios: confirm + reply).
 
-**Implementation:** In the Gate 2 handler in `message.ts`, after storing the PM-scoped `pendingEscalation`, check if the classifier returned any architect-scope items (items present in the original question but absent from the `gaps` array). If yes, call `setPendingEscalation` with `targetAgent: "architect"` for those items — or, since a PM escalation is already pending, queue the architect escalation to fire after the PM one resolves.
-
-**Complexity:** Currently only one `pendingEscalation` can be active at a time. Queuing a second one requires either (a) a `pendingEscalation` array, or (b) offering architect escalation as a follow-up after PM resolves. Option (b) is simpler solo-team: after PM @mention reply resumes design, the next run of Gate 4 will catch the architect gaps as unresolved and escalate then.
+---
 
 ---
 

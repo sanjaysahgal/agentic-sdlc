@@ -17,21 +17,23 @@ export type Message = {
 }
 
 export type PendingEscalation = {
-  targetAgent: "pm" | "architect"
-  question: string        // the specific blocking question to hand to the PM or architect
+  targetAgent: "pm" | "architect" | "design"
+  question: string        // the specific blocking question to hand to the PM, architect, or designer
   designContext: string   // current design draft — gives them instant context
   productSpec?: string    // approved product spec — so PM agent has full context without re-fetching
+  engineeringContext?: string  // current engineering spec draft — gives designer/PM context from architect
 }
 
-// Escalation notification — set after the PM/Architect @mention is posted.
-// Cleared when the PM/Architect replies in the thread, at which point the design agent resumes.
+// Escalation notification — set after the PM/Architect/Designer @mention is posted.
+// Cleared when they reply in the thread, at which point the originating agent resumes.
 // Distinct from PendingEscalation (which gates the user "yes" confirmation).
-// recommendations: the full PM/Architect agent response text, stored so the platform
-// can write confirmed decisions back to the product spec on human confirmation.
+// recommendations: the full agent response text, stored so the platform
+// can write confirmed decisions back to the appropriate spec on human confirmation.
 export type EscalationNotification = {
-  targetAgent: "pm" | "architect"
+  targetAgent: "pm" | "architect" | "design"
   question: string
   recommendations?: string
+  originAgent?: "design" | "architect"  // which agent to resume after reply; defaults to "design" if absent
 }
 
 // Pending spec approval — set when the agent detects approval intent.

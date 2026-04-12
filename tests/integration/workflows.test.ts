@@ -4393,3 +4393,196 @@ describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in 
     expect(getPendingEscalation("onboarding")).toBeNull()
   })
 })
+
+// ─── Scenario N31: Gate 2 pre-seeds architect-scope items into engineering spec ──────────────
+//
+// When the design agent calls offer_pm_escalation with mixed items (PM + architect scope),
+// Gate 2 classifier identifies them separately. PM-scope items → pendingEscalation.
+// Architect-scope items → preseedEngineeringSpec writes [open: architecture] questions
+// to the engineering spec draft branch. Silent platform action, no user message.
+//
+// Real incident (2026-04-12): 3-item offer_pm_escalation → 2 architect-scope items silently
+// discarded. This test proves those items now land in the engineering spec draft.
+
+describe("Scenario N31 — Gate 2 pre-seeds architect-scope filtered items into engineering spec", () => {
+  const THREAD = "workflow-n31"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+    mockGetRef.mockReset()
+    mockCreateRef.mockReset()
+  })
+
+  it("architect-scope items are written to engineering spec draft as [open: architecture] questions", async () => {
+    // All reads → 404 (no existing specs, no engineering branch yet)
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Agent question: 1 PM gap + 2 architect-scope items
+    const mixedQuestion = [
+      "1. What happens to the user's SSO session when authentication fails mid-onboarding?",
+      "2. What fields must the guest session record contain to survive the sign-up flow?",
+      "3. How should the session store enforce TTL on guest sessions?",
+    ].join("\n")
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent        → false
+    //   [1] isSpecStateQuery          → false
+    //   [2] runAgent (tool_use)       → offer_pm_escalation (mixed question)
+    //   [3] classifyForPmGaps         → 1 GAP (SSO failure UX) + 2 ARCH (session fields, TTL)
+    //   [4] runAgent (end_turn)       → agent prose after gate
+    //   [5] identifyUncommittedDecisions → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: mixedQuestion } }],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "GAP: What happens to the user when SSO authentication fails mid-onboarding?\nARCH: What fields must the guest session record contain to survive the sign-up flow?\nARCH: How should the session store enforce TTL on guest sessions?" }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Design is blocked on the SSO failure UX — PM needs to decide what the user experiences." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+
+    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "what's blocking us?"))
+
+    // PM-scope gap stored in pendingEscalation
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending!.question).toContain("SSO")
+
+    // Architect-scope items pre-seeded into engineering spec draft via createOrUpdateFileContents
+    const engWriteCall = mockCreateOrUpdate.mock.calls.find(
+      (call: any) => call[0]?.path?.includes("onboarding.engineering.md")
+    )
+    expect(engWriteCall).toBeDefined()
+    const writtenContent = Buffer.from(engWriteCall![0].content, "base64").toString("utf-8")
+    expect(writtenContent).toContain("[open: architecture]")
+    expect(writtenContent).toContain("session record")
+    expect(writtenContent).toContain("TTL")
+  })
+})
+
+// ─── Scenario N32: Architect upstream escalation to Designer — full round-trip ──────────────
+//
+// Architect discovers an implementation constraint that requires the design spec to be revised.
+// Turn 1: Architect calls offer_upstream_revision(question, "design") → pendingEscalation stored.
+// Turn 2: User confirms "yes" → design agent runs with constraint brief, @mention posted,
+//         escalationNotification set with originAgent: "architect".
+// Turn 3: Designer replies → architect resumes with injected design decision.
+
+describe("Scenario N32 — Architect upstream escalation to Designer round-trip", () => {
+  const THREAD = "workflow-n32"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation, clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("user confirms yes → design agent runs with upstream constraint brief, notification set with originAgent:architect", async () => {
+    // Pre-seed architect upstream escalation
+    setPendingEscalation("onboarding", {
+      targetAgent: "design",
+      question: "The modal sheet must support partial-height drag — current design specifies full-screen only, which the native nav stack cannot support.",
+      designContext: "",
+    })
+
+    // All GitHub reads → 404
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Anthropic sequence — handleDesignPhase runs with the constraint brief:
+    //   [0] isOffTopicForAgent (design agent) → false
+    //   [1] isSpecStateQuery (design agent)   → false
+    //   [2] runAgent (design agent brief)     → design recommendations
+    //   [3] identifyUncommittedDecisions      → none
+    const DESIGN_RECOMMENDATIONS = "1. My recommendation: Use a bottom sheet pattern limited to 60% height with drag-to-dismiss.\n→ Rationale: Native half-sheet is the standard pattern on iOS/Android and fits within nav stack constraints."
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: DESIGN_RECOMMENDATIONS }],
+      })
+      .mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Pending escalation cleared after @mention posted
+    const { getPendingEscalation: getEsc, getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEsc("onboarding")).toBeNull()
+
+    // Escalation notification set with originAgent: "architect" so architect resumes on reply
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+    expect(notification!.targetAgent).toBe("design")
+    expect(notification!.originAgent).toBe("architect")
+    expect(notification!.recommendations).toBe(DESIGN_RECOMMENDATIONS)
+
+    // @mention posted in thread
+    const postMessageCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const mentionCall = postMessageCalls.find((c: any) => c[0]?.text?.includes("architect needs a design revision"))
+    expect(mentionCall).toBeDefined()
+  })
+
+  it("designer reply → architect resumes with injected design decision, notification cleared", async () => {
+    // Pre-seed escalation notification (architect-originated, awaiting designer reply)
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "design",
+      question: "The modal sheet must support partial-height drag — current design specifies full-screen only.",
+      recommendations: "1. My recommendation: Use a bottom sheet pattern limited to 60% height.\n→ Rationale: Native half-sheet fits nav stack constraints.",
+      originAgent: "architect",
+    })
+
+    // All GitHub reads → 404
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Anthropic sequence — runArchitectAgent runs with injected design decision:
+    //   [0] isOffTopicForAgent (arch) → false
+    //   [1] isSpecStateQuery (arch)   → false
+    //   [2] runAgent (architect)      → continues engineering spec with revision applied
+    //   [3] identifyUncommittedDecisions → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Understood — updating modal sheet spec to use 60% height bottom sheet with drag-to-dismiss. Continuing with API contract." }],
+      })
+      .mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "Approved — use the 60% bottom sheet pattern.")
+    await handleFeatureChannelMessage(params)
+
+    // Escalation notification cleared after designer reply
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).toBeNull()
+
+    // Architect was called — the injected message contains the design decision
+    const runAgentCall = mockAnthropicCreate.mock.calls.find((call: any) => {
+      const lastMsg = (call[0]?.messages as { role: string; content: string }[] | undefined)?.at(-1)
+      return lastMsg?.content?.includes("Designer resolved the upstream constraint")
+    })
+    expect(runAgentCall).toBeDefined()
+  })
+})
