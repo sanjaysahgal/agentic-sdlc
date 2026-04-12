@@ -470,7 +470,8 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(reviewPost[0].text).toContain("Product Manager")
     expect(reviewPost[0].text).toContain("reply here to confirm or adjust")
 
-    // Pending escalation cleared after confirmation
+    // Pending escalation cleared AFTER @mention posted — not before agent runs
+    // (guard against network failure losing escalation before PM is notified)
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     expect(getPendingEscalation("onboarding")).toBeNull()
 

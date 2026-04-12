@@ -187,4 +187,13 @@ describe("classifyForPmGaps — producer tests (system prompt contains format in
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
     expect(systemPrompt.toLowerCase()).toContain("design decision")
   })
+
+  it("system prompt names layout and visual styling as NOT PM-scope with concrete examples", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must name specific visual examples so classifier doesn't flag layout/styling gaps as PM
+    expect(systemPrompt.toLowerCase()).toMatch(/wordmark|glow|gradient|opacity|shadow/)
+    expect(systemPrompt.toLowerCase()).toMatch(/layout|screen structure|visual hierarchy/)
+  })
 })

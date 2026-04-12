@@ -13,9 +13,10 @@ PM-scope gaps include:
 - Qualitative criteria without measurable definitions: any PM spec language like "seamlessly", "appropriately", "ambient awareness", "minimal path" that must be made concrete before design can commit to a specific implementation
 
 NOT PM-scope (do not flag):
-- Design decisions (layout, color, spacing, animation, component choice)
-- Architecture or engineering decisions (API shape, database schema, auth implementation)
+- Design decisions: layout, color, spacing, animation, component choice, screen structure, visual hierarchy, where UI elements are positioned (wordmark placement, button placement, prompt bar position), what styling a component uses (glow effects, gradients, shadows, opacity), whether two screens share the same layout, which screens need to be designed
+- Architecture or engineering decisions (API shape, database schema, auth implementation, data transfer mechanism, session token structure)
 - Brand token questions
+- Open design questions the designer is exploring — things the design team will decide themselves without PM input
 
 For each PM-scope gap you find, output exactly one line:
 GAP: <one sentence — the specific PM decision needed>

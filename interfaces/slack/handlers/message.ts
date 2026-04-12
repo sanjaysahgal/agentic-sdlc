@@ -225,7 +225,9 @@ export async function handleFeatureChannelMessage(params: {
     if (pendingEscalation && isAffirmative(userMessage)) {
       console.log(`[ROUTER] branch=pending-escalation-confirmed targetAgent=${pendingEscalation.targetAgent} question="${pendingEscalation.question.slice(0, 100)}"`)
 
-      clearPendingEscalation(featureName)
+      // Do NOT clear yet — clear only after @mention is successfully posted.
+      // Clearing early means a network failure or agent refusal permanently loses the escalation,
+      // forcing the design agent to rediscover the gaps (possibly finding fewer or wrong ones).
       const { roles } = loadWorkspaceConfig()
       const isArchitectEscalation = pendingEscalation.targetAgent === "architect"
       const mention = isArchitectEscalation
@@ -279,6 +281,8 @@ ${pendingEscalation.question}`
         thread_ts: threadTs,
         text: `${mention} — review the recommendations above and reply here to confirm or adjust. Design will resume automatically once you reply.`,
       })
+      // Clear only after @mention posted — ensures network failures don't silently drop the escalation
+      clearPendingEscalation(featureName)
       setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question })
       return
     }
