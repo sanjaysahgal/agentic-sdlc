@@ -73,6 +73,14 @@ When `runPmAgent` runs during escalation confirmation (`readOnly: true`), it app
 
 ---
 
+### Escalation reply: accept only within a timed window (2026-04-11)
+
+`EscalationNotification` currently accepts **any** reply in the thread as the PM/Architect answer — including the human product owner if they jump in before the PM responds. At scale, the escalation reply window should be time-bounded (e.g., ~5 minutes after the @mention) so that a user follow-up message doesn't accidentally get consumed as a PM recommendation. A simple `timestamp` field on `EscalationNotification` plus a check in `message.ts` would close this.
+
+**Why not now:** Solo-team context — the PM *is* the product owner in most sessions; ambiguity is low. The deterministic behavior of "any reply resumes design" is strictly better than the previous silent-drop bug. Timed window is a precision improvement.
+
+---
+
 ### Parallel PM + architect routing for borderline escalation questions (2026-04-11)
 
 The classifier routes each gap question to either PM or architect — never both. Questions that sit on the PM/architect boundary (e.g. "what conversation data must survive sign-up?" is PM-scope; "how is the session store structured?" is architect-scope) are handled by the classifier's WHAT/HOW decision rule, which is probabilistic.
