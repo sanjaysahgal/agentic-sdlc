@@ -501,7 +501,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     })
 
     mockAnthropicCreate.mockResolvedValue({
-      content: [{ type: "text", text: "→ Provisional answer: Show a retry screen with an error message.\n→ Rationale: Standard SSO failure UX.\n→ Flag: Provisional" }],
+      content: [{ type: "text", text: "1. My recommendation: Show a retry screen with an error message.\n→ Rationale: Standard SSO failure UX.\n→ Note: Pending human PM confirmation before engineering handoff" }],
       stop_reason: "end_turn",
       usage: { input_tokens: 10, output_tokens: 30 },
     })

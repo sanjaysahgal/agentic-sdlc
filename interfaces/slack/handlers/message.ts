@@ -240,28 +240,28 @@ export async function handleFeatureChannelMessage(params: {
       const productSpecSection = pendingEscalation.productSpec
         ? `\n\nAPPROVED PRODUCT SPEC (for context):\n${pendingEscalation.productSpec}`
         : ""
-      const pmBrief = `DESIGN TEAM ESCALATION — PROVISIONAL ANSWERS NEEDED TO UNBLOCK DESIGN.
+      const pmBrief = `DESIGN TEAM ESCALATION — PM RECOMMENDATIONS NEEDED TO UNBLOCK DESIGN.
 
-The UX Designer is blocked on the items below and cannot continue until each has a working answer. Your job: provide a specific, concrete provisional answer for each item so design can proceed today. These are working assumptions — not final decisions — that the human PM can review and adjust. You are not overriding anyone. You are unblocking the team with your best expert judgment.
+The UX Designer is blocked on the numbered items below. Your job: give a specific, concrete recommendation for each one so design can proceed today. These are your expert recommendations — not final decisions — the human PM will review and confirm or adjust each one.
 
-For each item, output exactly:
-→ Provisional answer: [one specific, concrete answer — no conditionals, no "it depends", no "the PM should decide"]
+For each numbered item, respond with the same number so the human can follow along. Output exactly:
+[N]. My recommendation: [one specific, concrete answer — no conditionals, no "it depends", no "the PM should decide"]
 → Rationale: [one sentence grounded in product vision, user needs, or standard practice]
-→ Flag: Provisional — human PM to confirm before engineering handoff
+→ Note: Pending human PM confirmation before engineering handoff
 
 Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it.${productSpecSection}
 
 BLOCKING ITEMS:
 ${pendingEscalation.question}`
 
-      const archBrief = `DESIGN TEAM ESCALATION — PROVISIONAL TECHNICAL ANSWERS NEEDED TO UNBLOCK DESIGN.
+      const archBrief = `DESIGN TEAM ESCALATION — ARCHITECT RECOMMENDATIONS NEEDED TO UNBLOCK DESIGN.
 
-The UX Designer is blocked on the items below and cannot continue until each has a working answer. Your job: provide a specific, concrete provisional answer for each item so design can proceed today. These are working assumptions the engineering team can refine — not final architecture decisions.
+The UX Designer is blocked on the numbered items below. Your job: give a specific, concrete recommendation for each one so design can proceed today. These are your expert recommendations — the engineering team will refine at the spec phase.
 
-For each item, output exactly:
-→ Provisional answer: [one specific, concrete technical answer — no conditionals, no "it depends"]
+For each numbered item, respond with the same number so the human can follow along. Output exactly:
+[N]. My recommendation: [one specific, concrete technical answer — no conditionals, no "it depends"]
 → Rationale: [one sentence grounded in the system architecture or standard practice]
-→ Flag: Provisional — architect to confirm at engineering spec phase
+→ Note: Pending architect confirmation at engineering spec phase
 
 Do not ask for more context. Do not present multiple options. Pick the best answer and state it.
 
