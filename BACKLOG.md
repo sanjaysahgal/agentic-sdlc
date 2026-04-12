@@ -43,6 +43,16 @@ Architect now has `offer_upstream_revision(question, targetAgent)` tool (targetA
 
 ---
 
+### Design agent strips implementation sub-questions from offer_pm_escalation (2026-04-12)
+
+When the design agent formulates its `offer_pm_escalation` question, it sometimes bundles design/implementation details into what should be a pure PM decision — e.g., asking the PM to specify "opacity level and screen position" of an indicator alongside "what must the indicator communicate." The PM owns the WHAT (label text, what information must be conveyed), not the HOW (opacity, position, animation).
+
+**Fix:** Add an instruction to the design agent system prompt (or the `offer_pm_escalation` tool description) to strip any design/implementation sub-questions before escalating. The PM brief should contain only product-behavior decisions. The designer implements visual/delivery details without PM input.
+
+**Impact:** Low urgency — the PM answering visual details is noise, not a data loss. The spec writeback will still capture the product-behavior decisions correctly.
+
+---
+
 ### Assess: architect upstream escalation runs auditPhaseCompletion inside design brief (2026-04-12)
 
 When the architect calls `offer_upstream_revision` and the user confirms, the platform calls `handleDesignPhase` with the constraint brief. If a design spec draft exists on the branch, `auditPhaseCompletion` fires inside that call — injecting design readiness findings into the upstream brief context. Likely benign (findings would be visible to the design agent responding to the constraint), but not the intent. Assess in production: if the audit noise pollutes the constraint-brief response, refactor to call `runDesignAgent` with a flag that skips the completion audit for upstream-revision briefs.
