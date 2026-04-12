@@ -196,4 +196,39 @@ describe("classifyForPmGaps — producer tests (system prompt contains format in
     expect(systemPrompt.toLowerCase()).toMatch(/wordmark|glow|gradient|opacity|shadow/)
     expect(systemPrompt.toLowerCase()).toMatch(/layout|screen structure|visual hierarchy/)
   })
+
+  it("system prompt defines the PM as owning the WHAT — not the HOW", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Core PM identity: customer journey / user experience, not implementation
+    expect(systemPrompt.toLowerCase()).toMatch(/what.*how|how.*what/)
+    expect(systemPrompt.toLowerCase()).toMatch(/customer journey|user delight|retention/)
+  })
+
+  it("system prompt names session store schema and account-linking mechanism as architecture-scope (not PM)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // These concrete examples prevent the classifier from routing implementation questions to PM
+    expect(systemPrompt.toLowerCase()).toContain("session store")
+    expect(systemPrompt.toLowerCase()).toContain("account-linking")
+  })
+
+  it("system prompt gives the PM→architect decision rule: schema/mechanism/data model = architect", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Decision signal: these words in a question → architect, not PM
+    expect(systemPrompt.toLowerCase()).toMatch(/schema|mechanism|data model/)
+    expect(systemPrompt.toLowerCase()).toMatch(/architect/)
+  })
+
+  it("system prompt frames PM gaps as user experience or product requirements — not technical specs", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // GAP output framing: PM decision = user experience or product requirement
+    expect(systemPrompt.toLowerCase()).toMatch(/user experience|product requirement/)
+  })
 })
