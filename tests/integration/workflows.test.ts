@@ -3579,16 +3579,23 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
   })
 
   it("writes patched spec to GitHub when product spec exists on main and Anthropic returns a valid patch", async () => {
-    // patchProductSpecWithRecommendations fires BEFORE handleDesignPhase (sequential await in message.ts).
-    // The FIRST getContent call is readFile(productSpec, "main") from patchProductSpecWithRecommendations.
-    // The SECOND getContent call is saveApprovedSpec's SHA lookup on main.
-    // All subsequent calls (loadDesignAgentContext, phase entry audit) get 404.
-    mockGetContent
-      .mockResolvedValueOnce({ data: { content: SPEC_B64, type: "file" } })             // 1st: readFile(productSpec, "main")
-      .mockResolvedValueOnce({ data: { content: SPEC_B64, sha: "abc123", type: "file" } }) // 2nd: saveApprovedSpec SHA lookup
-      .mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))        // all others → 404
+    // Argument-based mock — does not depend on call order.
+    // readFile(productSpec, "main") → ref is explicitly "main": return spec content.
+    // saveApprovedSpec SHA lookup → path matches product.md, ref absent: return SHA.
+    // All other calls (loadDesignAgentContext reads, phase audit reads) → 404.
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        // readFile(productSpec, "main") in patchProductSpecWithRecommendations
+        return { data: { content: SPEC_B64, type: "file" } }
+      }
+      if (path?.includes("onboarding.product.md") && !ref) {
+        // saveApprovedSpec internal SHA lookup (getContent without ref)
+        return { data: { content: SPEC_B64, sha: "abc123", type: "file" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
 
-    // patchProductSpecWithRecommendations: Anthropic returns valid patch (## headers required)
+    // First Anthropic call: patchProductSpecWithRecommendations patch generation (## headers required)
     // All subsequent calls (identifyUncommittedDecisions, design agent, Gate 4 classifier): resume text
     mockAnthropicCreate
       .mockResolvedValueOnce({
