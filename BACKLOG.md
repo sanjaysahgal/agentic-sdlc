@@ -61,6 +61,16 @@ When the design agent formulates its `offer_pm_escalation` question, it sometime
 
 ---
 
+### Assess: isStandaloneConfirmation UX friction — factual PM answers without a confirmation keyword route to PM agent (2026-04-12)
+
+`isStandaloneConfirmation()` requires a message to start with a known affirmative keyword ("confirmed", "approved", "yes", etc.). A human PM who types a factual answer ("Guest sessions are cleared on sign-up.") without prefixing it with a keyword will be routed back to the PM agent instead of closing the escalation and resuming design. This is correct behavior in the multi-turn sense (it keeps the conversation open), but may surprise users who expect their factual answer to close the loop.
+
+**Assess in production:** Is the affirmative-keyword requirement causing confusion, or do users naturally say "confirmed — X" when they intend to close the escalation? If friction is observed, consider extending `isStandaloneConfirmation` to accept informational statements (no "?", no continuation request, no follow-up ask) as implicit closers — or add a UI affordance (e.g., the @mention message says "Reply with *confirmed* + your answer to close this gap").
+
+**Impact:** Low urgency — the PM agent conversation remains open and will eventually get an explicit confirmation. No data loss.
+
+---
+
 ### Assess: architect upstream escalation runs auditPhaseCompletion inside design brief (2026-04-12)
 
 When the architect calls `offer_upstream_revision` and the user confirms, the platform calls `handleDesignPhase` with the constraint brief. If a design spec draft exists on the branch, `auditPhaseCompletion` fires inside that call — injecting design readiness findings into the upstream brief context. Likely benign (findings would be visible to the design agent responding to the constraint), but not the intent. Assess in production: if the audit noise pollutes the constraint-brief response, refactor to call `runDesignAgent` with a flag that skips the completion audit for upstream-revision briefs.
