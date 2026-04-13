@@ -43,18 +43,11 @@ Architect now has `offer_upstream_revision(question, targetAgent)` tool (targetA
 
 ---
 
-### PM agent brief enforcement — agent defers to human instead of making concrete recommendations (2026-04-12) — HIGH PRIORITY
+~~### PM agent brief enforcement — agent defers to human instead of making concrete recommendations (2026-04-12)~~ ✅ Done (2026-04-12)
 
-Real incident: PM agent received a brief with 4 blocking questions. The brief explicitly says "Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it." The agent gave a recommendation for #4 only, and for 1–3 said "I cannot responsibly give you recommendations without talking to the human PM first" — directly violating the brief.
-
-**Root cause:** The PM agent system prompt or brief framing is not authoritative enough to override the model's default deference behavior. The model treats "pending human PM confirmation" as permission to defer rather than permission to commit.
-
-**Fix options:**
-1. Strengthen the brief opening: add "You ARE the PM agent. Making concrete decisions is your job, not an optional step. Refusing to recommend is a failure." before the format instructions.
-2. Add a platform-level check: after the PM agent run, if the response contains "I cannot" or "I need to loop in" or "without talking to" — re-run with a forceful override injection: "PLATFORM OVERRIDE: You must give a specific recommendation for every item. Output the format exactly. No exceptions."
-3. Option 2 is structural enforcement (Principle 8); option 1 is prompt-dependent. Implement option 2 as the primary mechanism.
-
-**Impact:** Without this fix, the human PM must manually provide decisions every time the agent defers — eliminating the value of the escalation flow entirely.
+Dual fix:
+1. **Platform-level deferral gate** (Principle 8): After `runPmAgent` returns in the escalation confirmation path, `DEFERRAL_PATTERN` regex detects refusal language ("I cannot responsibly", "need to loop in", "without talking to the PM", etc.). If matched: re-runs PM agent inside the same `withThinking` bubble with a `PLATFORM ENFORCEMENT` override message that mandates a concrete recommendation for every item. `capturedAgentResponse` is reset so the enforcement response is what gets stored in `escalationNotification`. N33 integration test covers.
+2. **PM agent tone fix**: Added explicit prohibition in `agents/pm.ts` — "You are the authority. Never say 'I cannot responsibly...', never describe your recommendations as guesses, never defer to a higher PM authority. You make the calls." Forbids specific phrases that erode trust.
 
 ---
 
@@ -73,6 +66,12 @@ When the design agent formulates its `offer_pm_escalation` question, it sometime
 When the architect calls `offer_upstream_revision` and the user confirms, the platform calls `handleDesignPhase` with the constraint brief. If a design spec draft exists on the branch, `auditPhaseCompletion` fires inside that call — injecting design readiness findings into the upstream brief context. Likely benign (findings would be visible to the design agent responding to the constraint), but not the intent. Assess in production: if the audit noise pollutes the constraint-brief response, refactor to call `runDesignAgent` with a flag that skips the completion audit for upstream-revision briefs.
 
 ---
+
+~~### Multi-turn escalation continuity — non-confirmation replies during escalation should continue the conversation~~ ✅ Done (2026-04-12)
+
+Real incident: PM agent gave recommendation for #4 only. Human replied "approved for #4, ask for 1-3" — platform treated this as a standalone confirmation and resumed design, losing the request for further recommendations.
+
+**Fix:** `isStandaloneConfirmation()` added as a stricter gate for escalation notification replies. A message that starts with an affirmative keyword but also contains a question mark, "can you", "recommend for", "ask (them|it|the pm)", or similar continuation patterns is NOT a standalone confirmation — it routes back to the escalated agent (PM/architect) for continued conversation. The notification stays active with updated `recommendations` from the latest agent response. Only a clean affirmative (no follow-up request) clears the notification and resumes design. N34 integration test covers (partial approval routes to PM, notification updated, design not resumed).
 
 ~~### Escalation reply auto-routing — PM/Architect reply in thread should re-trigger design agent~~ ✅ Done (2026-04-07)
 

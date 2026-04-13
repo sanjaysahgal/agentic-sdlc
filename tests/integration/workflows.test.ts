@@ -72,6 +72,7 @@ import {
   setPendingEscalation,
   getPendingEscalation,
   clearPendingEscalation,
+  clearEscalationNotification,
 } from "../../../runtime/conversation-store"
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
 
@@ -164,6 +165,13 @@ beforeEach(() => {
   // The bot reads .conversation-history.json on startup; without this, legacy messages
   // cause extra identifyUncommittedDecisions API calls that tests don't account for.
   clearLegacyMessages()
+  // Clear escalation notification state — tests that run the escalation confirmation path
+  // set this as a side effect. Without global cleanup, it leaks into subsequent tests that
+  // use confirmedAgent=ux-design, causing the escalation-continuation branch to fire.
+  clearEscalationNotification("onboarding")
+  clearEscalationNotification("dashboard")
+  clearPendingEscalation("onboarding")
+  clearPendingEscalation("dashboard")
   process.env = {
     ...originalEnv,
     PRODUCT_NAME: "TestApp",
@@ -3443,13 +3451,13 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
   })
 })
 
-// ─── Scenario N16: Any reply when escalation notification active resumes design ──
+// ─── Scenario N16: Standalone confirmation when escalation notification active resumes design ──
 //
-// After the PM @mention is posted and EscalationNotification is set, ANY reply in
-// the thread clears the notification and resumes the design agent with the answer
-// injected. userId matching is not required — the @mention ensures only the right
-// person is expected to reply, and a silent userId mismatch (wrong SLACK_PM_USER env)
-// would be worse than accepting any reply.
+// After the PM @mention is posted and EscalationNotification is set, a standalone
+// confirmation ("confirmed", "approved", "yes") clears the notification and resumes the design
+// agent with the answer injected. A non-standalone message (informational reply, question,
+// partial approval + request) routes back to the PM agent instead — see N34.
+// userId matching is not required — the @mention ensures only the right person is expected.
 
 describe("Scenario N16 — Any reply when escalation notification active resumes design agent", () => {
   const THREAD = "workflow-n16"
@@ -3476,8 +3484,8 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
       usage: { input_tokens: 10, output_tokens: 20 },
     })
 
-    // Any userId — no role match required
-    const params = { ...makeParams(THREAD, "feature-onboarding", "Guest sessions are cleared on sign-up."), userId: "U_ANY_USER" }
+    // Any userId — no role match required. Message is a standalone confirmation.
+    const params = { ...makeParams(THREAD, "feature-onboarding", "confirmed — guest sessions are cleared on sign-up"), userId: "U_ANY_USER" }
 
     await handleFeatureChannelMessage(params)
 
@@ -3490,7 +3498,7 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
 
     // Injected message contains PM answer and original question
     const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
-      c[0]?.messages?.[0]?.content?.includes?.("Guest sessions are cleared")
+      c[0]?.messages?.[0]?.content?.includes?.("guest session")
     )
     expect(agentCall).toBeDefined()
   })
@@ -3527,7 +3535,8 @@ describe("Scenario N17 — Escalation reply injected message contains question +
       usage: { input_tokens: 10, output_tokens: 20 },
     })
 
-    const params = { ...makeParams(THREAD, "feature-onboarding", "Sessions are cleared permanently on sign-up."), userId: "U_PM_123" }
+    // Standalone confirmation form — starts with affirmative keyword, no follow-up request
+    const params = { ...makeParams(THREAD, "feature-onboarding", "confirmed — sessions are cleared permanently on sign-up"), userId: "U_PM_123" }
 
     await handleFeatureChannelMessage(params)
 
@@ -3538,7 +3547,7 @@ describe("Scenario N17 — Escalation reply injected message contains question +
     expect(agentCall).toBeDefined()
     const injected = agentCall[0].messages[0].content as string
     expect(injected).toContain("guest session")
-    expect(injected).toContain("Sessions are cleared permanently on sign-up")
+    expect(injected).toContain("confirmed — sessions are cleared permanently on sign-up")
     expect(injected).toContain("PM gap is now closed")
     // Design agent must be instructed to list what it applies — so user sees explicit confirmation
     expect(injected).toContain("Begin your response by listing each recommendation you are applying")
@@ -3610,7 +3619,7 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
     mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
     mockCreateOrUpdate.mockResolvedValue({})
 
-    const params = makeParams(THREAD, "feature-onboarding", "i approve all your recommendations")
+    const params = makeParams(THREAD, "feature-onboarding", "approved — all recommendations accepted")
     await handleFeatureChannelMessage(params)
 
     // saveApprovedSpec must have written the merged product spec to GitHub
@@ -4584,5 +4593,140 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
       return lastMsg?.content?.includes("Designer resolved the upstream constraint")
     })
     expect(runAgentCall).toBeDefined()
+  })
+})
+
+// ─── Scenario N33: PM agent deferral detected → platform enforcement re-run ──────────────────
+//
+// When the PM agent responds to an escalation brief with a deferral ("I cannot responsibly give
+// you recommendations without talking to the human PM"), DEFERRAL_PATTERN detects it and the
+// platform immediately re-runs PM with an enforcement override inside the same withThinking bubble.
+// The escalationNotification.recommendations must reflect the SECOND (non-deferral) response.
+
+describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendations from second response", () => {
+  const THREAD = "workflow-n33"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    // Pre-seed pending escalation — user will confirm "yes" to trigger PM brief
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "Should the onboarding nudge be dismissable? If so, does it re-appear after session reset?",
+      designContext: "The design spec currently shows a persistent nudge with no X button.",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clrEsc("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("second (enforcement) PM response stored in escalationNotification, not the deferral", async () => {
+    // All GitHub reads → 404 (loadAgentContext falls back to empty context)
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    const DEFERRAL_RESPONSE = "I cannot responsibly give you recommendations without talking to the human PM first. These decisions require the product owner."
+    const PROPER_RECOMMENDATIONS = "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Forcing persistent UI elements erodes trust.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: Do not re-appear after session reset.\n→ Rationale: One nudge per user is sufficient for onboarding context."
+
+    // Mock sequence for two runPmAgent calls inside withThinking:
+    //   First run:  classifyMessageScope → "feature-specific", runAgent → deferral
+    //   Second run: classifyMessageScope → "feature-specific", runAgent → proper recommendations
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: DEFERRAL_RESPONSE }],
+      })                                                                                  // PM agent run 1 → deferral
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 2)
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: PROPER_RECOMMENDATIONS }],
+      })                                                                                  // PM agent run 2 → recommendations
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // escalationNotification should be set with the SECOND response, not the deferral
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+    expect(notification!.recommendations).toContain("My recommendation: The nudge should be dismissable")
+    expect(notification!.recommendations).not.toContain("I cannot responsibly")
+
+    // pendingEscalation cleared after successful @mention
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // Platform sent a "Reconsidering" update during deferral detection
+    const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const reconsideringCall = updateCalls.find((c: any) => c[0]?.text?.includes("Reconsidering"))
+    expect(reconsideringCall).toBeDefined()
+
+    // Anthropic was called 4 times: classifyScope×2 + PM agent×2
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+  })
+})
+
+// ─── Scenario N34: Non-standalone-confirmation during escalation notification → PM continues ──
+//
+// When escalationNotification is active (PM was @mentioned) and the human sends a partial
+// approval mixed with a follow-up request ("approved for #4, can you recommend for 1-3?"),
+// isStandaloneConfirmation returns false → the message routes back to the PM agent.
+// The notification stays active with updated recommendations. Design does NOT resume.
+
+describe("Scenario N34 — Partial approval during escalation routes to PM, notification stays active", () => {
+  const THREAD = "workflow-n34"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "Should the onboarding nudge be dismissable?",
+      recommendations: "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Forcing UI erodes trust.",
+      originAgent: "design",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("mixed approval+request routes to PM, escalation notification updated not cleared", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    const UPDATED_RECOMMENDATIONS = "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Confirmed by human.\n\n2. My recommendation: Use a 3-second delay before showing the nudge.\n→ Rationale: Avoids jarring immediate appearance.\n\n3. My recommendation: Position nudge at bottom of screen.\n→ Rationale: Follows mobile HIG guidelines."
+
+    // PM agent called once: classifyMessageScope → feature-specific, runAgent → updated recommendations
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: UPDATED_RECOMMENDATIONS }],
+      })
+
+    // "approved for #4, can you recommend for 1-3?" — has question + continuation request → NOT standalone confirmation
+    const params = makeParams(THREAD, "feature-onboarding", "approved for #4, can you recommend for 1-3?")
+    await handleFeatureChannelMessage(params)
+
+    // Notification must still be active — design did NOT resume
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+
+    // Recommendations updated to PM's latest response
+    expect(notification!.recommendations).toContain("3-second delay")
+
+    // Anthropic was called (PM ran) but patchProductSpecWithRecommendations did NOT run
+    // (the design agent never called — no product spec write)
+    const productWriteCall = mockCreateOrUpdate.mock.calls.find(
+      (call: any) => call[0]?.path?.includes("onboarding.product.md")
+    )
+    expect(productWriteCall).toBeUndefined()
   })
 })

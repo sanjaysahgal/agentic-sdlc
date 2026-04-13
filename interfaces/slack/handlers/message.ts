@@ -126,6 +126,18 @@ function isAffirmative(message: string): boolean {
   return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in|confirmed|confirm|approved|approve|lock it in|let's go|lets go)/.test(lower)
 }
 
+// Stricter form used in escalation notification reply: the message must be a standalone
+// confirmation — not a mixed message like "approved for #4, can you recommend for 1-3?"
+// If the message also contains a follow-up request to the agent, it routes back to the
+// escalated agent (PM/architect/designer) rather than resuming the originating agent.
+function isStandaloneConfirmation(message: string): boolean {
+  if (!isAffirmative(message)) return false
+  const lower = message.toLowerCase()
+  // Contains a question or an explicit request for more from the agent → treat as continuation
+  if (/\?|can you|ask (it|them|the pm|the designer|the architect)|recommend for|please (give|provide|add|recommend)|what about|and (ask|recommend|suggest)/.test(lower)) return false
+  return true
+}
+
 
 // Returns the current phase of a feature by reading GitHub state.
 // Falls back to "product-spec-in-progress" if GitHub is unavailable.
@@ -273,6 +285,11 @@ ${pendingEscalation.question}`
       const brief = isArchitectEscalation ? archBrief : pmBrief
       // Capture the agent's final response text — stored in EscalationNotification so the platform
       // can write confirmed decisions back to the product spec when the human confirms.
+      // Deferral patterns: PM agent said it cannot recommend without the human PM.
+      // This violates the brief ("pick the best answer and state it"). Platform re-runs with an
+      // enforcement override injected as a follow-up message inside the same thinking bubble.
+      const DEFERRAL_PATTERN = /i cannot responsibly|cannot give you recommendations|need to loop in|without talking to the (human )?pm|should defer|need the human pm|i need to talk to|escalate to the (human )?pm/i
+
       let capturedAgentResponse = ""
       await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
         const capturingUpdate = async (text: string) => { capturedAgentResponse = text; await update(text) }
@@ -280,6 +297,25 @@ ${pendingEscalation.question}`
           await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update: capturingUpdate })
         } else {
           await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
+          // Platform enforcement: if PM agent deferred instead of recommending, re-run with override.
+          // Structural check — does not rely on the model choosing to comply with the brief.
+          if (DEFERRAL_PATTERN.test(capturedAgentResponse)) {
+            console.log(`[ESCALATION] PM deferral detected — re-running with enforcement override`)
+            await update("_Reconsidering — I need to give you concrete recommendations..._")
+            capturedAgentResponse = ""
+            const enforcementMessage = `PLATFORM ENFORCEMENT: Your previous response deferred to the human PM instead of making concrete recommendations. That is not acceptable. You ARE the PM agent. Making specific, grounded recommendations is your only job here — the human PM will review and adjust; you are not making final decisions.
+
+Give a concrete recommendation for EVERY item in the original brief. If you genuinely lack information for one, make the best call from the product vision, user needs, and standard product practice — state your assumption. Do not refuse.
+
+Use the exact format for each:
+[N]. My recommendation: [one specific, concrete answer]
+→ Rationale: [one sentence]
+→ Note: Pending human PM confirmation before engineering handoff
+
+ORIGINAL BRIEF:
+${brief}`
+            await runPmAgent({ channelName, channelId, threadTs, userMessage: enforcementMessage, client, update: capturingUpdate })
+          }
         }
       }})
       await client.chat.postMessage({
@@ -305,14 +341,37 @@ ${pendingEscalation.question}`
       return
     }
 
-    // Escalation notification active — any reply in the thread resumes design with the answer injected.
-    // The PM/Architect was explicitly @mentioned and invited to reply. Whoever replies next IS the
-    // intended responder. userId matching is skipped — a silent mismatch (wrong SLACK_PM_USER env var)
-    // would cause the notification to be swallowed every time, which is worse than over-accepting.
+    // Escalation notification active — the PM/Architect/Designer was @mentioned and is expected
+    // to resolve blocking items before design resumes.
+    // If the human sends a standalone confirmation (yes/approved/confirmed), design resumes.
+    // If they send any other message — including partial approvals or follow-up requests —
+    // the message routes back to the escalated agent (PM or Architect) for continued conversation.
+    // This mirrors real-world behavior: once you're in a PM conversation, you stay in it until
+    // you explicitly confirm and close it.
     const escalationNotification = getEscalationNotification(featureName)
-    if (escalationNotification) {
-      const { roles } = loadWorkspaceConfig()
+    if (escalationNotification && escalationNotification.originAgent !== "architect") {
       const isArchitectEscalation = escalationNotification.targetAgent === "architect"
+      const notifAgentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
+
+      if (!isStandaloneConfirmation(userMessage)) {
+        // Human is continuing the conversation with the escalated agent — route back, keep notification.
+        console.log(`[ROUTER] branch=escalation-continuation targetAgent=${escalationNotification.targetAgent} msg="${userMessage.slice(0, 80)}"`)
+        let updatedRecommendations = ""
+        await withThinking({ client, channelId, threadTs, agent: notifAgentLabel, run: async (update) => {
+          const capturingUpdate = async (text: string) => { updatedRecommendations = text; await update(text) }
+          if (isArchitectEscalation) {
+            await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update: capturingUpdate })
+          } else {
+            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate })
+          }
+        }})
+        // Update stored recommendations so spec writeback captures the latest response on confirmation
+        setEscalationNotification(featureName, { ...escalationNotification, recommendations: updatedRecommendations || escalationNotification.recommendations })
+        return
+      }
+
+      // Standalone confirmation — human is done talking to the PM/Architect. Resume design.
+      const { roles } = loadWorkspaceConfig()
       const respondingRole = (isArchitectEscalation && roles.architectUser && userId === roles.architectUser)
         ? "Architect"
         : "PM"
@@ -427,12 +486,34 @@ ${archPendingEscalation.question}`
       })
       return
     }
-    // Upstream revision reply — Designer or PM responded to architect escalation; resume architect.
+    // Upstream revision reply — Designer or PM is responding to architect's upstream escalation.
+    // If standalone confirmation → resume architect. Otherwise → continue the conversation with
+    // the design/PM agent, keeping the notification active until the human explicitly confirms.
     const archEscalationNotification = getEscalationNotification(featureName)
     if (archEscalationNotification && archEscalationNotification.originAgent === "architect") {
-      console.log(`[ROUTER] branch=arch-upstream-revision-reply target=${archEscalationNotification.targetAgent}`)
+      const archNotifTarget = archEscalationNotification.targetAgent
+      const archNotifAgentLabel = archNotifTarget === "design" ? "UX Designer" : "Product Manager"
+
+      if (!isStandaloneConfirmation(userMessage)) {
+        // Human continues the conversation with the Designer or PM — keep notification active.
+        console.log(`[ROUTER] branch=arch-upstream-continuation target=${archNotifTarget} msg="${userMessage.slice(0, 80)}"`)
+        let updatedRecommendations = ""
+        await withThinking({ client, channelId, threadTs, agent: archNotifAgentLabel, run: async (update) => {
+          const capturingUpdate = async (text: string) => { updatedRecommendations = text; await update(text) }
+          if (archNotifTarget === "design") {
+            await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages: [], client, update: capturingUpdate })
+          } else {
+            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate })
+          }
+        }})
+        setEscalationNotification(featureName, { ...archEscalationNotification, recommendations: updatedRecommendations || archEscalationNotification.recommendations })
+        return
+      }
+
+      // Standalone confirmation — resume architect with injected revision.
+      console.log(`[ROUTER] branch=arch-upstream-revision-reply target=${archNotifTarget}`)
       clearEscalationNotification(featureName)
-      const respondingRole = archEscalationNotification.targetAgent === "design" ? "Designer" : "PM"
+      const respondingRole = archNotifTarget === "design" ? "Designer" : "PM"
       const injectedMessage = `${respondingRole} resolved the upstream constraint: "${archEscalationNotification.question}" → "${userMessage}". The upstream spec has been revised. Resume engineering spec development with this revision applied — update the affected sections and continue.`
       await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
         await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages: [], client, update })
