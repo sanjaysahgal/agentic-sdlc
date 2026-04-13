@@ -28,8 +28,21 @@ export type ToolHandler = (
 // Callers can inspect this after the call to detect unsaved decisions.
 export type ToolCallRecord = { name: string; input: Record<string, unknown> }
 
+// Splits a system prompt string at a known stable/dynamic boundary for prompt caching.
+// Block 1 (stable, cached): persona, workflow, tools, spec format — never changes for a given workspace.
+// Block 2 (dynamic, uncached): currentDraft, approvedSpecs — changes as the spec evolves.
+// If marker is not found, falls back to single cached block (safe but not optimal).
+export function splitSystemPrompt(prompt: string, dynamicMarker: string): Anthropic.TextBlockParam[] {
+  const idx = prompt.indexOf(dynamicMarker)
+  if (idx === -1) return [{ type: "text", text: prompt, cache_control: { type: "ephemeral" } }]
+  return [
+    { type: "text", text: prompt.slice(0, idx), cache_control: { type: "ephemeral" } },
+    { type: "text", text: prompt.slice(idx) },
+  ]
+}
+
 export async function runAgent(params: {
-  systemPrompt: string
+  systemPrompt: string | Anthropic.TextBlockParam[]
   history: Message[]
   userMessage: string
   userImages?: UserImage[]
@@ -39,6 +52,10 @@ export async function runAgent(params: {
   toolCallsOut?: ToolCallRecord[]  // Optional output — caller passes [] to collect records
 }): Promise<string> {
   const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT, tools, toolHandler, toolCallsOut } = params
+
+  const systemBlocks: Anthropic.TextBlockParam[] = Array.isArray(systemPrompt)
+    ? systemPrompt
+    : [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
 
   const userContent: Anthropic.ContentBlockParam[] | string =
     userImages && userImages.length > 0
@@ -87,7 +104,7 @@ export async function runAgent(params: {
     const requestParams: Anthropic.MessageCreateParamsNonStreaming = {
       model: AGENT_MODEL,
       max_tokens: 64000,
-      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      system: systemBlocks,
       messages,
       ...(tools && tools.length > 0 ? { tools } : {}),
     }

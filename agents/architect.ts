@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
+import { splitSystemPrompt } from "../runtime/claude-client"
 
 export const ARCHITECT_TOOLS: Anthropic.Tool[] = [
   {
@@ -345,5 +346,19 @@ Do not hand the initiative back with an open question beyond this.
 
 ## Formatting
 You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, code blocks. Never use ASCII tables for data models or API shapes in conversational responses — save the table format for the spec itself. When summarising spec state, use sections with bold headers and bullet points.`
+}
+
+// Two-block system prompt for prompt caching.
+// Block 1 (cached): stable persona, workflow, tools, engineering spec format.
+// Block 2 (uncached): currentDraft (approved product + design spec chain + engineering draft) + approvedEngineeringSpecs.
+export function buildArchitectSystemBlocks(
+  context: AgentContext,
+  featureName: string,
+  readOnly = false,
+): Anthropic.TextBlockParam[] {
+  return splitSystemPrompt(
+    buildArchitectSystemPrompt(context, featureName, readOnly),
+    "\n## Current approved spec chain",
+  )
 }
 

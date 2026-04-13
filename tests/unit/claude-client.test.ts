@@ -9,7 +9,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 import Anthropic from "@anthropic-ai/sdk"
-import { runAgent } from "../../runtime/claude-client"
+import { runAgent, splitSystemPrompt } from "../../runtime/claude-client"
 import type { Message } from "../../runtime/conversation-store"
 
 beforeEach(() => {
@@ -172,6 +172,48 @@ describe("runAgent", () => {
     expect(contents).not.toContain("msg 19")
     expect(contents).toContain("msg 20")
     expect(contents).toContain("latest")
+  })
+})
+
+// ─── splitSystemPrompt ─────────────────────────────────────────────────────────
+
+describe("splitSystemPrompt", () => {
+  it("splits at marker — stable block gets cache_control, dynamic block does not", () => {
+    const prompt = "You are an agent.\n\n## Current draft spec\nDraft content here."
+    const blocks = splitSystemPrompt(prompt, "\n\n## Current draft spec")
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toEqual({
+      type: "text",
+      text: "You are an agent.",
+      cache_control: { type: "ephemeral" },
+    })
+    expect(blocks[1]).toEqual({
+      type: "text",
+      text: "\n\n## Current draft spec\nDraft content here.",
+    })
+    expect(blocks[1]).not.toHaveProperty("cache_control")
+  })
+
+  it("falls back to single cached block when marker is not found", () => {
+    const prompt = "You are an agent. No dynamic section here."
+    const blocks = splitSystemPrompt(prompt, "\n\n## Current draft spec")
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toEqual({
+      type: "text",
+      text: prompt,
+      cache_control: { type: "ephemeral" },
+    })
+  })
+
+  it("stable block contains text before marker, dynamic block contains text from marker onward", () => {
+    const stable = "Stable persona and tools section."
+    const dynamic = "\n## Current approved spec chain\nApproved product spec goes here."
+    const blocks = splitSystemPrompt(stable + dynamic, "\n## Current approved spec chain")
+
+    expect(blocks[0].text).toBe(stable)
+    expect(blocks[1].text).toBe(dynamic)
   })
 })
 

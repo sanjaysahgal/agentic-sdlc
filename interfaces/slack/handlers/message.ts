@@ -1,9 +1,9 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
 import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getEscalationNotification, setEscalationNotification, clearEscalationNotification, Message } from "../../../runtime/conversation-store"
-import { buildPmSystemPrompt, PM_TOOLS } from "../../../agents/pm"
-import { buildDesignSystemPrompt, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
-import { buildArchitectSystemPrompt, ARCHITECT_TOOLS } from "../../../agents/architect"
+import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
+import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
+import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile, preseedEngineeringSpec } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
@@ -699,7 +699,7 @@ async function runPmAgent(params: {
     }
   }
 
-  const systemPrompt = buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext)
+  const systemPrompt = buildPmSystemBlocks(context, featureName, readOnly, approvedSpecContext)
 
   await update("_Product Manager is thinking..._")
 
@@ -1172,7 +1172,7 @@ async function runDesignAgent(params: {
   }
 
   const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice
-  const systemPrompt = buildDesignSystemPrompt(context, featureName, readOnly)
+  const systemPrompt = buildDesignSystemBlocks(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
 
@@ -1802,7 +1802,7 @@ async function runArchitectAgent(params: {
   }
 
   const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch + archReadinessNotice
-  const systemPrompt = buildArchitectSystemPrompt(context, featureName, readOnly)
+  const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
 

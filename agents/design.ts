@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig, WorkspaceConfig } from "../runtime/workspace-config"
 import { BrandDrift, AnimationDrift } from "../runtime/brand-auditor"
+import { splitSystemPrompt } from "../runtime/claude-client"
 
 // Builds the UX Design agent system prompt from the loaded context.
 // The design agent's job: shape the approved product spec into a structured
@@ -639,4 +640,19 @@ export function buildDesignStateResponse(params: {
   }
 
   return lines.join("\n")
+}
+
+// Two-block system prompt for prompt caching.
+// Block 1 (cached): stable persona, workflow, tools, design system format.
+// Block 2 (uncached): currentDraft (approved product spec + design draft) + approvedDesignSpecs.
+export function buildDesignSystemBlocks(
+  context: AgentContext,
+  featureName: string,
+  readOnly = false,
+  configOverride?: WorkspaceConfig,
+): Anthropic.TextBlockParam[] {
+  return splitSystemPrompt(
+    buildDesignSystemPrompt(context, featureName, readOnly, configOverride),
+    "\n## Current approved spec chain",
+  )
 }

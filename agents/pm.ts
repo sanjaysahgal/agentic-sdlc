@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
+import { splitSystemPrompt } from "../runtime/claude-client"
 
 export const PM_TOOLS: Anthropic.Tool[] = [
   {
@@ -294,5 +295,21 @@ When something goes wrong or you cannot deliver what was asked: own it, move on,
 3. Close with a single pick question referencing the numbers: "Which do you want — 1, 2, or 3?"
 
 Never present options without numbering them. The human's answer ("2" or "Option 3") is unambiguous — that is the point.`
+}
+
+// Two-block system prompt for prompt caching.
+// Block 1 (cached): stable persona, workflow, tools, spec format — never changes between turns.
+// Block 2 (uncached): currentDraft + approvedFeatureSpecs — changes on every spec save.
+// Reduces cache-write tokens by ~80% vs caching the entire prompt as one block.
+export function buildPmSystemBlocks(
+  context: AgentContext,
+  featureName: string,
+  readOnly = false,
+  approvedSpecContext = false,
+): Anthropic.TextBlockParam[] {
+  return splitSystemPrompt(
+    buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext),
+    "\n## Current draft spec",
+  )
 }
 

@@ -5001,3 +5001,48 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     expect(notification!.recommendations).toContain("My recommendation")
   })
 })
+
+// ─── Scenario N39: prompt caching — system prompt passed as TextBlockParam[] ──────────────────
+
+describe("Scenario N39 — agent system prompts are passed as TextBlockParam[] arrays for prompt caching", () => {
+  const THREAD = "workflow-n39"
+
+  beforeEach(() => {
+    clearHistory("n39feature")
+    setConfirmedAgent("n39feature", "ux-design")
+  })
+
+  it("design agent Anthropic call receives system as TextBlockParam[] — at least one block has cache_control", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    // With confirmedAgent already set, classifyMessageScope is skipped — first call IS the design agent
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Let's design the feature." }],
+      })
+
+    const params = makeParams(THREAD, "feature-n39feature", "Let's start designing")
+    await handleFeatureChannelMessage(params)
+
+    // The design agent call is the one where system is a TextBlockParam[] array.
+    // isOffTopicForAgent and isSpecStateQuery call client.messages.create directly with string
+    // system fields; identifyUncommittedDecisions sends no system field at all. Only the design
+    // agent (via runAgent → buildDesignSystemBlocks) passes system as an array.
+    const allCalls = mockAnthropicCreate.mock.calls
+    const designCall = allCalls.find((c: any) => Array.isArray(c[0].system))
+    expect(designCall).toBeDefined()
+
+    const system = designCall![0].system as Array<{ type: string; text: string; cache_control?: unknown }>
+
+    for (const block of system) {
+      expect(block.type).toBe("text")
+      expect(typeof block.text).toBe("string")
+    }
+
+    // Stable block carries cache_control — at least one block must have it
+    const cachedBlocks = system.filter(b => b.cache_control)
+    expect(cachedBlocks.length).toBeGreaterThanOrEqual(1)
+  })
+})
