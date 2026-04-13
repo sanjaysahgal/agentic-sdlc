@@ -228,7 +228,23 @@ export async function handleFeatureChannelMessage(params: {
   const { channelName, threadTs, userMessage, userImages, channelId, client, channelState, userId } = params
   const featureName = getFeatureName(channelName)
 
-  const confirmedAgent = getConfirmedAgent(featureName)
+  let confirmedAgent = getConfirmedAgent(featureName)
+
+  // Recovery: server restart clears in-memory confirmedAgent but pendingEscalation survives
+  // in .conversation-state.json. If the user is affirming and a pending escalation exists,
+  // restore confirmedAgent from the escalation's origin so the escalation-confirmation branch
+  // runs correctly without requiring a new message from the user.
+  if (!confirmedAgent && isAffirmative(userMessage) && getPendingEscalation(featureName)) {
+    const recovered = getPendingEscalation(featureName)!
+    // Infer originating agent from the escalation target:
+    // design→PM or design→architect: targetAgent is "pm" or "architect"
+    // architect→design: targetAgent is "design"
+    const recoveredAgent: string = recovered.targetAgent === "design" ? "architect" : "ux-design"
+    confirmedAgent = recoveredAgent
+    setConfirmedAgent(featureName, recoveredAgent)
+    console.log(`[ROUTER] escalation-state-recovered: restored confirmedAgent=${recoveredAgent} from persisted pendingEscalation targetAgent=${recovered.targetAgent} for feature=${featureName}`)
+  }
+
   console.log(`[ROUTER] handleFeatureChannelMessage: feature=${featureName} confirmedAgent=${confirmedAgent ?? "(none)"} msg="${userMessage.slice(0, 100)}"`)
 
   // Confirmed agent — check phase first, then run

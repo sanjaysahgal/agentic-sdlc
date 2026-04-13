@@ -4859,3 +4859,70 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(4) // classifyScope×2 + PM agent×2
   })
 })
+
+// ─── Scenario N37: Server-restart escalation recovery ──────────────────────────────────────────
+//
+// confirmedAgent is cleared by a server restart (in-memory wipe), but pendingEscalation
+// survives in .conversation-state.json. When the user says "yes" in the next message,
+// the router recovers the confirmed agent from the pending escalation and routes to the
+// escalation-confirmation path — NOT to the design agent.
+
+describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscalation survives; yes routes to PM escalation", () => {
+  const THREAD = "workflow-n37"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    // Simulate restart: confirmed agent is ABSENT (not in store)
+    // but pendingEscalation was loaded from .conversation-state.json
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "1. Replace 'ambient awareness only' with a concrete measurable requirement.\n2. Specify the exact text the logged-out indicator should display.",
+      designContext: "",
+    })
+    // confirmedAgent is intentionally NOT set (simulates post-restart state)
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clrEsc("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("yes routes to PM escalation (not design agent) when confirmedAgent is absent but pendingEscalation exists", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    // PM agent runs with the brief
+    const PM_RECOMMENDATIONS = "1. My recommendation: The logged-out indicator must be static — no animation, no expand, no popovers, no sign-up prompts.\n→ Rationale: Ambient awareness means presence without demand.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: Display 'Not signed in — your session will not be saved'.\n→ Rationale: Makes implications of logged-out state explicit.\n→ Note: Pending human PM confirmation before engineering handoff"
+
+    // The router recovers confirmedAgent="ux-design" from pendingEscalation, then runs PM escalation.
+    // PM escalation path calls: classifyMessageScope (1 call) + PM agent run (1 call).
+    // Brief has 2 items and PM returns 2 recommendations → no enforcement re-run.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: PM_RECOMMENDATIONS }],
+      })                                                                                  // PM agent run
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // pendingEscalation must be cleared
+    const { getPendingEscalation, getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // escalationNotification must be set (PM was @mentioned)
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+    expect(notification!.targetAgent).toBe("pm")
+    expect(notification!.recommendations).toContain("My recommendation")
+
+    // PM @mention must have been posted
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const mentionCall = postCalls.find((c: any) =>
+      c[0]?.text?.includes("*Product Manager*") || c[0]?.text?.includes("PM") || c[0]?.text?.includes("recommendations")
+    )
+    expect(mentionCall).toBeDefined()
+  })
+})
