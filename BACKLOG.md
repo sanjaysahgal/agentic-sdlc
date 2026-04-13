@@ -67,6 +67,23 @@ Also extended PM_RUBRIC criterion 2 vague word list: added "soft", "non-intrusiv
 
 ---
 
+### Escalation UX — agent-triggered offer_pm_escalation path: assertive language + action menu suppression (2026-04-13)
+
+The pre-run structural gate (line 1159 in `message.ts`) already produces assertive escalation language and suppresses the action menu via early return. However, the *agent-triggered* path — when the design agent calls `offer_pm_escalation` itself (no blocking questions in the spec draft) — still has two issues:
+
+1. **Passive escalation prose** — agent may ask a wishy-washy question ("Want me to call the PM now?") instead of asserting the block with a numbered gap list + "Say *yes* and I'll bring the PM in."
+2. **Action menu still shown** — when escalation is offered this turn (null → set), the 20-item design action menu is appended below the escalation message.
+
+**Fix (when this path surfaces in testing):**
+- Fix 1: Strengthen `offer_pm_escalation` instruction in `agents/design.ts` — assert block, numbered gaps, "say *yes*" CTA.
+- Fix 2: Snapshot `getPendingEscalation` before/after agent run; if null → set this turn, skip `buildActionMenu`. Also: early return with escalation reminder when escalation pending + user not affirmative.
+
+**Deferred because:** The pre-run gate covers the primary production path (blocking questions already in spec draft). Agent-triggered path only fires when gaps surface mid-conversation without being in the spec yet — less common. Pre-run gate validated end-to-end in production on 2026-04-13.
+
+**Impact:** Medium — UX inconsistency between gate-triggered and agent-triggered escalation paths. No data loss, no broken flows.
+
+---
+
 ### Design agent bundles visual sub-questions inside PM escalation items (2026-04-12)
 
 When the design agent formulates `offer_pm_escalation` questions, it bundles visual/UX sub-questions inside what is otherwise a PM-scope question. Example: "Define the visual placement, persistence behavior, and dismissibility of the indicator — is it a nav bar label, banner, or badge?" mixes two PM decisions (persistence, dismissibility) with a design decision (which UI component). The Gate 2 three-way classifier correctly classifies the item as GAP: (PM-scope wins), but the PM brief now includes the visual sub-question that the PM shouldn't be answering.
