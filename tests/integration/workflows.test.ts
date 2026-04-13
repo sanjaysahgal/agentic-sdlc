@@ -5118,3 +5118,70 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
     expect(text).toContain("Let's continue the design.")
   })
 })
+
+// ─── Scenario N41: per-feature in-flight lock ─────────────────────────────────
+//
+// When an agent run is already active for a feature (PM takes 10s+), a second
+// message arriving before the first completes should be rejected immediately with
+// a "Still working" message — not start a second parallel agent run.
+//
+// This prevents the Slack double-fire bug where both PM and UX Designer respond
+// to the same message when a Slack retry arrives during a slow PM agent run.
+
+describe("Scenario N41 — per-feature in-flight lock rejects concurrent messages", () => {
+  const THREAD = "workflow-n41"
+
+  beforeEach(() => {
+    clearHistory("n41feature")
+    // Pre-set confirmed agent to PM so we skip classifyIntent on the first message.
+    // This makes the mock sequence deterministic: classifyMessageScope (1) + PM agent (2, blocks).
+    setConfirmedAgent("n41feature", "pm")
+  })
+
+  afterEach(() => {
+    clearHistory("n41feature")
+  })
+
+  it("second message for same feature while first is in-flight gets 'Still working' reply, no agent call", async () => {
+    // First call mock sequence (confirmed-pm branch → runPmAgent):
+    //   [0] classifyMessageScope → "feature-specific"
+    //   [1] PM main agent        → blocks until resolveFirst() is called
+    // Second call must be rejected by the lock before making any API calls.
+    let resolveFirst!: () => void
+    const firstCallBlock = new Promise<void>((res) => { resolveFirst = res })
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // classifyMessageScope
+      .mockImplementationOnce(async () => {
+        await firstCallBlock // Block until second message has been processed
+        return { content: [{ type: "text", text: "Here is the spec." }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } }
+      })
+
+    const params1 = makeParams(THREAD, "feature-n41feature", "tell me about the spec")
+    const params2 = makeParams(THREAD, "feature-n41feature", "another message while first runs")
+
+    // Start first message — acquires lock synchronously, then blocks on PM agent call
+    const firstRun = handleFeatureChannelMessage(params1)
+
+    // Yield to the event loop so params1 can acquire the lock and reach its first await
+    await new Promise<void>((res) => setTimeout(res, 10))
+
+    // Fire second message while first is still in-flight — should be rejected by lock
+    await handleFeatureChannelMessage(params2)
+
+    // Unblock first call and wait for it to complete
+    resolveFirst()
+    await firstRun
+
+    // params2 should have received "Still working" via postMessage (not update)
+    const postMessageCalls = (params2.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const stillWorkingCall = postMessageCalls.find((c: any[]) =>
+      typeof c[0]?.text === "string" && c[0].text.includes("Still working")
+    )
+    expect(stillWorkingCall).toBeDefined()
+
+    // Only 2 API calls total: classifyMessageScope + PM agent (both for params1).
+    // params2 made zero — lock prevented it from reaching any agent call.
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+  })
+})

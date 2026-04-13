@@ -24,6 +24,11 @@ const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 // Prevents spamming the user on every message after the history limit is reached.
 const summarizationWarnedFeatures = new Set<string>()
 
+// Per-feature in-flight lock — prevents concurrent agent runs for the same feature.
+// When a Slack event arrives while an agent run is still processing (PM agents take 10s+),
+// the second invocation is rejected immediately rather than running a second agent in parallel.
+const featureInFlight = new Map<string, boolean>()
+
 // Content-addressed cache for phase entry upstream spec audits.
 // Key: `${agentType}:${featureName}:${specFingerprint}` — invalidates automatically when upstream spec content changes.
 // Value: formatted PLATFORM NOTICE string (empty string = no issues found).
@@ -227,6 +232,21 @@ export async function handleFeatureChannelMessage(params: {
 }): Promise<void> {
   const { channelName, threadTs, userMessage, userImages, channelId, client, channelState, userId } = params
   const featureName = getFeatureName(channelName)
+
+  // In-flight lock: reject concurrent messages for the same feature.
+  // PM agent runs take 10s+; without this, a Slack retry or rapid follow-up triggers a second
+  // agent run while the first is still active, causing both PM and Design to respond in parallel.
+  if (featureInFlight.get(featureName)) {
+    await client.chat.postMessage({
+      channel: channelId,
+      thread_ts: threadTs,
+      text: "_Still working on your last message — I'll be with you shortly._",
+    })
+    return
+  }
+  featureInFlight.set(featureName, true)
+
+  try {
 
   let confirmedAgent = getConfirmedAgent(featureName)
 
@@ -644,6 +664,10 @@ ${archPendingEscalation.question}`
 
     await update(`${routingNote}\n\nThe *${suggestedAgent} agent* is coming soon. The Product Manager is active right now.`)
   }})
+
+  } finally {
+    featureInFlight.delete(featureName)
+  }
 }
 
 async function runPmAgent(params: {

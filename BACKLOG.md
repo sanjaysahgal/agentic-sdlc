@@ -148,6 +148,36 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 
 ---
 
+~~### Per-feature in-flight lock — concurrent Slack messages cause double-fire (PM + UX Designer respond to same message)~~ ✅ Done (2026-04-13)
+
+Root cause: PM agent runs take 10s+. When a Slack retry or rapid follow-up arrived while the first run was still active, both invocations processed concurrently — PM agent ran for the first, design agent ran for the second, both posting responses to the same thread.
+
+**Fix:** Module-level `featureInFlight = new Map<string, boolean>()` in `message.ts`. Set synchronously before the first `await`; cleared in `finally` block. Second invocation checks the lock and immediately posts "_Still working on your last message — I'll be with you shortly._" via `chat.postMessage` and returns — no agent call made. N41 integration test covers (blocking mock on PM agent, second message confirmed as rejected).
+
+---
+
+~~### Escalation auto-close when PM saves spec in continuation path — "agree to both" routing bug~~ ✅ Done (2026-04-13)
+
+Root cause: `isAffirmative()` keyword list did not include "agree" → "agree to both your recommendations" returned false → code took the continuation path → PM ran again via tool, saved spec, but `clearEscalationNotification` was never called → all subsequent messages routed to PM indefinitely.
+
+**Fix (Principle 8 — structural detection):** After `runPmAgent` in the continuation path, inspect `toolCallsOut` for any spec-save tool (`save_product_spec_draft`, `apply_product_spec_patch`, `finalize_product_spec`). A save call is a deterministic signal the escalation is resolved — `clearEscalationNotification` fires and design resumes with an injected brief, regardless of how the human phrased their message. N40 integration test covers.
+
+Also added `toolCallsOut` parameter to `runPmAgent` so the continuation path can collect tool calls from inside the PM run without changing the return type.
+
+---
+
+~~### PM agent editorializing about phase transitions — "Are we ready to hand this to design?"~~ ✅ Done (2026-04-13)
+
+PM agent was saying "These don't block engineering. They block design handoff." (contradicting context it doesn't have) and asking "Are we ready to hand this to design?" (design is already active — the platform resumes it). Fixed via system prompt addition: when called to answer a design team escalation, the PM agent's role is narrow — answer, save, confirm, stop. Explicit prohibition against offering to "hand off to design" or "flag anything else."
+
+---
+
+~~### Prompt caching — system prompt split into stable/dynamic blocks~~ ✅ Done (2026-04-13)
+
+`splitSystemPrompt(prompt, dynamicMarker)` added to `runtime/claude-client.ts`. Splits the system prompt at the first occurrence of `dynamicMarker` — stable block (persona, tools, rules) gets `cache_control: { type: "ephemeral" }`, dynamic block (currentDraft, approvedSpecs) is uncached. `runAgent` accepts `string | TextBlockParam[]` for backward compatibility. All three agents (`buildPmSystemBlocks`, `buildDesignSystemBlocks`, `buildArchitectSystemBlocks`) call `splitSystemPrompt` at their respective markers. ~80% fewer cache-write tokens per agent call when spec context changes. N39 integration test and 3 unit tests in `claude-client.test.ts` cover.
+
+---
+
 ~~### Spec writeback appends PM decisions alongside vague criteria — design agent re-escalates same gaps~~ ✅ Done (2026-04-12)
 
 Root cause of the "stuck in escalation loop": `patchProductSpecWithRecommendations` Haiku prompt instructed Haiku to "add confirmed decisions to the spec" — Haiku added them as new entries but left the original vague criteria ("soft, non-intrusive", "ambient awareness") in `## Acceptance Criteria`. Design rubric criterion 10 re-fired on the original vague language every run.
