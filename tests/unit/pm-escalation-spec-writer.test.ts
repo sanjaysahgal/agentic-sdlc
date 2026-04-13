@@ -262,6 +262,18 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
     expect(systemPrompt.toLowerCase()).toMatch(/all.*criteria|complete.*section|all existing/)
   })
 
+  it("system prompt instructs Haiku to scan entire spec for remaining vague language beyond current escalation questions", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Hygiene pass must scan the whole spec — not just the areas addressed by current PM recommendations
+    expect(systemPrompt.toLowerCase()).toMatch(/hygiene|scan.*entire|scan.*whole|scan.*spec/)
+    // Must leave unchanged anything the PM never addressed — no invented decisions
+    expect(systemPrompt.toLowerCase()).toMatch(/cannot be inferred|never addressed|leave.*unchanged|do not invent/)
+  })
+
   it("uses claude-haiku-4-5-20251001 — fast focused patch generation, not Sonnet", async () => {
     await patchProductSpecWithRecommendations({
       featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,

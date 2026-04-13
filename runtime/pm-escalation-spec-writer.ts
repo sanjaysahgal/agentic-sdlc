@@ -50,10 +50,13 @@ RULES — follow exactly:
    - Product decisions (UX behavior, what the user experiences, when things fire) → ## Acceptance Criteria
    - Error experiences and failure modes → ## Edge Cases
 
-6. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
+6. HYGIENE PASS — scan the entire spec for any remaining vague language beyond what the current PM recommendations directly address.
+   After applying rules 1–5, scan every criterion in ## Acceptance Criteria and ## Edge Cases for the vague words listed in Rule 1. If a criterion contains vague language AND the correct concrete meaning can be inferred from PM decisions already present in the spec (either from this writeback or from prior confirmed decisions visible in the existing spec), replace it. If the meaning cannot be inferred — the PM never addressed it — leave it unchanged for the next escalation. Do not invent decisions the PM has not made.
+
+7. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
     messages: [{
       role: "user",
-      content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions and visual/technical details stripped.`,
+      content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions, visual/technical details stripped, and any remaining vague language in the spec resolved where the PM's intent is already clear.`,
     }],
   })
 
