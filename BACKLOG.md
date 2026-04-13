@@ -59,13 +59,11 @@ Root cause was deeper than the regex: `DEFERRAL_PATTERN` detected bad output pat
 
 ---
 
-### Design agent strips implementation sub-questions from offer_pm_escalation (2026-04-12)
+~~### Gate 2 three-way classifier — DESIGN: items returned to designer, not escalated to PM (2026-04-12)~~ ✅ Done (2026-04-12)
 
-When the design agent formulates its `offer_pm_escalation` question, it sometimes bundles design/implementation details into what should be a pure PM decision — e.g., asking the PM to specify "opacity level and screen position" of an indicator alongside "what must the indicator communicate." The PM owns the WHAT (label text, what information must be conveyed), not the HOW (opacity, position, animation).
+`classifyForPmGaps` now returns three categories: `gaps[]` (GAP: → PM scope), `architectItems[]` (ARCH: → engineering spec), and `designItems[]` (DESIGN: → returned to design agent for self-resolution). When Gate 2 receives only DESIGN: items (0 PM gaps), the `offer_pm_escalation` tool result includes the design items as a numbered list with "resolve these design decisions yourself: [list]" — no `pendingEscalation` set, no PM @mention. Visual/UX decisions (element type, placement, animation timing, visual treatment) stay with the designer. N36 integration test and consumer/producer tests in `pm-gap-classifier.test.ts` cover.
 
-**Fix:** Add an instruction to the design agent system prompt (or the `offer_pm_escalation` tool description) to strip any design/implementation sub-questions before escalating. The PM brief should contain only product-behavior decisions. The designer implements visual/delivery details without PM input.
-
-**Impact:** Low urgency — the PM answering visual details is noise, not a data loss. The spec writeback will still capture the product-behavior decisions correctly.
+Also extended PM_RUBRIC criterion 2 vague word list: added "soft", "non-intrusive", "proactively", "ambient", "seamlessly", "minimal", "appropriate", "subtle" — specs using these words in acceptance criteria are now flagged before approval.
 
 ---
 

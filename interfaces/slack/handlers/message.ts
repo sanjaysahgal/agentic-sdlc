@@ -1302,12 +1302,20 @@ async function runDesignAgent(params: {
           // Classifier found no PM-scope gaps — the agent escalated for design/brand/architecture
           // concerns that are not the PM's domain. Reject the tool call and redirect the agent.
           console.log(`[ESCALATION] Gate 2 classifier: 0 PM gaps — rejecting offer_pm_escalation, redirecting agent`)
-          // Still pre-seed any architect items before redirecting
+          // Pre-seed any architect items before redirecting
           if (classification.architectItems.length > 0) {
             const { paths } = loadWorkspaceConfig()
             const archFilePath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
             await preseedEngineeringSpec({ featureName, filePath: archFilePath, architectItems: classification.architectItems })
               .catch(err => console.log(`[GATE2] preseedEngineeringSpec failed (non-blocking): ${err}`))
+          }
+          // Design-scope items: return them to the agent for self-resolution (no PM or architect needed)
+          if (classification.designItems.length > 0) {
+            const designItemList = classification.designItems.map((d, i) => `${i + 1}. ${d}`).join("\n")
+            console.log(`[ESCALATION] Gate 2: ${classification.designItems.length} design-scope item(s) returned to agent for self-resolution`)
+            return {
+              result: `REJECTED: No PM-scope gaps found. The following items are visual/UX design decisions you own independently — resolve them yourself without escalating:\n\n${designItemList}\n\nFor architecture questions (schema, data model, technical mechanism), call offer_architect_escalation instead.`,
+            }
           }
           return {
             result: "REJECTED: No PM-scope gaps found in your question. These appear to be design, brand, or architecture concerns. Resolve brand token conflicts directly from BRAND.md (it is the authoritative source). For architecture questions, call offer_architect_escalation instead. Do not escalate to PM for hex values, animation durations, or implementation decisions.",

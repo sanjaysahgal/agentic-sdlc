@@ -4731,6 +4731,68 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
   })
 })
 
+// ─── Scenario N36: Gate 2 three-way classifier — DESIGN: items returned to designer ──────────
+//
+// When the design agent calls offer_pm_escalation with items that are all visual/UX decisions
+// (element type, placement, animation timing), the Gate 2 classifier returns DESIGN: lines
+// (0 PM gaps). The platform rejects the tool call and returns the design items back to the
+// agent with "resolve these design decisions yourself: [list]". No pendingEscalation is stored.
+// The designer owns these decisions and resolves them without PM or architect input.
+
+describe("Scenario N36 — DESIGN: items from Gate 2 classifier returned to agent, no PM escalation stored", () => {
+  const THREAD = "workflow-n36"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("DESIGN: items returned to agent as self-resolution list — no pendingEscalation set", async () => {
+    const designQuestion = [
+      "1. Should the session timer use a chip or an inline text element?",
+      "2. Where exactly does the session timer sit relative to the prompt bar — above, below, or overlaid?",
+      "3. What is the animation timing for the timer appearing: entry direction, duration (ms), and easing function?",
+    ].join("\n")
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent        → false
+    //   [1] isSpecStateQuery          → false
+    //   [2] runAgent (tool_use)       → offer_pm_escalation (all design-scope items)
+    //   [3] classifyForPmGaps         → 3 DESIGN: lines (0 GAP:, 0 ARCH:)
+    //   [4] runAgent (end_turn)       → agent resolves design items independently
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "offer_pm_escalation", input: { question: designQuestion } }],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "DESIGN: Whether the session timer uses a chip or inline text element.\nDESIGN: Vertical position of the session timer relative to the prompt bar.\nDESIGN: Animation timing for the session timer appearance (direction, duration, easing)." }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I've resolved these visual decisions: chip component for the timer, positioned above the prompt bar, sliding in from top over 200ms with ease-out." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what visual decisions do you need to lock down?")
+    await handleFeatureChannelMessage(params)
+
+    // No PM escalation stored — these were design decisions, not PM gaps
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // Agent's final response is present (it resolved independently)
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("resolved")
+  })
+})
+
 // ─── Scenario N35: Structural recommendation gate — partial answer triggers enforcement ──────
 //
 // Brief has 2 numbered items. PM agent responds with only 1 "My recommendation:" line.

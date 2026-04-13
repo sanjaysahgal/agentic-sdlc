@@ -128,6 +128,60 @@ describe("classifyForPmGaps — consumer tests (gate logic with mocked Haiku)", 
     expect(userContent).not.toContain("Approved Product Spec")
   })
 
+  it("extracts a single DESIGN: line into designItems", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "DESIGN: Exact element type for the guest session indicator (icon vs chip vs inline text)." }],
+    })
+
+    const result = await classifyForPmGaps({ agentResponse: "some agent prose" })
+
+    expect(result.designItems).toHaveLength(1)
+    expect(result.designItems[0]).toContain("indicator")
+    expect(result.gaps).toHaveLength(0)
+    expect(result.architectItems).toHaveLength(0)
+  })
+
+  it("extracts mixed GAP: and DESIGN: lines into separate arrays", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{
+        type: "text",
+        text: "GAP: Error experience for failed guest session claim is undefined.\nDESIGN: Placement of the session timer relative to the prompt bar.\nDESIGN: Animation timing for the session expiry warning (entry direction, duration, easing).",
+      }],
+    })
+
+    const result = await classifyForPmGaps({ agentResponse: "some prose" })
+
+    expect(result.gaps).toHaveLength(1)
+    expect(result.gaps[0]).toContain("Error experience")
+    expect(result.designItems).toHaveLength(2)
+    expect(result.designItems[0]).toContain("Placement")
+    expect(result.designItems[1]).toContain("Animation")
+    expect(result.architectItems).toHaveLength(0)
+  })
+
+  it("returns designItems when only DESIGN: lines present, gaps is empty", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "DESIGN: Where exactly the wordmark sits relative to the prompt bar.\nDESIGN: Whether the notification uses a glow or shadow effect." }],
+    })
+
+    const result = await classifyForPmGaps({ agentResponse: "some prose" })
+
+    expect(result.gaps).toHaveLength(0)
+    expect(result.designItems).toHaveLength(2)
+    expect(result.architectItems).toHaveLength(0)
+  })
+
+  it("skips a DESIGN: line with empty body after trimming", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "DESIGN:   \nDESIGN: Real design item." }],
+    })
+
+    const result = await classifyForPmGaps({ agentResponse: "some prose" })
+
+    expect(result.designItems).toHaveLength(1)
+    expect(result.designItems[0]).toBe("Real design item.")
+  })
+
   it("propagates API error — not swallowed, single call", async () => {
     mockCreate.mockRejectedValue(new Error("APITimeoutError: Request timed out"))
 
@@ -181,11 +235,13 @@ describe("classifyForPmGaps — producer tests (system prompt contains format in
     expect(systemPrompt.toLowerCase()).toMatch(/measurable|qualitative/i)
   })
 
-  it("system prompt explicitly excludes design decisions from PM-scope", async () => {
+  it("system prompt gives visual/UX decisions their own DESIGN: category — not routed to PM", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
     await classifyForPmGaps({ agentResponse: "some prose" })
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    expect(systemPrompt.toLowerCase()).toContain("design decision")
+    // Visual/UX decisions must be classified as DESIGN:, keeping them out of PM-scope GAP: output
+    expect(systemPrompt).toContain("DESIGN:")
+    expect(systemPrompt.toLowerCase()).toMatch(/visual|ux|element type|placement/)
   })
 
   it("system prompt names layout and visual styling as NOT PM-scope with concrete examples", async () => {
@@ -230,5 +286,38 @@ describe("classifyForPmGaps — producer tests (system prompt contains format in
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
     // GAP output framing: PM decision = user experience or product requirement
     expect(systemPrompt.toLowerCase()).toMatch(/user experience|product requirement/)
+  })
+
+  it("system prompt defines DESIGN: as the prefix for visual/UX decisions the designer owns", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("DESIGN:")
+  })
+
+  it("system prompt names element type, placement, and animation timing as design-scope examples", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // These concrete examples prevent the classifier from routing visual/UX questions to PM
+    expect(systemPrompt.toLowerCase()).toMatch(/element type|placement|timing/)
+    expect(systemPrompt.toLowerCase()).toMatch(/animation|duration|easing/)
+  })
+
+  it("system prompt distinguishes design-scope from architecture-scope — designer resolves design items independently", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Key distinction: designer owns these, no PM or architect input needed
+    expect(systemPrompt.toLowerCase()).toMatch(/designer.*independently|independently.*designer|resolves.*independently|independently.*resolv/)
+  })
+
+  it("system prompt instructs Haiku to output 'DESIGN: <sentence>' per design-scope item found", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain("DESIGN:")
+    // Must be in the output format instructions, not just as a category name
+    expect(systemPrompt).toMatch(/DESIGN:.*one sentence|output.*DESIGN:|DESIGN:.*visual/)
   })
 })

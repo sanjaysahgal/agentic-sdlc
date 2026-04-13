@@ -103,7 +103,7 @@ ${specContent}`,
 
 export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories has an explicit success path AND at least one error/edge path documented in ## Edge Cases or the story itself. A user story with no error path is incomplete.
 
-2. MEASURABLE ACCEPTANCE CRITERIA — Every criterion in ## Acceptance Criteria is specific and testable by an engineer. Criteria containing words like "fast", "smooth", "easy", "good", "improve", or any comparative without a baseline are not measurable and must be flagged. Each criterion must name a concrete, observable outcome.
+2. MEASURABLE ACCEPTANCE CRITERIA — Every criterion in ## Acceptance Criteria is specific and testable by an engineer. Criteria containing words like "fast", "smooth", "easy", "good", "improve", "soft", "non-intrusive", "proactively", "proactive", "ambient", "seamlessly", "seamless", "minimal", "appropriate", "subtle", or any comparative without a baseline are not measurable and must be flagged. Each criterion must name a concrete, observable outcome.
 
 3. NO OPEN QUESTIONS — The ## Open Questions section contains zero questions tagged [blocking: yes] that are unresolved. A spec with unresolved blocking questions cannot be approved — those questions must be answered first.
 
