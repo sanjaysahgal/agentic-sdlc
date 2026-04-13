@@ -68,6 +68,25 @@ Prompt rules are probabilistic. The model can ignore them, reinterpret them, or 
 - A system prompt instruction: "When you see X, call tool Y" — probabilistic
 - A notice injected into the user message: "For product gaps, call offer_pm_escalation" — probabilistic
 - A tool description: "Call this when Z occurs" — probabilistic
+- A regex that matches "bad" text in agent output — probabilistic (there are infinite ways to not comply)
+
+### 8a. Enforcement output contract rule (non-negotiable extension of Principle 8)
+
+**Before writing any code that re-runs an agent or overrides its response, state the output contract first.**
+
+An output contract is: *"Correct output contains [X]. The platform verifies [X] is present."*
+
+**Verify presence of required output. Never detect absence of good output by matching bad text.**
+
+| ❌ Wrong (text-pattern gate) | ✅ Right (structural gate) |
+|---|---|
+| `DEFERRAL_PATTERN.test(response)` | `countRecommendations(response) < requiredCount` |
+| `response.includes("I cannot")` | `response.match(/my recommendation:/gi).length >= n` |
+| Regex list of bad phrases | Count of required format markers |
+
+Text-pattern gates are always incomplete — there are infinite phrasings of non-compliance. A structural gate that verifies the required format is present catches everything: refusal, clarification-stall, partial answer, hallucination, tangent.
+
+**The gate question:** "What must be present in correct output, and can I count or parse it?" If the answer exists, implement the count/parse check. A regex against output content is a code smell for this pattern.
 
 **Delivery requirement:** When any change touches `agents/*.ts`, the self-rating must explicitly enumerate:
 - Which behaviors are platform-enforced (structural) and where the enforcement code lives
@@ -79,6 +98,7 @@ A prompt-dependent behavior with no justification is a delivery gap, same as a m
 - Escalation trigger: was a prompt instruction ("call offer_pm_escalation when you see product gaps"), now a platform gate in `runDesignAgent` that auto-triggers when `[type: product]` findings exist and `getPendingEscalation` is null
 - Brand drift: was a prompt instruction, now `auditBrandTokens()` runs deterministically on every response
 - Finalization gate: was a prompt instruction ("don't approve if questions remain"), now `extractBlockingQuestions()` hard-blocks the `finalize_*` tool handler
+- PM escalation brief enforcement: was `DEFERRAL_PATTERN` regex against agent response text, now `countRecommendations(response) < countBriefItems(question)` structural count gate
 
 ### 7. Zero human errors of omission — the specialist always surfaces violations proactively
 
