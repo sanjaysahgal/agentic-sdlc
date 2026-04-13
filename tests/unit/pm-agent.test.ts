@@ -133,3 +133,33 @@ describe("buildPmSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("more than 3 sections")
   })
 })
+
+describe("buildPmSystemPrompt — escalation-context role scope", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const ctx: AgentContext = { ...baseContext, currentDraft: "## Problem\nTest." }
+
+  it("prohibits 'are we ready to hand this to design' phase-transition editorializing", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt).toContain("do not ask")
+    expect(prompt.toLowerCase()).toContain("phase transition")
+  })
+
+  it("instructs PM to stop after confirming decisions — not offer to flag more things", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt).toContain("Stop")
+    expect(prompt.toLowerCase()).toContain("escalation")
+  })
+
+  it("does not own design-phase next steps — platform handles resumption", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt).toContain("platform")
+    // Verify the escalation-context section is present
+    expect(prompt).toContain("When called to answer a design team escalation")
+  })
+})

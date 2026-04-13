@@ -5046,3 +5046,75 @@ describe("Scenario N39 — agent system prompts are passed as TextBlockParam[] a
     expect(cachedBlocks.length).toBeGreaterThanOrEqual(1)
   })
 })
+
+// ─── Scenario N40: escalation-continuation auto-close when PM saves spec ─────────────────────
+//
+// Root cause of 2026-04-13 production incident: "agree to both your recommendations" is not in
+// isAffirmative's keyword list → isStandaloneConfirmation returns false → continuation path →
+// PM runs again but escalationNotification is never cleared → every subsequent message routes to PM.
+//
+// Fix: after runPmAgent in the continuation path, check toolCallsOut for any spec-save tool.
+// A save tool call is a deterministic signal the escalation is resolved — clear the notification
+// and resume design regardless of how the human phrased their message.
+
+describe("Scenario N40 — PM saves spec in continuation path → escalation auto-closed, design resumes", () => {
+  const THREAD = "workflow-n40"
+
+  beforeEach(async () => {
+    clearHistory("n40feature")
+    setConfirmedAgent("n40feature", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("n40feature", {
+      targetAgent: "pm",
+      question: "1. What is the exact copy for the logged-out indicator?",
+      recommendations: "1. My recommendation: Use 'Not signed in'.\n→ Rationale: Standard phrasing.",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("n40feature")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("n40feature")
+  })
+
+  it("non-affirmative message that causes PM to save spec → escalation cleared, design agent runs", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    // auditSpecDraft early-returns { status: "ok" } when productVision + systemArchitecture are empty
+    // (both 404 from GitHub in this test) — so it makes NO Anthropic call in the tool handler.
+    // Mock sequence (continuation path: PM runs, saves spec, design resumes):
+    //   [0] classifyMessageScope      → "feature-specific" (runPmAgent calls this before main agent)
+    //   [1] PM: stop_reason=tool_use  → save_product_spec_draft (auditSpecDraft skipped — no context)
+    //   [2] PM: stop_reason=end_turn  → "Done. Spec updated." (tool result fed back)
+    //   auto-close fires → design agent path:
+    //   [3] isOffTopicForAgent        → false
+    //   [4] isSpecStateQuery          → false
+    //   [5] design agent              → "Let's continue the design."
+    //   default: NONE for all remaining (identifyUncommittedDecisions etc.)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_1", name: "save_product_spec_draft", input: { content: "## Problem\nLocked decision." } }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      })
+      // PM end_turn after tool result
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Done. Spec updated." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      // design agent path
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's continue the design." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // design agent
+
+    // "agree to both" is NOT in isAffirmative — triggers continuation path, not standalone confirmation
+    const params = makeParams(THREAD, "feature-n40feature", "agree to both your recommendations")
+    await handleFeatureChannelMessage(params)
+
+    // Escalation notification must be cleared — not stuck in PM loop
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("n40feature")).toBeNull()
+
+    // Design agent must have been called — verified by checking the last update text
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Let's continue the design.")
+  })
+})

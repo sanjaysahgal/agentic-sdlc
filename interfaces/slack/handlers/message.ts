@@ -381,14 +381,31 @@ ${brief}`
         // Human is continuing the conversation with the escalated agent — route back, keep notification.
         console.log(`[ROUTER] branch=escalation-continuation targetAgent=${escalationNotification.targetAgent} msg="${userMessage.slice(0, 80)}"`)
         let updatedRecommendations = ""
+        const continuationToolCalls: ToolCallRecord[] = []
         await withThinking({ client, channelId, threadTs, agent: notifAgentLabel, run: async (update) => {
           const capturingUpdate = async (text: string) => { updatedRecommendations = text; await update(text) }
           if (isArchitectEscalation) {
             await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update: capturingUpdate })
           } else {
-            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate })
+            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate, toolCallsOut: continuationToolCalls })
           }
         }})
+
+        // Platform enforcement: if the PM saved the spec this turn, the escalation is structurally
+        // resolved regardless of how the human phrased their message ("agree", "looks good", etc.).
+        // A spec save is a deterministic signal — clear the notification and resume design.
+        const PM_SAVE_TOOLS = ["save_product_spec_draft", "apply_product_spec_patch", "finalize_product_spec"]
+        const pmDidSave = !isArchitectEscalation && continuationToolCalls.some(t => PM_SAVE_TOOLS.includes(t.name))
+        if (pmDidSave) {
+          console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn, escalation resolved`)
+          clearEscalationNotification(featureName)
+          const injectedMessage = `PM answered the blocking question and updated the product spec. The PM gap is now closed. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
+          await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
+            await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
+          }})
+          return
+        }
+
         // Update stored recommendations so spec writeback captures the latest response on confirmation
         setEscalationNotification(featureName, { ...escalationNotification, recommendations: updatedRecommendations || escalationNotification.recommendations })
         return
@@ -640,8 +657,9 @@ async function runPmAgent(params: {
   routingNote?: string
   readOnly?: boolean
   approvedSpecContext?: boolean
+  toolCallsOut?: ToolCallRecord[]  // Optional: caller passes [] to collect tool calls (e.g. to detect spec saves)
 }): Promise<void> {
-  const { channelName, channelId, threadTs, userMessage, userImages, client, update, routingNote, readOnly, approvedSpecContext } = params
+  const { channelName, channelId, threadTs, userMessage, userImages, client, update, routingNote, readOnly, approvedSpecContext, toolCallsOut: callerToolCallsOut } = params
   const featureName = getFeatureName(channelName)
 
   // Pending spec approval — check before anything else
@@ -795,6 +813,9 @@ async function runPmAgent(params: {
     },
     toolCallsOut: toolCallsOutPm,
   })
+
+  // Expose collected tool calls to caller if requested (e.g. to detect spec saves in continuation path)
+  if (callerToolCallsOut) callerToolCallsOut.push(...toolCallsOutPm)
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
