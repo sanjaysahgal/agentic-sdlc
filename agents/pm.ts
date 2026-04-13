@@ -50,6 +50,20 @@ export const PM_TOOLS: Anthropic.Tool[] = [
       required: [],
     },
   },
+  {
+    name: "offer_architect_escalation",
+    description: "Register an architecture gap that requires the architect's input before engineering begins. Call this when you identify a question about data retention, infrastructure, API contracts, or technical constraints that is not currently documented in the System Architecture. Do NOT mention this in prose — call this tool so the platform can surface it to the user as a formal escalation. The design phase can still continue; this will be addressed when the engineering phase begins.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        question: {
+          type: "string",
+          description: "The specific architecture question(s) the architect must answer. Be concrete. If multiple, number them.",
+        },
+      },
+      required: ["question"],
+    },
+  },
 ]
 
 // Builds the pm agent system prompt from the loaded context.

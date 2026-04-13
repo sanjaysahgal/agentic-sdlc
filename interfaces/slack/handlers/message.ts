@@ -441,6 +441,22 @@ ${brief}`
           // Without this, the pre-run structural gate re-fires on the next design turn with the same
           // stale markers, looping back to PM even though the questions are answered.
           await clearProductBlockingMarkersFromDesignSpec(featureName)
+
+          // If the PM also called offer_architect_escalation this turn, surface it before resuming design.
+          // Platform enforcement: the tool call is the signal — not prose. Principle 8.
+          const archEscalationCall = continuationToolCalls.find(t => t.name === "offer_architect_escalation")
+          if (archEscalationCall) {
+            const archQuestion = archEscalationCall.input.question as string
+            setPendingEscalation(featureName, { targetAgent: "architect", question: archQuestion, designContext: "" })
+            console.log(`[ROUTER] branch=escalation-auto-close-arch — PM flagged architecture gap: "${archQuestion.slice(0, 80)}"`)
+            await client.chat.postMessage({
+              channel: channelId,
+              thread_ts: threadTs,
+              text: `*Product Manager* — Design questions resolved and spec updated.\n\nHowever, an architecture gap was identified that the architect must address before engineering begins:\n\n${archQuestion}\n\nSay *yes* to bring the architect into this thread now, or continue with design and the architect will address it when the engineering phase begins.`,
+            })
+            return
+          }
+
           const injectedMessage = `PM answered the blocking question and updated the product spec. The PM gap is now closed. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
           await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
             await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
@@ -858,6 +874,11 @@ async function runPmAgent(params: {
         const { githubOwner, githubRepo } = loadWorkspaceConfig()
         const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${pmFilePath}`
         return { result: { url, nextPhase: "design" } }
+      }
+      if (name === "offer_architect_escalation") {
+        // Tool call captured in toolCallsOut — the caller (auto-close path) processes it after the PM run.
+        // Design can still continue; the architecture gap is surfaced before engineering begins.
+        return { result: "Architecture gap registered. If the user confirms, the architect will be brought in to resolve it before engineering begins." }
       }
       return { error: `Unknown tool: ${name}` }
     },

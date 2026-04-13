@@ -13,8 +13,9 @@ const baseContext: AgentContext = {
 }
 
 describe("PM_TOOLS structure", () => {
-  it("exports 4 tools", () => {
-    expect(PM_TOOLS).toHaveLength(4)
+  it("exports 5 tools — save_draft, apply_patch, phase_audit, finalize, offer_architect_escalation", () => {
+    expect(PM_TOOLS).toHaveLength(5)
+    expect(PM_TOOLS.map(t => t.name)).toContain("offer_architect_escalation")
   })
 
   it("includes save_product_spec_draft as first tool", () => {

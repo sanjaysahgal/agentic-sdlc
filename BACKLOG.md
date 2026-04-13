@@ -148,6 +148,14 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 
 ---
 
+~~### PM agent architecture gap escalation — prose mention instead of tool call (2026-04-13)~~ ✅ Done (2026-04-13)
+
+When the PM identified an architecture gap during the design-questions-answering context, it mentioned "say yes and I'll escalate to the architect" in prose — but `PM_TOOLS` had no `offer_architect_escalation` tool. The platform had nothing to act on; the user's "yes" was consumed by the next pending escalation.
+
+**Fix:** Added `offer_architect_escalation(question)` to `PM_TOOLS`. Handler returns success (tool call is captured in `toolCallsOut`). In the auto-close path, after PM saves the spec, platform checks `continuationToolCalls` for `offer_architect_escalation`. If found: set `pendingEscalation` to architect, post a structured message listing the gap and "say yes to bring the architect in", skip running the design agent. Design can continue; the architect addresses the gap in the engineering phase. N43 integration test covers.
+
+---
+
 ~~### Escalation loop — [type: product] markers in design spec not cleared after PM resolves them (2026-04-13)~~ ✅ Done (2026-04-13)
 
 Root cause: `[type: product] [blocking: yes]` markers are written into the design spec draft by the design agent when it identifies PM-scope blocking questions. When the PM resolves these questions, only the product spec is updated (`patchProductSpecWithRecommendations`). The design spec markers were never removed. On the next design turn, the pre-run structural gate re-read the design spec, found the same markers still present, set a new `pendingEscalation`, and returned early — design never ran. User kept hitting the same PM escalation loop.

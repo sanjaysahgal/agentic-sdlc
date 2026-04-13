@@ -36,6 +36,7 @@ Shapes a feature idea into a structured product spec through conversation. Asks 
 - `apply_product_spec_patch` — incremental update; same audit
 - `run_phase_completion_audit` — Sonnet-based comprehensive completeness check; called on approval intent BEFORE finalize; returns `{ ready, findings }`
 - `finalize_product_spec` — blocked if unresolved `[blocking: yes]` questions exist; triggers phase advance to design
+- `offer_architect_escalation` — registers an architecture gap (data retention, infrastructure, API contracts) that the architect must resolve before engineering begins. Called instead of mentioning gaps in prose. Platform captures via `toolCallsOut` and surfaces the question to the user before resuming design.
 
 **Phase completion gate (PM).** When the PM signals approval, the agent calls `run_phase_completion_audit()` first. The tool runs `auditPhaseCompletion(PM_RUBRIC)` — a Sonnet-based check covering: all user stories have error paths, acceptance criteria are measurable, zero unresolved blocking questions, data requirements are explicit, no architectural contradictions, Non-Goals names at least one scope boundary. If findings exist, the agent surfaces them numbered with recommendations and waits for re-approval. The phase does not advance to design until the audit returns zero findings.
 

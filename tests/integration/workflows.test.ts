@@ -5272,3 +5272,83 @@ describe("Scenario N42 — [type: product] markers cleared from design spec afte
     expect(savedContent).not.toContain("[blocking: yes]")
   })
 })
+
+// ─── Scenario N43: PM calls offer_architect_escalation in auto-close path ─────
+//
+// When PM resolves design blocking questions AND identifies an architecture gap,
+// it should call offer_architect_escalation tool — not mention it in prose.
+// Platform enforcement: the tool call is the signal. If PM called the tool,
+// surface the architect escalation to the user before resuming design.
+//
+// Production gap (2026-04-13): PM mentioned "escalate to the architect" in prose
+// but PM_TOOLS had no offer_architect_escalation tool. Platform had nothing to
+// act on, so user's "yes" was swallowed by the next pendingEscalation.
+
+describe("Scenario N43 — PM offer_architect_escalation in auto-close path surfaces architect question", () => {
+  const THREAD = "workflow-n43"
+
+  beforeEach(async () => {
+    clearHistory("n43feature")
+    setConfirmedAgent("n43feature", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("n43feature", {
+      targetAgent: "pm",
+      question: "1. Define what 'ambient awareness only' means operationally.",
+      recommendations: "1. My recommendation: Non-clickable text only.",
+    })
+  })
+
+  afterEach(async () => {
+    clearHistory("n43feature")
+    const { clearEscalationNotification, clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("n43feature")
+    clearPendingEscalation("n43feature")
+  })
+
+  it("PM saves spec and calls offer_architect_escalation → architect escalation surfaced, design does NOT run", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    // Mock sequence (continuation path):
+    //   [0] classifyMessageScope → "feature-specific"
+    //   [1] PM: stop_reason=tool_use → save_product_spec_draft
+    //   [2] PM: stop_reason=tool_use → offer_architect_escalation
+    //   [3] PM: stop_reason=end_turn → "Done."
+    //   auto-close fires → architect escalation detected → postMessage, no design agent call
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_1", name: "save_product_spec_draft", input: { content: "## Problem\nDecisions locked." } }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_2", name: "offer_architect_escalation", input: { question: "1. What is the data retention policy for logged-out sessions?" } }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Done. Spec updated and architecture gap registered." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+
+    const params = makeParams(THREAD, "feature-n43feature", "agree with all the recommendations")
+    await handleFeatureChannelMessage(params)
+
+    // Architect escalation must be surfaced via postMessage
+    const postMessageCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const archEscalationMsg = postMessageCalls.find((c: any[]) =>
+      typeof c[0]?.text === "string" && c[0].text.includes("architecture gap")
+    )
+    expect(archEscalationMsg).toBeDefined()
+    expect(archEscalationMsg![0].text).toContain("data retention policy")
+
+    // pendingEscalation must be set to architect
+    const { getPendingEscalation: getPE } = await import("../../../runtime/conversation-store")
+    const pending = getPE("n43feature")
+    expect(pending).not.toBeNull()
+    expect(pending!.targetAgent).toBe("architect")
+
+    // Design agent must NOT have run — no design-agent update after the postMessage
+    const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const designUpdate = updateCalls.find((c: any[]) => typeof c[0]?.text === "string" && c[0].text.includes("UX Designer"))
+    expect(designUpdate).toBeUndefined()
+  })
+})
