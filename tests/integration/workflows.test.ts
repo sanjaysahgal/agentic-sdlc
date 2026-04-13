@@ -4623,48 +4623,48 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     clearEscalationNotification("onboarding")
   })
 
-  it("second (enforcement) PM response stored in escalationNotification, not the deferral", async () => {
-    // All GitHub reads → 404 (loadAgentContext falls back to empty context)
+  it("structural gate: clarification-stall (0 'My recommendation:' lines) triggers enforcement re-run", async () => {
+    // Real incident 2026-04-12: PM asked "Before I give recommendations, I need to clarify..."
+    // DEFERRAL_PATTERN didn't match this. Structural count gate catches it: 0 < 1 required.
     mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
     mockPaginate.mockResolvedValue([])
 
-    const DEFERRAL_RESPONSE = "I cannot responsibly give you recommendations without talking to the human PM first. These decisions require the product owner."
-    const PROPER_RECOMMENDATIONS = "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Forcing persistent UI elements erodes trust.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: Do not re-appear after session reset.\n→ Rationale: One nudge per user is sufficient for onboarding context."
+    const CLARIFICATION_STALL = "Before I give recommendations, I need to clarify one thing: when you say 'dismissable' — are you asking whether the nudge has an X button, or whether clicking anywhere outside it dismisses it? Once I understand that, I can give you concrete recommendations."
+    const PROPER_RECOMMENDATIONS = "1. My recommendation: The nudge should be dismissable via an explicit X button.\n→ Rationale: Explicit dismissal is more intentional — users know they've seen it.\n→ Note: Pending human PM confirmation before engineering handoff"
 
-    // Mock sequence for two runPmAgent calls inside withThinking:
-    //   First run:  classifyMessageScope → "feature-specific", runAgent → deferral
-    //   Second run: classifyMessageScope → "feature-specific", runAgent → proper recommendations
+    // Mock sequence: first PM run returns clarification-stall (0 "My recommendation:" occurrences)
+    // Structural gate fires (0 < 1 required) → enforcement re-run → proper recommendation
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
-        content: [{ type: "text", text: DEFERRAL_RESPONSE }],
-      })                                                                                  // PM agent run 1 → deferral
+        content: [{ type: "text", text: CLARIFICATION_STALL }],
+      })                                                                                  // PM agent run 1 → clarification-stall
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 2)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PROPER_RECOMMENDATIONS }],
-      })                                                                                  // PM agent run 2 → recommendations
+      })                                                                                  // PM agent run 2 → recommendation
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // escalationNotification should be set with the SECOND response, not the deferral
+    // escalationNotification must reflect the SECOND response (enforcement output)
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notification = getEscalationNotification("onboarding")
     expect(notification).not.toBeNull()
     expect(notification!.recommendations).toContain("My recommendation: The nudge should be dismissable")
-    expect(notification!.recommendations).not.toContain("I cannot responsibly")
+    expect(notification!.recommendations).not.toContain("Before I give recommendations")
 
-    // pendingEscalation cleared after successful @mention
+    // pendingEscalation cleared after @mention
     expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // Platform sent a "Reconsidering" update during deferral detection
+    // Platform emitted enforcement update (structural gate fired)
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
-    const reconsideringCall = updateCalls.find((c: any) => c[0]?.text?.includes("Reconsidering"))
-    expect(reconsideringCall).toBeDefined()
+    const enforcementUpdate = updateCalls.find((c: any) => c[0]?.text?.includes("concrete recommendations"))
+    expect(enforcementUpdate).toBeDefined()
 
-    // Anthropic was called 4 times: classifyScope×2 + PM agent×2
+    // Anthropic called 4 times: classifyScope×2 + PM agent×2
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 })
@@ -4728,5 +4728,72 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
       (call: any) => call[0]?.path?.includes("onboarding.product.md")
     )
     expect(productWriteCall).toBeUndefined()
+  })
+})
+
+// ─── Scenario N35: Structural recommendation gate — partial answer triggers enforcement ──────
+//
+// Brief has 2 numbered items. PM agent responds with only 1 "My recommendation:" line.
+// Structural gate: countRecommendations(1) < countBriefItems(2) → enforcement re-run.
+// Catches the original incident: PM gave recommendation for #4 but deferred on 1-3.
+// No DEFERRAL_PATTERN needed — gate fires on output shape alone.
+
+describe("Scenario N35 — Structural gate fires when PM answers fewer items than the brief requires", () => {
+  const THREAD = "workflow-n35"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    // Two-item brief — PM must produce 2 "My recommendation:" lines
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "1. When SSO fails for a returning user, should they remain logged out with an error, or enter a retry state?\n2. Define what the logged-out indicator must communicate to the user and the conditions under which it appears.",
+      designContext: "",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clrEsc("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("1-of-2 partial answer triggers enforcement — final notification contains 2 recommendations", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+
+    // First PM run: answers item 2 only — 1 "My recommendation:" line, brief requires 2
+    const PARTIAL_ANSWER = "2. My recommendation: The logged-out indicator should display the text 'Session expired — tap to sign in again' and appear whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff\n\nFor item 1, I want to clarify what 'retry state' means before committing to a recommendation."
+    const FULL_RECOMMENDATIONS = "1. My recommendation: The user should remain logged out with a clear, persistent error message on the sign-in screen.\n→ Rationale: Retaining context in a retry state adds complexity without meaningful benefit for auth failures.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: The logged-out indicator should display 'Session expired — tap to sign in again' whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff"
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: PARTIAL_ANSWER }],
+      })                                                                                  // PM run 1 → 1 recommendation (partial)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 2)
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: FULL_RECOMMENDATIONS }],
+      })                                                                                  // PM run 2 → 2 recommendations
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Structural gate must have fired — enforcement update emitted
+    const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const enforcementUpdate = updateCalls.find((c: any) => c[0]?.text?.includes("concrete recommendations"))
+    expect(enforcementUpdate).toBeDefined()
+
+    // Stored recommendations must be the enforcement response (2 items)
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+    expect(notification!.recommendations).toContain("remain logged out with a clear, persistent error message")
+    expect(notification!.recommendations).toContain("Session expired")
+
+    // PM agent called twice (structural gate triggered re-run)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4) // classifyScope×2 + PM agent×2
   })
 })

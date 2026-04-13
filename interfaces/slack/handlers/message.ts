@@ -283,12 +283,20 @@ BLOCKING ITEMS:
 ${pendingEscalation.question}`
 
       const brief = isArchitectEscalation ? archBrief : pmBrief
-      // Capture the agent's final response text — stored in EscalationNotification so the platform
-      // can write confirmed decisions back to the product spec when the human confirms.
-      // Deferral patterns: PM agent said it cannot recommend without the human PM.
-      // This violates the brief ("pick the best answer and state it"). Platform re-runs with an
-      // enforcement override injected as a follow-up message inside the same thinking bubble.
-      const DEFERRAL_PATTERN = /i cannot responsibly|cannot give you recommendations|need to loop in|without talking to the (human )?pm|should defer|need the human pm|i need to talk to|escalate to the (human )?pm/i
+
+      // Structural recommendation gate (Principle 8):
+      // After the agent runs, verify it produced a "My recommendation:" line for every item in the brief.
+      // This catches ALL forms of non-compliance — refusal, clarification-stall, partial answer, tangent —
+      // without pattern-matching the model's text for specific bad phrases (which is always incomplete).
+      // Gate: count(required items in brief) vs count("My recommendation:" in response).
+      // If response count < required count → enforcement re-run with the output format injected.
+      function countBriefItems(question: string): number {
+        const numbered = question.match(/^\d+\./gm)
+        return numbered ? numbered.length : 1
+      }
+      function countRecommendations(response: string): number {
+        return (response.match(/my recommendation:/gi) ?? []).length
+      }
 
       let capturedAgentResponse = ""
       await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
@@ -297,20 +305,20 @@ ${pendingEscalation.question}`
           await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update: capturingUpdate })
         } else {
           await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
-          // Platform enforcement: if PM agent deferred instead of recommending, re-run with override.
-          // Structural check — does not rely on the model choosing to comply with the brief.
-          if (DEFERRAL_PATTERN.test(capturedAgentResponse)) {
-            console.log(`[ESCALATION] PM deferral detected — re-running with enforcement override`)
-            await update("_Reconsidering — I need to give you concrete recommendations..._")
+          // Structural enforcement: verify the response contains a recommendation for every brief item.
+          // One enforcement cycle — if the second run also fails, we use whatever was returned.
+          const requiredCount = countBriefItems(pendingEscalation.question)
+          if (countRecommendations(capturedAgentResponse) < requiredCount) {
+            console.log(`[ESCALATION] PM recommendation gate failed — expected ${requiredCount}, got ${countRecommendations(capturedAgentResponse)} — re-running with enforcement override`)
+            await update("_Giving you concrete recommendations for every item..._")
             capturedAgentResponse = ""
-            const enforcementMessage = `PLATFORM ENFORCEMENT: Your previous response deferred to the human PM instead of making concrete recommendations. That is not acceptable. You ARE the PM agent. Making specific, grounded recommendations is your only job here — the human PM will review and adjust; you are not making final decisions.
+            const enforcementMessage = `PLATFORM ENFORCEMENT: Your previous response did not include a "My recommendation:" line for every item. The brief has ${requiredCount} item(s). You must output exactly ${requiredCount} recommendation(s) — one per numbered item — using this exact format for each:
 
-Give a concrete recommendation for EVERY item in the original brief. If you genuinely lack information for one, make the best call from the product vision, user needs, and standard product practice — state your assumption. Do not refuse.
-
-Use the exact format for each:
-[N]. My recommendation: [one specific, concrete answer]
-→ Rationale: [one sentence]
+[N]. My recommendation: [one specific, concrete answer — no conditionals, no "it depends"]
+→ Rationale: [one sentence grounded in product vision, user needs, or standard practice]
 → Note: Pending human PM confirmation before engineering handoff
+
+Do not ask for context. Do not clarify before recommending. Make the best call and state it. If a question has two valid interpretations, state both and recommend one.
 
 ORIGINAL BRIEF:
 ${brief}`

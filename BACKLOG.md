@@ -51,22 +51,11 @@ Dual fix:
 
 ---
 
-### DEFERRAL_PATTERN misses clarification-stall — PM asks question instead of recommending (2026-04-12) — HIGH PRIORITY
+~~### DEFERRAL_PATTERN misses clarification-stall — PM asks question instead of recommending (2026-04-12)~~ ✅ Done (2026-04-12)
 
-Real incident (2026-04-12): PM agent received escalation brief with 2 blocking items. Instead of recommending, it asked a clarifying question: "Before I give recommendations, I need to clarify one thing... Once I understand that, I can give you both recommendations." The brief explicitly says "Do not ask for more context." `DEFERRAL_PATTERN` did not match this phrasing — only outright refusals are caught.
+Root cause was deeper than the regex: `DEFERRAL_PATTERN` detected bad output patterns — an inherently incomplete approach. Replaced with a **structural output-count gate**: count `My recommendation:` occurrences in the response vs number of numbered items in the brief. If response count < required count → enforcement re-run. Catches all forms of non-compliance (refusal, clarification-stall, partial answer, tangent) with a single deterministic check — no pattern list to maintain.
 
-**Root cause:** `DEFERRAL_PATTERN` covers refusal patterns ("I cannot responsibly", "need to loop in") but not clarification-stall patterns where the agent defers by asking a question before committing to a recommendation.
-
-**Fix:** Extend `DEFERRAL_PATTERN` in `message.ts` to include:
-```typescript
-|before i (can |give you )?recommend|once i understand|i need to clarify|need one more (piece|bit)|can you clarify before|before giving (you )?recommendations|once you (confirm|clarify|tell me)
-```
-
-**Also fix in PM agent tone:** Add prohibition: "Never ask a clarifying question when you have enough context to make a reasonable recommendation. Make the call. If the question genuinely changes the answer, state both interpretations explicitly with a recommendation for each — do not gate the recommendation on the answer."
-
-**N35 test:** PM agent returns clarification-stall phrasing → `DEFERRAL_PATTERN` fires → re-runs with enforcement override → concrete recommendations returned.
-
-**Impact:** High — same failure mode as outright refusal; the escalation flow stalls waiting for a question that the brief prohibits.
+`DEFERRAL_PATTERN` removed entirely from `message.ts`. PM agent tone updated with explicit clarification-stall prohibition. N33 (clarification-stall triggers gate), N35 (partial answer triggers gate) cover both cases.
 
 ---
 
