@@ -34,6 +34,16 @@ This file tracks decisions that are correct for a small team today but need to c
 
 ---
 
+## Ephemeral conversation state persisted to `.conversation-state.json`
+
+**Now:** `pendingEscalation`, `pendingApproval`, and `escalationNotification` are persisted to `.conversation-state.json` on every write and loaded on startup. Previously these lived in memory only — a server restart (e.g. nodemon on code change) silently wiped pending state, causing users who said "yes" after a code push to have their confirmation ignored and the design agent re-run instead of triggering PM escalation.
+
+**Why it works now:** One machine, one process. The file survives nodemon restarts. If the process crashes mid-write, the file may be stale by one operation — acceptable for a solo-team setup.
+
+**At scale:** Needs Redis. Same constraints as conversation history and confirmed agents.
+
+---
+
 ## Agent triggers are manual (Slack-initiated)
 
 **Now:** Every agent interaction starts with a human sending a message in Slack. There are no automatic triggers.

@@ -163,6 +163,118 @@ describe("conversation-store", () => {
     setPendingEscalation("thread-1", { targetAgent: "pm", question: plain, designContext: "" })
     expect(getPendingEscalation("thread-1")!.question).toBe(plain)
   })
+
+  // ─── state persistence (restart survival) ────────────────────────────────
+
+  it("setPendingEscalation calls fs.writeFileSync to persist state to disk", async () => {
+    const { setPendingEscalation } = await import("../../runtime/conversation-store")
+    const callsBefore = fsMocks.writeFileSync.mock.calls.length
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: "Q", designContext: "" })
+    expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
+
+  it("clearPendingEscalation calls fs.writeFileSync to persist cleared state to disk", async () => {
+    const { setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
+    setPendingEscalation("thread-1", { targetAgent: "pm", question: "Q", designContext: "" })
+    const callsBefore = fsMocks.writeFileSync.mock.calls.length
+    clearPendingEscalation("thread-1")
+    expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
+
+  it("pendingEscalation survives process restart — loaded from .conversation-state.json on startup", async () => {
+    // Simulate: a previously-set escalation was persisted to .conversation-state.json
+    // and the process restarted (module re-imported).
+    const savedState = {
+      pendingEscalations: {
+        "onboarding": { targetAgent: "pm", question: "What is the session expiry?", designContext: "" }
+      },
+      pendingApprovals: {},
+      escalationNotifications: {},
+    }
+    // readFileSync called in order: confirmed-agents (throw), history (throw), state (return saved)
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") }) // confirmed-agents
+      .mockImplementationOnce(() => { throw new Error("ENOENT") }) // history
+      .mockReturnValueOnce(JSON.stringify(savedState))              // state
+
+    const { getPendingEscalation } = await import("../../runtime/conversation-store")
+    const loaded = getPendingEscalation("onboarding")
+    expect(loaded).not.toBeNull()
+    expect(loaded?.question).toBe("What is the session expiry?")
+    expect(loaded?.targetAgent).toBe("pm")
+  })
+
+  // ─── pending approval ─────────────────────────────────────────────────────
+
+  it("getPendingApproval returns null when no approval is set", async () => {
+    const { getPendingApproval } = await import("../../runtime/conversation-store")
+    expect(getPendingApproval("thread-1")).toBeNull()
+  })
+
+  it("setPendingApproval stores approval and getPendingApproval retrieves it", async () => {
+    const { getPendingApproval, setPendingApproval } = await import("../../runtime/conversation-store")
+    const approval = { specType: "product" as const, specContent: "# Spec", filePath: "path.md", featureName: "onboarding" }
+    setPendingApproval("thread-1", approval)
+    expect(getPendingApproval("thread-1")).toEqual(approval)
+  })
+
+  it("setPendingApproval calls fs.writeFileSync to persist state to disk", async () => {
+    const { setPendingApproval } = await import("../../runtime/conversation-store")
+    const callsBefore = fsMocks.writeFileSync.mock.calls.length
+    setPendingApproval("thread-1", { specType: "design", specContent: "# Design", filePath: "d.md", featureName: "f" })
+    expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
+
+  it("clearPendingApproval removes the approval", async () => {
+    const { getPendingApproval, setPendingApproval, clearPendingApproval } = await import("../../runtime/conversation-store")
+    setPendingApproval("thread-1", { specType: "product", specContent: "# S", filePath: "p.md", featureName: "f" })
+    clearPendingApproval("thread-1")
+    expect(getPendingApproval("thread-1")).toBeNull()
+  })
+
+  it("clearPendingApproval calls fs.writeFileSync to persist cleared state to disk", async () => {
+    const { setPendingApproval, clearPendingApproval } = await import("../../runtime/conversation-store")
+    setPendingApproval("thread-1", { specType: "product", specContent: "# S", filePath: "p.md", featureName: "f" })
+    const callsBefore = fsMocks.writeFileSync.mock.calls.length
+    clearPendingApproval("thread-1")
+    expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
+
+  // ─── escalation notification ──────────────────────────────────────────────
+
+  it("getEscalationNotification returns null when none is set", async () => {
+    const { getEscalationNotification } = await import("../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).toBeNull()
+  })
+
+  it("setEscalationNotification stores notification and getEscalationNotification retrieves it", async () => {
+    const { getEscalationNotification, setEscalationNotification } = await import("../../runtime/conversation-store")
+    const notification = { targetAgent: "pm" as const, question: "What is the session expiry?", recommendations: "1 week" }
+    setEscalationNotification("onboarding", notification)
+    expect(getEscalationNotification("onboarding")).toEqual(notification)
+  })
+
+  it("setEscalationNotification calls fs.writeFileSync to persist state to disk", async () => {
+    const { setEscalationNotification } = await import("../../runtime/conversation-store")
+    const callsBefore = fsMocks.writeFileSync.mock.calls.length
+    setEscalationNotification("onboarding", { targetAgent: "pm", question: "Q" })
+    expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
+
+  it("clearEscalationNotification removes the notification", async () => {
+    const { getEscalationNotification, setEscalationNotification, clearEscalationNotification } = await import("../../runtime/conversation-store")
+    setEscalationNotification("onboarding", { targetAgent: "pm", question: "Q" })
+    clearEscalationNotification("onboarding")
+    expect(getEscalationNotification("onboarding")).toBeNull()
+  })
+
+  it("clearEscalationNotification calls fs.writeFileSync to persist cleared state to disk", async () => {
+    const { setEscalationNotification, clearEscalationNotification } = await import("../../runtime/conversation-store")
+    setEscalationNotification("onboarding", { targetAgent: "pm", question: "Q" })
+    const callsBefore = fsMocks.writeFileSync.mock.calls.length
+    clearEscalationNotification("onboarding")
+    expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -54,6 +54,7 @@ const escalationNotifications = new Map<string, EscalationNotification>() // fea
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
+const CONVERSATION_STATE_FILE = path.join(__dirname, "../.conversation-state.json")
 
 function loadConfirmedAgents(): void {
   try {
@@ -119,9 +120,39 @@ function persistConversationHistory(): void {
   }
 }
 
+function loadConversationState(): void {
+  try {
+    const raw = fs.readFileSync(CONVERSATION_STATE_FILE, "utf-8")
+    const parsed = JSON.parse(raw) as {
+      pendingEscalations?: Record<string, PendingEscalation>
+      pendingApprovals?: Record<string, PendingApproval>
+      escalationNotifications?: Record<string, EscalationNotification>
+    }
+    for (const [k, v] of Object.entries(parsed.pendingEscalations ?? {})) pendingEscalations.set(k, v)
+    for (const [k, v] of Object.entries(parsed.pendingApprovals ?? {})) pendingApprovals.set(k, v)
+    for (const [k, v] of Object.entries(parsed.escalationNotifications ?? {})) escalationNotifications.set(k, v)
+  } catch {
+    // File doesn't exist yet — start fresh
+  }
+}
+
+function persistConversationState(): void {
+  try {
+    const obj = {
+      pendingEscalations: Object.fromEntries(pendingEscalations),
+      pendingApprovals: Object.fromEntries(pendingApprovals),
+      escalationNotifications: Object.fromEntries(escalationNotifications),
+    }
+    fs.writeFileSync(CONVERSATION_STATE_FILE, JSON.stringify(obj, null, 2))
+  } catch (err) {
+    console.log(`[STORE] persistConversationState: error writing ${CONVERSATION_STATE_FILE}: ${err}`)
+  }
+}
+
 // Load both from disk on startup, then migrate any old threadTs-keyed entries
 loadConfirmedAgents()
 loadConversationHistory()
+loadConversationState()
 migrateThreadTsKeys()
 
 export function getHistory(featureName: string): Message[] {
@@ -156,6 +187,7 @@ export function clearHistory(threadTs: string): void {
   pendingApprovals.delete(threadTs)
   persistConfirmedAgents()
   persistConversationHistory()
+  persistConversationState()
 }
 
 // Once a user confirms an agent for a thread, store it so we skip confirmation on follow-ups
@@ -180,11 +212,13 @@ export function setPendingEscalation(threadTs: string, escalation: PendingEscala
   const normalizedQuestion = escalation.question.replace(/(?<=[^\n])(\s+)(\d+\.\s)/g, "\n$2")
   console.log(`[STORE] setPendingEscalation: feature=${threadTs} targetAgent=${escalation.targetAgent}`)
   pendingEscalations.set(threadTs, { ...escalation, question: normalizedQuestion })
+  persistConversationState()
 }
 
 export function clearPendingEscalation(threadTs: string): void {
   console.log(`[STORE] clearPendingEscalation: feature=${threadTs}`)
   pendingEscalations.delete(threadTs)
+  persistConversationState()
 }
 
 export function getPendingApproval(threadTs: string): PendingApproval | null {
@@ -194,11 +228,13 @@ export function getPendingApproval(threadTs: string): PendingApproval | null {
 export function setPendingApproval(threadTs: string, approval: PendingApproval): void {
   console.log(`[STORE] setPendingApproval: feature=${threadTs} specType=${approval.specType}`)
   pendingApprovals.set(threadTs, approval)
+  persistConversationState()
 }
 
 export function clearPendingApproval(threadTs: string): void {
   console.log(`[STORE] clearPendingApproval: feature=${threadTs}`)
   pendingApprovals.delete(threadTs)
+  persistConversationState()
 }
 
 export function getEscalationNotification(featureName: string): EscalationNotification | null {
@@ -208,9 +244,11 @@ export function getEscalationNotification(featureName: string): EscalationNotifi
 export function setEscalationNotification(featureName: string, notification: EscalationNotification): void {
   console.log(`[STORE] setEscalationNotification: feature=${featureName} targetAgent=${notification.targetAgent}`)
   escalationNotifications.set(featureName, notification)
+  persistConversationState()
 }
 
 export function clearEscalationNotification(featureName: string): void {
   console.log(`[STORE] clearEscalationNotification: feature=${featureName}`)
   escalationNotifications.delete(featureName)
+  persistConversationState()
 }

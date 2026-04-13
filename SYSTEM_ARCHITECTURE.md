@@ -274,6 +274,7 @@ Every new agent added to the platform must wire its equivalent audit before the 
 | Phase state | Re-read from GitHub on every message (~200–300ms overhead) | Redis cache, invalidated on spec merge to main |
 | Conversation history | In-memory + disk (one process) | Redis — survives redeploys, works across multiple bot instances |
 | Confirmed agents | `.confirmed-agents.json` on disk | Redis — same reasons |
+| Pending escalation / approval / notification | `.conversation-state.json` on disk — persisted on every write, loaded on startup | Redis — same reasons |
 | Context limit | Silent failure when thread exceeds model window | Proactive warning at ~70% capacity; explicit error surfaced to user at limit |
 
 ---
@@ -300,7 +301,7 @@ All Slack threads in the same feature channel share one history entry. A new tea
 
 `threadTs` is still passed to Slack API calls (replies post in the correct thread) but is no longer used as the store key.
 
-**Dev persistence:** `.confirmed-agents.json` on disk — survives bot restarts
+**Dev persistence:** `.confirmed-agents.json` (confirmed agents), `.conversation-history.json` (history), `.conversation-state.json` (pending escalation/approval/notification) — all persisted on every write, loaded on startup, survive bot restarts including nodemon file-watch restarts triggered by code changes.
 **Prod target:** Redis — survives multi-instance deployment, configurable TTL per workspace
 
 ### Zero application database for business logic
