@@ -67,6 +67,16 @@ Also extended PM_RUBRIC criterion 2 vague word list: added "soft", "non-intrusiv
 
 ---
 
+### Design agent bundles visual sub-questions inside PM escalation items (2026-04-12)
+
+When the design agent formulates `offer_pm_escalation` questions, it bundles visual/UX sub-questions inside what is otherwise a PM-scope question. Example: "Define the visual placement, persistence behavior, and dismissibility of the indicator — is it a nav bar label, banner, or badge?" mixes two PM decisions (persistence, dismissibility) with a design decision (which UI component). The Gate 2 three-way classifier correctly classifies the item as GAP: (PM-scope wins), but the PM brief now includes the visual sub-question that the PM shouldn't be answering.
+
+**Fix:** Add instruction to the design agent system prompt and/or `offer_pm_escalation` tool description: "When formulating escalation questions, separate product-behavior decisions (what the user experiences, when something fires, who can access it) from visual/component decisions (what UI element to use, where it is positioned). The PM question must contain only the product-behavior decision. Strip visual sub-questions — you own those."
+
+**Impact:** Medium — the PM is receiving questions they shouldn't answer, which adds noise and may cause them to make decisions that are rightfully the designer's. The design spec writeback captures the product decision correctly, but the PM brief is imprecise.
+
+---
+
 ### Assess: isStandaloneConfirmation UX friction — factual PM answers without a confirmation keyword route to PM agent (2026-04-12)
 
 `isStandaloneConfirmation()` requires a message to start with a known affirmative keyword ("confirmed", "approved", "yes", etc.). A human PM who types a factual answer ("Guest sessions are cleared on sign-up.") without prefixing it with a keyword will be routed back to the PM agent instead of closing the escalation and resuming design. This is correct behavior in the multi-turn sense (it keeps the conversation open), but may surprise users who expect their factual answer to close the loop.
