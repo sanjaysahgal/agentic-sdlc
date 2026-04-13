@@ -51,6 +51,25 @@ Dual fix:
 
 ---
 
+### DEFERRAL_PATTERN misses clarification-stall — PM asks question instead of recommending (2026-04-12) — HIGH PRIORITY
+
+Real incident (2026-04-12): PM agent received escalation brief with 2 blocking items. Instead of recommending, it asked a clarifying question: "Before I give recommendations, I need to clarify one thing... Once I understand that, I can give you both recommendations." The brief explicitly says "Do not ask for more context." `DEFERRAL_PATTERN` did not match this phrasing — only outright refusals are caught.
+
+**Root cause:** `DEFERRAL_PATTERN` covers refusal patterns ("I cannot responsibly", "need to loop in") but not clarification-stall patterns where the agent defers by asking a question before committing to a recommendation.
+
+**Fix:** Extend `DEFERRAL_PATTERN` in `message.ts` to include:
+```typescript
+|before i (can |give you )?recommend|once i understand|i need to clarify|need one more (piece|bit)|can you clarify before|before giving (you )?recommendations|once you (confirm|clarify|tell me)
+```
+
+**Also fix in PM agent tone:** Add prohibition: "Never ask a clarifying question when you have enough context to make a reasonable recommendation. Make the call. If the question genuinely changes the answer, state both interpretations explicitly with a recommendation for each — do not gate the recommendation on the answer."
+
+**N35 test:** PM agent returns clarification-stall phrasing → `DEFERRAL_PATTERN` fires → re-runs with enforcement override → concrete recommendations returned.
+
+**Impact:** High — same failure mode as outright refusal; the escalation flow stalls waiting for a question that the brief prohibits.
+
+---
+
 ### Design agent strips implementation sub-questions from offer_pm_escalation (2026-04-12)
 
 When the design agent formulates its `offer_pm_escalation` question, it sometimes bundles design/implementation details into what should be a pure PM decision — e.g., asking the PM to specify "opacity level and screen position" of an indicator alongside "what must the indicator communicate." The PM owns the WHAT (label text, what information must be conveyed), not the HOW (opacity, position, animation).
