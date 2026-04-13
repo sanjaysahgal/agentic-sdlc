@@ -69,6 +69,7 @@ function loadConfirmedAgents(): void {
 }
 
 function persistConfirmedAgents(): void {
+  if (!_filePersistenceEnabled) return
   try {
     const obj = Object.fromEntries(confirmedAgents)
     fs.writeFileSync(CONFIRMED_AGENTS_FILE, JSON.stringify(obj, null, 2))
@@ -112,6 +113,7 @@ function migrateThreadTsKeys(): void {
 }
 
 function persistConversationHistory(): void {
+  if (!_filePersistenceEnabled) return
   try {
     const obj = Object.fromEntries(store)
     fs.writeFileSync(CONVERSATION_HISTORY_FILE, JSON.stringify(obj, null, 2))
@@ -136,13 +138,20 @@ function loadConversationState(): void {
   }
 }
 
+// Disable file persistence for integration tests — prevents test cleanup from wiping production state files.
+// Call once from integration test global setup. Has no effect on unit tests (which mock fs directly).
+let _filePersistenceEnabled = true
+export function disableFilePersistence(): void { _filePersistenceEnabled = false }
+
 function persistConversationState(): void {
+  if (!_filePersistenceEnabled) return
   try {
     const obj = {
       pendingEscalations: Object.fromEntries(pendingEscalations),
       pendingApprovals: Object.fromEntries(pendingApprovals),
       escalationNotifications: Object.fromEntries(escalationNotifications),
     }
+    console.log(`[STORE] persistConversationState: writing escalations=[${[...pendingEscalations.keys()].join(",")}]`)
     fs.writeFileSync(CONVERSATION_STATE_FILE, JSON.stringify(obj, null, 2))
   } catch (err) {
     console.log(`[STORE] persistConversationState: error writing ${CONVERSATION_STATE_FILE}: ${err}`)

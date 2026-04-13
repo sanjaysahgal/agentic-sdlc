@@ -110,7 +110,8 @@ vi.mock("@octokit/rest", () => ({
 }))
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
-import { clearHistory, setConfirmedAgent, getHistory } from "../../../runtime/conversation-store"
+import { clearHistory, setConfirmedAgent, getHistory, disableFilePersistence } from "../../../runtime/conversation-store"
+disableFilePersistence()
 
 const originalEnv = process.env
 

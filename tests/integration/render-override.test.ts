@@ -43,7 +43,8 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
-import { clearHistory, clearLegacyMessages, setConfirmedAgent, appendMessage } from "../../../runtime/conversation-store"
+import { clearHistory, clearLegacyMessages, setConfirmedAgent, appendMessage, disableFilePersistence } from "../../../runtime/conversation-store"
+disableFilePersistence()
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
 
 const originalEnv = process.env

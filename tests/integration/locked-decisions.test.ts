@@ -38,7 +38,8 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
-import { clearHistory, setConfirmedAgent, appendMessage } from "../../../runtime/conversation-store"
+import { clearHistory, setConfirmedAgent, appendMessage, disableFilePersistence } from "../../../runtime/conversation-store"
+disableFilePersistence()
 
 const originalEnv = process.env
 const THREAD = "thread-locked"

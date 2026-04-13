@@ -301,7 +301,7 @@ All Slack threads in the same feature channel share one history entry. A new tea
 
 `threadTs` is still passed to Slack API calls (replies post in the correct thread) but is no longer used as the store key.
 
-**Dev persistence:** `.confirmed-agents.json` (confirmed agents), `.conversation-history.json` (history), `.conversation-state.json` (pending escalation/approval/notification) — all persisted on every write, loaded on startup, survive bot restarts including nodemon file-watch restarts triggered by code changes.
+**Dev persistence:** `.confirmed-agents.json` (confirmed agents), `.conversation-history.json` (history), `.conversation-state.json` (pending escalation/approval/notification) — all persisted on every write, loaded on startup, survive bot restarts including nodemon file-watch restarts triggered by code changes. `disableFilePersistence()` is called by all test files to prevent test teardown (clearHistory etc.) from overwriting production state files during the pre-push test hook.
 **Prod target:** Redis — survives multi-instance deployment, configurable TTL per workspace
 
 ### Zero application database for business logic
