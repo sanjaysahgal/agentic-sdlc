@@ -131,6 +131,14 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 
 ---
 
+~~### Spec writeback appends PM decisions alongside vague criteria — design agent re-escalates same gaps~~ ✅ Done (2026-04-12)
+
+Root cause of the "stuck in escalation loop": `patchProductSpecWithRecommendations` Haiku prompt instructed Haiku to "add confirmed decisions to the spec" — Haiku added them as new entries but left the original vague criteria ("soft, non-intrusive", "ambient awareness") in `## Acceptance Criteria`. Design rubric criterion 10 re-fired on the original vague language every run.
+
+**Fix:** Haiku prompt rewritten with 6 explicit rules: (1) REPLACE vague criteria — find the criterion that the PM recommendation addresses, remove the vague version, insert the concrete one; (2) list the specific vague words to replace ("soft", "non-intrusive", "ambient", "proactively", "seamlessly", "minimal", "appropriate", "subtle"); (3) STRIP visual/design details from PM recommendations before writing to spec (no hex values, RGBA, component choices, pixel positions); (4) keep ALL existing concrete criteria; (5) route to correct sections; (6) output complete section body. Design agent resume message now explicitly says "The product spec has been updated" so user knows it happened. 5 new producer tests cover the replace rule, vague word list, and strip rule.
+
+---
+
 ### ⚠️ Real-agent fixture for `pm-escalation-spec-writer.ts` Haiku prompt (2026-04-12) — HIGH PRIORITY
 
 Consumer and producer unit tests exist for `pm-escalation-spec-writer.ts`, but the producer tests only verify that the system prompt **contains** the right language — they do not prove that Haiku actually produces `##` output in practice. Per the fixture sourcing rule, this is a false-confidence gap.

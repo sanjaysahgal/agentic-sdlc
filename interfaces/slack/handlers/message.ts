@@ -397,7 +397,10 @@ ${brief}`
         }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
       }
 
-      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed. Begin your response by listing each recommendation you are applying to the spec (e.g. "Applying PM recommendations: 1. ... 2. ..."), then proceed with the spec updates.`
+      const specUpdatedNote = escalationNotification.recommendations
+        ? " The product spec has been updated to replace vague acceptance criteria with the confirmed decisions — you will not see these same gaps again."
+        : ""
+      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed.${specUpdatedNote} Begin your response by confirming the product spec has been updated and listing each decision you are now applying to the design spec (e.g. "Product spec updated. Applying: 1. ... 2. ..."), then proceed with the design spec updates.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
       }})

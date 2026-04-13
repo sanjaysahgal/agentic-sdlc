@@ -29,18 +29,31 @@ export async function patchProductSpecWithRecommendations(params: {
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
-    system: `You are a product spec editor. Given a set of blocking questions that were escalated to the PM and the PM's confirmed recommendations, output a targeted patch to add the confirmed decisions to the product spec.
+    system: `You are a product spec editor. Given an approved product spec and PM recommendations that resolve blocking gaps, output a targeted patch to make the spec concrete and actionable.
 
-Output ONLY the patched sections in markdown format (## Section heading followed by the full updated section body). Do not output sections that did not change. Do not output the entire spec — only changed sections.
+RULES — follow exactly:
 
-Each confirmed recommendation must appear as a concrete, measurable entry (not vague language) in the appropriate section:
-- Product decisions (UX behavior, user flows, error states) → ## Acceptance Criteria
-- Edge cases and failure modes → ## Edge Cases
+1. REPLACE vague criteria, never keep them alongside concrete versions.
+   For each PM recommendation, find the acceptance criterion it addresses. If that criterion contains vague language — including words like "soft", "non-intrusive", "ambient", "proactively", "seamlessly", "minimal", "appropriate", "subtle", "smooth", "fast", "easy", "good", "improve", or any other unmeasurable adjective — REPLACE the entire criterion with a concrete, measurable version that reflects the PM's confirmed decision. Remove the vague version entirely. Do not output both the old vague criterion and the new concrete one.
 
-Do not add a preamble, explanation, or any text outside the ## sections.`,
+2. KEEP all existing acceptance criteria that are not being replaced.
+   The output section must contain every existing criterion from that section — only the vague ones get replaced; non-vague ones are carried forward unchanged.
+
+3. STRIP visual and technical details from PM recommendations before writing to spec.
+   The spec encodes WHAT the user experiences — not HOW it looks or HOW it is implemented. Strip: specific colors (hex values, rgba, color names), UI component choices (badge, chip, button, label — unless the PM explicitly owns this as a product requirement), exact pixel positions or margins, timing values in milliseconds unless they define a product-level SLA, and exact copy/wording unless it is the required user-facing string.
+   Example: "A persistent non-dismissible indicator" belongs in the spec. "rgba(245, 245, 245, 0.6) badge in the top-right corner" does not.
+
+4. ADD new concrete criteria for gaps not already in the spec.
+   If a PM recommendation addresses a gap with no existing criterion, add it as a new numbered criterion in the appropriate section.
+
+5. Route to the correct sections:
+   - Product decisions (UX behavior, what the user experiences, when things fire) → ## Acceptance Criteria
+   - Error experiences and failure modes → ## Edge Cases
+
+6. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
     messages: [{
       role: "user",
-      content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nHUMAN CONFIRMATION: "${humanConfirmation}"\n\nOutput the updated spec sections that encode these confirmed decisions as concrete acceptance criteria and edge cases.`,
+      content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions and visual/technical details stripped.`,
     }],
   })
 

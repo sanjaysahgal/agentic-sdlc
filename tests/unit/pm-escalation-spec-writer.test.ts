@@ -91,7 +91,6 @@ describe("patchProductSpecWithRecommendations — consumer (gate logic)", () => 
     expect(callArgs.messages[0].content).toContain(EXISTING_SPEC)
     expect(callArgs.messages[0].content).toContain(BLOCKING_QUESTION)
     expect(callArgs.messages[0].content).toContain(RECOMMENDATIONS)
-    expect(callArgs.messages[0].content).toContain(HUMAN_CONFIRM)
   })
 
   it("calls saveApprovedSpec with merged spec when Anthropic returns a valid ## patch", async () => {
@@ -179,14 +178,13 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_PATCH }] })
   })
 
-  it("system prompt instructs Haiku to output only ## sections that changed — not the entire spec", async () => {
+  it("system prompt instructs Haiku to output only sections that changed — not the entire spec", async () => {
     await patchProductSpecWithRecommendations({
       featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
     })
 
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    expect(systemPrompt).toContain("only changed sections")
-    expect(systemPrompt).toContain("Do not output the entire spec")
+    expect(systemPrompt.toLowerCase()).toMatch(/only sections that changed|output only.*changed/)
   })
 
   it("system prompt requires concrete measurable entries — prohibits vague language", async () => {
@@ -196,7 +194,6 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
 
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
     expect(systemPrompt).toContain("concrete, measurable")
-    expect(systemPrompt).toContain("not vague language")
   })
 
   it("system prompt routes product decisions to ## Acceptance Criteria and edge cases to ## Edge Cases", async () => {
@@ -215,8 +212,54 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
     })
 
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    expect(systemPrompt).toContain("Do not add a preamble")
-    expect(systemPrompt).toContain("any text outside the ## sections")
+    expect(systemPrompt).toContain("preamble")
+    expect(systemPrompt.toLowerCase()).toMatch(/nothing outside|no.*outside|text outside/)
+  })
+
+  it("system prompt instructs Haiku to REPLACE vague criteria — not append new ones alongside old", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must explicitly say to replace, not add alongside
+    expect(systemPrompt.toLowerCase()).toMatch(/replace.*vague|vague.*replace/)
+    expect(systemPrompt.toLowerCase()).toMatch(/remove.*vague|do not keep both|remove.*entirely/)
+  })
+
+  it("system prompt names specific vague words that must be replaced — including 'soft', 'ambient', 'non-intrusive'", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // The cycle-causing words must be explicitly named so Haiku knows to replace them
+    expect(systemPrompt.toLowerCase()).toContain("soft")
+    expect(systemPrompt.toLowerCase()).toContain("ambient")
+    expect(systemPrompt.toLowerCase()).toContain("non-intrusive")
+    expect(systemPrompt.toLowerCase()).toContain("seamlessly")
+  })
+
+  it("system prompt instructs Haiku to STRIP visual/design details from PM recommendations before writing to spec", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must explicitly prohibit color values and component choices from being written to spec
+    expect(systemPrompt.toLowerCase()).toMatch(/strip|remove.*visual|visual.*detail/)
+    expect(systemPrompt.toLowerCase()).toMatch(/hex|rgba|color/)
+    expect(systemPrompt.toLowerCase()).toMatch(/component|badge|chip/)
+  })
+
+  it("system prompt requires section output to carry ALL existing criteria — not just the changed ones", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Section body must be complete — applySpecPatch replaces entire section, not individual criteria
+    expect(systemPrompt.toLowerCase()).toMatch(/all.*criteria|complete.*section|all existing/)
   })
 
   it("uses claude-haiku-4-5-20251001 — fast focused patch generation, not Sonnet", async () => {
