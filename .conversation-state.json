@@ -1,11 +1,5 @@
 {
-  "pendingEscalations": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. Define the exact copy for the persistent logged-out indicator \u2014 \"Not signed in\", \"Signed out\", or another phrase \u2014 so the user understands their authentication state clearly.\n2. Specify the user experience and exact error message when post-SSO account creation fails \u2014 whether the user sees an inline error in the Auth Sheet, a recovery screen, a retryable error state, or another approach \u2014 so they know what went wrong and how to proceed.\n3. Decide whether the signature glow effect diminishes as conversation fills the viewport (and if so, define the exact trigger conditions, final opacity/blur values, and transition duration) or remains visually constant throughout the session, so the designer can implement the intended aesthetic.\n4. Define distinct Auth Sheet copy for new vs returning users \u2014 exact heading (e.g., \"Create your account\" vs \"Welcome back\") and subheading when a session has no conversation history \u2014 so the onboarding messaging matches the user's context.",
-      "designContext": ""
-    }
-  },
+  "pendingEscalations": {},
   "pendingApprovals": {},
   "escalationNotifications": {}
 }

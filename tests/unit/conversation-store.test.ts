@@ -275,6 +275,33 @@ describe("conversation-store", () => {
     clearEscalationNotification("onboarding")
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
+
+  it("disableFilePersistence clears all in-memory state loaded from disk on module import", async () => {
+    // Simulate production state on disk with all three map types populated
+    const savedState = {
+      pendingEscalations: { "onboarding": { targetAgent: "pm", question: "Q", designContext: "" } },
+      pendingApprovals: { "onboarding": { specType: "product", specContent: "...", filePath: "x", featureName: "onboarding" } },
+      escalationNotifications: { "onboarding": { targetAgent: "pm", question: "Q" } },
+    }
+    fsMocks.readFileSync
+      .mockImplementationOnce(() => { throw new Error("ENOENT") })       // confirmed-agents
+      .mockImplementationOnce(() => { throw new Error("ENOENT") })       // history
+      .mockReturnValueOnce(JSON.stringify(savedState))                    // state
+
+    const { disableFilePersistence, getPendingEscalation, getPendingApproval, getEscalationNotification, getHistory } = await import("../../runtime/conversation-store")
+
+    // Before disableFilePersistence: disk state is in memory
+    expect(getPendingEscalation("onboarding")?.question).toBe("Q")
+    expect(getPendingApproval("onboarding")?.specType).toBe("product")
+    expect(getEscalationNotification("onboarding")?.question).toBe("Q")
+
+    // After disableFilePersistence: all state is wiped — tests start clean
+    disableFilePersistence()
+    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingApproval("onboarding")).toBeNull()
+    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getHistory("onboarding")).toEqual([])
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

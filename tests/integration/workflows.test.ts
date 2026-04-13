@@ -4932,3 +4932,72 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     expect(mentionCall).toBeDefined()
   })
 })
+
+// ─── Scenario N38: loadAgentContext main-branch fallback for approved product spec ──────────────
+
+describe("Scenario N38 — loadAgentContext falls back to main when draft branch 404s, PM agent gets product spec", () => {
+  const THREAD = "workflow-n38"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    // pendingEscalation without productSpec — simulates state restored from disk without the field,
+    // or set by the pre-run structural gate before the main-branch fallback was implemented.
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "1. What is the exact copy for the logged-out indicator?",
+      designContext: "",
+      // productSpec intentionally absent
+    })
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clrEsc("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("PM agent receives approved product spec from main-branch fallback when productSpec absent from pendingEscalation", async () => {
+    const approvedSpec = "## Problem\nHelp users onboard.\n\n## Target Users\nNew mobile users.\n"
+
+    // Draft branch 404s → loadAgentContext falls back to main (returns the approved spec)
+    mockGetContent.mockImplementation((params: any) => {
+      if (params?.ref === "spec/onboarding-product") {
+        return Promise.reject(Object.assign(new Error("not found"), { status: 404 }))
+      }
+      if (params?.path?.includes("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(approvedSpec).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("not found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' — concise and universally understood.\n→ Rationale: Standard phrasing across industry; no ambiguity.\n→ Note: Pending human PM confirmation before engineering handoff"
+
+    // PM escalation path: classifyMessageScope + PM agent run
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: PM_RECOMMENDATIONS }],
+      })                                                                                  // PM agent run
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // PM agent should have gotten the product spec — verify via the content passed to the Anthropic call.
+    // The second Anthropic call (index 1) is the PM agent run — its system prompt includes currentDraft.
+    // system is an array of cache-control blocks: [{ type: "text", text: "...", cache_control: {...} }]
+    const pmCall = mockAnthropicCreate.mock.calls[1]
+    const systemBlocks = pmCall[0].system as Array<{ type: string; text: string }>
+    const systemText = systemBlocks.map((b: any) => b.text ?? "").join("")
+    // The approved spec is injected via context.currentDraft in the PM system prompt
+    expect(systemText).toContain("Help users onboard")
+
+    // escalationNotification must be set (PM produced recommendations and was @mentioned)
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+    expect(notification!.recommendations).toContain("My recommendation")
+  })
+})

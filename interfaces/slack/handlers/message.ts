@@ -1161,7 +1161,7 @@ async function runDesignAgent(params: {
     if (productBlockingQuestions.length > 0 && !getPendingEscalation(featureName)) {
       const prefix = routingNote ? `${routingNote}\n\n` : ""
       const consolidated = productBlockingQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
-      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "" })
+      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
       const escalationResponse = `${consolidated}\n\n${assertionText}`
       appendMessage(featureName, { role: "user", content: userMessage })

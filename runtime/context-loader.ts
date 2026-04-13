@@ -77,7 +77,7 @@ export async function loadAgentContext(featureName?: string): Promise<AgentConte
     readFile(paths.productVision),
     readFile(paths.featureConventions),
     readFile(paths.systemArchitecture),
-    draftPath ? readFile(draftPath, draftBranch) : Promise.resolve(""),
+    draftPath ? readFile(draftPath, draftBranch).then(d => d || readFile(draftPath)) : Promise.resolve(""),
     // Load all other approved product specs for cross-feature coherence
     loadApprovedSpecs(paths.featuresRoot, ".product.md", featureName),
   ])

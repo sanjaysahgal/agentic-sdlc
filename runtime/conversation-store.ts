@@ -139,9 +139,19 @@ function loadConversationState(): void {
 }
 
 // Disable file persistence for integration tests — prevents test cleanup from wiping production state files.
-// Call once from integration test global setup. Has no effect on unit tests (which mock fs directly).
+// Also clears all in-memory state loaded from disk on module import, so tests start with a clean slate
+// regardless of what the production state files contain.
+// Call once at the top of each integration test file, before any test runs.
 let _filePersistenceEnabled = true
-export function disableFilePersistence(): void { _filePersistenceEnabled = false }
+export function disableFilePersistence(): void {
+  _filePersistenceEnabled = false
+  // Wipe all state maps — disk-loaded values from module import must not bleed into tests.
+  store.clear()
+  confirmedAgents.clear()
+  pendingEscalations.clear()
+  pendingApprovals.clear()
+  escalationNotifications.clear()
+}
 
 function persistConversationState(): void {
   if (!_filePersistenceEnabled) return
