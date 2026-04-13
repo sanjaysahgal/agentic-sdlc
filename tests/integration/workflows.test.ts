@@ -73,7 +73,13 @@ import {
   getPendingEscalation,
   clearPendingEscalation,
   clearEscalationNotification,
+  disableFilePersistence,
 } from "../../../runtime/conversation-store"
+
+// Prevent integration tests from writing to production state files on disk.
+// Test teardown calls clearPendingEscalation etc. — without this guard those calls
+// would wipe .conversation-state.json and lose real pending escalation state.
+disableFilePersistence()
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
 
 const originalEnv = process.env
