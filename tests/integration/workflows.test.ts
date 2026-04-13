@@ -5185,3 +5185,90 @@ describe("Scenario N41 — per-feature in-flight lock rejects concurrent message
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 })
+
+// ─── Scenario N42: [type: product] markers cleared after PM resolution ────────
+//
+// Root cause of the "infinite escalation loop" production bug (2026-04-13):
+// After the PM resolved blocking questions and design resumed via auto-close,
+// the pre-run structural gate re-fired on the same [type: product] [blocking: yes]
+// markers still present in the design spec draft. The gate created a new pendingEscalation
+// and returned early — design never ran. User had to keep saying "yes" to a PM that
+// kept answering the same questions.
+//
+// Fix: clearProductBlockingMarkersFromDesignSpec() runs in both the auto-close path
+// and the standalone-confirmation path before the design agent is called.
+
+describe("Scenario N42 — [type: product] markers cleared from design spec after PM resolution", () => {
+  const THREAD = "workflow-n42"
+
+  beforeEach(async () => {
+    clearHistory("n42feature")
+    setConfirmedAgent("n42feature", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("n42feature", {
+      targetAgent: "pm",
+      question: "1. Define what 'ambient awareness only' means operationally.",
+      recommendations: "1. My recommendation: Non-clickable text only.\n→ Rationale: Ambient = passive.",
+    })
+  })
+
+  afterEach(async () => {
+    clearHistory("n42feature")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("n42feature")
+  })
+
+  it("standalone confirmation path: design spec blocking markers stripped before design resumes", async () => {
+    // GitHub returns design spec draft WITH blocking markers — simulates the production bug state
+    const designSpecWithMarkers = [
+      "# Onboarding Design Spec",
+      "",
+      "## Open Questions",
+      "- [type: product] [blocking: yes] Define what 'ambient awareness only' means operationally.",
+      "",
+      "## Screens",
+      "Screen 1.",
+    ].join("\n")
+    const designBranchContent = Buffer.from(designSpecWithMarkers).toString("base64")
+
+    // GitHub mock: paginate returns design branch; getContent returns design spec with markers
+    mockPaginate.mockResolvedValueOnce([{ name: "spec/n42feature-design" }])
+    mockGetContent
+      .mockResolvedValueOnce({ data: { content: Buffer.from("# Product Spec").toString("base64"), type: "file" } }) // product on main
+      .mockRejectedValueOnce(new Error("Not Found"))   // design not on main (draft only)
+      .mockRejectedValueOnce(new Error("Not Found"))   // engineering not on main
+      .mockResolvedValueOnce({ data: { content: designBranchContent, type: "file" } }) // design draft on branch (phase completion audit)
+      .mockResolvedValueOnce({ data: { content: designBranchContent, type: "file" } }) // design draft on branch (pre-run gate)
+
+    // "yes" — standalone confirmation, isStandaloneConfirmation returns true
+    // Mock sequence: patchProductSpecWithRecommendations Haiku → design agent
+    // (auditPhaseCompletion also calls Anthropic — that's handled by default NONE mock)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- Non-clickable text only." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // patchProductSpecWithRecommendations Haiku
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Resuming design." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // design agent
+
+    const params = makeParams(THREAD, "feature-n42feature", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Design agent must have run — pre-run gate must NOT have re-fired on the stale markers
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("Resuming design.")
+
+    // No new pendingEscalation should have been set (gate didn't re-fire)
+    const { getPendingEscalation: getPE } = await import("../../../runtime/conversation-store")
+    expect(getPE("n42feature")).toBeNull()
+
+    // Design spec markers must have been stripped — verified by checking saveDraftDesignSpec was called
+    // (mockCreateOrUpdate called at least once — clearing markers wrote back the cleaned spec)
+    expect(mockCreateOrUpdate).toHaveBeenCalled()
+    const saveCall = (mockCreateOrUpdate as ReturnType<typeof vi.fn>).mock.calls.find((c: any[]) =>
+      typeof c[0]?.path === "string" && c[0].path.includes("n42feature.design.md")
+    )
+    expect(saveCall).toBeDefined()
+    const savedContent = Buffer.from(saveCall![0].content, "base64").toString()
+    expect(savedContent).not.toContain("[type: product]")
+    expect(savedContent).not.toContain("[blocking: yes]")
+  })
+})

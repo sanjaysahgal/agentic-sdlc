@@ -148,6 +148,14 @@ When the user confirms escalation ("yes"), the platform currently posts the raw 
 
 ---
 
+~~### Escalation loop — [type: product] markers in design spec not cleared after PM resolves them (2026-04-13)~~ ✅ Done (2026-04-13)
+
+Root cause: `[type: product] [blocking: yes]` markers are written into the design spec draft by the design agent when it identifies PM-scope blocking questions. When the PM resolves these questions, only the product spec is updated (`patchProductSpecWithRecommendations`). The design spec markers were never removed. On the next design turn, the pre-run structural gate re-read the design spec, found the same markers still present, set a new `pendingEscalation`, and returned early — design never ran. User kept hitting the same PM escalation loop.
+
+**Fix:** `clearProductBlockingMarkersFromDesignSpec(featureName)` — strips lines containing both `[type: product]` and `[blocking: yes]` from the design spec draft and saves back to the branch. Called in both the auto-close path (PM saves spec in continuation) and the standalone-confirmation path (human PM confirms with "yes") before the design agent runs. N42 integration test covers.
+
+---
+
 ~~### Per-feature in-flight lock — concurrent Slack messages cause double-fire (PM + UX Designer respond to same message)~~ ✅ Done (2026-04-13)
 
 Root cause: PM agent runs take 10s+. When a Slack retry or rapid follow-up arrived while the first run was still active, both invocations processed concurrently — PM agent ran for the first, design agent ran for the second, both posting responses to the same thread.

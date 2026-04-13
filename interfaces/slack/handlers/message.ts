@@ -45,6 +45,24 @@ function specFingerprint(content: string): string {
   return `${content.length}:${content.slice(0, 100)}:${content.slice(-50)}`
 }
 
+// Removes [type: product] [blocking: yes] markers from the design spec draft after PM resolution.
+// Called in both the auto-close path and the standalone-confirmation path before design resumes.
+// Without this, the pre-run structural gate re-fires on stale markers every turn, looping back to PM.
+async function clearProductBlockingMarkersFromDesignSpec(featureName: string): Promise<void> {
+  const { paths } = loadWorkspaceConfig()
+  const filePath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+  const branchName = `spec/${featureName}-design`
+  const draft = await readFile(filePath, branchName).catch(() => null)
+  if (!draft) return
+  const cleaned = draft
+    .split("\n")
+    .filter(line => !(line.includes("[type: product]") && line.includes("[blocking: yes]")))
+    .join("\n")
+  if (cleaned === draft) return  // No markers found — nothing to do
+  await saveDraftDesignSpec({ featureName, filePath, content: cleaned })
+  console.log(`[ESCALATION] clearProductBlockingMarkersFromDesignSpec: stripped blocking markers from ${filePath}`)
+}
+
 // Detects when the design agent correctly identified PM gaps in prose but did not call
 // offer_pm_escalation. Signals: response contains PM-escalation language — either an explicit
 // "say yes" CTA ("bring the PM", "PM into this thread", "cannot move forward") OR an offer to
@@ -419,6 +437,10 @@ ${brief}`
         if (pmDidSave) {
           console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn, escalation resolved`)
           clearEscalationNotification(featureName)
+          // Remove [type: product] [blocking: yes] markers from the design spec — PM just resolved them.
+          // Without this, the pre-run structural gate re-fires on the next design turn with the same
+          // stale markers, looping back to PM even though the questions are answered.
+          await clearProductBlockingMarkersFromDesignSpec(featureName)
           const injectedMessage = `PM answered the blocking question and updated the product spec. The PM gap is now closed. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
           await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
             await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
@@ -458,6 +480,10 @@ ${brief}`
           text: `*Product Manager* — Product spec updated with the confirmed decisions. The design team can now continue.`,
         }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
       }
+
+      // Remove [type: product] [blocking: yes] markers from the design spec — PM just resolved them.
+      // Without this, the pre-run structural gate re-fires on the next design turn with stale markers.
+      await clearProductBlockingMarkersFromDesignSpec(featureName)
 
       const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". The PM gap is now closed and the product spec has been updated. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
