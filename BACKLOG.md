@@ -122,11 +122,11 @@ Real incident: PM agent gave recommendation for #4 only. Human replied "approved
 
 ---
 
-~~### Design agent escalation must be platform-enforced, not prompt-dependent~~ ✅ Done (2026-04-07)
+~~### Design agent escalation must be platform-enforced, not prompt-dependent~~ ✅ Done (2026-04-07, root cause fix 2026-04-13)
 
-Two-layer platform enforcement in `runDesignAgent`:
-1. **Pre-run structural gate** (primary): After loading the design spec draft, `extractProductBlockingQuestions` parses for `[type: product] [blocking: yes]` lines. If found and no pending escalation, auto-triggers escalation and returns before calling the agent. Deterministic — no LLM, no Anthropic call. N19 covers this gate independently.
-2. **Post-run rubric gate** (belt-and-suspenders): If `designReadinessFindings` contains `[type: product]` tagged findings after the agent runs, platform overrides the response and sets pending escalation. `buildDesignRubric` criterion 10 instructs Haiku to output `[type: product]` prefixed findings for unresolved product questions. N18 covers this path.
+Post-run rubric gate in `runDesignAgent`: if `designReadinessFindings` contains `[PM-GAP]` tagged findings after the agent runs and agent did not call `offer_pm_escalation`, platform auto-triggers escalation. `buildDesignRubric` criterion 10 instructs Sonnet to output `[PM-GAP]` prefixed findings — a rubric-level tag only, never written to the design spec. N18 covers this path.
+
+**Root cause fix (2026-04-13):** The original implementation used a two-layer approach where (1) the design agent was allowed to write `[type: product] [blocking: yes]` markers into the design spec, and (2) a pre-run gate re-read those markers each turn. This was architecturally wrong — the design spec should never contain PM-scope questions. The pre-run gate (`extractProductBlockingQuestions`), the marker-clearing function (`clearProductBlockingMarkersFromDesignSpec`), and the N42 test have all been deleted. Criterion 10 now outputs `[PM-GAP]` (rubric-level only). The design agent system prompt explicitly prohibits `[type: product]` in spec open questions. N19 updated to verify no false-positive gate fires on engineering-only open questions.
 
 ~~### PM agent must run on escalation confirmation — not raw question dump~~ ✅ Done (2026-04-07)
 
@@ -156,11 +156,9 @@ When the PM identified an architecture gap during the design-questions-answering
 
 ---
 
-~~### Escalation loop — [type: product] markers in design spec not cleared after PM resolves them (2026-04-13)~~ ✅ Done (2026-04-13)
+~~### Escalation loop — [type: product] markers in design spec not cleared after PM resolves them (2026-04-13)~~ ✅ DELETED as symptom fix (root cause fix supersedes, 2026-04-13)
 
-Root cause: `[type: product] [blocking: yes]` markers are written into the design spec draft by the design agent when it identifies PM-scope blocking questions. When the PM resolves these questions, only the product spec is updated (`patchProductSpecWithRecommendations`). The design spec markers were never removed. On the next design turn, the pre-run structural gate re-read the design spec, found the same markers still present, set a new `pendingEscalation`, and returned early — design never ran. User kept hitting the same PM escalation loop.
-
-**Fix:** `clearProductBlockingMarkersFromDesignSpec(featureName)` — strips lines containing both `[type: product]` and `[blocking: yes]` from the design spec draft and saves back to the branch. Called in both the auto-close path (PM saves spec in continuation) and the standalone-confirmation path (human PM confirms with "yes") before the design agent runs. N42 integration test covers.
+This was a symptom fix for the escalation loop. The actual root cause: the design spec was being used as a communication channel for PM-scope state — rubric criterion 10 wrote `[type: product] [blocking: yes]` markers into the spec, and the pre-run gate re-read them each turn. The root cause fix (same date) eliminated the mechanism that produced the markers. `clearProductBlockingMarkersFromDesignSpec`, `extractProductBlockingQuestions`, and N42 test have been deleted as obsolete. See "Design agent escalation must be platform-enforced" above for the root cause fix details.
 
 ---
 

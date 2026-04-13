@@ -297,10 +297,11 @@ describe("buildDesignRubric criterion 10 — open-loop product assumption check"
     expect(rubric).toContain("PART B")
   })
 
-  it("criterion 10 instructs Sonnet to output [type: product] [blocking: yes] prefix per gap", () => {
+  it("criterion 10 instructs Sonnet to output [PM-GAP] prefix per gap (not [type: product] — that tag was removed as root cause of escalation loop)", () => {
     const rubric = buildDesignRubric(["mobile", "desktop"])
-    expect(rubric).toContain("[type: product]")
-    expect(rubric).toContain("[blocking: yes]")
+    expect(rubric).toContain("[PM-GAP]")
+    // [type: product] was removed — PM questions must never be written into the design spec
+    expect(rubric).not.toContain("[type: product]")
   })
 
   it("criterion 10 identifies design assumptions without PM backing — not just pre-tagged questions", () => {
@@ -312,12 +313,12 @@ describe("buildDesignRubric criterion 10 — open-loop product assumption check"
   it("criterion 10 is present in all buildDesignRubric outputs regardless of form factors", () => {
     const mobile = buildDesignRubric(["mobile"])
     const both = buildDesignRubric(["mobile", "desktop", "tablet"])
-    expect(mobile).toContain("[type: product]")
-    expect(both).toContain("[type: product]")
+    expect(mobile).toContain("[PM-GAP]")
+    expect(both).toContain("[PM-GAP]")
   })
 
   it("DESIGN_RUBRIC default export includes criterion 10 (regression guard)", () => {
-    expect(DESIGN_RUBRIC).toContain("[type: product]")
+    expect(DESIGN_RUBRIC).toContain("[PM-GAP]")
     expect(DESIGN_RUBRIC.toLowerCase()).toMatch(/assum/)
   })
 })

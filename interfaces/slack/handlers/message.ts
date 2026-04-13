@@ -13,7 +13,7 @@ import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } f
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
-import { extractBlockingQuestions, extractProductBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
+import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
@@ -45,23 +45,6 @@ function specFingerprint(content: string): string {
   return `${content.length}:${content.slice(0, 100)}:${content.slice(-50)}`
 }
 
-// Removes [type: product] [blocking: yes] markers from the design spec draft after PM resolution.
-// Called in both the auto-close path and the standalone-confirmation path before design resumes.
-// Without this, the pre-run structural gate re-fires on stale markers every turn, looping back to PM.
-async function clearProductBlockingMarkersFromDesignSpec(featureName: string): Promise<void> {
-  const { paths } = loadWorkspaceConfig()
-  const filePath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-  const branchName = `spec/${featureName}-design`
-  const draft = await readFile(filePath, branchName).catch(() => null)
-  if (!draft) return
-  const cleaned = draft
-    .split("\n")
-    .filter(line => !(line.includes("[type: product]") && line.includes("[blocking: yes]")))
-    .join("\n")
-  if (cleaned === draft) return  // No markers found — nothing to do
-  await saveDraftDesignSpec({ featureName, filePath, content: cleaned })
-  console.log(`[ESCALATION] clearProductBlockingMarkersFromDesignSpec: stripped blocking markers from ${filePath}`)
-}
 
 // Detects when the design agent correctly identified PM gaps in prose but did not call
 // offer_pm_escalation. Signals: response contains PM-escalation language — either an explicit
@@ -437,10 +420,6 @@ ${brief}`
         if (pmDidSave) {
           console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn, escalation resolved`)
           clearEscalationNotification(featureName)
-          // Remove [type: product] [blocking: yes] markers from the design spec — PM just resolved them.
-          // Without this, the pre-run structural gate re-fires on the next design turn with the same
-          // stale markers, looping back to PM even though the questions are answered.
-          await clearProductBlockingMarkersFromDesignSpec(featureName)
 
           // If the PM also called offer_architect_escalation this turn, surface it before resuming design.
           // Platform enforcement: the tool call is the signal — not prose. Principle 8.
@@ -496,10 +475,6 @@ ${brief}`
           text: `*Product Manager* — Product spec updated with the confirmed decisions. The design team can now continue.`,
         }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
       }
-
-      // Remove [type: product] [blocking: yes] markers from the design spec — PM just resolved them.
-      // Without this, the pre-run structural gate re-fires on the next design turn with stale markers.
-      await clearProductBlockingMarkersFromDesignSpec(featureName)
 
       const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". The PM gap is now closed and the product spec has been updated. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
@@ -1227,10 +1202,10 @@ async function runDesignAgent(params: {
       }).catch(() => null)
       if (designAuditResult && !designAuditResult.ready) {
         designReadinessFindings = designAuditResult.findings
-        const productFindingsPreRun = designAuditResult.findings.filter(f => f.issue.toLowerCase().includes("[type: product]"))
-        console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: ${designAuditResult.findings.length} total findings, ${productFindingsPreRun.length} [type: product]`)
+        const productFindingsPreRun = designAuditResult.findings.filter(f => f.issue.includes("[PM-GAP]"))
+        console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: ${designAuditResult.findings.length} total findings, ${productFindingsPreRun.length} [PM-GAP]`)
         if (productFindingsPreRun.length > 0) {
-          console.log(`[ESCALATION] Gate 1 [type: product] findings:\n${productFindingsPreRun.map(f => f.issue).join("\n")}`)
+          console.log(`[ESCALATION] Gate 1 [PM-GAP] findings:\n${productFindingsPreRun.map(f => f.issue).join("\n")}`)
         }
         const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. The platform displays these in a structured block — DO NOT restate or list them in your response. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation. For design gaps you own, fix them when the user asks. Keep your prose to ≤3 sentences.\n${findingLines}]`
@@ -1240,26 +1215,6 @@ async function runDesignAgent(params: {
       }
       phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
       designReadinessFindingsCache.set(designCacheKey, designReadinessFindings)
-    }
-  }
-
-  // Pre-run structural gate: if the design spec has [type: product] [blocking: yes] open questions
-  // and no escalation is already pending, auto-trigger escalation before the agent runs.
-  // This is deterministic (pure string match) — no LLM, no Anthropic call. Catches the case
-  // where the rubric-based post-run gate can't fire because the rubric doesn't tag findings
-  // with [type: product]. The spec's own Open Questions section is the authoritative source.
-  if (designDraftContent && !readOnly) {
-    const productBlockingQuestions = extractProductBlockingQuestions(designDraftContent)
-    if (productBlockingQuestions.length > 0 && !getPendingEscalation(featureName)) {
-      const prefix = routingNote ? `${routingNote}\n\n` : ""
-      const consolidated = productBlockingQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
-      setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
-      const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
-      const escalationResponse = `${consolidated}\n\n${assertionText}`
-      appendMessage(featureName, { role: "user", content: userMessage })
-      appendMessage(featureName, { role: "assistant", content: escalationResponse })
-      await update(`${prefix}${escalationResponse}`)
-      return
     }
   }
 
@@ -1584,10 +1539,11 @@ async function runDesignAgent(params: {
     }
   }
 
-  // Platform enforcement: if there are [type: product] blocking findings and the agent did NOT
-  // call offer_pm_escalation, auto-trigger escalation. Prompt rules are probabilistic — this
-  // makes product gap escalation structurally deterministic regardless of agent prose choices.
-  const productFindings = designReadinessFindings.filter(f => f.issue.toLowerCase().includes("[type: product]"))
+  // Platform enforcement: if there are [PM-GAP] findings from the design rubric and the agent
+  // did NOT call offer_pm_escalation, auto-trigger escalation. Prompt rules are probabilistic —
+  // this makes product gap escalation structurally deterministic regardless of agent prose choices.
+  // [PM-GAP] is a rubric-level tag — it never appears in the design spec itself (root cause fix).
+  const productFindings = designReadinessFindings.filter(f => f.issue.includes("[PM-GAP]"))
   const agentCalledEscalation = !!getPendingEscalation(featureName)
   console.log(`[ESCALATION] gate check for ${featureName}: productFindings=${productFindings.length}, agentCalledEscalation=${agentCalledEscalation}, toolCalls=${toolCallsOutDesign.map(t => t.name).join(",") || "none"}`)
   if (productFindings.length > 0 && !agentCalledEscalation) {

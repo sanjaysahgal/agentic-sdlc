@@ -33,6 +33,23 @@ The target repo (`agentic-health360` or any future customer repo) is read-only f
 
 **Before touching any file in a customer repo:** stop and ask "Is this a product decision the user has approved, or am I doing this to work around a platform limitation?" If the latter, fix the platform.
 
+### 9. No symptom fixes — ever. Always find the root cause.
+
+**When a bug appears, find the architectural assumption that makes it possible — then fix that. Never patch the symptom.**
+
+A symptom fix is any change that makes the bug stop manifesting without eliminating the condition that causes it. Symptom fixes always produce more bugs of the same class because the underlying assumption is still wrong.
+
+**The mandatory gate before writing any bug fix:**
+1. What is the invariant that was violated?
+2. What architectural assumption allowed the invariant to be violated?
+3. Is this the second time this class of bug has appeared? If yes — stop. The first fix was a symptom fix. Find the assumption.
+
+**The test for a real fix:** After the fix, is it *structurally impossible* for the same class of bug to recur? If another bug of the same class is still possible, you fixed a symptom.
+
+**Historical violation (April 2026):** The design spec contained `[type: product] [blocking: yes]` markers that caused an infinite escalation loop. Three symptom fixes were implemented: (1) markers not cleared → add `clearProductBlockingMarkersFromDesignSpec`, (2) gate re-fires on stale markers → add marker-stripping in auto-close path, (3) N42 test for marker cleanup. The root cause — the design spec was being used as a communication channel for PM-scope state, which it should never contain — was only identified when the user asked "why does the design spec have PM questions in it at all?" One root cause fix eliminated all three symptom fixes.
+
+**Enforcement:** If you are writing a fix for a bug class that already has a prior fix in the codebase, stop and read the prior fix before writing the new one. If the new fix addresses the same symptom at a different location, you are fixing a symptom. Escalate to the user: "This is the second fix for this class. The root cause has not been addressed. Here is what I believe the root cause is: [X]. Should I fix that instead?"
+
 ### 4. Durable over fast
 When two approaches solve the problem — one fast/brittle, one slower/durable — always choose durable. Flag the tradeoff explicitly before implementing. Never implement a shortcut without saying so and getting confirmation.
 

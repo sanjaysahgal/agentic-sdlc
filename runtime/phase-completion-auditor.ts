@@ -144,7 +144,7 @@ PART A — Design assumptions: Identify any design decision that assumes a produ
 
 PART B — PM spec vagueness: Scan the ## Approved Product Spec for requirements that use vague or undefined language for user-visible behaviors — for example: "handle gracefully", "preserve conversations", "appropriate response", "seamlessly", or any error path/edge case described without specifying the actual behavior. For each such vague PM requirement, check whether the design spec provides a specific, implementable decision. If the PM spec is too vague to design against AND the design spec also lacks a specific implementation (missing screen, missing state, missing error copy), that is a product-scope gap — the design team cannot invent the answer unilaterally.
 
-For each finding from PART A or PART B, output exactly one line with the prefix "[type: product] [blocking: yes]" followed by: which PM requirement is vague or missing, and what specific PM decision is needed before design can proceed. If no gaps exist, output nothing for this criterion.`
+For each finding from PART A or PART B, output exactly one line with the prefix "[PM-GAP]" followed by: which PM requirement is vague or missing, and what specific PM decision is needed before design can proceed. If no gaps exist, output nothing for this criterion.`
 }
 
 export const DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"])

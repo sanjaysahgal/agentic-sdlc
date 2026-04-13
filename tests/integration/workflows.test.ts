@@ -3640,14 +3640,24 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
   })
 })
 
-// ─── Scenario N19: Pre-run structural gate fires on [type: product] [blocking: yes] in spec ──
+// ─── Scenario N19: [type: product] markers no longer written to design spec (root cause fix) ──
 //
-// When the design spec draft has [type: product] [blocking: yes] open questions, the platform
-// must auto-trigger escalation BEFORE the agent runs — deterministic string match, no LLM.
-// This gate fires even if auditPhaseCompletion returns PASS (rubric has no criterion producing
-// [type: product] findings). The test proves the pre-run gate works independently of the rubric.
+// DELETED MECHANISM (2026-04-13): The pre-run structural gate that read [type: product]
+// [blocking: yes] markers from the design spec has been removed as part of the root cause fix
+// for the escalation loop. Root cause: rubric criterion 10 was instructing the design agent to
+// write PM-scope questions into the design spec as open questions. This was architecturally wrong
+// — design specs must only contain engineering-scope open questions.
+//
+// The replacement architecture:
+// - Rubric criterion 10 now outputs [PM-GAP] prefix — a rubric-level tag, never persisted to spec
+// - The N18 post-run gate checks designReadinessFindings for [PM-GAP] (rubric output, not spec content)
+// - Design agent system prompt explicitly prohibits [type: product] questions in the spec
+// - The design spec contains only [type: engineering] open questions
+//
+// This scenario now verifies the new invariant: a design spec with only [type: engineering]
+// open questions runs the agent normally — no false-positive gate fires, no premature block.
 
-describe("Scenario N19 — Pre-run structural gate fires when spec has [type: product] blocking questions", () => {
+describe("Scenario N19 — Design spec with only engineering open questions runs agent normally (no false-positive gate)", () => {
   const THREAD = "workflow-n19"
 
   beforeEach(() => {
@@ -3660,16 +3670,15 @@ describe("Scenario N19 — Pre-run structural gate fires when spec has [type: pr
     clearPendingEscalation("onboarding")
   })
 
-  it("spec has [type: product] [blocking: yes] question → gate fires before agent, no runAgent Anthropic call", async () => {
-    // Design spec draft has an unresolved product-scope open question.
+  it("spec with [type: engineering] open question → agent runs, no premature escalation gate", async () => {
+    // Design spec with only engineering-scope open questions (correct format per root cause fix).
     const draftContent = [
       "## Screens",
       "### Onboarding Welcome",
       "Purpose: First screen after signup.",
       "",
       "## Open Questions",
-      "- [type: product] [blocking: yes] Which SSO providers must be supported at launch?",
-      "- [type: design] [blocking: no] Should the welcome illustration be static or animated?",
+      "- [type: engineering] [blocking: yes] Which WebAuthn library handles passkey registration?",
     ].join("\n")
 
     mockGetContent.mockImplementation(async ({ path }: any) => {
@@ -3679,33 +3688,23 @@ describe("Scenario N19 — Pre-run structural gate fires when spec has [type: pr
       throw Object.assign(new Error("not found"), { status: 404 })
     })
 
-    // Anthropic mock sequence: only isOffTopicForAgent, isSpecStateQuery, auditPhaseCompletion.
-    // auditPhaseCompletion returns PASS — rubric finds no issues. Pre-run gate fires regardless.
-    // runAgent is NOT mocked — if it's called, the test will hang or fail.
+    // auditPhaseCompletion returns PASS. Agent runs and responds normally.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })   // auditPhaseCompletion → PASS (rubric finds nothing)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })   // auditPhaseCompletion → PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is the design update." }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 20 } })  // design agent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })   // identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "what's next for the welcome screen?")
     await handleFeatureChannelMessage(params)
 
-    // Pre-run gate must have set pending escalation without calling runAgent.
+    // No pre-run gate should have fired — agent ran and responded.
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
-    expect(pending).not.toBeNull()
-    expect(pending?.targetAgent).toBe("pm")
-    expect(pending?.question).toContain("SSO providers")
+    expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // Response must assert the block with the "say yes" CTA.
     const text = lastUpdateText(params.client)
-    expect(text).toContain("Design cannot move forward")
-    expect(text).toContain("Say *yes*")
-    expect(text).toContain("SSO providers")
-
-    // The non-product design question must NOT appear in the escalation
-    // (it's [type: design], not [type: product]) — gate is selective.
-    expect(pending?.question).not.toContain("welcome illustration")
+    expect(text).toContain("Here is the design update.")
   })
 })
 
@@ -3750,8 +3749,9 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isSpecStateQuery
       .mockResolvedValueOnce({
-        // auditPhaseCompletion → returns product finding
-        content: [{ type: "text", text: "FINDING: [type: product] [blocking: yes] SSO failure handling unspecified | Specify the recovery behavior when SSO token is valid but no account found" }],
+        // auditPhaseCompletion → returns [PM-GAP] finding (root cause fix: criterion 10 now outputs
+        // [PM-GAP] instead of [type: product] — [PM-GAP] is a rubric-level tag, never written to spec)
+        content: [{ type: "text", text: "FINDING: [PM-GAP] SSO failure handling unspecified | Specify the recovery behavior when SSO token is valid but no account found" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 20, output_tokens: 30 },
       })
@@ -3771,7 +3771,7 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
     const pending = getPendingEscalation("onboarding")
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
-    expect(pending?.question).toContain("[type: product]")
+    expect(pending?.question).toContain("[PM-GAP]")
     expect(pending?.question).toContain("SSO failure handling")
 
     // Response must assert the block, not ask a passive question
@@ -5186,92 +5186,19 @@ describe("Scenario N41 — per-feature in-flight lock rejects concurrent message
   })
 })
 
-// ─── Scenario N42: [type: product] markers cleared after PM resolution ────────
+// ─── Scenario N42: DELETED — clearProductBlockingMarkersFromDesignSpec removed (root cause fix) ──
 //
-// Root cause of the "infinite escalation loop" production bug (2026-04-13):
-// After the PM resolved blocking questions and design resumed via auto-close,
-// the pre-run structural gate re-fired on the same [type: product] [blocking: yes]
-// markers still present in the design spec draft. The gate created a new pendingEscalation
-// and returned early — design never ran. User had to keep saying "yes" to a PM that
-// kept answering the same questions.
+// This scenario tested clearProductBlockingMarkersFromDesignSpec(), which was a symptom fix
+// for the escalation loop bug (2026-04-13). The symptom: after PM resolved questions, the
+// pre-run gate re-fired on stale [type: product] [blocking: yes] markers still in the spec.
 //
-// Fix: clearProductBlockingMarkersFromDesignSpec() runs in both the auto-close path
-// and the standalone-confirmation path before the design agent is called.
-
-describe("Scenario N42 — [type: product] markers cleared from design spec after PM resolution", () => {
-  const THREAD = "workflow-n42"
-
-  beforeEach(async () => {
-    clearHistory("n42feature")
-    setConfirmedAgent("n42feature", "ux-design")
-    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("n42feature", {
-      targetAgent: "pm",
-      question: "1. Define what 'ambient awareness only' means operationally.",
-      recommendations: "1. My recommendation: Non-clickable text only.\n→ Rationale: Ambient = passive.",
-    })
-  })
-
-  afterEach(async () => {
-    clearHistory("n42feature")
-    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("n42feature")
-  })
-
-  it("standalone confirmation path: design spec blocking markers stripped before design resumes", async () => {
-    // GitHub returns design spec draft WITH blocking markers — simulates the production bug state
-    const designSpecWithMarkers = [
-      "# Onboarding Design Spec",
-      "",
-      "## Open Questions",
-      "- [type: product] [blocking: yes] Define what 'ambient awareness only' means operationally.",
-      "",
-      "## Screens",
-      "Screen 1.",
-    ].join("\n")
-    const designBranchContent = Buffer.from(designSpecWithMarkers).toString("base64")
-
-    // GitHub mock: paginate returns design branch; getContent returns design spec with markers
-    mockPaginate.mockResolvedValueOnce([{ name: "spec/n42feature-design" }])
-    mockGetContent
-      .mockResolvedValueOnce({ data: { content: Buffer.from("# Product Spec").toString("base64"), type: "file" } }) // product on main
-      .mockRejectedValueOnce(new Error("Not Found"))   // design not on main (draft only)
-      .mockRejectedValueOnce(new Error("Not Found"))   // engineering not on main
-      .mockResolvedValueOnce({ data: { content: designBranchContent, type: "file" } }) // design draft on branch (phase completion audit)
-      .mockResolvedValueOnce({ data: { content: designBranchContent, type: "file" } }) // design draft on branch (pre-run gate)
-
-    // "yes" — standalone confirmation, isStandaloneConfirmation returns true
-    // Mock sequence: patchProductSpecWithRecommendations Haiku → design agent
-    // (auditPhaseCompletion also calls Anthropic — that's handled by default NONE mock)
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- Non-clickable text only." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // patchProductSpecWithRecommendations Haiku
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Resuming design." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // design agent
-
-    const params = makeParams(THREAD, "feature-n42feature", "yes")
-    await handleFeatureChannelMessage(params)
-
-    // Design agent must have run — pre-run gate must NOT have re-fired on the stale markers
-    const text = lastUpdateText(params.client)
-    expect(text).toContain("Resuming design.")
-
-    // No new pendingEscalation should have been set (gate didn't re-fire)
-    const { getPendingEscalation: getPE } = await import("../../../runtime/conversation-store")
-    expect(getPE("n42feature")).toBeNull()
-
-    // Design spec markers must have been stripped — verified by checking saveDraftDesignSpec was called
-    // (mockCreateOrUpdate called at least once — clearing markers wrote back the cleaned spec)
-    expect(mockCreateOrUpdate).toHaveBeenCalled()
-    const saveCall = (mockCreateOrUpdate as ReturnType<typeof vi.fn>).mock.calls.find((c: any[]) =>
-      typeof c[0]?.path === "string" && c[0].path.includes("n42feature.design.md")
-    )
-    expect(saveCall).toBeDefined()
-    const savedContent = Buffer.from(saveCall![0].content, "base64").toString()
-    expect(savedContent).not.toContain("[type: product]")
-    expect(savedContent).not.toContain("[blocking: yes]")
-  })
-})
+// Root cause fix (same date): rubric criterion 10 now outputs [PM-GAP] (a rubric-level tag,
+// never written to spec) instead of [type: product] [blocking: yes]. The design agent system
+// prompt also explicitly prohibits writing product-scope questions as open questions. With the
+// invariant enforced at the source, there are no markers to clear — the symptom fix and its
+// test are obsolete. See N19 for the new invariant verification.
+//
+// clearProductBlockingMarkersFromDesignSpec and extractProductBlockingQuestions have been deleted.
 
 // ─── Scenario N43: PM calls offer_architect_escalation in auto-close path ─────
 //

@@ -336,15 +336,16 @@ If this is the first feature and no DESIGN_SYSTEM.md exists yet, draft the initi
 If no updates are needed for an existing design system, state: "No design system updates — this feature uses only established patterns."
 
 ## Open Questions
-- [type: engineering|product] [blocking: yes|no] <question>
+- [type: engineering] [blocking: yes|no] <question>
 
 ## Open questions rule
 Every open question must be tagged:
-- [type: engineering] — requires a technical decision
-- [type: product] — requires a product decision
+- [type: engineering] — requires a technical decision from the architect
 - [blocking: yes|no] — yes means this spec cannot be approved until resolved
 
 Never write a free-form open question without these tags.
+
+Product-scope questions (user behavior, acceptance criteria, PM decisions) must NEVER be written into the design spec as open questions. If you discover a product gap, call \`offer_pm_escalation\` immediately — do not record it in the spec.
 
 ## Formatting rule for open items
 Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".
