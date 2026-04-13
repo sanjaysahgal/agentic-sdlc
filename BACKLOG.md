@@ -69,7 +69,7 @@ Also extended PM_RUBRIC criterion 2 vague word list: added "soft", "non-intrusiv
 
 ### Escalation UX — agent-triggered offer_pm_escalation path: assertive language + action menu suppression (2026-04-13)
 
-The pre-run structural gate (line 1159 in `message.ts`) already produces assertive escalation language and suppresses the action menu via early return. However, the *agent-triggered* path — when the design agent calls `offer_pm_escalation` itself (no blocking questions in the spec draft) — still has two issues:
+The N18 post-run gate already produces assertive escalation language and suppresses the action menu via early return. However, the *agent-triggered* path — when the design agent calls `offer_pm_escalation` itself — still has two issues:
 
 1. **Passive escalation prose** — agent may ask a wishy-washy question ("Want me to call the PM now?") instead of asserting the block with a numbered gap list + "Say *yes* and I'll bring the PM in."
 2. **Action menu still shown** — when escalation is offered this turn (null → set), the 20-item design action menu is appended below the escalation message.
@@ -78,9 +78,19 @@ The pre-run structural gate (line 1159 in `message.ts`) already produces asserti
 - Fix 1: Strengthen `offer_pm_escalation` instruction in `agents/design.ts` — assert block, numbered gaps, "say *yes*" CTA.
 - Fix 2: Snapshot `getPendingEscalation` before/after agent run; if null → set this turn, skip `buildActionMenu`. Also: early return with escalation reminder when escalation pending + user not affirmative.
 
-**Deferred because:** The pre-run gate covers the primary production path (blocking questions already in spec draft). Agent-triggered path only fires when gaps surface mid-conversation without being in the spec yet — less common. Pre-run gate validated end-to-end in production on 2026-04-13.
-
 **Impact:** Medium — UX inconsistency between gate-triggered and agent-triggered escalation paths. No data loss, no broken flows.
+
+---
+
+### Producer test gap: criterion 10 [PM-GAP] prefix needs real-Sonnet fixture (2026-04-13)
+
+The N18 gate filters `designReadinessFindings` for `[PM-GAP]` tagged issues. The consumer side is tested (N18 integration test mocks Sonnet returning `FINDING: [PM-GAP] ...`). But the producer side — whether `buildDesignRubric` criterion 10 actually causes real Sonnet to output `[PM-GAP]` prefix — has no fixture-based producer test.
+
+Per the producer-consumer chain rule: mocking the LLM to return `[PM-GAP]` is not a substitute for verifying the rubric instructs Sonnet to produce it.
+
+**Fix:** Capture a real Sonnet response to `auditPhaseCompletion` where criterion 10 fires, save to `tests/fixtures/agent-output/design-rubric-criterion-10-pm-gap.txt`, add a producer test that verifies the fixture contains `[PM-GAP]` prefix. Same pattern as existing producer tests in `phase-completion-auditor.test.ts`.
+
+**Impact:** Low (tests pass, behavior works in production) but required by the producer-consumer chain rule in CLAUDE.md. This is a coverage gap, not a correctness bug.
 
 ---
 
