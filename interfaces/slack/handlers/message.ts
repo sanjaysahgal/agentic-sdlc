@@ -397,10 +397,16 @@ ${brief}`
         }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
       }
 
-      const specUpdatedNote = escalationNotification.recommendations
-        ? " The product spec has been updated to replace vague acceptance criteria with the confirmed decisions — you will not see these same gaps again."
-        : ""
-      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". Resume design with this answer — the PM gap is now closed.${specUpdatedNote} Begin your response by confirming the product spec has been updated and listing each decision you are now applying to the design spec (e.g. "Product spec updated. Applying: 1. ... 2. ..."), then proceed with the design spec updates.`
+      // PM posts closure message — PM owns the spec update, not the design agent
+      if (escalationNotification.recommendations) {
+        await client.chat.postMessage({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `*Product Manager* — Product spec updated with the confirmed decisions. The design team can now continue.`,
+        }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
+      }
+
+      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". The PM gap is now closed and the product spec has been updated. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
       }})

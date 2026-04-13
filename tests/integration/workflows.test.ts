@@ -3549,8 +3549,8 @@ describe("Scenario N17 — Escalation reply injected message contains question +
     expect(injected).toContain("guest session")
     expect(injected).toContain("confirmed — sessions are cleared permanently on sign-up")
     expect(injected).toContain("PM gap is now closed")
-    // Design agent must be instructed to confirm spec update and list what it applies
-    expect(injected).toMatch(/confirming the product spec has been updated|Begin your response by confirming/)
+    // Design agent must be instructed to list what it applies — spec update credit belongs to PM, not design agent
+    expect(injected).toMatch(/listing each.*decision|listing each confirmed/)
   })
 })
 
