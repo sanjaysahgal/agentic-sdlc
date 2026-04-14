@@ -1313,9 +1313,19 @@ async function runDesignAgent(params: {
   const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
   const auditProductSpec = productSpecMatch ? productSpecMatch[1].trim() : ""
 
+  // Tracks whether any apply_design_spec_patch calls happened this turn.
+  // Used to do a single Slack preview upload after all patches complete,
+  // instead of uploading after every patch (which spams the thread).
+  let patchAppliedThisTurn = false
+  // Caches the last successfully generated HTML so the post-patch upload can
+  // use it directly without a GitHub round-trip.
+  let lastGeneratedPreviewHtml: string | null = null
+
   // Shared save logic: audit + save + preview + checkpoint.
   // Used by both save_design_spec_draft and apply_design_spec_patch tools.
-  const saveDesignDraft = async (content: string): Promise<{ result?: unknown; error?: string }> => {
+  // skipSlackUpload=true: save to GitHub and generate HTML but don't upload to Slack.
+  // Used by apply_design_spec_patch so multi-patch turns only post one preview.
+  const saveDesignDraft = async (content: string, { skipSlackUpload = false }: { skipSlackUpload?: boolean } = {}): Promise<{ result?: unknown; error?: string }> => {
     await update("_Auditing draft against product vision and architecture..._")
     const audit = await auditSpecDraft({
       draft: content,
@@ -1349,18 +1359,23 @@ async function runDesignAgent(params: {
     }).catch((e: Error) => e)
     if (!(previewResult instanceof Error)) {
       renderWarnings = previewResult.warnings
+      lastGeneratedPreviewHtml = previewResult.html
       await saveDraftHtmlPreview({ featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
-      try {
-        await client.files.uploadV2({
-          channel_id: channelId,
-          thread_ts: threadTs,
-          content: previewResult.html,
-          filename: `${featureName}.preview.html`,
-          title: `${featureName} — Design Preview`,
-        })
-        previewUrl = "uploaded_to_slack"
-      } catch (uploadErr: any) {
-        console.error(`[preview] Slack upload failed: ${uploadErr?.message}`)
+      if (!skipSlackUpload) {
+        try {
+          await client.files.uploadV2({
+            channel_id: channelId,
+            thread_ts: threadTs,
+            content: previewResult.html,
+            filename: `${featureName}.preview.html`,
+            title: `${featureName} — Design Preview`,
+          })
+          previewUrl = "uploaded_to_slack"
+        } catch (uploadErr: any) {
+          console.error(`[preview] Slack upload failed: ${uploadErr?.message}`)
+          previewUrl = "saved_to_github"
+        }
+      } else {
         previewUrl = "saved_to_github"
       }
     } else {
@@ -1398,7 +1413,8 @@ async function runDesignAgent(params: {
         const patch = input.patch as string
         const existingDraft = await readFile(designFilePath, designBranchName)
         const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
-        return saveDesignDraft(mergedDraft)
+        patchAppliedThisTurn = true
+        return saveDesignDraft(mergedDraft, { skipSlackUpload: true })
       }
       if (name === "generate_design_preview") {
         // Serve the HTML that was saved when the spec was last committed.
@@ -1604,6 +1620,10 @@ async function runDesignAgent(params: {
       const saveMsg = `✓ *Spec ${action}.* Your changes are committed.\n\nI hit an error generating the summary response — the spec itself is safe. Ask a follow-up question to continue.`
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: saveMsg })
+      // Upload the final preview once if patches were applied (skipped per-patch to avoid spam)
+      if (patchAppliedThisTurn && lastGeneratedPreviewHtml) {
+        client.files.uploadV2({ channel_id: channelId, thread_ts: threadTs, content: lastGeneratedPreviewHtml, filename: `${featureName}.preview.html`, title: `${featureName} — Design Preview` }).catch(() => {})
+      }
       await update(saveMsg)
       return
     }
@@ -1611,6 +1631,18 @@ async function runDesignAgent(params: {
   }
 
   appendMessage(featureName, { role: "user", content: userMessage })
+
+  // If patches were applied this turn, do a single preview upload now that all patches are done.
+  // Individual patch calls saved to GitHub (skipSlackUpload=true) to avoid spamming the thread.
+  if (patchAppliedThisTurn && lastGeneratedPreviewHtml) {
+    client.files.uploadV2({
+      channel_id: channelId,
+      thread_ts: threadTs,
+      content: lastGeneratedPreviewHtml,
+      filename: `${featureName}.preview.html`,
+      title: `${featureName} — Design Preview`,
+    }).catch((uploadErr: any) => console.error(`[preview] post-patch Slack upload failed: ${uploadErr?.message}`))
+  }
 
   // Post-response tool-call audit: did this turn introduce decisions that weren't saved?
   // Always run — the history-length guard was needed when we passed full history to the

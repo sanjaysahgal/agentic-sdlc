@@ -6125,3 +6125,62 @@ describe("Scenario N51 — PM spec sanitizer strips design-scope content before 
     expect(savedContent).toContain("failed SSO")
   })
 })
+
+// ─── Scenario N53: Multi-patch turn posts exactly one preview ─────────────────
+//
+// When the design agent calls apply_design_spec_patch multiple times in a single
+// turn, only one preview should be uploaded to Slack (after all patches complete),
+// not one per patch. This prevents thread spam when the agent applies many fixes.
+//
+// Setup: agent calls apply_design_spec_patch twice in one turn.
+// Expected: files.uploadV2 called exactly once (post-turn, not per-patch).
+
+describe("Scenario N53 — Multi-patch turn posts exactly one preview", () => {
+  const THREAD = "workflow-n53"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("two apply_design_spec_patch calls in one turn produce exactly one preview upload", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Anthropic call sequence (0 history → no extractLockedDecisions; no design draft → auditPhaseCompletion skipped):
+    //   [0] isOffTopicForAgent    → false
+    //   [1] isSpecStateQuery      → false
+    //   [2] runAgent (tool_use)   → apply_design_spec_patch (patch 1)
+    //   [3] auditSpecRenderAmbiguity → ambiguities (triggers second patch)
+    //   [4] runAgent (tool_use)   → apply_design_spec_patch (patch 2)
+    //   [5] auditSpecRenderAmbiguity → [] (resolved)
+    //   [6] runAgent (end_turn)   → text response
+    //   [7] identifyUncommittedDecisions → "none"
+    // generateDesignPreview is template-based (no LLM call).
+    // uploadV2 must be called exactly once — after runAgent completes, not after each patch.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Screens\n### Chat Home\nChips near bottom." } }],
+      })                                                                          // runAgent: tool_use (patch 1)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Chip position is vague — specify exact spacing"]' }] }) // auditSpecRenderAmbiguity → ambiguity
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t2", name: "apply_design_spec_patch", input: { patch: "## Screens\n### Chat Home\nChips: 12px above prompt bar." } }],
+      })                                                                          // runAgent: tool_use (patch 2)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })        // auditSpecRenderAmbiguity → resolved
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Fixed chip positioning to 12px above prompt bar." }] }) // runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })      // identifyUncommittedDecisions
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "fix all 9 gaps"), client })
+
+    // Exactly one preview upload — not one per patch
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
+
+    // The single upload uses the correct filename
+    const uploadCall = (client.files.uploadV2 as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(uploadCall.filename).toBe("onboarding.preview.html")
+  })
+})
