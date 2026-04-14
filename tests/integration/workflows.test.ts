@@ -1889,8 +1889,9 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
     // [3] runAgent → tool_use: finalize_design_spec,
     //     auditSpecDecisions skips LLM (history.length < 2 → returns "ok" immediately),
+    //     [4] auditDownstreamReadiness(architect) → PASS [parallel with auditSpecDecisions],
     //     auditBrandTokens fires (pure) → drift found → tool returns error,
-    // [4] runAgent → end_turn (agent sees tool error, explains block)
+    // [5] runAgent → end_turn (agent sees tool error, explains block)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
@@ -1899,6 +1900,7 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
       })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditDownstreamReadiness(architect)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Finalization blocked — brand token drift detected. Please patch --bg and --violet to match BRAND.md before approving." }],
@@ -1911,7 +1913,7 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     expect(mockCreateOrUpdate).not.toHaveBeenCalled()
 
     // Tool result delivered to the agent contained the brand drift error
-    const runAgentAfterToolCall = mockAnthropicCreate.mock.calls[4][0]
+    const runAgentAfterToolCall = mockAnthropicCreate.mock.calls[5][0]
     const toolResultMsg = (runAgentAfterToolCall.messages as Array<{ role: string; content: unknown }>)
       .findLast((m: { role: string }) => m.role === "user")
     const toolResultContent = toolResultMsg?.content
@@ -1921,8 +1923,8 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     expect(toolResultText).toContain("Finalization blocked")
     expect(toolResultText).toContain("brand token drift")
 
-    // 5 Anthropic calls total
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // 6 Anthropic calls total (added auditDownstreamReadiness)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 
   it("allows finalization when no brand drift — spec saved to GitHub", async () => {
@@ -1942,8 +1944,9 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
     // [3] runAgent → tool_use: finalize_design_spec,
     //     auditSpecDecisions skips LLM (history.length < 2 → returns "ok" immediately),
+    //     [4] auditDownstreamReadiness(architect) → PASS [parallel with auditSpecDecisions],
     //     auditBrandTokens fires (pure) → no drift → saveApprovedDesignSpec called,
-    // [4] runAgent → end_turn (spec approved)
+    // [5] runAgent → end_turn (spec approved)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
@@ -1952,6 +1955,7 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
       })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditDownstreamReadiness(architect)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Design spec approved and saved to GitHub." }],
@@ -1963,8 +1967,8 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     // No drift → spec WAS saved
     expect(mockCreateOrUpdate).toHaveBeenCalled()
 
-    // 5 Anthropic calls total
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // 6 Anthropic calls total (added auditDownstreamReadiness)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 })
 
@@ -2352,6 +2356,7 @@ describe("Scenario 23 — Architect finalize_engineering_spec tool", () => {
         content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
       })                                                                          // runAgent: tool_use — finalize
       // auditSpecDecisions skips API call when history < 2 messages (empty history)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // auditDownstreamReadiness(engineer)
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Engineering spec finalized and ready for build." }] }) // runAgent: end_turn
 
     const params = makeParams(THREAD, "feature-onboarding", "the spec is ready, finalize it")
@@ -2532,8 +2537,11 @@ describe("Scenario 27 — Architect finalize with decision corrections", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
       })                                                                          // runAgent: tool_use — finalize
-      // auditSpecDecisions: history has 2 msgs → API call made → returns correction
+      // auditSpecDecisions + auditDownstreamReadiness run in parallel:
+      // auditSpecDecisions: history has 2 msgs → API call → returns correction
+      // auditDownstreamReadiness(engineer): open-ended adversarial audit → PASS
       .mockResolvedValueOnce({ content: [{ type: "text", text: "MISMATCH: Page size | 100 items per page | 50 items per page" }] }) // auditSpecDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // auditDownstreamReadiness(engineer)
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Finalized with correction applied." }] }) // runAgent: end_turn
 
     const params = makeParams(THREAD, "feature-onboarding", "finalize the spec")
