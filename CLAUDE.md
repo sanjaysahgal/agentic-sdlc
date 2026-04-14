@@ -255,7 +255,7 @@ A task is NOT done until the following are updated to reflect the change:
 | New runtime behavior, routing, or data flow | `SYSTEM_ARCHITECTURE.md` — architecture section |
 | New backlog item completed | `BACKLOG.md` — move to Completed |
 | New solo-team shortcut taken | `DECISIONS.md` — add entry with scale gap |
-| New agent built | `message.ts` — must add always-on platform audit block (`[X]ReadinessNotice`) before agent is considered complete; see `designReadinessNotice` / `archReadinessNotice` as reference implementations |
+| New agent built | `message.ts` — must add always-on platform audit block (`[X]ReadinessNotice`) before agent is considered complete; see `designReadinessNotice` / `archReadinessNotice` as reference implementations. Finalization handler must run TWO checks: (1) same-domain rubric (`[X]_RUBRIC`), (2) adversarial downstream-readiness audit (`auditDownstreamReadiness` with the next role's persona) — an open-ended "pretend you're [next role], what's missing?" prompt with no enumeration ceiling. Both checks are required; the rubric alone is insufficient. |
 | New WorkspaceConfig field added | `.env.example` — add with comment |
 | New agent goes live | `PRESENTATIONS.md` + `platform-engineering-deep-dive.html` + `investor-pitch.html` |
 | Roadmap step completes | `PRESENTATIONS.md` + `investor-pitch.html` + `platform-engineering-deep-dive.html` |

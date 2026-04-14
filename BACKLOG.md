@@ -41,6 +41,33 @@ Root cause: Slack Socket Mode pong timeout → reconnect → Slack retries the m
 
 ---
 
+### Adversarial downstream-readiness audit — replace rubric-based finalization check with open-ended "pretend you're the next role" prompt at every phase boundary (2026-04-13)
+
+**Why:** Rubric-based finalization gates (PM_RUBRIC, DESIGN_RUBRIC, PM_DESIGN_READINESS_RUBRIC) can only catch gap classes they explicitly enumerate. Two production incidents showed a 1-criterion rubric catching 2 of 6 gaps the design agent later found. The root cause is structural: any finite checklist fails on the open-ended question "what is a designer missing?" The fix is an adversarial open-ended prompt: "Pretend you are [downstream role]. Read this spec. List every decision you would need to make that this spec doesn't answer." This has no enumeration ceiling — Sonnet can surface any class of gap, not just ones pre-listed.
+
+**Pattern (applies to all agents, current and future):**
+
+Each finalization gate runs TWO checks:
+1. **Same-domain rubric** (existing) — PM_RUBRIC, DESIGN_RUBRIC, ENGINEER_RUBRIC — checks completeness within the current agent's domain
+2. **Adversarial downstream-perspective prompt** (new) — open-ended "pretend you're [next role]" — checks readiness for the next phase
+
+| Phase boundary | Downstream role persona | Prompt framing |
+|---|---|---|
+| PM → Design | UX designer receiving spec for first time | "You just received this product spec. List every design decision you'd need to make that this spec doesn't answer — including interaction behaviors, error states, loading states, modalities, and copy." |
+| Design → Architect | Software architect opening this spec to plan engineering | "You just received this design spec. List every implementation decision you'd need to make that this spec doesn't answer — including API shape, data model, state management, platform-specific behavior, and error handling." |
+| Architect → Build | Backend or frontend engineer assigned this spec | "You just received this engineering spec. List every low-level decision you'd need to make that this spec doesn't answer — including exact API contracts, error codes, migration steps, and edge cases with no handler." |
+
+**Implementation:**
+- Single `auditDownstreamReadiness({ specContent, downstreamRolePrompt, featureName })` function in `phase-completion-auditor.ts` — open-ended system prompt, same FINDING/PASS output format
+- `buildDownstreamReadinessPrompt(role: "designer" | "architect" | "engineer")` returns the persona + framing above
+- Called in each finalization handler alongside the existing rubric gate; blocking on any FINDING
+- `PM_DESIGN_READINESS_RUBRIC` (5-criterion checklist) retained as a fast deterministic pre-filter; adversarial audit adds the open-ended second pass
+- Same mock pattern as existing `auditPhaseCompletion` calls — no new infrastructure required
+
+**Rule for new agents:** Every new spec-producing agent must implement both checks before it is considered complete. The "Definition of Done" in CLAUDE.md must be updated to include this requirement.
+
+**Priority:** HIGH — proven failure class with two production incidents. PM→Design path is most urgent (already two incidents). Design→Architect is next (design agent has found arch gaps mid-spec; architect getting incomplete design specs is a known risk).
+
 ~~### PM design-readiness gate — design agent must not be first to discover PM spec vagueness (2026-04-13)~~ ✅ Done (2026-04-13)
 
 `finalize_product_spec` now runs `auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC)` as a third structural gate. Catches vague sensory descriptors ("ambient", "soft"), missing numeric thresholds (session TTL without a value), and underspecified error UI behaviors before the spec reaches the design agent. Production incident: PM said "nothing blocking" after completion audit, design agent immediately found 2 PM-GAP items ("ambient awareness only", unspecified session TTL). Root cause: PM_RUBRIC and design rubric criterion 10 PART B check different things — PM_RUBRIC checks PM-completeness; PART B checks designer-readiness. New rubric bridges the gap. N49 integration test + 5 producer unit tests.
