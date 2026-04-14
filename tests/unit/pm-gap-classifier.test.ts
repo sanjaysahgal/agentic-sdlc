@@ -93,6 +93,16 @@ describe("classifyForPmGaps — consumer tests (gate logic with mocked Haiku)", 
     )
   })
 
+  it("uses max_tokens 1024 — sufficient for 6+ gaps without truncation", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+
+    await classifyForPmGaps({ agentResponse: "some prose" })
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 1024 })
+    )
+  })
+
   it("passes agentResponse as part of the user message", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
 
