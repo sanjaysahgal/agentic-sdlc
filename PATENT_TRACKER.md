@@ -29,7 +29,7 @@
 | 6 | Prepare Application Data Sheet (ADS) — completed via Web ADS in Patent Center | $0 | DIY | Done |
 | 7 | Prepare Inventor's Oath/Declaration (form PTO/AIA/01) — completed and signed | $0 | DIY | Done |
 | 8 | File via Patent Center — App #19/646,571, Confirmation #6659, filed 04/14/2026 | $730 | DIY | Done |
-| 8a | — File corrected ADS to add domestic benefit claim (provisional 64/015,378) | $0 | DIY | TODO |
+| 8a | — File corrected ADS to add domestic benefit claim (provisional 64/015,378) — blocked by preexam processing validation error. Check back ~April 28, 2026. Priority protected by spec text in the meantime. Also verify entity status shows "Small" not "Regular Undiscounted". | $0 | DIY | TODO — check week of April 28 |
 | 9 | Filing confirmation received — App #19/646,571 | $0 | — | Done |
 | 10 | Wait for examiner assignment (12–18 months) | $0 | — | Waiting |
 | 11 | Receive first Office Action | $0 | — | Waiting |
@@ -78,7 +78,7 @@
 | Provisional filed | March 24, 2026 |
 | Non-provisional filed | April 14, 2026 |
 | Non-provisional App # | 19/646,571 |
-| Corrected ADS (domestic benefit claim) | TODO — file ASAP |
+| Corrected ADS (domestic benefit claim) | TODO — check week of April 28, 2026 |
 | First Office Action expected | ~June–October 2027 |
 | Office Action response deadline | — |
 | Notice of Allowance | — |
