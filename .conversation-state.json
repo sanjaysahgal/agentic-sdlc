@@ -1,12 +1,5 @@
 {
   "pendingEscalations": {},
   "pendingApprovals": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. Confirm whether the session expiry warning (when a logged-out user has 10 minutes of inactivity remaining and at least one conversation exchange) should be a non-dismissible banner that clears on user action, or a modal with dismiss affordances — the product spec locks the banner pattern, but the design spec shows a modal, and this contradiction must be resolved before design proceeds.",
-      "recommendations": "[1]. My recommendation: The session expiry warning is a non-dismissible banner at the top of the chat interface, as specified in AC#8 — it appears above the message thread, contains the warning text and \"Sign in now\" button, and is automatically cleared only when the user performs an action that resets the inactivity timer (e.g., sends a message); it cannot be manually dismissed or swiped away.\n\n→ Rationale: AC#8 is the locked product requirement; a banner is less disruptive than a modal and keeps the user in chat context while warning them; non-dismissibility ensures the warning cannot be accidentally ignored at a critical moment.\n\n→ Note: Pending your approval — say yes to apply to the product spec\n\n---\n\nSay *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation.",
-      "originAgent": "design"
-    }
-  }
+  "escalationNotifications": {}
 }
