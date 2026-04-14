@@ -453,74 +453,105 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(text).toContain("Say *yes*")
   })
 
-  it("Turn 2: user says yes → PM agent runs with brief, spec patched immediately, design agent resumes", async () => {
+  it("Turn 2: user says yes → PM agent runs with brief, escalation notification set, awaiting human approval", async () => {
+    // Two-step PM escalation: first "yes" runs PM agent and waits for human approval.
+    // Spec is NOT patched and design does NOT resume until the human explicitly approves.
     setConfirmedAgent("onboarding", "ux-design")
     appendMessage("onboarding", { role: "user", content: "should we support social login?" })
     appendMessage("onboarding", { role: "assistant", content: "Should chips be permanent for authenticated users?\n\nDesign cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now." })
 
-    // Set up the pending escalation as the tool handler would have (no shortcut)
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
     setPendingEscalation("onboarding", {
       targetAgent: "pm",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
     })
-    // Note: no productSpec set here — verified in separate test below
 
-    // Mock sequence:
-    //   PM run: classifyMessageScope → "feature-specific", PM agent → recommendation (1 "My recommendation:" line)
-    //   Enforcement gate: 1 required, 0 found ("Recommendation:" is not "My recommendation:") → enforcement re-run
-    //   Enforcement run: classifyMessageScope → "feature-specific", PM agent → proper format
-    //   patchProductSpecWithRecommendations: readFile(main) → 404 → skipped (no Haiku call)
-    //   handleDesignPhase: isOffTopicForAgent, isSpecStateQuery, extractLockedDecisions (history=6≥6),
-    //     runAgent, identifyUncommittedDecisions, Gate4 classifyForPmGaps
+    // Mock sequence (4 calls — PM only, design phase does NOT run):
+    //   [0] classifyMessageScope → "feature-specific" (PM run 1)
+    //   [1] PM agent → no "My recommendation:" → enforcement fires
+    //   [2] classifyMessageScope → "feature-specific" (PM run 2 / enforcement)
+    //   [3] PM agent enforcement → proper format with "My recommendation:"
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (PM run 1)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Recommendation: Yes, support Google OAuth." }],
         usage: { input_tokens: 10, output_tokens: 30 },
-      })                                                                                  // PM run 1 (0 "My recommendation:" → enforcement fires)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (PM run 2)
+      })                                                                                   // [1] PM run 1 (enforcement fires)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [2] classifyMessageScope (enforcement)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
-        content: [{ type: "text", text: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.\n→ Note: Pending human PM confirmation before engineering handoff" }],
+        content: [{ type: "text", text: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.\n→ Note: Pending your approval — say yes to apply to the product spec" }],
         usage: { input_tokens: 10, output_tokens: 30 },
-      })                                                                                  // PM run 2 (enforcement)
-      // handleDesignPhase calls (history=6 after 2 PM runs appended 4 messages):
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })              // extractLockedDecisions (history=6≥6)
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
+      })                                                                                   // [3] PM run 2 (enforcement)
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // PM agent was called
-    expect(mockAnthropicCreate).toHaveBeenCalled()
+    // PM ran — exactly 4 calls (no design phase)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
 
-    // Product spec updated closure message posted (not an @mention for human review)
+    // Pending escalation cleared (PM ran successfully)
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // EscalationNotification IS set — awaiting human approval of PM recommendations
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notif = getEscalationNotification("onboarding")
+    expect(notif).not.toBeNull()
+    expect(notif?.targetAgent).toBe("pm")
+    expect(notif?.originAgent).toBe("design")
+    expect(notif?.recommendations).toContain("My recommendation:")
+
+    // No "Product spec updated" message — spec not patched until human approves
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    expect(closurePost).toBeUndefined()
+  })
+
+  it("Turn 3: human approves PM recommendations → spec patched, 'Product spec updated' posted, design resumes", async () => {
+    // Second "yes" hits escalationNotification path — patches spec and resumes design.
+    setConfirmedAgent("onboarding", "ux-design")
+    // History = 4 messages (Turn 1 + Turn 2 user/assistant pairs)
+    appendMessage("onboarding", { role: "user", content: "should we support social login?" })
+    appendMessage("onboarding", { role: "assistant", content: "Design cannot move forward. Say *yes*..." })
+    appendMessage("onboarding", { role: "user", content: "yes" })
+    appendMessage("onboarding", { role: "assistant", content: "1. My recommendation: Support Google OAuth..." })
+
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "Should social login be supported?",
+      recommendations: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.",
+      originAgent: "design",
+    })
+
+    // patchProductSpecWithRecommendations: readFile(main) → 404 → Haiku skipped (non-blocking)
+    // handleDesignPhase: isOffTopicForAgent, isSpecStateQuery, extractLockedDecisions (history=6≥6),
+    //   runAgent, identifyUncommittedDecisions, Gate4 classifyForPmGaps
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })               // extractLockedDecisions (history=6≥6)
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // Gate4 classifyForPmGaps
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // "Product spec updated" closure posted
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
     const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
     expect(closurePost).toBeDefined()
 
-    // No @mention "review and reply" message — PM is an AI agent, no human review needed
-    const reviewPost = postCalls.find((c: any) => c[0]?.text?.includes("review the recommendations above"))
-    expect(reviewPost).toBeUndefined()
-
-    // Pending escalation cleared
-    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
-
-    // EscalationNotification is NOT set — PM escalation is one-step, design resumes immediately
+    // EscalationNotification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notif = getEscalationNotification("onboarding")
-    expect(notif).toBeNull()
+    expect(getEscalationNotification("onboarding")).toBeNull()
 
-    // Design agent ran (more than just PM calls were made)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(10) // 4 PM + 6 design (extractLockedDecisions fires at history=6)
+    // Design agent ran — 5 calls total (history=4, extractLockedDecisions fires at ≥6)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 
   it("Turn 2 with productSpec — approved product spec injected into PM brief so agent has full context", async () => {
@@ -4679,9 +4710,7 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
 
     // Mock sequence: first PM run returns clarification-stall (0 "My recommendation:" occurrences)
     // Structural gate fires (0 < 1 required) → enforcement re-run → proper recommendation
-    // After PM completes: patchProductSpecWithRecommendations (readFile→404, no Haiku) + closure message posted
-    // Then design agent resumes: history=4 (<6, extractLockedDecisions skips)
-    // Design calls: isOffTopicForAgent + isSpecStateQuery + runAgent + identifyUncommittedDecisions + Gate4
+    // Design does NOT run yet — two-step flow: escalationNotification set, awaiting human approval.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
@@ -4693,37 +4722,27 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
         stop_reason: "end_turn",
         content: [{ type: "text", text: PROPER_RECOMMENDATIONS }],
       })                                                                                  // PM agent run 2 → proper recommendations
-      // handleDesignPhase resumes (history=4, extractLockedDecisions skips):
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
-
-    // New one-step behavior: escalationNotification is NOT set for PM escalation.
-    // Design resumes immediately — no hold state, no @mention for human review.
-    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification("onboarding")
-    expect(notification).toBeNull()
-
-    // pendingEscalation cleared
-    expect(getPendingEscalation("onboarding")).toBeNull()
-
-    // Closure message posted (not an @mention for human review)
-    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
-    expect(closurePost).toBeDefined()
 
     // Platform emitted enforcement update (structural gate fired)
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const enforcementUpdate = updateCalls.find((c: any) => c[0]?.text?.includes("concrete recommendations"))
     expect(enforcementUpdate).toBeDefined()
 
-    // Anthropic called 9 times: classifyScope×2 + PM agent×2 + design agent×5 (history=4, no extractLockedDecisions)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
+    // pendingEscalation cleared
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // Two-step: escalationNotification IS set — awaiting human approval of PM recommendations
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    const notification = getEscalationNotification("onboarding")
+    expect(notification).not.toBeNull()
+    expect(notification?.targetAgent).toBe("pm")
+    expect(notification?.recommendations).toContain("My recommendation:")
+
+    // PM ran — exactly 4 calls total (no design phase yet)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 })
 
@@ -4886,8 +4905,7 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     const PARTIAL_ANSWER = "2. My recommendation: The logged-out indicator should display the text 'Session expired — tap to sign in again' and appear whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff\n\nFor item 1, I want to clarify what 'retry state' means before committing to a recommendation."
     const FULL_RECOMMENDATIONS = "1. My recommendation: The user should remain logged out with a clear, persistent error message on the sign-in screen.\n→ Rationale: Retaining context in a retry state adds complexity without meaningful benefit for auth failures.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: The logged-out indicator should display 'Session expired — tap to sign in again' whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff"
 
-    // After PM enforcement completes: patchProductSpecWithRecommendations (readFile→404, no Haiku)
-    // Then design agent resumes: history=4 (<6, extractLockedDecisions skips) → 5 design calls
+    // Two-step: design does NOT run yet — escalationNotification set, awaiting human approval.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
@@ -4899,12 +4917,6 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
         stop_reason: "end_turn",
         content: [{ type: "text", text: FULL_RECOMMENDATIONS }],
       })                                                                                  // PM run 2 → 2 recommendations (enforcement)
-      // handleDesignPhase resumes (history=4, extractLockedDecisions skips):
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -4914,19 +4926,17 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     const enforcementUpdate = updateCalls.find((c: any) => c[0]?.text?.includes("concrete recommendations"))
     expect(enforcementUpdate).toBeDefined()
 
-    // New one-step behavior: escalationNotification is NOT set for PM escalation.
-    // Design resumes immediately after spec patch — no hold state created.
+    // Two-step: escalationNotification IS set with both recommendations — awaiting human approval
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notification = getEscalationNotification("onboarding")
-    expect(notification).toBeNull()
+    expect(notification).not.toBeNull()
+    expect(notification?.targetAgent).toBe("pm")
+    // Final notification contains BOTH recommendations (enforcement run produced full 2-item answer)
+    expect(notification?.recommendations).toContain("1. My recommendation:")
+    expect(notification?.recommendations).toContain("2. My recommendation:")
 
-    // Closure message posted (confirms spec was updated)
-    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
-    expect(closurePost).toBeDefined()
-
-    // PM agent called twice (structural gate triggered re-run) + design agent called 5 times
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9) // 4 PM + 5 design
+    // PM ran — exactly 4 calls total (no design phase yet)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 })
 
@@ -4967,42 +4977,29 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
 
     // The router recovers confirmedAgent="ux-design" from pendingEscalation, then runs PM escalation.
     // PM path: classifyMessageScope (1) + PM agent run (1). 2 items → 2 recommendations → no enforcement.
-    // After PM: patchProductSpecWithRecommendations (readFile→404, skipped). Closure message posted.
-    // Design agent resumes: history=2 (<6, extractLockedDecisions skips) → 5 design calls.
+    // Two-step: design does NOT run yet — escalationNotification set, awaiting human approval.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
       })                                                                                  // PM agent run
-      // handleDesignPhase resumes (history=2, extractLockedDecisions skips):
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // pendingEscalation must be cleared
+    // pendingEscalation cleared
     const { getPendingEscalation, getEscalationNotification } = await import("../../../runtime/conversation-store")
     expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // New one-step behavior: escalationNotification is NOT set for PM — no hold state.
-    // Design resumes immediately after spec patch.
+    // Two-step: escalationNotification IS set — awaiting human approval
     const notification = getEscalationNotification("onboarding")
-    expect(notification).toBeNull()
+    expect(notification).not.toBeNull()
+    expect(notification?.targetAgent).toBe("pm")
+    expect(notification?.recommendations).toContain("My recommendation:")
 
-    // Closure message posted (confirms spec was updated and design is resuming)
-    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const closurePost = postCalls.find((c: any) =>
-      c[0]?.text?.includes("Product spec updated") || c[0]?.text?.includes("Product Manager")
-    )
-    expect(closurePost).toBeDefined()
-
-    // Design agent ran: total = 2 PM + 5 design
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+    // PM ran — exactly 2 calls total (no design phase yet)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -5050,27 +5047,13 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     // Call sequence (no pre-escalation audit — removed; only specific design-agent gaps go to PM):
     //   [0] classifyMessageScope → "feature-specific" (inside runPmAgent)
     //   [1] PM agent run → PM_RECOMMENDATIONS (1 item, 1 "My recommendation:" → no enforcement)
-    //   [2] patchProductSpecWithRecommendations: Haiku call (spec found on main → generates patch)
-    //   [3] isOffTopicForAgent (design)
-    //   [4] isSpecStateQuery (design)
-    //   [5] auditPhaseCompletion — PM spec found on main, PM_RUBRIC audit fires
-    //   [6] runAgent (design)
-    //   [7] identifyUncommittedDecisions
-    //   [8] Gate4 classifyForPmGaps
+    // Two-step: design does NOT run yet — escalationNotification set, awaiting human approval.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
       })                                                                                   // [1] PM agent run
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n1. Display 'Not signed in' indicator." }] }) // [2] patchProductSpec Haiku
-      // handleDesignPhase resumes (history=2, extractLockedDecisions skips):
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // [3] isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // [4] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // [5] auditPhaseCompletion (PM spec found)
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // [6] runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [7] identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [8] Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -5083,15 +5066,11 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     // The approved spec is injected via context.currentDraft in the PM system prompt
     expect(systemText).toContain("Help users onboard")
 
-    // New one-step behavior: escalationNotification is NOT set for PM — design resumes immediately.
+    // Two-step: escalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notification = getEscalationNotification("onboarding")
-    expect(notification).toBeNull()
-
-    // Closure message posted
-    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
-    expect(closurePost).toBeDefined()
+    expect(notification).not.toBeNull()
+    expect(notification?.targetAgent).toBe("pm")
   })
 })
 
@@ -5868,7 +5847,15 @@ describe("Scenario N49 — finalize_product_spec blocked by PM_DESIGN_READINESS_
 // inflating the brief to 13+ items caused Haiku to introduce new imprecision at higher rate than
 // natural convergence (3-4 rounds of 2-3 items each). The audit belongs only at finalize_product_spec.
 
-describe("Scenario N50 — PM escalation: only design-agent questions in brief, design resumes after patch", () => {
+describe("Scenario N50 — PM escalation two-step: PM brief content, approval, and design resume", () => {
+  // Two-step PM escalation:
+  //   Turn 2 (first "yes"): PM runs, escalationNotification set, design does NOT run yet
+  //   Turn 3 (second "yes"): spec patched, design resumes
+  // This verifies:
+  //   1. PM brief contains only design-identified questions (no audit inflation)
+  //   2. Design cannot resume until human explicitly approves PM recommendations
+  //   3. Spec patched (or skipped if 404) and design resumes on approval
+
   const THREAD = "workflow-n50"
 
   beforeEach(() => {
@@ -5883,44 +5870,26 @@ describe("Scenario N50 — PM escalation: only design-agent questions in brief, 
   afterEach(async () => {
     clearHistory("onboarding")
     const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
+    const { clearEscalationNotification: clrNotif } = await import("../../../runtime/conversation-store")
     clrEsc("onboarding")
+    clrNotif("onboarding")
   })
 
-  it("PM brief contains only the design-agent-identified question — no audit inflation", async () => {
-    const approvedSpec = "## Problem\nHelp users log in.\n\n## Acceptance Criteria\n1. Display logged-out indicator.\n"
-    const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.\n→ Note: Pending human PM confirmation before engineering handoff"
-
-    mockGetContent.mockImplementation((params: any) => {
-      if (params?.path?.includes("onboarding.product.md")) {
-        return Promise.resolve({ data: { content: Buffer.from(approvedSpec).toString("base64"), type: "file" } })
-      }
-      return Promise.reject(Object.assign(new Error("not found"), { status: 404 }))
-    })
+  it("Turn 2: PM brief contains only the design-agent-identified question — no audit inflation; design does not run yet", async () => {
     mockPaginate.mockResolvedValue([])
 
-    // Call sequence (no pre-escalation audit):
-    //   [0] classifyMessageScope → "feature-specific" (inside runPmAgent)
-    //   [1] PM agent run → PM_RECOMMENDATIONS (1 item — only design-identified gap)
-    //   [2] patchProductSpecWithRecommendations: Haiku call
-    //   [3] isOffTopicForAgent (design)
-    //   [4] isSpecStateQuery (design)
-    //   [5] auditPhaseCompletion
-    //   [6] runAgent (design)
-    //   [7] identifyUncommittedDecisions
-    //   [8] classifyForPmGaps
+    const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.\n→ Note: Pending your approval — say yes to apply to the product spec"
+
+    // Call sequence (Turn 2 — PM only, design does NOT run):
+    //   [0] classifyMessageScope → "feature-specific"
+    //   [1] PM agent → PM_RECOMMENDATIONS (1 item, enforcement gate passes — 1 "My recommendation:")
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
+        usage: { input_tokens: 10, output_tokens: 30 },
       })                                                                                   // [1] PM agent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n1. Display 'Not signed in' indicator." }] }) // [2] Haiku
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // [3] isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // [4] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // [5] auditPhaseCompletion
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // [6] runAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [7] identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [8] classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -5930,22 +5899,35 @@ describe("Scenario N50 — PM escalation: only design-agent questions in brief, 
     const briefText = classifyCall[0].messages[0].content as string
     expect(briefText).toContain("What is the exact copy for the logged-out indicator?")
 
-    // Design resumes after one focused PM round
+    // pendingEscalation cleared, escalationNotification set — awaiting approval
     expect(getPendingEscalation("onboarding")).toBeNull()
-    const designCall = mockAnthropicCreate.mock.calls.find((c: any) => Array.isArray(c[0]?.system))
-    expect(designCall).toBeDefined()
+    const { getEscalationNotification: getNotif } = await import("../../../runtime/conversation-store")
+    const notif = getNotif("onboarding")
+    expect(notif).not.toBeNull()
+    expect(notif?.targetAgent).toBe("pm")
+
+    // Design did NOT run (only 2 Anthropic calls)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 
-  it("spec not found on main → Haiku skipped, design resumes directly", async () => {
+  it("Turn 3: human approves → spec patched (or skipped if 404), design resumes", async () => {
+    // Set up Turn 3 state directly (Turn 2 was the PM round)
+    const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
+    clrEsc("onboarding")
+    const { setEscalationNotification: setNotif } = await import("../../../runtime/conversation-store")
+    setNotif("onboarding", {
+      targetAgent: "pm",
+      question: "1. What is the exact copy for the logged-out indicator?",
+      recommendations: "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.",
+      originAgent: "design",
+    })
+
+    // Spec 404 → Haiku skipped (patchProductSpecWithRecommendations returns null non-blocking)
     mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
     mockPaginate.mockResolvedValue([])
 
-    const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.\n→ Note: Pending human PM confirmation before engineering handoff"
-
-    // No Haiku call (spec 404 → patchProductSpecWithRecommendations returns null)
+    // Design phase calls (no Haiku — spec 404):
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // classifyMessageScope
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: PM_RECOMMENDATIONS }] }) // PM agent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // isSpecStateQuery
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing." }] }) // runAgent (design)
@@ -5955,8 +5937,17 @@ describe("Scenario N50 — PM escalation: only design-agent questions in brief, 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    // EscalationNotification cleared
+    const { getEscalationNotification: getNotif } = await import("../../../runtime/conversation-store")
+    expect(getNotif("onboarding")).toBeNull()
+
+    // Design ran
     const designCall = mockAnthropicCreate.mock.calls.find((c: any) => Array.isArray(c[0]?.system))
     expect(designCall).toBeDefined()
+
+    // "Product spec updated" closure posted (even when Haiku skipped — platform always confirms)
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    expect(closurePost).toBeDefined()
   })
 })

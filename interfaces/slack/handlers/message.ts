@@ -309,9 +309,9 @@ The UX Designer is blocked on the numbered items below. Your job: give a specifi
 For each numbered item, respond with the same number so the human can follow along. Output exactly:
 [N]. My recommendation: [one specific, concrete answer — no conditionals, no "it depends", no "the PM should decide"]
 → Rationale: [one sentence grounded in product vision, user needs, or standard practice]
-→ Note: Pending human PM confirmation before engineering handoff
+→ Note: Pending your approval — say yes to apply to the product spec
 
-Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it. End with exactly this sentence on its own line: "Once you approve these recommendations, I'll update the product spec to reflect each confirmed decision."${productSpecSection}
+Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it. End with exactly this sentence on its own line: "Say *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation."${productSpecSection}
 
 BLOCKING ITEMS:
 ${comprehensiveQuestion}`
@@ -364,7 +364,7 @@ ${pendingEscalation.question}`
 
 [N]. My recommendation: [one specific, concrete answer — no conditionals, no "it depends"]
 → Rationale: [one sentence grounded in product vision, user needs, or standard practice]
-→ Note: Pending human PM confirmation before engineering handoff
+→ Note: Pending your approval — say yes to apply to the product spec
 
 Do not ask for context. Do not clarify before recommending. Make the best call and state it. If a question has two valid interpretations, state both and recommend one.
 
@@ -386,27 +386,10 @@ ${brief}`
         })
         setEscalationNotification(featureName, { targetAgent: "architect", question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       } else {
-        // PM is an AI agent — the user's "yes" is the authorization.
-        // Pre-escalation audit already ran above and merged all gaps into comprehensiveQuestion.
-        // PM agent already ran with the comprehensive brief in withThinking above.
-        // Just patch the spec and resume design — no loop possible.
-        if (capturedAgentResponse) {
-          await patchProductSpecWithRecommendations({
-            featureName,
-            question: comprehensiveQuestion,
-            recommendations: capturedAgentResponse,
-            humanConfirmation: userMessage,
-          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
-        }
-
-        await client.chat.postMessage({
-          channel: channelId,
-          thread_ts: threadTs,
-          text: `*Product Manager* — Product spec updated with the confirmed decisions. The design team can now continue.`,
-        }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
-        await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-          await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: "PM decisions confirmed and product spec updated. Continue the design.", userImages, client, update })
-        }})
+        // PM recommendations require explicit human approval before spec is patched and design resumes.
+        // Two-step pattern: PM runs → human says yes → spec patched → design resumes.
+        // This matches the architect path and makes the "pending your approval" note in PM output honest.
+        setEscalationNotification(featureName, { targetAgent: "pm", question: comprehensiveQuestion, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       }
       return
     }
