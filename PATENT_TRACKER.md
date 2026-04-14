@@ -17,17 +17,17 @@
 | 3a | — Title of the Invention | — | DIY | Done |
 | 3b | — Cross-Reference to Related Applications (cite provisional) | — | DIY | Done |
 | 3c | — Field of the Invention | — | DIY | Done |
-| 3d | — Background of the Invention | — | DIY | Not started |
-| 3e | — Summary of the Invention | — | DIY | Not started |
-| 3f | — Brief Description of the Drawings | — | DIY | Not started |
-| 3g | — Detailed Description of Preferred Embodiments | — | DIY | Not started |
-| 3h | — Abstract (150 words max) | — | DIY | Not started |
-| 4 | Prepare formal drawings (black & white line art, numbered refs) | $0 | DIY | Not started |
-| 5 | Draft claims (~20 total) | $0 | DIY | Not started |
-| 5a | — Independent claim: system | — | DIY | Not started |
-| 5b | — Independent claim: method | — | DIY | Not started |
-| 5c | — Independent claim: computer-readable medium | — | DIY | Not started |
-| 5d | — Dependent claims (remaining ~17) | — | DIY | Not started |
+| 3d | — Background of the Invention (19 competitors, 11 limitations) | — | DIY | Done |
+| 3e | — Summary of the Invention (17 bullet points) | — | DIY | Done |
+| 3f | — Brief Description of the Drawings (17 figures) | — | DIY | Done (descriptions written, drawings pending) |
+| 3g | — Detailed Description of Preferred Embodiments (17 embodiments) | — | DIY | Done |
+| 3h | — Abstract | — | DIY | Done |
+| 4 | Prepare formal drawings (black & white line art, numbered refs, FIGs 1–17) | $0 | DIY | Not started |
+| 5 | Draft claims (27 total) | $0 | DIY | Done |
+| 5a | — Independent system claims (6) | — | DIY | Done |
+| 5b | — Independent method claims (6) | — | DIY | Done |
+| 5c | — Independent computer-readable medium claims (3) | — | DIY | Done |
+| 5d | — Dependent system claims (12) | — | DIY | Done |
 | 6 | Prepare Application Data Sheet (ADS) in Patent Center | $0 | DIY | Not started |
 | 7 | Prepare Inventor's Oath/Declaration (form PTO/AIA/01) | $0 | DIY | Not started |
 | 8 | File via Patent Center — upload all docs, pay fees | $900 | DIY | Not started |

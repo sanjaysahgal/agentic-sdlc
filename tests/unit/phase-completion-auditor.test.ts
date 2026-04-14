@@ -378,34 +378,63 @@ describe("PM_DESIGN_READINESS_RUBRIC — export and format", () => {
     expect(PM_DESIGN_READINESS_RUBRIC.length).toBeGreaterThan(0)
   })
 
-  it("rubric instructs Sonnet to flag vague sensory descriptors — the 'ambient' class", () => {
-    // Must name at least the key words from the production incident
+  // Criterion 1: VAGUE LANGUAGE — covers original incident (ambient, TTL) plus recurring incident
+  it("criterion 1 flags vague sensory descriptors — the 'ambient' and 'friendly' class", () => {
     expect(PM_DESIGN_READINESS_RUBRIC).toContain("ambient")
     expect(PM_DESIGN_READINESS_RUBRIC).toContain("soft")
     expect(PM_DESIGN_READINESS_RUBRIC).toContain("subtle")
+    // Second incident: "clear, friendly message" — "friendly" must be in the word list
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("friendly")
   })
 
-  it("rubric instructs Sonnet to flag missing timing/threshold values — the 'session TTL' class", () => {
-    // Must instruct scanning for TTL/timeout/expiry mentions without a numeric value
-    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/ttl|timeout|session expiry|threshold/)
-    // Must require a concrete numeric value (seconds or minutes)
-    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/seconds|minutes|numeric|actual.+value/)
+  it("criterion 1 flags missing timing/threshold values — the session TTL class", () => {
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/ttl|timeout|session expiry/)
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/seconds|minutes/)
   })
 
-  it("rubric instructs Sonnet to flag underspecified error/edge UI behaviors", () => {
-    // Must name vague behavior descriptions like "handle gracefully" or "show an error"
+  it("criterion 1 flags transition vagueness — the 'without visual disruption' class", () => {
+    // Second incident: "transitions without visual disruption" — must catch this phrasing
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/without disruption|seamlessly transitions|without interruption/)
+  })
+
+  it("criterion 1 flags underspecified error UI — names modal/inline/toast/banner", () => {
     expect(PM_DESIGN_READINESS_RUBRIC).toContain("handle gracefully")
-    // Must require specifying the UI treatment (modal, inline, toast, banner)
     expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/modal|inline|toast|banner/)
   })
 
-  it("rubric instructs Sonnet to output FINDING lines (producer side of the gate)", () => {
-    // The consumer (finalize_product_spec handler) checks designReadiness.ready and findings[].
-    // The producer (system prompt) must instruct Sonnet to output FINDING lines.
-    // auditPhaseCompletion system prompt always contains "FINDING:" — but this rubric must
-    // not accidentally suppress that by contradicting the output format.
-    // Verify the rubric text itself doesn't redefine the output format in a conflicting way.
-    expect(PM_DESIGN_READINESS_RUBRIC).not.toContain("output PASS")
-    expect(PM_DESIGN_READINESS_RUBRIC).not.toContain("[PM-GAP]") // not a design-agent tag
+  // Criterion 2: INTERACTION COMPLETENESS — catches "what happens if user taps indicator"
+  it("criterion 2 requires every interactive element to define its tap behavior", () => {
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("INTERACTION COMPLETENESS")
+    // Must instruct checking for tap/press/interact behavior definition
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/tap|press|interact/)
+    // Must flag elements without explicit interactivity specification
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/interactive or not/)
+  })
+
+  // Criterion 3: ERROR AND FAILURE RECOVERY — catches "account creation failure, no recovery path"
+  it("criterion 3 requires every failure mode to have a recovery UX", () => {
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("ERROR AND FAILURE RECOVERY")
+    // Must name recovery path types
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/retry|redirect|alternative/)
+  })
+
+  // Criterion 4: UI MODALITY — catches "inline or overlay for nudge, dismissible or not"
+  it("criterion 4 requires modality, dismissibility, and persistence for notifications/nudges", () => {
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("UI MODALITY")
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/dismissib/)
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/inline|overlay|modal|banner|toast/)
+    // Must require persistence definition
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/persist/)
+  })
+
+  // Criterion 5: LOADING AND TRANSITION STATES — catches "2-60 second auth resolution, no loading state"
+  it("criterion 5 requires every async operation to define its loading treatment", () => {
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("LOADING AND TRANSITION STATES")
+    // Must name loading treatments
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/skeleton|spinner|progress/)
+  })
+
+  it("rubric does not use [PM-GAP] prefix — that is a design-agent-only tag", () => {
+    expect(PM_DESIGN_READINESS_RUBRIC).not.toContain("[PM-GAP]")
   })
 })

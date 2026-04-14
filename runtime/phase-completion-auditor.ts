@@ -121,14 +121,22 @@ export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories 
 // approved. Complements PM_RUBRIC criterion 2 (measurable criteria) — catches gaps that Sonnet
 // may miss in PM context but the designer would encounter immediately.
 
-export const PM_DESIGN_READINESS_RUBRIC = `1. DESIGN-READY REQUIREMENTS — Every user-visible behavior described in ## Acceptance Criteria, ## User Stories, and ## Edge Cases must be specific enough for a designer to make implementation decisions without inventing answers. Scan for:
+export const PM_DESIGN_READINESS_RUBRIC = `1. VAGUE LANGUAGE — Scan ## Acceptance Criteria, ## User Stories, and ## Edge Cases for requirements that two designers would implement differently:
 
-- Vague sensory or quality descriptors applied to UI elements or behaviors: "soft", "ambient", "subtle", "minimal", "appropriate", "smooth", "seamless", "non-intrusive", "clean", "polished", "gentle", "quiet", "unobtrusive" — each must be replaced with a concrete, observable UI behavior (e.g. "read-only banner, no interactive elements, does not overlay other content")
+- Vague sensory or quality descriptors: "soft", "ambient", "subtle", "minimal", "appropriate", "smooth", "seamless", "non-intrusive", "clean", "polished", "gentle", "quiet", "unobtrusive", "friendly", "clear", "warm", "elegant", "natural", "nice" — each must be replaced with a concrete, observable UI behavior
 - Undefined timing or threshold values: "quickly", "immediately", "eventually", "after some time", "after inactivity", or any mention of "TTL", "timeout", "session expiry", "limit", "quota", or "rate" that does not also name the actual numeric value in seconds or minutes
-- Underspecified error or edge behaviors: "handle gracefully", "show an error", "notify the user", "display a warning" — each must name the exact UI treatment (modal, inline text, toast, banner) and either the exact copy or a format with all variable slots filled
-- Undefined scope terms gating a user-visible experience: "premium users", "eligible accounts", "supported devices" — each must name the qualifying condition so the designer knows which state to design for which audience
+- Transition vagueness: "without disruption", "seamlessly transitions", "smoothly moves", "without interruption" — each must specify exactly what the user sees during and after the transition
+- Underspecified error or edge behaviors: "handle gracefully", "show an error", "notify the user", "display a warning", "surface a message" — each must name the exact UI treatment (modal, inline text, toast, banner) and either the exact copy or a format with all variable slots filled
 
-For each vague requirement, output exactly one FINDING line naming the specific requirement and one specific PM decision that would make it design-ready.`
+2. INTERACTION COMPLETENESS — Every UI element that a user can tap, press, or interact with must define what happens when the user does so. For each interactive element described or implied in the spec (indicators, banners, nudges, CTAs, buttons): the spec must state whether it is interactive or not, and if interactive, what action it triggers. "Indicator" or "banner" without specifying tap behavior is incomplete. If tapping does nothing, the spec must say so explicitly.
+
+3. ERROR AND FAILURE RECOVERY — Every user action that can fail must have a defined recovery UX. For each user story or edge case that names a failure mode (sign-up failure, session expiry mid-flow, auth resolution failure, network error, rate limit hit): the spec must state the exact recovery path — retry offered, alternative suggested, redirect to a specific state, or error with no recovery. "Failed attempts are handled" or "errors are shown" without naming the recovery path is incomplete.
+
+4. UI MODALITY AND PLACEMENT — Every notification, nudge, alert, or injected content element must specify: (a) modality — inline in the content stream, floating overlay, full-screen modal, banner at top/bottom, or toast; (b) dismissibility — whether the user can dismiss it and how; (c) persistence — whether it persists until action, auto-dismisses after N seconds, or stays for the session. "A message appears" or "a nudge is shown" without all three attributes is incomplete.
+
+5. LOADING AND TRANSITION STATES — Every async operation with a duration the user can perceive must define what the user sees during the wait. For any operation that takes more than an instant (auth resolution, account creation, data load): the spec must name the loading treatment — skeleton screen, spinner, progress indicator, blank canvas, or immediate optimistic render — and what the user sees when it resolves (instant replace, fade-in, scroll-to-top). "Loads the home screen" without specifying the loading state is incomplete.
+
+For each gap found in any criterion above, output exactly one FINDING line naming the specific requirement or element and one specific PM decision that would make it design-ready.`
 
 // ─── Design Rubric ─────────────────────────────────────────────────────────────
 
