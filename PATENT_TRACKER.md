@@ -28,7 +28,7 @@
 | 5b | — Independent method claims (6) | — | DIY | Done |
 | 5c | — Independent computer-readable medium claims (3) | — | DIY | Done |
 | 5d | — Dependent system claims (12) | — | DIY | Done |
-| 6 | Prepare Application Data Sheet (ADS) in Patent Center | $0 | DIY | Not started |
+| 6 | Prepare Application Data Sheet (ADS) in Patent Center — filing as individual inventor, all data ready | $0 | DIY | Ready (fill in Patent Center at filing time) |
 | 7 | Prepare Inventor's Oath/Declaration (form PTO/AIA/01) | $0 | DIY | Not started |
 | 8 | File via Patent Center — upload all docs, pay fees | $900 | DIY | Not started |
 | 9 | Receive filing confirmation + application number | $0 | — | Waiting |
