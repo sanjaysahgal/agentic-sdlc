@@ -1,12 +1,5 @@
 {
   "pendingEscalations": {},
   "pendingApprovals": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. Define what \"ambient awareness only\" means operationally — does the logged-out indicator display text only with no interactive elements, or can it include a subtle visual affordance that hints at sign-in without being clickable?\n2. Specify the exact text or messaging string that must appear in the logged-out indicator so the designer knows what label to render.\n3. Define what \"without visual disruption\" means measurably — should the transition from logged-out to authenticated state render in a single pass with no spinner, or is a brief loading state acceptable if it completes within a specific threshold (e.g., under 500ms)?",
-      "recommendations": "Nothing is blocking engineering. The product spec is complete and ready for handoff.\n\nTo move to engineering, the design spec must be approved first. That's the next gate — not a blocker on this product spec.\n\n**Say approve and I'll finalize the product spec now.**",
-      "originAgent": "design"
-    }
-  }
+  "escalationNotifications": {}
 }

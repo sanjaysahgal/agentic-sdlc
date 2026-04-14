@@ -33,6 +33,14 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Double-fire on escalation-continuation branch — in-flight lock not covering all paths (2026-04-13)
+
+Root cause: Slack Socket Mode pong timeout → reconnect → Slack retries the message. The per-feature in-flight lock (N41) prevents double-fire on the main agent path, but the `escalation-continuation` branch in the router appears to bypass or not check the lock. Observed in logs at 18:00:12 and 18:00:21 — same message ("What's blocking us from moving this design to engineering?") processed twice, first with 36 history messages, second with 38 (first response already appended). Not harmful (same PM response both times) but wastes a Haiku call and appends duplicate history.
+
+**Fix:** Verify the `featureInFlight` lock is checked before ALL router branches — not just the main agent invocation path. The escalation-continuation, pending-escalation-confirmed, and any other branch that calls an agent must respect the same lock.
+
+---
+
 ~~### Spec open questions architecture — holistic root cause fix (2026-04-13)~~ ✅ Done (2026-04-13)
 
 Each spec's `## Open Questions` now contains same-domain questions only (`[type: product]` in PM spec, `[type: design]` in design spec, `[type: engineering]` in engineering spec). Cross-domain routes through escalation tools or handoff sections. All three `finalize_*` handlers use `extractAllOpenQuestions` — both `[blocking: yes]` and `[blocking: no]` questions block finalization. New `## Design Notes` section in PM spec seeds design agent brief at finalization. New `## Design Assumptions` section in design spec seeds engineering spec draft at finalization via `seedHandoffSection`; cleared at engineering finalization via `clearHandoffSection`. Architect escalation writeback now routes to engineering spec (`patchEngineeringSpecWithDecision`) not product spec, for both design-originated and PM-originated arch escalation paths. New design rubric criterion 11 (no open questions). PM rubric criterion 3 and ENGINEER rubric criterion 6 updated to catch non-blocking questions. New integration tests N44, N44b, N46, N47 (×3), N48.
