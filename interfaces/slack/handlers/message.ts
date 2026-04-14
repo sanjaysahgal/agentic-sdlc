@@ -287,39 +287,14 @@ export async function handleFeatureChannelMessage(params: {
         : (roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`)
       const agentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
 
-      // PRE-ESCALATION AUDIT — runs BEFORE PM brief is built, BEFORE PM agent is called.
-      // For PM escalation only: read approved spec, find ALL designer gaps, merge into one brief.
-      // Front-loading prevents the infinite loop where a post-patch audit audits the ENTIRE spec,
-      // finds pre-existing gaps unrelated to the current escalation, creates a new pendingEscalation,
-      // PM answers some, audit fires again, repeat forever.
-      // One comprehensive brief → one PM call → spec patched once → design resumes. No loop.
-      let comprehensiveQuestion = pendingEscalation.question
-      if (!isArchitectEscalation) {
-        const productSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
-        const currentProductSpec = pendingEscalation.productSpec ||
-          await readFile(productSpecPath, "main").catch(() => null)
-
-        if (currentProductSpec) {
-          const preEscalationAudit = await auditDownstreamReadiness({
-            specContent: currentProductSpec,
-            downstreamRole: "designer",
-            featureName,
-          }).catch(err => { console.log(`[ESCALATION] pre-escalation audit failed (non-blocking): ${err}`); return null })
-
-          if (preEscalationAudit && !preEscalationAudit.ready && preEscalationAudit.findings.length > 0) {
-            // Merge: existing design-identified questions + audit-identified gaps.
-            // Renumber sequentially so PM gets a clean unified numbered brief.
-            const existingLines = pendingEscalation.question.trim().split("\n").filter(l => l.trim())
-            const auditLines = preEscalationAudit.findings.map(f => f.issue)
-            const allItems = [
-              ...existingLines.map(l => l.replace(/^\d+\.\s*/, "")), // strip existing numbers
-              ...auditLines,
-            ]
-            comprehensiveQuestion = allItems.map((item, i) => `${i + 1}. ${item}`).join("\n")
-            console.log(`[ESCALATION] pre-escalation audit merged ${existingLines.length} design gaps + ${auditLines.length} audit gaps → ${allItems.length} total items in PM brief`)
-          }
-        }
-      }
+      // Design agent's specific questions are the ONLY brief.
+      // The pre-escalation audit was removed because it inflated every PM round from 2-3 specific
+      // questions to 13-15 audit-discovered gaps. PM + Haiku handling 15 items at once introduced
+      // new imprecision (e.g. "within one frame (~16ms)") at higher rate than natural convergence.
+      // Natural convergence: designer asks 2 gaps → PM answers 2 → designer asks 2 more → 3-4 rounds.
+      // Audit approach: 15 items → Haiku errors → 2 new gaps → repeat. Slower and less accurate.
+      // The audit belongs at finalize_product_spec (already there), not at each escalation round.
+      const comprehensiveQuestion = pendingEscalation.question
 
       // Run the PM/Architect agent with the blocking questions as a brief so it produces
       // concrete decisions before the human is notified — not a raw question dump.
