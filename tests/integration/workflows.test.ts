@@ -548,9 +548,11 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // The PM agent call must have received the product spec content in its messages
-    const pmCall = mockAnthropicCreate.mock.calls[0][0]
-    const userMessage = pmCall.messages[0].content as string
+    // The PM brief must contain the product spec content.
+    // classifyMessageScope [1] receives the full PM brief as its user message (messages[0])
+    // and is the simplest call to check since history is not prepended there.
+    const classifyCall = mockAnthropicCreate.mock.calls[1][0]
+    const userMessage = classifyCall.messages[0].content as string
     expect(userMessage).toContain("APPROVED PRODUCT SPEC")
     expect(userMessage).toContain("Users can sign in via SSO")
     expect(userMessage).toContain("SSO failure path undefined")
@@ -5045,9 +5047,9 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
 
     const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' — concise and universally understood.\n→ Rationale: Standard phrasing across industry; no ambiguity.\n→ Note: Pending human PM confirmation before engineering handoff"
 
-    // Call sequence (new pre-escalation audit architecture):
-    //   [0] classifyMessageScope → "feature-specific" (PM)
-    //   [1] auditDownstreamReadiness(designer) → PASS (pre-escalation audit runs BEFORE PM)
+    // Call sequence (pre-escalation audit architecture):
+    //   [0] auditDownstreamReadiness(designer) → PASS (runs BEFORE PM brief is built)
+    //   [1] classifyMessageScope → "feature-specific" (inside runPmAgent)
     //   [2] PM agent run → PM_RECOMMENDATIONS (1 item, 1 "My recommendation:" → no enforcement)
     //   [3] patchProductSpecWithRecommendations: Haiku call (spec found on main → generates patch)
     //   [4] isOffTopicForAgent (design)
@@ -5057,8 +5059,8 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     //   [8] identifyUncommittedDecisions
     //   [9] Gate4 classifyForPmGaps
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // [1] auditDownstreamReadiness(designer) → PASS (pre-escalation)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // [0] auditDownstreamReadiness → PASS (pre-escalation)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [1] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
@@ -5076,8 +5078,7 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     await handleFeatureChannelMessage(params)
 
     // PM agent should have gotten the product spec — verify via the content passed to the Anthropic call.
-    // Call index [2] is the PM agent run — its system prompt includes currentDraft.
-    // system is an array of cache-control blocks: [{ type: "text", text: "...", cache_control: {...} }]
+    // Call index [2] is the PM agent run — its user message (brief) includes product spec section.
     const pmCall = mockAnthropicCreate.mock.calls[2]
     const systemBlocks = pmCall[0].system as Array<{ type: string; text: string }>
     const systemText = systemBlocks.map((b: any) => b.text ?? "").join("")
@@ -5901,8 +5902,8 @@ describe("Scenario N50 — pre-escalation audit merges design-identified gaps an
     mockPaginate.mockResolvedValue([])
 
     // Call sequence (pre-escalation architecture):
-    //   [0] classifyMessageScope → "feature-specific"
-    //   [1] auditDownstreamReadiness(designer) → FINDING (audit finds 1 additional gap)
+    //   [0] auditDownstreamReadiness(designer) → FINDING (runs BEFORE PM brief is built)
+    //   [1] classifyMessageScope → "feature-specific" (inside runPmAgent)
     //   [2] PM agent run → PM_RECOMMENDATIONS (2 items — merged brief)
     //   [3] patchProductSpecWithRecommendations: Haiku call
     //   [4] isOffTopicForAgent (design)
@@ -5912,10 +5913,10 @@ describe("Scenario N50 — pre-escalation audit merges design-identified gaps an
     //   [8] identifyUncommittedDecisions
     //   [9] classifyForPmGaps
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0]
       .mockResolvedValueOnce({
         content: [{ type: "text", text: "FINDING: What happens when the user taps the logged-out indicator? | PM must decide: navigate to login, show modal, or no-op" }],
-      })                                                                                   // [1] pre-escalation audit → FINDING
+      })                                                                                   // [0] pre-escalation audit → FINDING
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [1] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
@@ -5959,14 +5960,14 @@ describe("Scenario N50 — pre-escalation audit merges design-identified gaps an
     mockPaginate.mockResolvedValue([])
 
     // Call sequence:
-    //   [0] classifyMessageScope
-    //   [1] auditDownstreamReadiness → PASS (no additional gaps)
+    //   [0] auditDownstreamReadiness → PASS (no additional gaps, runs BEFORE PM)
+    //   [1] classifyMessageScope (inside runPmAgent)
     //   [2] PM agent (original 1-item brief)
     //   [3] patchProductSpecWithRecommendations Haiku
-    //   [4-8] design resumes normally
+    //   [4-9] design resumes normally
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0]
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // [1] pre-escalation audit → PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // [0] pre-escalation audit → PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [1] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
