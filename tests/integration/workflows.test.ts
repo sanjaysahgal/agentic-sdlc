@@ -4479,6 +4479,70 @@ describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in 
   })
 })
 
+// ─── Scenario N52: Gate 4 skipped when Gate 3 already classified ──────────────
+//
+// Real incident Apr 2026: Gate 3 ran classifyForPmGaps on extracted prose and
+// returned 0 PM gaps (animation spec contradiction is DESIGN-scope). But Gate 4
+// then ran a second classifyForPmGaps on the full response and, due to LLM
+// non-determinism, returned 1 PM gap — overturning Gate 3's correct suppression.
+//
+// Fix: if gate3ClassifierRan is true, Gate 4 is skipped entirely. Only one Haiku
+// classification call should be made for this response — Gate 3's.
+
+describe("Scenario N52 — Gate 4 skipped when Gate 3 already ran the classifier", () => {
+  const THREAD = "workflow-n52"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("makes exactly 5 Anthropic calls — Gate 4 does not add a 6th when Gate 3 classified", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Agent prose triggers Gate 3 extraction (mentions "cannot move forward" + lists items)
+    // but the items are DESIGN-scope (animation spec contradiction).
+    const agentResponse = [
+      "Design cannot move forward until the animation spec contradiction is resolved:",
+      "",
+      "1. Confirm whether the glow animation opacity cycle is 25% → 35% → 25% over 2.5 seconds",
+      "   or 50–100% over 4 seconds, and whether it is a single combined radial gradient or two",
+      "   independent separate glows.",
+      "",
+      "Say yes and I'll bring the PM into this thread now.",
+    ].join("\n")
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent            → false
+    //   [1] isSpecStateQuery              → false
+    //   [2] runAgent (end_turn)           → animation contradiction prose
+    //   [3] identifyUncommittedDecisions  → none
+    //   [4] classifyForPmGaps (Gate 3)    → 0 PM gaps (animation = DESIGN-scope)
+    //   Gate 4 MUST NOT run — no 6th call
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: agentResponse }], stop_reason: "end_turn" }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })           // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })           // Gate 3 classifier → 0 PM gaps
+
+    const params = makeParams(THREAD, "feature-onboarding", "what is blocking design?")
+    await handleFeatureChannelMessage(params)
+
+    // Exactly 5 calls — Gate 4 skipped
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+
+    // No pending escalation — DESIGN-scope item suppressed correctly
+    const { getPendingEscalation } = await import("../../../runtime/conversation-store")
+    expect(getPendingEscalation("onboarding")).toBeNull()
+  })
+})
+
 // ─── Scenario N31: Gate 2 pre-seeds architect-scope items into engineering spec ──────────────
 //
 // When the design agent calls offer_pm_escalation with mixed items (PM + architect scope),

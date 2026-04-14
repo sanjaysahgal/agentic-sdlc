@@ -1661,6 +1661,7 @@ async function runDesignAgent(params: {
   // this gate is purely structural — it matches the agent's own controlled output pattern.
   // The agent's prose is preserved (not overridden); we only record the pending escalation
   // so the action menu is suppressed and the "yes" → PM flow can proceed.
+  let gate3ClassifierRan = false
   if (!agentCalledEscalation) {
     const pmQuestions = extractPmEscalationFromAgentResponse(response)
     if (pmQuestions) {
@@ -1672,11 +1673,14 @@ async function runDesignAgent(params: {
         agentResponse: pmQuestions,
         approvedProductSpec: context.approvedProductSpec ?? undefined,
       }).catch(() => ({ gaps: [] }))
+      gate3ClassifierRan = true
       console.log(`[ESCALATION] Gate 3 classifier: ${g3Classification.gaps.length} PM gaps retained (${pmQuestions.split("\n").filter(l => l.trim()).length} lines extracted)`)
       if (g3Classification.gaps.length === 0) {
         // Classifier found no PM-scope gaps — the prose matched the extraction pattern but
         // the questions are design/brand/architecture concerns, not PM decisions. Drop it.
-        console.log(`[ESCALATION] Gate 3 classifier: 0 PM gaps — suppressing escalation`)
+        // Gate 4 must also be skipped: re-classifying the same response with more noise would
+        // risk LLM non-determinism overturning this correct suppression decision.
+        console.log(`[ESCALATION] Gate 3 classifier: 0 PM gaps — suppressing escalation; Gate 4 skipped`)
       } else {
         const g3FilteredQuestion = g3Classification.gaps.length === 1
           ? g3Classification.gaps[0]
@@ -1693,7 +1697,7 @@ async function runDesignAgent(params: {
   // Final safety net — only runs when all earlier gates passed and no escalation is set.
   // Skipped when the agent saved the spec (no PM gap prose to classify in a save response).
   // Fail-safe at call site: .catch returns empty gaps, never blocks the response.
-  if (!agentCalledEscalation && !getPendingEscalation(featureName) && !didSave && !agentStillSeeking) {
+  if (!agentCalledEscalation && !getPendingEscalation(featureName) && !didSave && !agentStillSeeking && !gate3ClassifierRan) {
     console.log(`[ESCALATION] Gate 4 (Haiku classifier) running for ${featureName}`)
     const classification = await classifyForPmGaps({
       agentResponse: response,
@@ -1705,7 +1709,7 @@ async function runDesignAgent(params: {
       setPendingEscalation(featureName, { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     }
   } else {
-    console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureName)}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}`)
+    console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureName)}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}, gate3ClassifierRan=${gate3ClassifierRan}`)
   }
 
   // If escalation was just offered this turn (via tool call, N18 gate, fallback prose-detection
