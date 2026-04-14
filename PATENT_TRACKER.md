@@ -1,9 +1,9 @@
 # Archon Patent — Non-Provisional Filing Tracker
 
 **Entity status:** Small Entity
-**Provisional App No:** _fill in_
-**Provisional Filing Date:** _fill in_
-**Non-Provisional Deadline:** _12 months from provisional filing date_
+**Provisional App No:** 64/015,378
+**Provisional Filing Date:** March 24, 2026
+**Non-Provisional Deadline:** March 24, 2027
 
 ---
 
@@ -11,8 +11,8 @@
 
 | # | Step | Cost (Small Entity) | DIY / Attorney | Status |
 |---|------|---------------------|----------------|--------|
-| 1 | Create/verify USPTO.gov account at Patent Center | $0 | DIY | Not started |
-| 2 | Confirm small entity eligibility | $0 | DIY | Not started |
+| 1 | Create/verify USPTO.gov account at Patent Center | $0 | DIY | Done |
+| 2 | Confirm small entity eligibility — qualified (independent inventor, no assignments to large entities, income exceeds micro threshold) | $0 | DIY | Done |
 | 3 | Prepare specification document | $0 | DIY | Not started |
 | 3a | — Title of the Invention | — | DIY | Not started |
 | 3b | — Cross-Reference to Related Applications (cite provisional) | — | DIY | Not started |

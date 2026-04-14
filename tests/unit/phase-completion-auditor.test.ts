@@ -323,6 +323,33 @@ describe("buildDesignRubric criterion 10 — open-loop product assumption check"
   })
 })
 
+// ─── buildDesignRubric criterion 11 — producer test ──────────────────────────
+//
+// Criterion 11 tells Haiku/Sonnet that ANY open question (blocking or non-blocking)
+// in ## Open Questions is a finding. Test that both [blocking: yes] and [blocking: no]
+// are named in the rubric text so the model knows both are violations.
+
+describe("buildDesignRubric criterion 11 — no open questions (producer test)", () => {
+  it("criterion 11 text contains both [blocking: yes] and [blocking: no]", () => {
+    const rubric = buildDesignRubric(["mobile", "desktop"])
+    expect(rubric).toContain("11.")
+    // Both blocking values must be named — model must know non-blocking also blocks approval
+    expect(rubric).toContain("[blocking: yes]")
+    expect(rubric).toContain("[blocking: no]")
+  })
+
+  it("criterion 11 is present in all buildDesignRubric outputs regardless of form factors", () => {
+    const mobile = buildDesignRubric(["mobile"])
+    const both = buildDesignRubric(["mobile", "desktop", "tablet"])
+    expect(mobile).toContain("11.")
+    expect(both).toContain("11.")
+  })
+
+  it("DESIGN_RUBRIC default export includes criterion 11 (regression guard)", () => {
+    expect(DESIGN_RUBRIC).toContain("11.")
+  })
+})
+
 // ─── Network failure resilience — phase-completion-auditor ────────────────────
 //
 // phase-completion-auditor.ts already had maxRetries: 0; timeout was added.

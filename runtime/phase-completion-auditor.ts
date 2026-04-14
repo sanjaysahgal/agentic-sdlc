@@ -105,7 +105,7 @@ export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories 
 
 2. MEASURABLE ACCEPTANCE CRITERIA — Every criterion in ## Acceptance Criteria is specific and testable by an engineer. Criteria containing words like "fast", "smooth", "easy", "good", "improve", "soft", "non-intrusive", "proactively", "proactive", "ambient", "seamlessly", "seamless", "minimal", "appropriate", "subtle", or any comparative without a baseline are not measurable and must be flagged. Each criterion must name a concrete, observable outcome.
 
-3. NO OPEN QUESTIONS — The ## Open Questions section contains zero questions tagged [blocking: yes] that are unresolved. A spec with unresolved blocking questions cannot be approved — those questions must be answered first.
+3. NO OPEN QUESTIONS — The ## Open Questions section contains zero questions (blocking or non-blocking). All questions must be resolved before approval — not just blocking ones. Any line with [blocking: yes] or [blocking: no] in ## Open Questions is a finding.
 
 4. DATA REQUIREMENTS — Any user story that reads, writes, or stores data must have its data requirements explicitly described (in the user story, acceptance criteria, or a dedicated section). "User data is saved" is not a data requirement. "User profile including name, email, and onboarding completion flag is persisted to the database" is a data requirement.
 
@@ -144,7 +144,9 @@ PART A — Design assumptions: Identify any design decision that assumes a produ
 
 PART B — PM spec vagueness: Scan the ## Approved Product Spec for requirements that use vague or undefined language for user-visible behaviors — for example: "handle gracefully", "preserve conversations", "appropriate response", "seamlessly", or any error path/edge case described without specifying the actual behavior. For each such vague PM requirement, check whether the design spec provides a specific, implementable decision. If the PM spec is too vague to design against AND the design spec also lacks a specific implementation (missing screen, missing state, missing error copy), that is a product-scope gap — the design team cannot invent the answer unilaterally.
 
-For each finding from PART A or PART B, output exactly one line with the prefix "[PM-GAP]" followed by: which PM requirement is vague or missing, and what specific PM decision is needed before design can proceed. If no gaps exist, output nothing for this criterion.`
+For each finding from PART A or PART B, output exactly one line with the prefix "[PM-GAP]" followed by: which PM requirement is vague or missing, and what specific PM decision is needed before design can proceed. If no gaps exist, output nothing for this criterion.
+
+11. NO OPEN QUESTIONS — The ## Open Questions section contains zero questions of any kind. All [type: design] questions must be resolved before design approval. Engineering constraints belong in ## Design Assumptions (seeded to engineering spec at finalization), not in ## Open Questions. Any line with [blocking: yes] or [blocking: no] in ## Open Questions is a blocking gap.`
 }
 
 export const DESIGN_RUBRIC = buildDesignRubric(["mobile", "desktop"])
@@ -161,4 +163,4 @@ export const ENGINEER_RUBRIC = `1. API CONTRACTS — Every user story or data op
 
 5. MIGRATION STRATEGY — Any schema change (new table, new column, column rename, column removal) must have a migration approach documented: additive migration, backfill strategy, or explicit "no migration needed" with reasoning. "Schema will be updated" is not a strategy.
 
-6. NO UNRESOLVED BLOCKING QUESTIONS — The spec contains zero questions tagged [blocking: yes] that are unresolved. A spec with unresolved blocking questions cannot move to implementation.`
+6. NO OPEN QUESTIONS — The ## Open Questions section contains zero questions (blocking or non-blocking). All questions must be resolved before engineering approval — not just blocking ones. Any line with [blocking: yes] or [blocking: no] in ## Open Questions is a finding.`

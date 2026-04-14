@@ -2333,7 +2333,7 @@ describe("Scenario 23 — Architect finalize_engineering_spec tool", () => {
   it("finalize_engineering_spec saves draft to main when no blocking questions", async () => {
     setConfirmedAgent("onboarding", "architect")
 
-    const DRAFT = "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.\n\n## Open Questions\n- What is the API rate limit? [type: engineering] [blocking: no]"
+    const DRAFT = "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.\n\n## Open Questions\n"
 
     // Draft exists on branch — read it during finalize_engineering_spec
     mockGetContent.mockImplementation(async ({ path, ref }: { path: string; ref?: string }) => {
@@ -5277,5 +5277,422 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const designUpdate = updateCalls.find((c: any[]) => typeof c[0]?.text === "string" && c[0].text.includes("UX Designer"))
     expect(designUpdate).toBeUndefined()
+  })
+})
+
+// ─── Scenario N44: Architect escalation writeback routes to engineering spec ──────────────────
+//
+// When the design agent escalates to the architect (offer_architect_escalation) and the human
+// confirms, the platform must write the decision to the engineering spec branch — NOT to the
+// product spec. The old code called patchProductSpecWithRecommendations unconditionally, which
+// was wrong: architect decisions belong in the engineering spec, not the product spec.
+//
+// Routing is determined by isArchitectEscalation = escalationNotification.targetAgent === "architect".
+
+describe("Scenario N44 — Architect escalation confirmation routes writeback to engineering spec (not product spec)", () => {
+  const THREAD = "workflow-n44"
+  const QUESTION = "What is the max file upload size the API enforces?"
+  const DECISION = "1. My recommendation: 10MB hard limit — API returns 413 for larger payloads."
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "architect",
+      question: QUESTION,
+      recommendations: DECISION,
+      originAgent: "design",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("writes decision to engineering spec branch; does NOT write to product spec on main", async () => {
+    // GitHub call order after standalone confirmation:
+    // 1. patchEngineeringSpecWithDecision reads arch spec branch → 404 (no spec yet), then writes to branch
+    // 2. Design phase resumes → various context reads (all 404)
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockCreateOrUpdate.mockResolvedValue({})
+    // All reads: 404 (arch spec not found, context reads fail gracefully)
+    mockGetContent.mockRejectedValue(Object.assign(new Error("Not Found"), { status: 404 }))
+
+    // Anthropic: design agent resumes after escalation cleared
+    mockAnthropicCreate
+      .mockResolvedValue({
+        content: [{ type: "text", text: "Architect confirmed the upload limit. Updating design spec now." }],
+        stop_reason: "end_turn",
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "approved, proceed")
+    await handleFeatureChannelMessage(params)
+
+    // Engineering spec branch must have been written (saveDraftEngineeringSpec → createOrUpdateFileContents on branch)
+    const engWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.path?.includes("onboarding.engineering.md")
+    )
+    expect(engWrite).toBeDefined()
+    const engContent = Buffer.from(engWrite![0].content, "base64").toString()
+    expect(engContent).toContain(QUESTION)
+    expect(engContent).toContain("Pre-Engineering Architectural Decisions")
+
+    // Product spec must NOT have been written (patchProductSpecWithRecommendations not called)
+    const productWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.path?.includes("onboarding.product.md")
+    )
+    expect(productWrite).toBeUndefined()
+  })
+})
+
+// ─── N44 update to N30: isArchitectEscalation=true → patchProductSpecWithRecommendations NOT called ──
+//
+// This is the N30 complementary test: when targetAgent=architect, the PM writeback must NOT fire.
+// N30 already tests the PM path (targetAgent=pm → product spec written). This ensures the
+// routing condition is exclusive.
+
+describe("Scenario N30 variant — isArchitectEscalation=true → product spec NOT written", () => {
+  const THREAD = "workflow-n30-arch"
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "architect",
+      question: "What caching strategy should the auth token use?",
+      recommendations: "1. My recommendation: 15-minute TTL with sliding window.",
+      originAgent: "design",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("does not write to product spec on main when targetAgent=architect", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockCreateOrUpdate.mockResolvedValue({})
+    mockGetContent.mockRejectedValue(Object.assign(new Error("Not Found"), { status: 404 }))
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "Architect decision applied." }],
+      stop_reason: "end_turn",
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes approved")
+    await handleFeatureChannelMessage(params)
+
+    // No product spec write — routing must have gone to engineering spec only
+    const productSpecWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => {
+        const msg: string = c[0]?.message ?? ""
+        return msg.includes("product.md") || c[0]?.path?.includes("product.md")
+      }
+    )
+    expect(productSpecWrite).toBeUndefined()
+  })
+})
+
+// ─── Scenario N44b: Arch upstream escalation reply writes to engineering spec ─────────────────
+//
+// When the ARCHITECT calls offer_upstream_revision targeting "pm" and the PM responds with a
+// standalone confirmation, the platform must write the architect's question + PM decision to the
+// engineering spec (as a pre-engineering decision) before resuming the architect.
+
+describe("Scenario N44b — Arch upstream escalation confirmation writes to engineering spec", () => {
+  const THREAD = "workflow-n44b"
+  const ARCH_QUESTION = "Does the product spec allow background sync to run while the app is backgrounded?"
+  const PM_DECISION = "Yes — background sync is explicitly in scope per the approved product spec."
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: ARCH_QUESTION,
+      recommendations: PM_DECISION,
+      originAgent: "architect",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("writes pre-engineering decision to engineering spec branch before resuming architect", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockCreateOrUpdate.mockResolvedValue({})
+    mockGetContent.mockRejectedValue(Object.assign(new Error("Not Found"), { status: 404 }))
+
+    // Anthropic: architect resumes after confirmation
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: "PM confirmed background sync is in scope. Proceeding with engineering spec." }],
+      stop_reason: "end_turn",
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "confirmed, proceed")
+    await handleFeatureChannelMessage(params)
+
+    // Engineering spec branch must have been written with the decision
+    const engWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.path?.includes("onboarding.engineering.md")
+    )
+    expect(engWrite).toBeDefined()
+    const engContent = Buffer.from(engWrite![0].content, "base64").toString()
+    expect(engContent).toContain("Pre-Engineering Architectural Decisions")
+    expect(engContent).toContain(ARCH_QUESTION)
+  })
+})
+
+// ─── Scenario N47: [blocking: no] open question blocks all three finalize_* handlers ──────────
+//
+// Before this fix, only [blocking: yes] questions blocked finalization.
+// The new extractAllOpenQuestions gate blocks on ANY question (yes or no).
+// All three finalize_* handlers must enforce this.
+
+describe("Scenario N47 — [blocking: no] question blocks finalize_product_spec", () => {
+  const THREAD = "workflow-n47-pm"
+  // Spec with ONLY a non-blocking question — was previously allowed through
+  const DRAFT_WITH_NON_BLOCKING = `# Onboarding Product Spec\n\n## Open Questions\n- [type: product] [blocking: no] Should we add a skip button to step 3?\n`
+  const DRAFT_B64 = Buffer.from(DRAFT_WITH_NON_BLOCKING).toString("base64")
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("finalize_product_spec blocks when spec has a [blocking: no] question", async () => {
+    setConfirmedAgent("onboarding", "pm")
+
+    // GitHub: product spec branch has draft with [blocking: no] question
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref?.includes("product")) {
+        return { data: { content: DRAFT_B64, type: "file" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+    mockGetRef.mockRejectedValue(new Error("Not Found"))
+
+    // Agent calls finalize_product_spec
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Spec has remaining open questions." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "approve the spec")
+    await handleFeatureChannelMessage(params)
+
+    // saveApprovedSpec must NOT have been called (finalization blocked)
+    const productMain = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.message?.includes("final approved")
+    )
+    expect(productMain).toBeUndefined()
+  })
+})
+
+describe("Scenario N47 — [blocking: no] question blocks finalize_design_spec", () => {
+  const THREAD = "workflow-n47-design"
+  const DRAFT = `# Onboarding Design Spec\n\n## Open Questions\n- [type: design] [blocking: no] Should the empty state show a subtle illustration?\n\n## Screens\nAuth screen.\n`
+  const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("finalize_design_spec blocks when spec has a [blocking: no] question", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.design.md") && ref?.includes("design")) {
+        return { data: { content: DRAFT_B64, type: "file" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+    mockGetRef.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Design spec has remaining open questions." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "approve the design")
+    await handleFeatureChannelMessage(params)
+
+    // saveApprovedDesignSpec must NOT have been called
+    const designMain = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.message?.includes("design.md — final approved")
+    )
+    expect(designMain).toBeUndefined()
+  })
+})
+
+describe("Scenario N47 — [blocking: no] question blocks finalize_engineering_spec", () => {
+  const THREAD = "workflow-n47-arch"
+  const DRAFT = `# Onboarding Engineering Spec\n\n## Open Questions\n- [type: engineering] [blocking: no] Should we use Redis or Postgres for session caching?\n\n## API Contracts\nPOST /auth\n`
+  const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("finalize_engineering_spec blocks when spec has a [blocking: no] question", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.engineering.md") && ref?.includes("engineering")) {
+        return { data: { content: DRAFT_B64, type: "file" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+    mockGetRef.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Engineering spec has remaining open questions." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "approve the engineering spec")
+    await handleFeatureChannelMessage(params)
+
+    // saveApprovedEngineeringSpec must NOT have been called
+    const engMain = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.message?.includes("engineering.md — final approved")
+    )
+    expect(engMain).toBeUndefined()
+  })
+})
+
+// ─── Scenario N46: finalize_engineering_spec blocked on unconfirmed design assumptions ────────
+//
+// When ## Design Assumptions To Validate has content in the engineering spec draft,
+// finalize_engineering_spec must block. This is the structural gate ensuring the architect
+// confirms or escalates every design assumption before engineering is approved.
+
+describe("Scenario N46 — finalize_engineering_spec blocked when Design Assumptions To Validate is non-empty", () => {
+  const THREAD = "workflow-n46"
+  const DRAFT = [
+    "# Onboarding Engineering Spec",
+    "",
+    "## Design Assumptions To Validate",
+    "",
+    "- Designed for max 10MB file uploads — upload UX assumes immediate processing.",
+    "",
+    "## API Contracts",
+    "POST /auth → { userId, token }",
+  ].join("\n")
+  const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("blocks finalize_engineering_spec when unconfirmed design assumptions remain", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.engineering.md") && ref?.includes("engineering")) {
+        return { data: { content: DRAFT_B64, type: "file" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+    mockGetRef.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] }) // isSpecStateQuery
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_engineering_spec", input: {} }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Engineering spec has unconfirmed design assumptions." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "finalize the engineering spec")
+    await handleFeatureChannelMessage(params)
+
+    // saveApprovedEngineeringSpec must NOT have been called
+    const engMain = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.message?.includes("engineering.md — final approved")
+    )
+    expect(engMain).toBeUndefined()
+  })
+})
+
+// ─── Scenario N48: finalize_product_spec blocked when ## Design Notes is non-empty ────────────
+//
+// The PM must address (or move to ## Design Notes) all design guidance before finalizing.
+// If ## Design Notes has content, finalize_product_spec must block even if there are no
+// open questions — the design notes must be explicitly resolved first.
+
+describe("Scenario N48 — finalize_product_spec blocked when Design Notes is non-empty", () => {
+  const THREAD = "workflow-n48"
+  const DRAFT = [
+    "# Onboarding Product Spec",
+    "",
+    "## Acceptance Criteria",
+    "- User can register.",
+    "",
+    "## Open Questions",
+    "(none)",
+    "",
+    "## Design Notes",
+    "- The empty state should feel encouraging, not alarming — designer owns the visual treatment.",
+  ].join("\n")
+  const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
+
+  beforeEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("blocks finalize_product_spec when ## Design Notes is non-empty", async () => {
+    setConfirmedAgent("onboarding", "pm")
+
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref?.includes("product")) {
+        return { data: { content: DRAFT_B64, type: "file" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+    mockGetRef.mockRejectedValue(new Error("Not Found"))
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Cannot finalize — Design Notes must be addressed first." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "finalize the spec")
+    await handleFeatureChannelMessage(params)
+
+    // saveApprovedSpec must NOT have been called
+    const productMain = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.message?.includes("product.md — final approved")
+    )
+    expect(productMain).toBeUndefined()
   })
 })

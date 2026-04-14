@@ -367,6 +367,93 @@ export async function preseedEngineeringSpec(params: {
   console.log(`[GITHUB] preseedEngineeringSpec: ${architectItems.length} item(s) written to ${filePath} on ${branch}`)
 }
 
+// Generic phase handoff seeding — writes a named section into a target spec on a draft branch.
+// Used for Design → Engineering seeding (## Design Assumptions To Validate).
+// No-op if content is blank/whitespace. Creates branch + file stub if they don't exist.
+export async function seedHandoffSection(params: {
+  featureName: string
+  targetFilePath: string       // path of the spec to seed into
+  targetBranchName: string     // branch to write to (e.g. spec/{featureName}-engineering)
+  targetSectionHeading: string // e.g. "## Design Assumptions To Validate"
+  content: string              // raw body content to write under the section
+}): Promise<void> {
+  const { featureName, targetFilePath, targetBranchName, targetSectionHeading, content } = params
+  if (!content.trim()) return
+
+  let existing: string | null = null
+  try {
+    existing = await readFile(targetFilePath, targetBranchName)
+  } catch {
+    // Branch or file doesn't exist yet
+  }
+
+  const newSection = `${targetSectionHeading}\n\n${content.trim()}\n`
+
+  let merged: string
+  if (!existing) {
+    merged = `# ${featureName} Engineering Spec\n\n${newSection}`
+  } else if (existing.includes(targetSectionHeading)) {
+    // Replace the existing section body
+    const escapedHeading = targetSectionHeading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    merged = existing.replace(
+      new RegExp(`${escapedHeading}\\s*\\n[\\s\\S]*?(?=\\n## |\\n*$)`),
+      `${newSection}`,
+    )
+  } else {
+    merged = `${existing.trimEnd()}\n\n${newSection}`
+  }
+
+  await saveDraftEngineeringSpec({ featureName, filePath: targetFilePath, content: merged })
+  console.log(`[GITHUB] seedHandoffSection: "${targetSectionHeading}" seeded to ${targetFilePath} on ${targetBranchName}`)
+}
+
+// Removes the body of a named section from an approved spec on main (leaves heading with empty body).
+// Called at engineering finalization to clear ## Design Assumptions from the design spec on main.
+// Signals "all confirmed" — the heading remains as evidence the section existed.
+export async function clearHandoffSection(params: {
+  featureName: string
+  filePath: string        // spec path on main
+  sectionHeading: string  // e.g. "## Design Assumptions"
+}): Promise<void> {
+  const { featureName, filePath, sectionHeading } = params
+
+  const existing = await readFile(filePath, "main")
+  if (!existing) {
+    console.log(`[GITHUB] clearHandoffSection: ${filePath} not found on main, skipping`)
+    return
+  }
+
+  if (!existing.includes(sectionHeading)) {
+    console.log(`[GITHUB] clearHandoffSection: section "${sectionHeading}" absent from ${filePath}, no-op`)
+    return
+  }
+
+  // Replace section body with empty string — heading stays, body is gone
+  const escapedHeading = sectionHeading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const cleared = existing.replace(
+    new RegExp(`(${escapedHeading}\\s*\\n)[\\s\\S]*?(?=\\n## |\\n*$)`),
+    (_, heading) => `${heading}`,
+  )
+
+  // Determine spec type from file path and save to main accordingly
+  let mainFileSha: string | undefined
+  try {
+    const existing2 = await octokit.repos.getContent({ owner, repo, path: filePath })
+    mainFileSha = (existing2.data as { sha: string }).sha
+  } catch {
+    console.log(`[GITHUB] clearHandoffSection: could not get SHA for ${filePath}, skipping`)
+    return
+  }
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner, repo, path: filePath,
+    message: `[SPEC] ${featureName} — clear ${sectionHeading} (engineering approved)`,
+    content: Buffer.from(cleared).toString("base64"),
+    sha: mainFileSha,
+  })
+  console.log(`[GITHUB] clearHandoffSection: "${sectionHeading}" cleared from ${filePath} on main`)
+}
+
 // Save a draft HTML preview to the design branch.
 // Saved alongside the design spec — deleted on spec approval (it's a draft artifact).
 export async function saveDraftHtmlPreview(params: {

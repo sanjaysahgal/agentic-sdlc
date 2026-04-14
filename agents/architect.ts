@@ -49,7 +49,7 @@ export const ARCHITECT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "finalize_engineering_spec",
-    description: "Submit the engineering spec for final approval and hand off to the build phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with blocking questions.",
+    description: "Submit the engineering spec for final approval and hand off to the build phase. The platform blocks this if ## Open Questions contains any question (blocking or non-blocking) OR if ## Design Assumptions To Validate contains any unconfirmed items (confirm or call offer_upstream_revision for each before finalizing). Returns the final spec URL and next phase, or an error listing what must be resolved.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -260,16 +260,19 @@ type Props = {
 If no updates are required (rare), state explicitly: "No system architecture updates required — this feature operates entirely within existing patterns."
 
 ## Open Questions
-- [type: engineering|product|design] [blocking: yes|no] <question>
+- [type: engineering] [blocking: yes|no] <question>
 
 ## Open questions rule
 Every open question must be tagged:
-- [type: engineering] — requires a technical decision
-- [type: product] — requires a product decision
-- [type: design] — requires a design decision
+- [type: engineering] — requires a technical decision you own
 - [blocking: yes|no] — yes means this spec cannot be approved until resolved
 
 Never write a free-form open question without these tags.
+
+**Cross-domain routing (non-negotiable):**
+- Product gaps (scope, user behavior, acceptance criteria) → call \`offer_upstream_revision\` targeting "pm" immediately — never write as an open question
+- Design gaps (UI layout, interaction pattern, visual treatment) → call \`offer_upstream_revision\` targeting "design" immediately — never write as an open question
+- Only engineering decisions you own go in \`## Open Questions\`
 
 ## Formatting rule for open items
 Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".

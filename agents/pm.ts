@@ -43,7 +43,7 @@ export const PM_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "finalize_product_spec",
-    description: "Submit the spec for final approval and hand off to the design phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with the blocking questions.",
+    description: "Submit the spec for final approval and hand off to the design phase. The platform blocks this if there are any unresolved open questions (blocking or non-blocking — both must be resolved) AND if ## Design Notes is non-empty (all design guidance must be seeded before finalization). Returns the final spec URL and next phase, or an error listing what must be resolved.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -187,11 +187,23 @@ If no updates are needed, state: "No product vision updates — this feature ope
 
 ## Open Questions
 Each question must follow this format:
-- [type: design|engineering|product] [blocking: yes|no] <the question>
+- [type: product] [blocking: yes|no] <the question>
 
 Example:
-1. [type: design] [blocking: yes] Should the onboarding flow be a modal or a dedicated page?
-2. [type: engineering] [blocking: no] Which third-party library should handle step progress state?
+1. [type: product] [blocking: yes] Should guest checkout be allowed, or must users create an account?
+2. [type: product] [blocking: no] Is there a free tier, or is this feature paid-only?
+
+## Open questions rule
+PM spec contains only product decisions you cannot answer yourself. Engineering constraints → call \`offer_architect_escalation\`. Design considerations → write to \`## Design Notes\`.
+
+## Design Notes
+<Design decisions you identified but do not own — the designer makes the final call.>
+Example: "The empty state should feel encouraging, not alarming — designer owns the visual treatment."
+Rules:
+- Assertions or observations only — never questions
+- Each item flags a design decision the designer must actively address before the design is approved
+- Seeded into the design agent's opening brief at PM finalization
+- Must be empty in the final approved PM spec
 \`\`\`
 
 ## Enforcement
@@ -207,10 +219,9 @@ ${context.approvedFeatureSpecs
   ? `Read these before every response. Flag any decision in the current feature that contradicts or creates inconsistency with these approved specs:\n\n${context.approvedFeatureSpecs}`
   : "No other approved product specs yet — this is the first feature."}
 
-## Open questions rule
-Every open question in the spec must be tagged with a type (design, engineering, or product) and a blocking flag (yes or no). Never write a free-form open question without these tags. If you are retrofitting an existing draft that has untagged questions, re-tag them before saving the next draft.
+Every open question in the spec must be tagged \`[type: product]\` and a blocking flag (yes or no). Never write a free-form open question without these tags. Engineering constraints belong in \`offer_architect_escalation\`, not in \`## Open Questions\`. Design considerations belong in \`## Design Notes\`, not in \`## Open Questions\`.
 
-A blocking question means: this spec cannot be approved until this is resolved. A non-blocking question means: it can be resolved later, in the design or engineering phase.
+A blocking question means: this spec cannot be approved until this is resolved. A non-blocking question means: it can be resolved in the design or engineering phase.
 
 ## Formatting rule for open items
 Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".

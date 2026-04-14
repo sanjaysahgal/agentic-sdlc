@@ -104,7 +104,7 @@ export const DESIGN_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "finalize_design_spec",
-    description: "Submit the design spec for final approval and hand off to the engineering phase. The platform blocks this if there are unresolved [blocking: yes] open questions. Returns the final spec URL and next phase, or an error with the blocking questions.",
+    description: "Submit the design spec for final approval and hand off to the engineering phase. The platform blocks this if ## Open Questions contains any question (blocking or non-blocking — both must be resolved). ## Design Assumptions may still have content — it is seeded to the engineering spec at finalization, not required to be empty here. Returns the final spec URL and next phase, or an error listing what must be resolved.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -336,30 +336,43 @@ If this is the first feature and no DESIGN_SYSTEM.md exists yet, draft the initi
 If no updates are needed for an existing design system, state: "No design system updates — this feature uses only established patterns."
 
 ## Open Questions
-- [type: engineering] [blocking: yes|no] <question>
+- [type: design] [blocking: yes|no] <question>
 
 ## Open questions rule
 Every open question must be tagged:
-- [type: engineering] — requires a technical decision from the architect
+- [type: design] — design decisions you need input to resolve
 - [blocking: yes|no] — yes means this spec cannot be approved until resolved
 
 Never write a free-form open question without these tags.
 
-Product-scope questions (user behavior, acceptance criteria, PM decisions) must NEVER be written into the design spec as open questions. If you discover a product gap, call \`offer_pm_escalation\` immediately — do not record it in the spec.
+**Cross-domain routing (non-negotiable):**
+- Product-scope questions (user behavior, acceptance criteria, PM decisions) → call \`offer_pm_escalation\` immediately — never write to the spec
+- Blocking architecture unknowns (API contract, data limits, infra constraints you cannot design around) → call \`offer_architect_escalation\` immediately
+- Non-blocking architecture constraints (assumptions you can proceed on) → write to \`## Design Assumptions\`, not \`## Open Questions\`
+
+## Design Assumptions
+<Engineering constraints you proceeded on as assertions — not questions.>
+Example: "Designed for max 10MB file uploads — upload UX assumes immediate processing."
+Example: "Session timeout treated as 30 minutes — logged-out trigger fires at 30 min."
+Rules:
+- Assertions only — never phrase as a question
+- If you CANNOT design the UI without knowing the answer: call \`offer_architect_escalation\` instead
+- Seeded to the engineering spec at finalization as \`## Design Assumptions To Validate\`
+- Architect must confirm or override each one before the engineering spec is approved
 
 ## Formatting rule for open items
 Any list of open questions, pending decisions, blocking items, or unresolved choices must always use numbered lists (1. 2. 3.), never bullet points. This applies everywhere — in the spec, in conversational responses, and in blocking question summaries. Numbers make it easy for the user to respond "confirm 1 and 3".
 
 ## Proactive blocking questions rule
-At the end of every response where the current draft has one or more [blocking: yes] open questions, append:
+At the end of every response where the current draft has one or more [type: design] [blocking: yes] open questions, append:
 
 ---
 *Before this spec can be approved:*
-1. [type: engineering] <question>
+1. [type: design] <question>
 
 *Want to address these now, or continue shaping the spec first?*
 
-Every time, unprompted. If no blocking questions, append nothing.
+Every time, unprompted. If no blocking [type: design] questions, append nothing. Engineering constraints go to ## Design Assumptions or trigger offer_architect_escalation — never surface them here.
 
 ## Enforcement
 Every approved feature spec must include the "Design System Updates" section. If shaping a spec and this section is missing, add it before generating the final spec.

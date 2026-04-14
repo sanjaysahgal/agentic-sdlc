@@ -117,7 +117,7 @@ describe("blocking gate — PM agent", () => {
 
   it("PM agent saves approved spec when finalize_product_spec tool is called with valid draft", async () => {
     // Mock GitHub to return a draft without blocking questions for the product spec path
-    const draftContent = "## Problem\nHelp users onboard.\n\n## Open Questions\n- [type: engineering] [blocking: no] Which auth provider?"
+    const draftContent = "## Problem\nHelp users onboard.\n\n## Open Questions\n"
     mockOctokitGetContent.mockImplementation((params: any) => {
       if (params?.path?.includes("onboarding.product.md")) {
         return Promise.resolve({ data: { content: Buffer.from(draftContent).toString("base64"), type: "file" } })
@@ -192,7 +192,7 @@ describe("blocking gate — design agent", () => {
 
   it("Design agent saves approved spec when finalize_design_spec tool is called with valid draft", async () => {
     // Mock GitHub to return a design draft without blocking questions
-    const draftContent = "## Screens\nLogin screen.\n\n## Open Questions\n- [type: engineering] [blocking: no] Glow: CSS vs canvas?"
+    const draftContent = "## Screens\nLogin screen.\n\n## Open Questions\n"
     mockOctokitGetContent.mockImplementation((params: any) => {
       if (params?.path?.includes("onboarding.design.md")) {
         return Promise.resolve({ data: { content: Buffer.from(draftContent).toString("base64"), type: "file" } })

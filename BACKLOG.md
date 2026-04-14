@@ -33,6 +33,10 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+~~### Spec open questions architecture — holistic root cause fix (2026-04-13)~~ ✅ Done (2026-04-13)
+
+Each spec's `## Open Questions` now contains same-domain questions only (`[type: product]` in PM spec, `[type: design]` in design spec, `[type: engineering]` in engineering spec). Cross-domain routes through escalation tools or handoff sections. All three `finalize_*` handlers use `extractAllOpenQuestions` — both `[blocking: yes]` and `[blocking: no]` questions block finalization. New `## Design Notes` section in PM spec seeds design agent brief at finalization. New `## Design Assumptions` section in design spec seeds engineering spec draft at finalization via `seedHandoffSection`; cleared at engineering finalization via `clearHandoffSection`. Architect escalation writeback now routes to engineering spec (`patchEngineeringSpecWithDecision`) not product spec, for both design-originated and PM-originated arch escalation paths. New design rubric criterion 11 (no open questions). PM rubric criterion 3 and ENGINEER rubric criterion 6 updated to catch non-blocking questions. New integration tests N44, N44b, N46, N47 (×3), N48.
+
 ~~### Gate 2 silently drops architect-scope items filtered from PM escalation (2026-04-12)~~ ✅ Done (2026-04-12)
 
 Architect-scope items filtered by Gate 2 are now pre-seeded into the engineering spec draft as `[open: architecture]` questions. `pm-gap-classifier.ts` extended to return `architectItems[]` alongside `gaps[]`. `preseedEngineeringSpec` writes to the engineering draft branch (creates branch/file if needed). Gate 2 handler calls `preseedEngineeringSpec` for both the "0 PM gaps" rejection path and the normal "PM + arch items" path. N31 integration test covers.

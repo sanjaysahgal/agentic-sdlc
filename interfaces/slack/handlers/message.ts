@@ -4,7 +4,7 @@ import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setCon
 import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile, preseedEngineeringSpec } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile, preseedEngineeringSpec, seedHandoffSection, clearHandoffSection } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
@@ -13,10 +13,11 @@ import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } f
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
-import { extractBlockingQuestions, extractSpecTextLiterals } from "../../../runtime/spec-utils"
+import { extractBlockingQuestions, extractAllOpenQuestions, extractDesignAssumptions, extractHandoffSection, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
+import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -456,15 +457,24 @@ ${brief}`
       console.log(`[ROUTER] branch=escalation-reply targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
       clearEscalationNotification(featureName)
 
-      // Write confirmed PM/Architect recommendations back to the approved product spec
-      // so the spec auditor doesn't re-discover the same gaps on the next design run.
+      // Write confirmed recommendations back to the appropriate spec:
+      // - PM escalation → product spec (auditor won't re-discover same gaps)
+      // - Architect escalation → engineering spec (decision captured before engineering begins)
       if (escalationNotification.recommendations) {
-        await patchProductSpecWithRecommendations({
-          featureName,
-          question: escalationNotification.question,
-          recommendations: escalationNotification.recommendations,
-          humanConfirmation: userMessage,
-        }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+        if (isArchitectEscalation) {
+          await patchEngineeringSpecWithDecision({
+            featureName,
+            question: escalationNotification.question,
+            decision: escalationNotification.recommendations,
+          }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
+        } else {
+          await patchProductSpecWithRecommendations({
+            featureName,
+            question: escalationNotification.question,
+            recommendations: escalationNotification.recommendations,
+            humanConfirmation: userMessage,
+          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+        }
       }
 
       // PM posts closure message — PM owns the spec update, not the design agent
@@ -599,6 +609,15 @@ ${archPendingEscalation.question}`
 
       // Standalone confirmation — resume architect with injected revision.
       console.log(`[ROUTER] branch=arch-upstream-revision-reply target=${archNotifTarget}`)
+      // Write the architect's question + upstream answer to the engineering spec (non-blocking)
+      // so the decision is recorded before the architect resumes.
+      if (archEscalationNotification.recommendations) {
+        await patchEngineeringSpecWithDecision({
+          featureName,
+          question: archEscalationNotification.question,
+          decision: archEscalationNotification.recommendations,
+        }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
+      }
       clearEscalationNotification(featureName)
       const respondingRole = archNotifTarget === "design" ? "Designer" : "PM"
       const injectedMessage = `${respondingRole} resolved the upstream constraint: "${archEscalationNotification.question}" → "${userMessage}". The upstream spec has been revised. Resume engineering spec development with this revision applied — update the affected sections and continue.`
@@ -834,9 +853,13 @@ async function runPmAgent(params: {
         if (!existingDraft) {
           return { error: "No draft saved yet — save a draft first before finalizing." }
         }
-        const blockingQuestions = extractBlockingQuestions(existingDraft)
-        if (blockingQuestions.length > 0) {
-          return { error: `Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` }
+        const allOpenQuestions = extractAllOpenQuestions(existingDraft)
+        if (allOpenQuestions.length > 0) {
+          return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
+        }
+        const designNotes = extractHandoffSection(existingDraft, "## Design Notes")
+        if (designNotes.trim()) {
+          return { error: `Approval blocked — ## Design Notes must be empty before finalization. Address or move each design note before submitting the final spec.` }
         }
         let finalContent = existingDraft
         const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
@@ -1218,7 +1241,17 @@ async function runDesignAgent(params: {
     }
   }
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice
+  // Inject ## Design Notes from approved PM spec as [PM DESIGN GUIDANCE] in design agent's brief.
+  // PM finalizes with Design Notes seeded; designer must address each before design is approved.
+  let pmDesignGuidanceNotice = ""
+  if (pmSpecContent) {
+    const pmDesignNotes = extractHandoffSection(pmSpecContent, "## Design Notes")
+    if (pmDesignNotes.trim()) {
+      pmDesignGuidanceNotice = `\n\n[PM DESIGN GUIDANCE — The PM identified the following design considerations. You must address each of these in the design spec before approval. They are not questions — they are constraints and observations the PM has flagged for the designer to act on:\n${pmDesignNotes}]`
+    }
+  }
+
+  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice
   const systemPrompt = buildDesignSystemBlocks(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -1461,9 +1494,9 @@ async function runDesignAgent(params: {
         if (!existingDraft) {
           return { error: "No draft saved yet — save a draft first before finalizing." }
         }
-        const blockingQuestions = extractBlockingQuestions(existingDraft)
-        if (blockingQuestions.length > 0) {
-          return { error: `Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` }
+        const allOpenQuestions = extractAllOpenQuestions(existingDraft)
+        if (allOpenQuestions.length > 0) {
+          return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
         }
         let finalContent = existingDraft
         const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
@@ -1486,6 +1519,18 @@ async function runDesignAgent(params: {
         }
         await update("_Saving final design spec..._")
         await saveApprovedDesignSpec({ featureName, filePath: designFilePath, content: finalContent })
+        // Seed ## Design Assumptions to engineering spec branch (non-blocking)
+        const assumptionsContent = extractDesignAssumptions(finalContent)
+        if (assumptionsContent.trim()) {
+          const engSpecFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
+          seedHandoffSection({
+            featureName,
+            targetFilePath: engSpecFilePath,
+            targetBranchName: `spec/${featureName}-engineering`,
+            targetSectionHeading: "## Design Assumptions To Validate",
+            content: assumptionsContent,
+          }).catch(err => console.log(`[DESIGN-FINALIZE] seedHandoffSection failed (non-blocking): ${err}`))
+        }
         const { githubOwner, githubRepo } = loadWorkspaceConfig()
         const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${designFilePath}`
         return { result: { url, nextPhase: "engineering" } }
@@ -1849,7 +1894,18 @@ async function runArchitectAgent(params: {
     }
   }
 
-  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch + archReadinessNotice
+  // Inject ## Design Assumptions To Validate from engineering spec branch into architect's brief.
+  // At engineering phase start, design finalization has seeded these — architect must confirm/override each.
+  let designAssumptionsNotice = ""
+  const engDraftForAssumptions = engDraftContent  // already fetched above for archReadinessNotice
+  if (engDraftForAssumptions) {
+    const assumptionsToValidate = extractHandoffSection(engDraftForAssumptions, "## Design Assumptions To Validate")
+    if (assumptionsToValidate.trim()) {
+      designAssumptionsNotice = `\n\n[PLATFORM DESIGN ASSUMPTIONS — The design team made the following assumptions that must be confirmed or overridden before the engineering spec is approved. For each: either confirm it inline in the spec (remove from this list) or call offer_upstream_revision(design) if the assumption is incorrect:\n${assumptionsToValidate}]`
+    }
+  }
+
+  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice
   const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
@@ -1926,9 +1982,14 @@ async function runArchitectAgent(params: {
         if (!existingDraft) {
           return { error: "No draft saved yet — save a draft first before finalizing." }
         }
-        const blockingQuestions = extractBlockingQuestions(existingDraft)
-        if (blockingQuestions.length > 0) {
-          return { error: `Approval blocked — ${blockingQuestions.length} blocking question${blockingQuestions.length > 1 ? "s" : ""} must be resolved first:\n${blockingQuestions.map(q => `• ${q}`).join("\n")}` }
+        const allOpenQuestions = extractAllOpenQuestions(existingDraft)
+        if (allOpenQuestions.length > 0) {
+          return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
+        }
+        // Structural gate: all Design Assumptions To Validate must be confirmed or overridden before engineering is approved
+        const unconfirmedAssumptions = extractHandoffSection(existingDraft, "## Design Assumptions To Validate")
+        if (unconfirmedAssumptions.trim()) {
+          return { error: `Approval blocked — ## Design Assumptions To Validate contains unconfirmed items. Confirm each assumption or call offer_upstream_revision(design) to reject it before finalizing:\n${unconfirmedAssumptions}` }
         }
         let finalContent = existingDraft
         const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
@@ -1938,6 +1999,13 @@ async function runArchitectAgent(params: {
         }
         await update("_Saving final engineering spec..._")
         await saveApprovedEngineeringSpec({ featureName, filePath: archFilePath, content: finalContent })
+        // Clear ## Design Assumptions from design spec on main (non-blocking)
+        const designSpecFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
+        clearHandoffSection({
+          featureName,
+          filePath: designSpecFilePath,
+          sectionHeading: "## Design Assumptions",
+        }).catch(err => console.log(`[ENG-FINALIZE] clearHandoffSection failed (non-blocking): ${err}`))
         const { githubOwner, githubRepo } = loadWorkspaceConfig()
         const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${archFilePath}`
         return { result: { url, nextPhase: "build" } }
