@@ -404,12 +404,19 @@ ${brief}`
         console.log(`[ROUTER] branch=escalation-continuation targetAgent=${escalationNotification.targetAgent} msg="${userMessage.slice(0, 80)}"`)
         let updatedRecommendations = ""
         const continuationToolCalls: ToolCallRecord[] = []
+        // Inject platform context so the agent knows its recommendations are pending confirmation —
+        // not that it needs to finalize. Without this, the PM says "say approve and I'll finalize"
+        // which is misleading: the spec is already on main and just needs the decisions patched in.
+        const pendingRecsContext = !isArchitectEscalation && escalationNotification.recommendations
+          ? `\n\n[PLATFORM CONTEXT] You have already provided your recommendations for the blocking question. They are pending the human's confirmation. When the human says "yes" or "approve", the platform will apply your recommendations to the product spec automatically — you do not need to finalize or re-draft anything. If they are satisfied with your recommendations, guide them to confirm.`
+          : ""
+        const continuationMessage = userMessage + pendingRecsContext
         await withThinking({ client, channelId, threadTs, agent: notifAgentLabel, run: async (update) => {
           const capturingUpdate = async (text: string) => { updatedRecommendations = text; await update(text) }
           if (isArchitectEscalation) {
             await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update: capturingUpdate })
           } else {
-            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate, toolCallsOut: continuationToolCalls })
+            await runPmAgent({ channelName, channelId, threadTs, userMessage: continuationMessage, client, update: capturingUpdate, toolCallsOut: continuationToolCalls })
           }
         }})
 
