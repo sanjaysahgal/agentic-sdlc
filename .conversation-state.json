@@ -1,10 +1,5 @@
 {
-  "pendingEscalations": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. [object Object]\n2. [object Object]\n3. [object Object]\n4. [object Object]\n5. [object Object]\n6. [object Object]\n7. [object Object]\n8. [object Object]\n9. [object Object]\n10. [object Object]\n11. [object Object]\n12. [object Object]\n13. [object Object]"
-    }
-  },
+  "pendingEscalations": {},
   "pendingApprovals": {},
   "escalationNotifications": {}
 }
