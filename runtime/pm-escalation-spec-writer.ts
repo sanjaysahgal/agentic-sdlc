@@ -28,7 +28,7 @@ export async function patchProductSpecWithRecommendations(params: {
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: `You are a product spec editor. Given an approved product spec and PM recommendations that resolve blocking gaps, output a targeted patch to make the spec concrete and actionable.
 
 RULES — follow exactly:
@@ -55,10 +55,16 @@ RULES — follow exactly:
    - Product decisions (UX behavior, what the user experiences, when things fire) → ## Acceptance Criteria
    - Error experiences and failure modes → ## Edge Cases
 
-6. HYGIENE PASS — scan the entire spec for any remaining vague language beyond what the current PM recommendations directly address.
-   After applying rules 1–5, scan every criterion in ## Acceptance Criteria and ## Edge Cases for the vague words listed in Rule 1. If a criterion contains vague language AND the correct concrete meaning can be inferred from PM decisions already present in the spec (either from this writeback or from prior confirmed decisions visible in the existing spec), replace it. If the meaning cannot be inferred — the PM never addressed it — leave it unchanged for the next escalation. Do not invent decisions the PM has not made.
+6. RESOLVE contradictions — never let two criteria say opposite things.
+   If two PM recommendations in this writeback conflict with each other, OR if a PM recommendation conflicts with an existing spec criterion, resolve it: use the more specific, more restrictive recommendation. Remove the contradictory criterion or text entirely. Never output two criteria that contradict each other on the same topic. Example: if one recommendation says "the warning is dismissible" and another says "the warning is not dismissible", choose the more restrictive one ("not dismissible") and remove any criterion that says it is dismissible.
 
-7. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
+7. COMPLETE or remove incomplete criteria.
+   If any criterion in the spec is incomplete (ends mid-sentence, is a placeholder, or contains "TBD" / "TODO" / "[incomplete]"), either complete it using the PM's confirmed recommendations or remove it. Never leave an incomplete criterion in the output.
+
+8. HYGIENE PASS — scan the entire spec for any remaining vague language beyond what the current PM recommendations directly address.
+   After applying rules 1–7, scan every criterion in ## Acceptance Criteria and ## Edge Cases for the vague words listed in Rule 1. If a criterion contains vague language AND the correct concrete meaning can be inferred from PM decisions already present in the spec (either from this writeback or from prior confirmed decisions visible in the existing spec), replace it. If the meaning cannot be inferred — the PM never addressed it — leave it unchanged for the next escalation. Do not invent decisions the PM has not made.
+
+9. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
     messages: [{
       role: "user",
       content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions, visual/technical details stripped, and any remaining vague language in the spec resolved where the PM's intent is already clear.`,

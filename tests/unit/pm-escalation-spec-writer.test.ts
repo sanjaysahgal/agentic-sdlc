@@ -313,4 +313,34 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
 
     expect(mockCreate.mock.calls[0][0].model).toBe("claude-haiku-4-5-20251001")
   })
+
+  it("max_tokens is 4096 — large enough for full spec patch when many recommendations are applied", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    expect(mockCreate.mock.calls[0][0].max_tokens).toBe(4096)
+  })
+
+  it("system prompt instructs Haiku to RESOLVE contradictions — never output two criteria that say opposite things", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must explicitly instruct to resolve conflicts, not faithfully reproduce both
+    expect(systemPrompt.toLowerCase()).toMatch(/resolve.*contradiction|contradict|conflict/)
+    expect(systemPrompt.toLowerCase()).toMatch(/never.*two criteria|remove.*contradict|contradictory criterion/)
+  })
+
+  it("system prompt instructs Haiku to COMPLETE or REMOVE incomplete criteria — never leave a stub in the spec", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must explicitly instruct to handle incomplete/truncated criteria
+    expect(systemPrompt.toLowerCase()).toMatch(/incomplete|incomplete criteria|remove it/)
+    expect(systemPrompt.toLowerCase()).toMatch(/tbd|todo|placeholder/)
+  })
 })
