@@ -443,11 +443,15 @@ ${brief}`
           return
         }
 
-        // Never overwrite recommendations once set — they represent confirmed PM decisions.
-        // A continuation turn may produce a confused or pivoted response; the spec must be
-        // patched with the original decisions, not whatever the PM said in a follow-up turn.
-        // Only update recommendations if they were not already present.
-        const preservedRecommendations = escalationNotification.recommendations || updatedRecommendations
+        // Only update stored recommendations if the PM's response is in recommendation format
+        // (contains "My recommendation:" markers). This prevents a pivoted or confused PM response
+        // (e.g. "I need to stop and clarify...") from overwriting valid decisions. A continuation
+        // turn where the PM explicitly revises its recommendations (the user asked "can you adjust
+        // #2?") should update; a turn where the PM pivots to an unrelated concern should not.
+        const pmResponseHasRecommendations = updatedRecommendations.includes("My recommendation:")
+        const preservedRecommendations = pmResponseHasRecommendations
+          ? updatedRecommendations
+          : (escalationNotification.recommendations || updatedRecommendations)
         setEscalationNotification(featureName, { ...escalationNotification, recommendations: preservedRecommendations })
         return
       }
