@@ -1,0 +1,34 @@
+---
+title: "FIG. 13 — Proactive Phase Orchestration with Handoff Gating"
+---
+graph TB
+    1300["1300 — Orchestration Layer\n(Periodic Evaluation)"]
+
+    1300 --> 1310["1310 — Read Version Control\nState for All Active Features"]
+
+    1310 --> 1320{"1320 — Phase\nComplete?"}
+
+    1320 -->|"No"| 1330{"1330 — Stall\nDetected?"}
+    1330 -->|"No activity > threshold"| 1331["1331 — Surface Stall\nNotification to Human"]
+    1330 -->|"Active"| 1300
+
+    1320 -->|"Yes"| 1340{"1340 — Scan Outgoing\nSpec for Unresolved\nOpen Questions"}
+
+    1340 -->|"Unresolved\nquestions found"| 1350["1350 — BLOCK Transition\nSurface blocking questions\nto responsible human"]
+    1350 --> 1300
+
+    1340 -->|"All questions\nresolved"| 1360["1360 — PERMIT Transition"]
+
+    1360 --> 1370["1370 — Notify Next-Phase\nHuman Stakeholder\n(proactive, no human query)"]
+
+    1370 --> 1380["1380 — Route to Next Agent\nvia Canonical Routing Table"]
+
+    subgraph "1390 — Canonical Routing Table\n(Single Source of Truth)"
+        1391["Phase 1 → PM Agent"]
+        1392["Phase 2 → Design Agent"]
+        1393["Phase 3 → Architect Agent"]
+        1394["Phase 4 → Engineer Agent"]
+        1395["Phase N → Domain Agent N"]
+    end
+
+    1380 --> 1390

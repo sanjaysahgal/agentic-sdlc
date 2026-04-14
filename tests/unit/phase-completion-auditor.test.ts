@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
-import { auditPhaseCompletion, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, DESIGN_RUBRIC, buildDesignRubric } from "../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, DESIGN_RUBRIC, buildDesignRubric } from "../../runtime/phase-completion-auditor"
 
 beforeEach(() => {
   mockCreate.mockReset()
@@ -436,5 +436,179 @@ describe("PM_DESIGN_READINESS_RUBRIC — export and format", () => {
 
   it("rubric does not use [PM-GAP] prefix — that is a design-agent-only tag", () => {
     expect(PM_DESIGN_READINESS_RUBRIC).not.toContain("[PM-GAP]")
+  })
+})
+
+// ─── auditDownstreamReadiness ──────────────────────────────────────────────────
+
+describe("auditDownstreamReadiness — consumer tests", () => {
+  it("returns ready: true and empty findings when model responds PASS", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    const result = await auditDownstreamReadiness({
+      specContent: "# Feature Spec\n## Problem\nWell-specified problem.",
+      downstreamRole: "designer",
+      featureName: "onboarding",
+    })
+
+    expect(result.ready).toBe(true)
+    expect(result.findings).toHaveLength(0)
+  })
+
+  it("returns ready: false with parsed finding when model responds with FINDING line", async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: "FINDING: Session timeout value not specified | PM must define the timeout threshold before designer can show the timeout warning UI",
+        },
+      ],
+    })
+
+    const result = await auditDownstreamReadiness({
+      specContent: "# Feature Spec\n## Sessions\nSession expires after some time.",
+      downstreamRole: "designer",
+      featureName: "session-management",
+    })
+
+    expect(result.ready).toBe(false)
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0].issue).toBe("Session timeout value not specified")
+    expect(result.findings[0].recommendation).toBe(
+      "PM must define the timeout threshold before designer can show the timeout warning UI"
+    )
+  })
+
+  it("parses multiple FINDING lines into multiple findings", async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: [
+            "FINDING: Error recovery path undefined | PM must specify what happens after account creation fails",
+            "FINDING: Nudge dismissibility not defined | PM must decide if the nudge is permanent or dismissible",
+          ].join("\n"),
+        },
+      ],
+    })
+
+    const result = await auditDownstreamReadiness({
+      specContent: "# Feature Spec",
+      downstreamRole: "designer",
+      featureName: "onboarding",
+    })
+
+    expect(result.ready).toBe(false)
+    expect(result.findings).toHaveLength(2)
+  })
+
+  it("returns ready: true when response has no parseable FINDING lines", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "The spec looks complete." }],
+    })
+
+    const result = await auditDownstreamReadiness({
+      specContent: "# Feature Spec",
+      downstreamRole: "designer",
+      featureName: "onboarding",
+    })
+
+    expect(result.ready).toBe(true)
+    expect(result.findings).toHaveLength(0)
+  })
+})
+
+describe("auditDownstreamReadiness — producer tests (system prompt content)", () => {
+  it("system prompt establishes designer persona for downstreamRole=designer", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "designer",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("senior UX designer")
+  })
+
+  it("system prompt establishes architect persona for downstreamRole=architect", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "architect",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("senior software architect")
+  })
+
+  it("system prompt establishes engineer persona for downstreamRole=engineer", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "engineer",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("engineer implementing this feature")
+  })
+
+  it("system prompt includes open-ended framing — not a rubric checklist", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "designer",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    // Must instruct the model to find gaps the spec doesn't answer — not check a fixed list
+    expect(call.system).toContain("guess, invent, or make an assumption")
+  })
+
+  it("system prompt excludes implementation-choice findings — only upstream-owned decisions flagged", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "designer",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    // Must tell model NOT to flag decisions that belong to the downstream role
+    expect(call.system).toMatch(/not.*implementation choices|implementation choices.*not/i)
+  })
+
+  it("system prompt attributes upstream role correctly for designer (PM)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "designer",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.system).toContain("PM")
+  })
+
+  it("uses Sonnet model — not Haiku — for open-ended adversarial analysis", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+
+    await auditDownstreamReadiness({
+      specContent: "# Spec",
+      downstreamRole: "designer",
+      featureName: "test-feature",
+    })
+
+    const call = mockCreate.mock.calls[0][0]
+    expect(call.model).toContain("sonnet")
   })
 })

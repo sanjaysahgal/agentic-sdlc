@@ -1,0 +1,33 @@
+---
+title: "FIG. 8 — Structured Open Question Tagging for Phase Gating"
+---
+graph TB
+    subgraph "800 — Specification Artifact"
+        801["801 — Open Questions Section"]
+        802["802 — Question 1:\n[type: product] [blocking: yes]\nWhat auth provider?"]
+        803["803 — Question 2:\n[type: design] [blocking: no]\nPreferred icon style?"]
+        804["804 — Question 3:\n[type: engineering] [blocking: yes]\nAPI rate limit strategy?"]
+    end
+
+    801 --> 802 & 803 & 804
+
+    subgraph "810 — Automated Routing"
+        811["811 — Type Parser"]
+        811 -->|"type: product"| 812["812 — Route to PM Agent\nor PM Human"]
+        811 -->|"type: design"| 813["813 — Route to Design Agent\nor Designer Human"]
+        811 -->|"type: engineering"| 814["814 — Route to Architect Agent\nor Architect Human"]
+    end
+
+    802 & 803 & 804 --> 811
+
+    subgraph "820 — Phase Gate"
+        821["821 — Blocking Scanner"]
+        821 -->|"Any unresolved\nquestions found"| 822["822 — BLOCK\nPhase Transition"]
+        821 -->|"All questions\nresolved"| 823["823 — PERMIT\nPhase Transition"]
+    end
+
+    801 --> 821
+
+    830["830 — Agent Enforcement:\nRefuses to save specs\nwith untagged questions"]
+
+    801 --> 830

@@ -1,0 +1,58 @@
+---
+title: "FIG. 11 — Specification Chain with Upstream Context Injection"
+---
+graph TB
+    subgraph "1100 — Authoritative Documents"
+        1101["1101 — Product Vision"]
+        1102["1102 — System Architecture"]
+        1103["1103 — Design System / Brand"]
+    end
+
+    subgraph "1110 — Phase 1: Product Spec"
+        1111["1111 — PM Agent"]
+        1112["1112 — feature.product.md"]
+    end
+
+    subgraph "1120 — Phase 2: Design Spec"
+        1121["1121 — Design Agent"]
+        1122["1122 — feature.design.md"]
+    end
+
+    subgraph "1130 — Phase 3: Engineering Spec"
+        1131["1131 — Architect Agent"]
+        1132["1132 — feature.engineering.md"]
+    end
+
+    subgraph "1140 — Phase 4: Build"
+        1141["1141 — Engineer Agent"]
+        1142["1142 — Source Code"]
+    end
+
+    1101 & 1102 -->|"reads"| 1111
+    1111 --> 1112
+
+    1101 & 1102 & 1103 -->|"reads"| 1121
+    1112 -->|"reads (approved)"| 1121
+    1121 --> 1122
+
+    1102 -->|"reads"| 1131
+    1112 -->|"reads (approved)"| 1131
+    1122 -->|"reads (approved)"| 1131
+    1131 --> 1132
+
+    1112 & 1122 & 1132 -->|"reads ALL\n(approved)"| 1141
+    1141 --> 1142
+
+    1150["1150 — Conflict Detection\n(enforced at every save)"]
+
+    1150 -.->|"No downstream artifact\nmay contradict any\nupstream artifact"| 1112 & 1122 & 1132 & 1142
+
+    subgraph "1160 — Upstream Doc Maintenance"
+        1161["1161 — PM maintains\nProduct Vision"]
+        1162["1162 — Design maintains\nDesign System"]
+        1163["1163 — Architect maintains\nSystem Architecture"]
+    end
+
+    1112 -.-> 1161
+    1122 -.-> 1162
+    1132 -.-> 1163

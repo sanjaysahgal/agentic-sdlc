@@ -1,0 +1,39 @@
+---
+title: "FIG. 4 — Synchronous Conflict Detection with Re-Read Verification"
+---
+sequenceDiagram
+    participant A as 400 — Agent
+    participant CD as 410 — Conflict<br/>Detection Module
+    participant VC as 420 — Version Control<br/>Repository
+    participant H as 430 — Human
+
+    A->>CD: 401 — Proposed spec artifact
+    CD->>VC: 402 — Load upstream documents<br/>(product vision, architecture, brand)
+    VC-->>CD: 403 — Upstream document content
+
+    CD->>CD: 404 — Compare artifact<br/>against upstream
+
+    alt 405 — CONFLICT detected
+        CD-->>A: 406 — Block save.<br/>Identify violated constraint.
+        A-->>H: 407 — "This contradicts<br/>[upstream constraint].<br/>Update upstream first."
+        H->>A: 408 — "I've updated it"
+        A->>VC: 409 — RE-READ upstream<br/>document from repository
+        VC-->>A: 410 — Current document content
+
+        alt 411 — Update confirmed
+            A->>CD: 412 — Re-validate artifact
+            CD-->>A: 413 — PASS
+            A->>VC: 414 — Save artifact
+        else 415 — Update NOT found
+            A-->>H: 416 — "Update not detected<br/>in repository.<br/>Please commit the change."
+        end
+
+    else 417 — GAP detected
+        CD-->>A: 418 — Allow save.<br/>Surface structured flag.
+        A->>VC: 419 — Save artifact with GAP flag
+        A-->>H: 420 — Surface gap for resolution
+
+    else 421 — No issues
+        CD-->>A: 422 — PASS
+        A->>VC: 423 — Save artifact
+    end

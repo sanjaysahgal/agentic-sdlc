@@ -1,0 +1,62 @@
+---
+title: "FIG. 1 — System Architecture"
+---
+graph TB
+    subgraph "100 — Human Interaction Layer"
+        101["101 — Slack Interface"]
+        102["102 — Web Interface"]
+        103["103 — Teams Interface"]
+    end
+
+    104["104 — Event Protocol\n(incoming message → platform → response)"]
+
+    subgraph "110 — Platform Orchestration Layer"
+        111["111 — Agent Router"]
+        112["112 — Phase Detection Module"]
+        113["113 — Conflict Detection Module"]
+        114["114 — Enforcement Gate Engine"]
+        115["115 — Escalation Manager"]
+        116["116 — Proactive Audit Engine"]
+    end
+
+    subgraph "120 — Agent Layer"
+        121["121 — PM Agent Function"]
+        122["122 — Design Agent Function"]
+        123["123 — Architect Agent Function"]
+        124["124 — Engineer Agent Function"]
+        125["125 — Future Domain Agents"]
+    end
+
+    subgraph "130 — Context & State Layer"
+        131["131 — Workspace Config\n(Environment Variables)"]
+        132["132 — Context Loader\n(Relevance Filter)"]
+        133["133 — Conversation History\n(External Persistence)"]
+    end
+
+    140["140 — Version Control Repository\n(Sole Authoritative State Store)"]
+
+    subgraph "150 — External Services"
+        151["151 — LLM API\n(Primary Model)"]
+        152["152 — LLM API\n(Secondary/Filter Model)"]
+    end
+
+    160["160 — CI/CD Platform Repository"]
+    170["170 — Monitoring Dashboard"]
+
+    101 & 102 & 103 --> 104
+    104 --> 111
+    111 --> 112
+    112 --> 140
+    111 --> 121 & 122 & 123 & 124 & 125
+    121 & 122 & 123 & 124 & 125 --> 113
+    113 --> 140
+    114 --> 121 & 122 & 123 & 124 & 125
+    116 --> 114
+    115 --> 121 & 122 & 123 & 124
+    132 --> 140
+    132 --> 152
+    131 --> 111 & 132
+    133 --> 121 & 122 & 123 & 124
+    121 & 122 & 123 & 124 --> 151
+    160 --> 140
+    170 --> 140

@@ -1,0 +1,42 @@
+---
+title: "FIG. 16 — Cross-Domain Specification Chain Composition"
+---
+graph TB
+    subgraph "1600 — Software Development Chain"
+        1601["1601 — Product Spec"] --> 1602["1602 — Design Spec"] --> 1603["1603 — Engineering Spec"] --> 1604["1604 — Build"]
+    end
+
+    subgraph "1610 — Go-To-Market Chain"
+        1611["1611 — Market Analysis"] --> 1612["1612 — Positioning"] --> 1613["1613 — Channel Strategy"] --> 1614["1614 — Campaign Plan"]
+    end
+
+    subgraph "1620 — Financial Planning Chain"
+        1621["1621 — Revenue Model"] --> 1622["1622 — Pricing Strategy"] --> 1623["1623 — Unit Economics"] --> 1624["1624 — Forecast"]
+    end
+
+    subgraph "1630 — Growth Chain"
+        1631["1631 — Acquisition\nStrategy"] --> 1632["1632 — Retention\nStrategy"] --> 1633["1633 — Expansion\nStrategy"] --> 1634["1634 — Growth\nForecast"]
+    end
+
+    subgraph "1640 — Typed Handoff Interfaces"
+        1641["1641 — Feature Timeline\nInterface"]
+        1642["1642 — Pricing\nInterface"]
+        1643["1643 — CAC Target\nInterface"]
+    end
+
+    1603 -->|"feature timeline"| 1641
+    1641 -->|"referenced by"| 1613
+
+    1622 -->|"pricing model"| 1642
+    1642 -->|"referenced by"| 1601
+
+    1631 -->|"CAC target"| 1643
+    1643 -->|"referenced by"| 1623
+
+    1650["1650 — Cross-Domain Conflict Detection\n(pricing assumes feature not in eng spec → CONFLICT)"]
+
+    1650 -.-> 1641 & 1642 & 1643
+
+    1660["1660 — Cross-Domain Escalation\n(triggers when referenced artifact\nin another chain is not finalized)"]
+
+    1660 -.-> 1641 & 1642 & 1643

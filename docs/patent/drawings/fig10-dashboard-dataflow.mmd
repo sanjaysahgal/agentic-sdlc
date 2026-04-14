@@ -1,0 +1,27 @@
+---
+title: "FIG. 10 — Version-Control-Derived Monitoring Dashboard"
+---
+graph LR
+    subgraph "1000 — Version Control Repository"
+        1001["1001 — Branch State\n(existence, names)"]
+        1002["1002 — File State\n(on branch vs main)"]
+        1003["1003 — Commit History\n(timestamps, authors)"]
+        1004["1004 — Spec Content\n(open questions, tags)"]
+        1005["1005 — PR State\n(open, merged, closed)"]
+    end
+
+    1010["1010 — Dashboard Engine\n(Read-Only Projection)"]
+
+    1001 & 1002 & 1003 & 1004 & 1005 --> 1010
+
+    subgraph "1020 — Dashboard Views"
+        1021["1021 — Portfolio View\nAll features × phases × duration"]
+        1022["1022 — Blocking Issues\nOpen questions by type\nand assignee"]
+        1023["1023 — Conflict Log\nCONFLICT + GAP history\nand resolution status"]
+        1024["1024 — Agent Activity Feed\nInvocations, saves,\nphase transitions"]
+        1025["1025 — Multi-Workspace View\nCross-tenant SDLC health"]
+    end
+
+    1010 --> 1021 & 1022 & 1023 & 1024 & 1025
+
+    1030["1030 — No separate data store.\nNo synchronization.\nNo cache invalidation.\nNo write path.\nHistorical views via git history."]

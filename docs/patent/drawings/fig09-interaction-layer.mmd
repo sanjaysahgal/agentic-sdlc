@@ -1,0 +1,34 @@
+---
+title: "FIG. 9 — Interface-Agnostic Human Interaction Layer"
+---
+graph TB
+    subgraph "900 — Interface Implementations"
+        901["901 — Slack Adapter"]
+        902["902 — Web Chat Adapter"]
+        903["903 — Teams Adapter"]
+        904["904 — CLI Adapter"]
+    end
+
+    910["910 — Event Protocol"]
+
+    901 & 902 & 903 & 904 -->|"Incoming Message Event\n{userId, channelId,\nthreadId, text}"| 910
+
+    subgraph "920 — Platform Orchestration\n(Interface-Agnostic)"
+        921["921 — Agent Router"]
+        922["922 — Phase Detection"]
+        923["923 — Agent Invocation"]
+        924["924 — Conflict Detection"]
+        925["925 — Enforcement Gates"]
+        926["926 — Escalation Manager"]
+    end
+
+    910 --> 921
+    921 --> 922 & 923 & 924 & 925 & 926
+
+    930["930 — Response Event\n{channelId, threadId,\nresponseText, attachments}"]
+
+    920 --> 930
+
+    930 -->|"Render response"| 901 & 902 & 903 & 904
+
+    940["940 — Substituting one interface\nrequires NO changes to\nagent, routing, state, or\nconflict detection components"]

@@ -1,0 +1,73 @@
+---
+title: "FIG. 14 — Deterministic Platform Enforcement Gates"
+---
+graph TB
+    1400["1400 — Human Message"]
+
+    subgraph "1410 — Layer 1: Pre-Run Structural Gate"
+        1411["1411 — Evaluate version control state"]
+        1412["1412 — Check pending escalations"]
+        1413["1413 — Run phase readiness audit"]
+        1414{"1414 — Required action\ndetected?"}
+        1415["1415 — Auto-trigger action\nBEFORE agent runs"]
+    end
+
+    1400 --> 1411
+    1411 --> 1412 --> 1413 --> 1414
+    1414 -->|"Yes"| 1415
+
+    1414 -->|"No"| 1420["1420 — Agent Function\nInvocation"]
+
+    1415 --> 1420
+
+    1420 --> 1430
+
+    subgraph "1430 — Layer 2: Post-Run Output Verification"
+        1431["1431 — Inspect tool calls"]
+        1432["1432 — Scan structured tags"]
+        1433["1433 — Extract prose patterns"]
+        1434{"1434 — Required behavior\nin output?"}
+        1435["1435 — Platform triggers\nmissing behavior"]
+    end
+
+    1431 & 1432 & 1433 --> 1434
+    1434 -->|"Missing"| 1435
+
+    1434 -->|"Present"| 1440
+
+    subgraph "1440 — Layer 3: State-Based Finalization Gate"
+        1441["1441 — Extract open questions"]
+        1442["1442 — Check brand token drift"]
+        1443["1443 — Verify upstream coherence"]
+        1444{"1444 — All checks\npass?"}
+        1445["1445 — BLOCK finalization"]
+    end
+
+    1441 & 1442 & 1443 --> 1444
+    1444 -->|"Fail"| 1445
+
+    1444 -->|"Pass"| 1450
+
+    subgraph "1450 — Layer 4: Always-On Proactive Audit"
+        1451["1451 — Spec conflict audit"]
+        1452["1452 — Brand drift audit"]
+        1453["1453 — Phase readiness audit"]
+        1454["1454 — Inject findings as\nplatform notices"]
+    end
+
+    1451 & 1452 & 1453 --> 1454
+
+    1454 --> 1460
+
+    subgraph "1460 — Layer 5: Fallback Classification"
+        1461["1461 — Secondary LLM classifies\nambiguous output"]
+        1462{"1462 — Classification\nresult"}
+        1463["1463 — Trigger appropriate\nplatform action"]
+    end
+
+    1461 --> 1462
+    1462 --> 1463
+
+    1463 --> 1470["1470 — Final Response to Human\n(all enforcement layers passed)"]
+
+    1480["1480 — P(failure) = P(L1) × P(L2) × P(L3) × P(L4) × P(L5)\n= exponentially unlikely"]

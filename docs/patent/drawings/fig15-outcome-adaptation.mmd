@@ -1,0 +1,43 @@
+---
+title: "FIG. 15 — Closed-Loop Outcome-Driven Behavioral Adaptation"
+---
+graph TB
+    subgraph "1500 — Specification Phase"
+        1501["1501 — Agent Produces\nSpecification Artifacts"]
+        1502["1502 — Spec Chain:\nProduct → Design →\nEngineering → Build"]
+    end
+
+    1501 --> 1502
+
+    1502 --> 1510["1510 — Deployed Artifact\n(feature, campaign,\npricing change)"]
+
+    subgraph "1520 — Production Environment"
+        1521["1521 — User Adoption\n(MAU, DAU)"]
+        1522["1522 — Revenue Impact\n(ARR, ARPU)"]
+        1523["1523 — Deployment Reliability\n(failure rate, rollbacks)"]
+        1524["1524 — Customer Acquisition\n(CAC, conversion)"]
+        1525["1525 — Engagement\n(session duration, usage)"]
+        1526["1526 — Retention\n(churn, NPS)"]
+    end
+
+    1510 --> 1520
+
+    1530["1530 — Metric Collection Module"]
+    1520 --> 1530
+
+    1540["1540 — Outcome Attribution Module\n(traces metrics → spec chain decisions\nvia version control audit trail)"]
+
+    1530 --> 1540
+
+    subgraph "1550 — Behavioral Parameter Adjustment"
+        1551["1551 — Rubric criteria weights\n(increase weight of criteria\ncorrelated with positive outcomes)"]
+        1552["1552 — Agent persona emphasis\n(shift decision style toward\nsuccessful patterns)"]
+        1553["1553 — Context injection priority\n(prioritize spec sections\nrelevant to good outcomes)"]
+        1554["1554 — Escalation sensitivity\n(adjust thresholds based on\nescalation-outcome correlation)"]
+    end
+
+    1540 --> 1550
+
+    1550 -->|"Adjusted parameters\napplied to next invocation"| 1501
+
+    1560["1560 — CLOSED LOOP:\nNo human intervention\nrequired for adaptation"]

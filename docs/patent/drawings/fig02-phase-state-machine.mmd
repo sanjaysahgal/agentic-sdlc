@@ -1,0 +1,45 @@
+---
+title: "FIG. 2 — Phase State Machine from Version Control"
+---
+stateDiagram-v2
+    [*] --> 200: Feature requested
+
+    200: 200 — No Branch\n(Feature not started)
+
+    200 --> 210: Branch spec/feature-product created
+
+    210: 210 — Product Spec In Progress\n(Branch exists, file not on main)
+
+    210 --> 220: PR merged to main
+
+    220: 220 — Product Spec Approved\n(File exists on main)
+
+    220 --> 230: Branch spec/feature-design created
+
+    230: 230 — Design Spec In Progress\n(Branch exists, file not on main)
+
+    230 --> 240: PR merged to main
+
+    240: 240 — Design Spec Approved\n(File exists on main)
+
+    240 --> 250: Branch spec/feature-engineering created
+
+    250: 250 — Engineering Spec In Progress\n(Branch exists, file not on main)
+
+    250 --> 260: PR merged to main
+
+    260: 260 — Engineering Spec Approved\n(File exists on main)
+
+    260 --> 270: Implementation branch created
+
+    270: 270 — Build Phase\n(Code implementation)
+
+    270 --> 280: PR merged, deployed
+
+    280: 280 — Deployed\n(Feature live)
+
+    280 --> [*]
+
+    note right of 210
+        Phase detection reads ONLY:\n- Branch existence\n- File existence on branch vs main\nNo separate database queried
+    end note

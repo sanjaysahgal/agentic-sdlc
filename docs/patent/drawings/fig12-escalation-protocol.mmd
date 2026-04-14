@@ -1,0 +1,38 @@
+---
+title: "FIG. 12 — Cross-Phase Escalation Protocol"
+---
+sequenceDiagram
+    participant H as 1200 — Human
+    participant DA as 1210 — Design Agent<br/>(Downstream)
+    participant P as 1220 — Platform<br/>Escalation Manager
+    participant PA as 1230 — PM Agent<br/>(Upstream)
+    participant VC as 1240 — Version Control
+
+    H->>DA: 1201 — Design conversation
+
+    Note over DA: 1202 — Detects blocking question:<br/>[type: product] [blocking: yes]<br/>"What auth provider to use?"
+
+    DA->>H: 1203 — "This is a product decision.<br/>Shall I bring in the PM?"
+
+    H->>P: 1204 — "Yes"
+
+    Note over P: 1205 — Construct upstream<br/>agent payload
+
+    P->>VC: 1206 — Load current draft excerpt
+    VC-->>P: Draft content
+
+    P->>PA: 1207 — Invoke PM with:<br/>- Blocking question<br/>- Draft excerpt<br/>- Conversation history
+
+    Note over PA: 1208 — Opens with concrete<br/>answer proposal<br/>(not discovery questions)
+
+    PA-->>H: 1209 — "My recommendation:<br/>Use OAuth 2.0 with Google<br/>because [rationale]..."
+
+    H->>PA: 1210 — Confirms or iterates
+
+    PA-->>P: 1211 — Resolution confirmed
+
+    Note over P: 1212 — Clear escalation state.<br/>Inject PM decision into<br/>design agent context.
+
+    P->>DA: 1213 — Resume design agent<br/>with injected decision
+
+    DA-->>H: 1214 — Continues design spec<br/>with PM answer incorporated

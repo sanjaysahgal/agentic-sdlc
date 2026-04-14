@@ -1,0 +1,34 @@
+---
+title: "FIG. 3 — Stateless Agent Invocation with Context Injection"
+---
+sequenceDiagram
+    participant H as 300 — Human
+    participant P as 310 — Platform
+    participant R as 320 — Relevance Filter<br/>(Secondary LLM)
+    participant VC as 330 — Version Control<br/>Repository
+    participant A as 340 — Agent Function<br/>(Primary LLM)
+
+    H->>P: 301 — Human message
+
+    par 302 — Parallel context loading
+        P->>VC: 303 — Read product vision
+        VC-->>P: Document content
+        P->>VC: 304 — Read system architecture
+        VC-->>P: Document content
+        P->>VC: 305 — Read current spec draft
+        VC-->>P: Document content
+        P->>VC: 306 — Read upstream approved specs
+        VC-->>P: Document content
+    end
+
+    P->>R: 307 — Full documents + human message
+    R-->>P: 308 — Relevance-filtered excerpts
+
+    Note over P: 309 — Build invocation payload:<br/>Stable block (persona + tools + rules)<br/>+ Dynamic block (filtered context)<br/>+ Conversation history
+
+    P->>A: 310 — Stateless invocation<br/>(system prompt + messages)
+    A-->>P: 311 — Agent response
+
+    Note over P: 312 — Append response to<br/>conversation history.<br/>Agent function exits.<br/>No state persisted.
+
+    P-->>H: 313 — Rendered response

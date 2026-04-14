@@ -1,0 +1,32 @@
+---
+title: "FIG. 5 — Phase-Aware Behavior Switching"
+---
+graph TB
+    500["500 — Incoming Human Message"]
+    510["510 — Phase Detection Module\n(reads version control state)"]
+
+    500 --> 510
+
+    510 -->|"Phase: Draft\n(branch exists, not merged)"| 520
+    510 -->|"Phase: Approved\n(spec merged to main)"| 530
+
+    subgraph "520 — Draft Mode Prompt Injection"
+        521["521 — Persona: Collaborative shaper"]
+        522["522 — Tools: save_draft, apply_patch,\nrun_audit, offer_escalation"]
+        523["523 — Context: Current draft +\nupstream docs + conversation"]
+        524["524 — Constraints: Propose content,\ndetect conflicts, manage approval"]
+    end
+
+    subgraph "530 — Approved Mode Prompt Injection"
+        531["531 — Persona: Baseline guardian"]
+        532["532 — Tools: read-only queries,\nrequest_revision"]
+        533["533 — Context: Approved spec +\nupstream docs + conversation"]
+        534["534 — Constraints: Answer questions,\nroute changes through re-approval"]
+    end
+
+    520 --> 540["540 — SAME Agent Function\n(single LLM invocation)"]
+    530 --> 540
+
+    540 --> 550["550 — Agent Response\n(continuous conversation history\nmaintained across mode switches)"]
+
+    Note["NOTE: No separate agent instance.\nSame agent, same conversation,\ndifferent system prompt injection."]

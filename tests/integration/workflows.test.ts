@@ -3272,7 +3272,8 @@ describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design ph
     mockPaginate.mockResolvedValueOnce([])
 
     // PM call sequence: classifyMessageScope → runAgent (finalize tool) →
-    //   auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC) → runAgent (end_turn)
+    //   auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC) + auditDownstreamReadiness(designer) [parallel] →
+    //   runAgent (end_turn)
     // auditSpecDecisions skips LLM (empty history)
     // No brand audit calls — PM does not load BRAND.md
     mockAnthropicCreate
@@ -3282,6 +3283,7 @@ describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design ph
         content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
       })                                                                                   // runAgent: tool_use
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // auditDownstreamReadiness(designer)
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Product spec finalized." }] }) // runAgent: end_turn
 
     const params = makeParams(THREAD, "feature-onboarding", "the spec is ready, finalize it")
@@ -3293,9 +3295,9 @@ describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design ph
     const text = lastUpdateText(params.client)
     expect(text).toContain("finalized")
 
-    // Exactly 4 Anthropic calls — NO brand audit calls (PM doesn't touch brand)
-    // Extra call vs prior: auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC) inside finalize handler
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // Exactly 5 Anthropic calls — NO brand audit calls (PM doesn't touch brand)
+    // Two extra calls vs prior: auditPhaseCompletion + auditDownstreamReadiness inside finalize handler
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 })
 
@@ -5738,8 +5740,10 @@ describe("Scenario N49 — finalize_product_spec blocked by PM_DESIGN_READINESS_
     mockGetRef.mockRejectedValue(new Error("Not Found"))
 
     // [0] runAgent: tool_use → finalize_product_spec
-    // [1] auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC) → FINDING (vague "ambient awareness indicator")
-    // [2] runAgent: end_turn → agent surfaces the finding to PM
+    // [1] auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC) → FINDING (vague "ambient awareness indicator") [parallel with 2]
+    // [2] auditDownstreamReadiness(designer) → PASS [parallel with 1]
+    // combined findings from [1] block finalization
+    // [3] runAgent: end_turn → agent surfaces the finding to PM
     mockAnthropicCreate
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
@@ -5748,6 +5752,7 @@ describe("Scenario N49 — finalize_product_spec blocked by PM_DESIGN_READINESS_
       .mockResolvedValueOnce({
         content: [{ type: "text", text: "FINDING: 'ambient awareness indicator' is too vague for a designer to implement | Replace with a concrete UI treatment: read-only banner below the chat header, no interactive elements, text reads 'Session expired — tap to sign in again'" }],
       })                                                                                      // auditPhaseCompletion: FINDING
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })                 // auditDownstreamReadiness: PASS
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Cannot finalize — the 'ambient awareness indicator' acceptance criterion is too vague for the designer to implement." }],

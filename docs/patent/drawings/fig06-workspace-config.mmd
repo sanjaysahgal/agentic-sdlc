@@ -1,0 +1,32 @@
+---
+title: "FIG. 6 — WorkspaceConfig Dependency Graph"
+---
+graph TB
+    600["600 — Environment Variables\n(.env file)"]
+    610["610 — WorkspaceConfig Object\n(loaded at startup)"]
+
+    600 --> 610
+
+    610 --> 621["621 — Agent Router\n(channel → agent mapping)"]
+    610 --> 622["622 — PM Agent\n(persona, product name)"]
+    610 --> 623["623 — Design Agent\n(brand path, form factors)"]
+    610 --> 624["624 — Architect Agent\n(architecture path)"]
+    610 --> 625["625 — Context Loader\n(spec paths, repo owner/name)"]
+    610 --> 626["626 — GitHub Operations\n(owner, repo, branch naming)"]
+    610 --> 627["627 — Phase Detection\n(spec directory structure)"]
+    610 --> 628["628 — Monitoring Dashboard\n(workspace display names)"]
+    610 --> 629["629 — CI/CD Pipeline\n(deployment config)"]
+
+    subgraph "630 — Tenant A Config"
+        631["productName: health360\ngithubRepo: agentic-health360\nmainChannel: all-health360\nbrandPath: brand/BRAND.md"]
+    end
+
+    subgraph "640 — Tenant B Config"
+        641["productName: fintech-app\ngithubRepo: acme-fintech\nmainChannel: all-fintech\nbrandPath: design/BRAND.md"]
+    end
+
+    631 -.->|"Same codebase\nzero code changes"| 610
+    641 -.->|"Same codebase\nzero code changes"| 610
+
+    650["650 — CI Enforcement\n(Fails PR if tenant-specific\nliterals in source code)"]
+    610 --> 650

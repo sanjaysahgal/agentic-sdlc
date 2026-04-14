@@ -1,0 +1,41 @@
+---
+title: "FIG. 7 — Decoupled CI/CD Platform"
+---
+graph TB
+    subgraph "700 — CI/CD Platform Repository"
+        701["701 — Dependency Installation"]
+        702["702 — Linting & Type Checking"]
+        703["703 — Test Execution"]
+        704["704 — Build Pipeline"]
+        705["705 — Deployment Logic"]
+        706["706 — Smoke Tests"]
+        707["707 — Visual Regression"]
+        708["708 — Performance Audits"]
+        709["709 — Notifications"]
+    end
+
+    710["710 — Reusable Workflow Interface\n(workflow_call)"]
+
+    701 & 702 & 703 & 704 & 705 & 706 & 707 & 708 & 709 --> 710
+
+    subgraph "720 — Application Repo A"
+        721["721 — Single workflow file\n(delegates to platform)"]
+        722["722 — App config only:\nruntime version,\npackage manager,\nsecrets"]
+    end
+
+    subgraph "730 — Application Repo B"
+        731["731 — Single workflow file\n(delegates to platform)"]
+        732["732 — App config only:\nruntime version,\npackage manager,\nsecrets"]
+    end
+
+    subgraph "740 — Application Repo C"
+        741["741 — Single workflow file\n(delegates to platform)"]
+        742["742 — App config only"]
+    end
+
+    710 --> 721 & 731 & 741
+
+    750["750 — Pipeline improvements\nautomatically inherited\nby all onboarded apps"]
+
+    700 -.-> 750
+    750 -.-> 720 & 730 & 740

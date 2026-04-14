@@ -1,0 +1,53 @@
+---
+title: "FIG. 17 — Autonomous Agent Configuration Generation"
+---
+graph TB
+    1700["1700 — Operator Request\n'I need a legal compliance agent'"]
+
+    subgraph "1710 — Domain Analysis Module"
+        1711["1711 — Analyze existing\nspec chain positions"]
+        1712["1712 — Determine upstream\ndependencies"]
+        1713["1713 — Determine downstream\nconsumers"]
+        1714["1714 — Identify domain-specific\nconstraints"]
+    end
+
+    1700 --> 1710
+
+    subgraph "1720 — Persona Generation Module"
+        1721["1721 — Role description"]
+        1722["1722 — Experience profile"]
+        1723["1723 — Decision-making style"]
+        1724["1724 — Behavioral constraints"]
+    end
+
+    1710 --> 1720
+
+    subgraph "1730 — Enforcement Rule Generation"
+        1731["1731 — CONFLICT definitions\n(what contradicts in this domain)"]
+        1732["1732 — Rubric criteria\n(phase completion checks)"]
+        1733["1733 — Brand/standard tokens\n(domain-specific audit targets)"]
+        1734["1734 — Escalation triggers\n(when to invoke other agents)"]
+    end
+
+    1720 --> 1730
+
+    1740["1740 — Generated Agent Configuration\n(declarative artifact in version control)"]
+
+    1730 --> 1740
+
+    subgraph "1750 — Validation Module"
+        1751["1751 — Verify agent contract\n(required tools present)"]
+        1752["1752 — Verify audit hooks wired"]
+        1753["1753 — Verify context loading pattern"]
+        1754["1754 — Verify enforcement gate\nintegration"]
+    end
+
+    1740 --> 1750
+
+    1760["1760 — Human Review & Approval"]
+    1750 --> 1760
+
+    1770["1770 — Activated Agent\n(inherits full enforcement\narchitecture, no code changes)"]
+    1760 -->|"Approved"| 1770
+
+    1780["1780 — Key distinction from prior art:\nGenerates enforcement rules +\nrubric criteria, not just personas"]

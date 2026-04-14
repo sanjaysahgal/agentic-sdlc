@@ -99,6 +99,104 @@ ${specContent}`,
   return { ready: false, findings }
 }
 
+// ─── Adversarial downstream-readiness audit ────────────────────────────────────
+//
+// Open-ended alternative to rubric-based checks. Instead of checking a named list
+// of criteria, asks Sonnet to take the perspective of the next-phase specialist and
+// list every decision the spec leaves undefined.
+//
+// Complements auditPhaseCompletion (rubric) — the rubric catches known classes;
+// this catches unknown classes the rubric didn't enumerate.
+//
+// Call this at every finalization gate alongside the rubric check.
+// Both must return ready: true before the spec is approved.
+
+type DownstreamRole = "designer" | "architect" | "engineer"
+
+const DOWNSTREAM_ROLE_CONTEXT: Record<DownstreamRole, { persona: string; task: string; upstreamRole: string }> = {
+  designer: {
+    persona: "a senior UX designer",
+    task: "design every screen, user flow, interaction, state, and copy string for this feature — you must be able to hand your design spec directly to an engineer with zero ambiguity",
+    upstreamRole: "PM",
+  },
+  architect: {
+    persona: "a senior software architect",
+    task: "design the technical architecture, data model, API surface, and all implementation decisions for this feature",
+    upstreamRole: "PM and designer",
+  },
+  engineer: {
+    persona: "an engineer implementing this feature from scratch",
+    task: "write all the code for this feature — backend, frontend, migrations, and error handling",
+    upstreamRole: "architect",
+  },
+}
+
+export async function auditDownstreamReadiness(params: {
+  specContent: string
+  downstreamRole: DownstreamRole
+  featureName: string
+}): Promise<PhaseCompletionAuditResult> {
+  const { specContent, downstreamRole, featureName } = params
+  const { persona, task, upstreamRole } = DOWNSTREAM_ROLE_CONTEXT[downstreamRole]
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    system: `You are ${persona}. You have just received the spec below and your job is to ${task}. You cannot ask the ${upstreamRole} any follow-up questions — you must work from this document alone.
+
+Read the spec carefully as if you are about to start work. Identify every place where you would need to guess, invent, or make an assumption in order to do your job. This includes:
+- Interaction behaviors not specified (what happens when a user taps X? can they dismiss Y?)
+- Error and failure states with no recovery path defined
+- UI modality decisions left open (inline vs overlay, modal vs banner, toast vs inline text)
+- Timing and threshold values referenced but not given a number
+- Loading and transition states with no visual treatment defined
+- Scope boundaries undefined (which users? which conditions? which tiers?)
+- Transition behaviors left as vague qualitative descriptions ("smoothly", "without disruption")
+
+For each such gap, output exactly one line:
+FINDING: <what decision or specification is missing from the spec> | <the specific decision the ${upstreamRole} must make before you can proceed>
+
+Important: only flag decisions that are rightfully the ${upstreamRole}'s to make — not implementation choices that are yours as the ${downstreamRole}. Do not flag visual details, layout specifics, or creative choices that you own.
+
+If the spec provides everything you need to proceed without guessing, output exactly: PASS
+
+Output only FINDING lines and/or PASS. No preamble, no explanation, no numbering.`,
+    messages: [
+      {
+        role: "user",
+        content: `Feature: ${featureName}\n\n## Spec\n${specContent}`,
+      },
+    ],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text.trim() : "PASS"
+
+  if (text === "PASS") {
+    console.log(`[AUDITOR] auditDownstreamReadiness: feature=${featureName} role=${downstreamRole} → ready=true`)
+    return { ready: true, findings: [] }
+  }
+
+  const findings: Array<{ issue: string; recommendation: string }> = []
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("FINDING:")) continue
+    const body = line.replace("FINDING:", "")
+    const pipeIndex = body.indexOf("|")
+    if (pipeIndex === -1) continue
+    findings.push({
+      issue: body.slice(0, pipeIndex).trim(),
+      recommendation: body.slice(pipeIndex + 1).trim(),
+    })
+  }
+
+  if (findings.length === 0) {
+    console.log(`[AUDITOR] auditDownstreamReadiness: feature=${featureName} role=${downstreamRole} → ready=true (no parseable findings)`)
+    return { ready: true, findings: [] }
+  }
+
+  console.log(`[AUDITOR] auditDownstreamReadiness: feature=${featureName} role=${downstreamRole} → ready=false findings=${findings.length}`)
+  return { ready: false, findings }
+}
+
 // ─── PM Rubric ─────────────────────────────────────────────────────────────────
 
 export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories has an explicit success path AND at least one error/edge path documented in ## Edge Cases or the story itself. A user story with no error path is incomplete.
