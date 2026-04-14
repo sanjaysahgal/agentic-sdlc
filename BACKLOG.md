@@ -33,6 +33,14 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Stale open questions — design spec open questions already answered in product spec are not detected (2026-04-14)
+
+`auditSpecDraft` checks for conflicts and gaps between design spec and product spec, but does not check whether open questions in the design spec's `## Open Questions` section are already answered in the product spec. When the PM later locks an AC that answers a design open question, the question remains in the spec indefinitely and blocks finalization via `extractAllOpenQuestions`.
+
+**Fix:** Add a stale-question pass to `auditSpecDraft` (or a dedicated `auditStaleOpenQuestions`): extract each question from `## Open Questions`, cross-reference against the product spec, and return findings for any question whose answer is already present. Return as `status: "stale-questions"` with the specific question text and the AC that answers it so the agent can remove the question in the same turn.
+
+---
+
 ### Double-fire on escalation-continuation branch — in-flight lock not covering all paths (2026-04-13)
 
 Root cause: Slack Socket Mode pong timeout → reconnect → Slack retries the message. The per-feature in-flight lock (N41) prevents double-fire on the main agent path, but the `escalation-continuation` branch in the router appears to bypass or not check the lock. Observed in logs at 18:00:12 and 18:00:21 — same message ("What's blocking us from moving this design to engineering?") processed twice, first with 36 history messages, second with 38 (first response already appended). Not harmful (same PM response both times) but wastes a Haiku call and appends duplicate history.
