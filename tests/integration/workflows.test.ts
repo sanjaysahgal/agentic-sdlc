@@ -3547,7 +3547,7 @@ describe("Scenario N17 — Escalation reply injected message contains question +
     clearEscalationNotification("onboarding")
   })
 
-  it("injected message contains original question and PM reply so design agent has full context", async () => {
+  it("design agent resumes with a clean continuation message after spec is updated", async () => {
     mockAnthropicCreate.mockResolvedValue({
       content: [{ type: "text", text: "Understood — resuming design with that answer." }],
       stop_reason: "end_turn",
@@ -3559,17 +3559,17 @@ describe("Scenario N17 — Escalation reply injected message contains question +
 
     await handleFeatureChannelMessage(params)
 
-    // The agent call must include the injected message with both question and answer
+    // Design agent must be called — find the call that triggered handleDesignPhase
     const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
-      c[0]?.messages?.[0]?.content?.includes?.("guest session")
+      c[0]?.messages?.[0]?.content?.includes?.("PM decisions confirmed")
     )
     expect(agentCall).toBeDefined()
     const injected = agentCall[0].messages[0].content as string
-    expect(injected).toContain("guest session")
-    expect(injected).toContain("confirmed — sessions are cleared permanently on sign-up")
-    expect(injected).toContain("PM gap is now closed")
-    // Design agent must be instructed to list what it applies — spec update credit belongs to PM, not design agent
-    expect(injected).toMatch(/listing each.*decision|listing each confirmed/)
+    // Injected message is a clean, minimal resume directive — decisions are in the spec
+    expect(injected).toContain("PM decisions confirmed")
+    expect(injected).toContain("product spec updated")
+    // No listing instruction — that was a prompt rule, not a structural requirement
+    expect(injected).not.toMatch(/listing each.*decision|listing each confirmed/)
   })
 })
 
