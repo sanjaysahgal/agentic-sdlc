@@ -1508,10 +1508,17 @@ async function runDesignAgent(params: {
           return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
         }
         let finalContent = existingDraft
-        const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
+        const [decisionAudit, architectReadiness] = await Promise.all([
+          auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) }),
+          auditDownstreamReadiness({ specContent: existingDraft, downstreamRole: "architect", featureName }),
+        ])
         if (decisionAudit.status === "corrections") {
           const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
           finalContent = corrected
+        }
+        if (architectReadiness.findings.length > 0) {
+          const findingLines = architectReadiness.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+          return { error: `Approval blocked — spec is not architect-ready. An architect receiving this spec would need to invent the following answers:\n${findingLines}\n\nResolve each before finalizing.` }
         }
         // Brand token drift hard gate — spec cannot be approved with drift vs BRAND.md
         if (context.brand) {
@@ -2001,10 +2008,17 @@ async function runArchitectAgent(params: {
           return { error: `Approval blocked — ## Design Assumptions To Validate contains unconfirmed items. Confirm each assumption or call offer_upstream_revision(design) to reject it before finalizing:\n${unconfirmedAssumptions}` }
         }
         let finalContent = existingDraft
-        const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
+        const [decisionAudit, engineerReadiness] = await Promise.all([
+          auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) }),
+          auditDownstreamReadiness({ specContent: existingDraft, downstreamRole: "engineer", featureName }),
+        ])
         if (decisionAudit.status === "corrections") {
           const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
           finalContent = corrected
+        }
+        if (engineerReadiness.findings.length > 0) {
+          const findingLines = engineerReadiness.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+          return { error: `Approval blocked — spec is not engineer-ready. An engineer receiving this spec would need to invent the following answers:\n${findingLines}\n\nResolve each before finalizing.` }
         }
         await update("_Saving final engineering spec..._")
         await saveApprovedEngineeringSpec({ featureName, filePath: archFilePath, content: finalContent })

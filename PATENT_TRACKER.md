@@ -22,7 +22,7 @@
 | 3f | — Brief Description of the Drawings (17 figures) | — | DIY | Done (descriptions written, drawings pending) |
 | 3g | — Detailed Description of Preferred Embodiments (17 embodiments) | — | DIY | Done |
 | 3h | — Abstract | — | DIY | Done |
-| 4 | Prepare formal drawings (black & white line art, numbered refs, FIGs 1–17) | $0 | DIY | Not started |
+| 4 | Prepare formal drawings (black & white line art, numbered refs, FIGs 1–17) — generated via Mermaid, SVG + PDF in docs/patent/drawings/ | $0 | DIY | Done |
 | 5 | Draft claims (27 total) | $0 | DIY | Done |
 | 5a | — Independent system claims (6) | — | DIY | Done |
 | 5b | — Independent method claims (6) | — | DIY | Done |
