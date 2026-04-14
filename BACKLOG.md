@@ -41,32 +41,14 @@ Root cause: Slack Socket Mode pong timeout → reconnect → Slack retries the m
 
 ---
 
-### Adversarial downstream-readiness audit — replace rubric-based finalization check with open-ended "pretend you're the next role" prompt at every phase boundary (2026-04-13)
+~~### Adversarial downstream-readiness audit — replace rubric-based finalization check with open-ended "pretend you're the next role" prompt at every phase boundary (2026-04-13)~~ ✅ Done (2026-04-13)
 
-**Why:** Rubric-based finalization gates (PM_RUBRIC, DESIGN_RUBRIC, PM_DESIGN_READINESS_RUBRIC) can only catch gap classes they explicitly enumerate. Two production incidents showed a 1-criterion rubric catching 2 of 6 gaps the design agent later found. The root cause is structural: any finite checklist fails on the open-ended question "what is a designer missing?" The fix is an adversarial open-ended prompt: "Pretend you are [downstream role]. Read this spec. List every decision you would need to make that this spec doesn't answer." This has no enumeration ceiling — Sonnet can surface any class of gap, not just ones pre-listed.
+`auditDownstreamReadiness({ specContent, downstreamRole, featureName })` added to `phase-completion-auditor.ts`. Open-ended Sonnet adversarial prompt: "You are [persona] — list every decision you'd have to invent from this spec." No enumeration ceiling. Wired at all three phase boundaries:
+- `finalize_product_spec` — `downstreamRole: "designer"` runs in parallel with `auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC)`
+- `finalize_design_spec` — `downstreamRole: "architect"` runs in parallel with `auditSpecDecisions`
+- `finalize_engineering_spec` — `downstreamRole: "engineer"` runs in parallel with `auditSpecDecisions`
 
-**Pattern (applies to all agents, current and future):**
-
-Each finalization gate runs TWO checks:
-1. **Same-domain rubric** (existing) — PM_RUBRIC, DESIGN_RUBRIC, ENGINEER_RUBRIC — checks completeness within the current agent's domain
-2. **Adversarial downstream-perspective prompt** (new) — open-ended "pretend you're [next role]" — checks readiness for the next phase
-
-| Phase boundary | Downstream role persona | Prompt framing |
-|---|---|---|
-| PM → Design | UX designer receiving spec for first time | "You just received this product spec. List every design decision you'd need to make that this spec doesn't answer — including interaction behaviors, error states, loading states, modalities, and copy." |
-| Design → Architect | Software architect opening this spec to plan engineering | "You just received this design spec. List every implementation decision you'd need to make that this spec doesn't answer — including API shape, data model, state management, platform-specific behavior, and error handling." |
-| Architect → Build | Backend or frontend engineer assigned this spec | "You just received this engineering spec. List every low-level decision you'd need to make that this spec doesn't answer — including exact API contracts, error codes, migration steps, and edge cases with no handler." |
-
-**Implementation:**
-- Single `auditDownstreamReadiness({ specContent, downstreamRolePrompt, featureName })` function in `phase-completion-auditor.ts` — open-ended system prompt, same FINDING/PASS output format
-- `buildDownstreamReadinessPrompt(role: "designer" | "architect" | "engineer")` returns the persona + framing above
-- Called in each finalization handler alongside the existing rubric gate; blocking on any FINDING
-- `PM_DESIGN_READINESS_RUBRIC` (5-criterion checklist) retained as a fast deterministic pre-filter; adversarial audit adds the open-ended second pass
-- Same mock pattern as existing `auditPhaseCompletion` calls — no new infrastructure required
-
-**Rule for new agents:** Every new spec-producing agent must implement both checks before it is considered complete. The "Definition of Done" in CLAUDE.md must be updated to include this requirement.
-
-**Priority:** HIGH — proven failure class with two production incidents. PM→Design path is most urgent (already two incidents). Design→Architect is next (design agent has found arch gaps mid-spec; architect getting incomplete design specs is a known risk).
+All three block on any FINDING. CLAUDE.md Definition of Done updated: new agents must implement both same-domain rubric AND adversarial downstream-readiness audit. Unit tests: consumer (PASS/FINDING parsing) + producer (persona injection, open-ended framing, implementation-choice exclusion, Sonnet model, upstream-role attribution). Integration tests: S21, S23, S27, N13, N49 updated for new parallel mock.
 
 ~~### PM design-readiness gate — design agent must not be first to discover PM spec vagueness (2026-04-13)~~ ✅ Done (2026-04-13)
 
