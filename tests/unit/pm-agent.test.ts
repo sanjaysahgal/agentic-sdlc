@@ -164,3 +164,42 @@ describe("buildPmSystemPrompt — escalation-context role scope", () => {
     expect(prompt).toContain("When called to answer a design team escalation")
   })
 })
+
+describe("buildPmSystemPrompt — domain boundary", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const ctx: AgentContext = { ...baseContext, currentDraft: "## Problem\nTest." }
+
+  it("has an explicit domain boundary section", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt).toContain("Domain boundary")
+    expect(prompt).toContain("what you never own")
+  })
+
+  it("prohibits PM from writing UI copy — designer owns wording", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt.toLowerCase()).toMatch(/never write.*copy|copy.*designer|designer.*writes.*words|designer.*writes.*actual/)
+  })
+
+  it("prohibits PM from writing visual positioning and color values", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt.toLowerCase()).toMatch(/rgba|hex|pixel|visual positioning/)
+  })
+
+  it("escalation answer rule explicitly prohibits copy — 'define intent, not wording'", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt.toLowerCase()).toMatch(/do not write.*copy|not write specific.*copy/)
+  })
+
+  it("escalation answer gives intent example vs prohibited copy example", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    // Must show the distinction between intent (PM territory) and copy (designer territory)
+    expect(prompt).toContain("inline error")
+    expect(prompt).toContain("designer writes the words")
+  })
+})

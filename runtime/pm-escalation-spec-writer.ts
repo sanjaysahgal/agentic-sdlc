@@ -39,9 +39,14 @@ RULES — follow exactly:
 2. KEEP all existing acceptance criteria that are not being replaced.
    The output section must contain every existing criterion from that section — only the vague ones get replaced; non-vague ones are carried forward unchanged.
 
-3. STRIP visual and technical details from PM recommendations before writing to spec.
-   The spec encodes WHAT the user experiences — not HOW it looks or HOW it is implemented. Strip: specific colors (hex values, rgba, color names), UI component choices (badge, chip, button, label — unless the PM explicitly owns this as a product requirement), exact pixel positions or margins, timing values in milliseconds unless they define a product-level SLA, and exact copy/wording unless it is the required user-facing string.
-   Example: "A persistent non-dismissible indicator" belongs in the spec. "rgba(245, 245, 245, 0.6) badge in the top-right corner" does not.
+3. STRIP visual details, technical details, and UI copy from PM recommendations before writing to spec.
+   The spec encodes WHAT the user experiences — not HOW it looks, HOW it is implemented, or WHAT IT SAYS. Strip:
+   - Specific colors (hex values, rgba, color names)
+   - UI component choices (badge, chip, button, label — unless the PM explicitly owns this as a product requirement)
+   - Exact pixel positions or margins
+   - Timing values in milliseconds unless they define a product-level SLA
+   - Exact UI copy and wording — the PM defines intent ("an inline error the user can dismiss"), the designer writes the actual words. NEVER write specific strings like "The AI is currently unavailable. Please try again in a moment." in the spec.
+   Example: "A persistent non-dismissible error indicator appears at the top of the chat" belongs in the spec. "rgba(245, 245, 245, 0.6) badge in the top-right corner saying 'The AI is currently unavailable.'" does not.
 
 4. ADD new concrete criteria for gaps not already in the spec.
    If a PM recommendation addresses a gap with no existing criterion, add it as a new numbered criterion in the appropriate section.

@@ -250,12 +250,12 @@ A task is NOT done until the following are updated to reflect the change:
 
 | What changed | What must be updated |
 |---|---|
-| New agent built or modified | `AGENTS.md` — persona, capabilities, inputs/outputs |
+| New agent built or modified | `AGENTS.md` — persona, capabilities, inputs/outputs; agent prompt must include `## Domain boundary — what you never own` section naming each neighboring agent's exclusive territory |
 | New branch or path added to `message.ts` or `agent-router.ts` | `tests/integration/workflows.test.ts` — new scenario in the **same commit**; `--coverage` alone is insufficient (lines executed ≠ behavior verified) |
 | New runtime behavior, routing, or data flow | `SYSTEM_ARCHITECTURE.md` — architecture section |
 | New backlog item completed | `BACKLOG.md` — move to Completed |
 | New solo-team shortcut taken | `DECISIONS.md` — add entry with scale gap |
-| New agent built | `message.ts` — must add always-on platform audit block (`[X]ReadinessNotice`) before agent is considered complete; see `designReadinessNotice` / `archReadinessNotice` as reference implementations. Finalization handler must run TWO checks: (1) same-domain rubric (`[X]_RUBRIC`), (2) adversarial downstream-readiness audit (`auditDownstreamReadiness` with the next role's persona) — an open-ended "pretend you're [next role], what's missing?" prompt with no enumeration ceiling. Both checks are required; the rubric alone is insufficient. |
+| New agent built | `message.ts` — must add always-on platform audit block (`[X]ReadinessNotice`) before agent is considered complete; see `designReadinessNotice` / `archReadinessNotice` as reference implementations. Finalization handler must run TWO checks: (1) same-domain rubric (`[X]_RUBRIC`), (2) adversarial downstream-readiness audit (`auditDownstreamReadiness` with the next role's persona) — an open-ended "pretend you're [next role], what's missing?" prompt with no enumeration ceiling. Both checks are required; the rubric alone is insufficient. Agent prompt must include `## Domain boundary — what you never own` with explicit prohibitions for each neighboring agent's exclusive territory (e.g. PM: never write UI copy or visual specs; Designer: never make product behavior decisions; Architect: never make product or design decisions). |
 | New WorkspaceConfig field added | `.env.example` — add with comment |
 | New agent goes live | `PRESENTATIONS.md` + `platform-engineering-deep-dive.html` + `investor-pitch.html` |
 | Roadmap step completes | `PRESENTATIONS.md` + `investor-pitch.html` + `platform-engineering-deep-dive.html` |

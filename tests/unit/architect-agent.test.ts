@@ -207,3 +207,39 @@ describe("buildArchitectSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt).toContain("more than 3 sections")
   })
 })
+
+describe("buildArchitectSystemPrompt — domain boundary", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const draftContext: AgentContext = {
+    ...baseContext,
+    currentDraft: "## Approved Product Spec\nSpec.\n\n## Approved Design Spec\nDesign.\n\n## Current Engineering Draft\n# Onboarding — Engineering Spec\n\n## Data Model\nUser table.",
+  }
+
+  it("has an explicit domain boundary section", () => {
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("Domain boundary")
+    expect(prompt).toContain("what you never own")
+  })
+
+  it("product decisions are routed to offer_upstream_revision(pm) — never made by architect", () => {
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("offer_upstream_revision")
+    expect(prompt.toLowerCase()).toMatch(/pm owns|product.*pm|pm.*product behavior/)
+  })
+
+  it("design decisions are routed to offer_upstream_revision(design) — never made by architect", () => {
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
+    expect(prompt.toLowerCase()).toMatch(/designer owns|design.*designer|ui.*layout.*designer/)
+  })
+
+  it("architect owns the technical domain explicitly", () => {
+    const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
+    expect(prompt.toLowerCase()).toMatch(/data model|api contracts|you own.*technical|technical.*yours/)
+  })
+})

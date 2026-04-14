@@ -644,3 +644,41 @@ describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {
     expect(prompt.slice(patchToolIdx).indexOf("renderAmbiguities")).toBeGreaterThan(-1)
   })
 })
+
+describe("buildDesignSystemPrompt — domain boundary", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PRODUCT_NAME: "TestApp", GITHUB_OWNER: "o", GITHUB_REPO: "r", TARGET_FORM_FACTORS: "mobile" }
+  })
+  afterEach(() => { process.env = originalEnv })
+
+  const draftContext: AgentContext = {
+    ...baseContext,
+    currentDraft: "## Approved Product Spec\nSpec.\n\n## Current Design Draft\n# Onboarding — Design Spec\n\n## Design Direction\nMinimal.",
+  }
+
+  it("has an explicit domain boundary section", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("Domain boundary")
+    expect(prompt).toContain("what you never own")
+  })
+
+  it("designer owns copy — PM defines intent, designer writes the words", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt.toLowerCase()).toMatch(/pm defines intent|designer.*writes.*words|designer owns.*copy|you own.*copy/)
+  })
+
+  it("product behavior decisions are explicitly routed to PM via offer_pm_escalation", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("offer_pm_escalation")
+    // Must explicitly route product behavior decisions to PM, not just mention the tool
+    expect(prompt.toLowerCase()).toMatch(/product behavior|pm owns.*product|product.*pm owns/)
+  })
+
+  it("architectural constraints are routed to offer_architect_escalation or Design Assumptions", () => {
+    const prompt = buildDesignSystemPrompt(draftContext, "onboarding")
+    expect(prompt).toContain("offer_architect_escalation")
+    expect(prompt).toContain("Design Assumptions")
+  })
+})

@@ -272,6 +272,18 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
     expect(systemPrompt.toLowerCase()).toMatch(/component|badge|chip/)
   })
 
+  it("system prompt instructs Haiku to STRIP all UI copy — copy is a designer decision, not a PM decision", async () => {
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Copy/wording belongs to designer — Haiku must strip specific strings from PM recommendations
+    expect(systemPrompt.toLowerCase()).toMatch(/strip.*copy|copy.*designer|designer.*writes.*words|designer.*writes.*actual/)
+    // Must not have the old qualifier that permitted "required user-facing strings"
+    expect(systemPrompt).not.toContain("unless it is the required user-facing string")
+  })
+
   it("system prompt requires section output to carry ALL existing criteria — not just the changed ones", async () => {
     await patchProductSpecWithRecommendations({
       featureName: "onboarding", question: BLOCKING_QUESTION, recommendations: RECOMMENDATIONS, humanConfirmation: HUMAN_CONFIRM,
