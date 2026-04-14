@@ -486,7 +486,7 @@ ${brief}`
         }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
       }
 
-      const injectedMessage = `${respondingRole} answered the blocking question: "${escalationNotification.question}" → "${userMessage}". The PM gap is now closed and the product spec has been updated. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
+      const injectedMessage = `PM decisions confirmed and product spec updated. Continue the design.`
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
       }})
