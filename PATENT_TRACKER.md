@@ -14,7 +14,7 @@
 | 1 | Create/verify USPTO.gov account at Patent Center | $0 | DIY | Done |
 | 2 | Confirm small entity eligibility — qualified (independent inventor, no assignments to large entities, income exceeds micro threshold) | $0 | DIY | Done |
 | 3 | Prepare specification document | $0 | DIY | Not started |
-| 3a | — Title of the Invention | — | DIY | Not started |
+| 3a | — Title of the Invention | — | DIY | Done |
 | 3b | — Cross-Reference to Related Applications (cite provisional) | — | DIY | Not started |
 | 3c | — Field of the Invention | — | DIY | Not started |
 | 3d | — Background of the Invention | — | DIY | Not started |
