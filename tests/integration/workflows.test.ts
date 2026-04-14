@@ -5241,8 +5241,8 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let's continue the design." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // design agent
 
-    // "agree to both" is NOT in isAffirmative — triggers continuation path, not standalone confirmation
-    const params = makeParams(THREAD, "feature-n40feature", "agree to both your recommendations")
+    // Non-affirmative message (does not start with yes/agree/ok/etc.) — triggers continuation path, not standalone confirmation
+    const params = makeParams(THREAD, "feature-n40feature", "those recommendations look right, apply them")
     await handleFeatureChannelMessage(params)
 
     // Escalation notification must be cleared — not stuck in PM loop
@@ -5392,7 +5392,7 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Done. Spec updated and architecture gap registered." }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
 
-    const params = makeParams(THREAD, "feature-n43feature", "agree with all the recommendations")
+    const params = makeParams(THREAD, "feature-n43feature", "those recommendations look right, apply them")
     await handleFeatureChannelMessage(params)
 
     // Architect escalation must be surfaced via postMessage

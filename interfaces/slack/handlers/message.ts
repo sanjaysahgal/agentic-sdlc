@@ -131,7 +131,7 @@ const CHECK_IN_RE = /^(are you (still )?there|you (still )?there|still there|hel
 // Detects a simple affirmative confirmation — used for escalation offers and spec approval.
 function isAffirmative(message: string): boolean {
   const lower = message.toLowerCase().trim()
-  return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in|confirmed|confirm|approved|approve|lock it in|let's go|lets go)/.test(lower)
+  return /^(yes|yeah|yep|sure|go ahead|pull them in|pull (the )?pm in|do it|ok|okay|please|yes please|bring them in|bring (the )?pm in|confirmed|confirm|approved|approve|lock it in|let's go|lets go|agree)/.test(lower)
 }
 
 // Stricter form used in escalation notification reply: the message must be a standalone
