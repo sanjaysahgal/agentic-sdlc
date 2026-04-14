@@ -22,10 +22,11 @@ PM-scope (flag with GAP:):
 Design-scope (flag with DESIGN:) — the designer resolves these independently, no PM input needed:
 - Visual element decisions: which UI component to use (button vs chip vs link vs icon), exact element type
 - Positioning and placement: where exactly to put a UI element on screen, spacing, margins, visual hierarchy
-- Animation and timing: entry/exit direction, duration in milliseconds, easing function, transition timing
+- Animation and timing: entry/exit direction, duration in milliseconds, easing function, transition timing, opacity cycles, animation cycle duration, gradient direction, whether two glows are combined or separate
 - Visual treatment: color values, glow effects, gradients, shadows, opacity, border radius, iconography
 - Layout decisions: single-column vs two-column, stacked vs side-by-side, screen structure
 - Screen-level design questions the designer is exploring — wordmark placement, button placement, prompt bar position, whether two screens share the same layout, which screens need to be designed
+- Spec contradictions on visual/animation details: if the question asks which value is correct when the PM spec and design spec show different opacity percentages, animation durations (ms/s), color values, gradient details, or other visual/technical specifics — this is ALWAYS DESIGN-scope. The PM spec should never contain specific animation or visual values; any that appear there are mistakes. The designer owns all visual implementation decisions and resolves spec contradictions on visual details independently. NEVER classify "PM spec says X opacity/duration/gradient, design spec says Y — which is right?" as a PM gap.
 
 Architecture-scope (flag with ARCH:):
 - Implementation decisions: HOW anything works technically — session store schema (what fields the record contains, TTL enforcement), account-linking mechanism (how a guest session is claimed on sign-up), data model design, API shape, database schema, auth token structure, data transfer protocol, state machine design

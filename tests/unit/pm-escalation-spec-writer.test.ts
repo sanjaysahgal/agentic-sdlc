@@ -344,3 +344,100 @@ describe("patchProductSpecWithRecommendations — producer (system prompt)", () 
     expect(systemPrompt.toLowerCase()).toMatch(/tbd|todo|placeholder/)
   })
 })
+
+// ─── Post-patch visual detail audit ─────────────────────────────────────────
+//
+// After Haiku generates a patch, the spec-writer runs a structural scan for
+// visual/animation details that should never appear in a PM product spec.
+// If found, a second Haiku pass strips them before saving.
+
+describe("patchProductSpecWithRecommendations — post-patch visual detail audit", () => {
+  const SPEC_WITH_VISUAL_DETAILS = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- User can register with email and password.
+- The logged-out indicator displays a glow animation with opacity cycling 25% → 35% → 25% over 2.5 seconds.
+- Session expires after 30 minutes of inactivity.
+
+## Edge Cases
+- Network failure during registration shows generic error.
+`
+
+  const SPEC_NO_VISUAL_DETAILS = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- User can register with email and password.
+- The logged-out indicator is persistently visible whenever the user is not authenticated.
+- Session expires after 30 minutes of inactivity.
+
+## Edge Cases
+- Network failure during registration shows generic error.
+`
+
+  beforeEach(() => {
+    mockCreate.mockReset()
+    mockReadFile.mockReset()
+    mockSaveApproved.mockReset()
+    mockSaveApproved.mockResolvedValue("already-on-main")
+  })
+
+  it("triggers second Haiku pass when merged spec contains opacity percentage in a criterion", async () => {
+    // First call: main patch. Returns a patch that includes visual detail (opacity %).
+    // Second call: strip pass. Returns cleaned spec.
+    mockReadFile.mockResolvedValue(SPEC_WITH_VISUAL_DETAILS)
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- User can register.\n- The logged-out indicator displays a glow animation with opacity cycling 25% → 35% → 25% over 2.5 seconds.\n- Session expires after 30 minutes." }] }) // patch
+      .mockResolvedValueOnce({ content: [{ type: "text", text: SPEC_NO_VISUAL_DETAILS }] }) // strip pass
+
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // Two Haiku calls: patch + strip
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+
+    // Strip pass system prompt must explicitly target opacity, animation timing, color values
+    const stripPrompt = mockCreate.mock.calls[1][0].system as string
+    expect(stripPrompt.toLowerCase()).toMatch(/opacity|animation|gradient/)
+    expect(stripPrompt.toLowerCase()).toMatch(/remove|strip/)
+  })
+
+  it("skips second Haiku pass when merged spec has no visual details", async () => {
+    mockReadFile.mockResolvedValue(SPEC_NO_VISUAL_DETAILS)
+    mockCreate.mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- User can register.\n- The logged-out indicator is persistently visible.\n- Session expires after 30 minutes." }] })
+
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // Only one Haiku call — no strip pass needed
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("saves the strip-pass result — not the un-stripped merged spec — when visual details are detected", async () => {
+    mockReadFile.mockResolvedValue(SPEC_WITH_VISUAL_DETAILS)
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- glow opacity 25% → 35% over 2.5 seconds." }] }) // patch with visual details
+      .mockResolvedValueOnce({ content: [{ type: "text", text: SPEC_NO_VISUAL_DETAILS }] }) // strip pass returns clean spec
+
+    const result = await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // saveApprovedSpec received the strip-pass output, not the un-stripped merged spec
+    const savedContent = mockSaveApproved.mock.calls[0][0].content as string
+    expect(savedContent).not.toContain("25% → 35%")
+    expect(savedContent).not.toContain("2.5 seconds")
+    // Return value is also the cleaned spec
+    expect(result).not.toContain("25% → 35%")
+  })
+})

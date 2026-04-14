@@ -10,6 +10,59 @@ import { loadWorkspaceConfig } from "./workspace-config"
 // 60s timeout — spec patch generation is a focused Haiku call; no retries.
 const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
 
+// Visual detail patterns that should never appear in a PM product spec.
+// PM spec encodes WHAT the user experiences — not animation values, colors, or gradients.
+// These are structural signals: if any criterion in the spec contains these, it has leaked
+// design/implementation detail that Haiku was supposed to strip but didn't.
+const VISUAL_DETAIL_PATTERNS = [
+  /\b\d+\.?\d*\s*%.*opacit/i,          // opacity percentages: "25% opacity", "opacity 50%"
+  /opacit.*\d+\.?\d*\s*%/i,            // opacity percentages reversed
+  /\b\d+\.?\d*\s*(ms|milliseconds?)\b/i, // animation timing in ms
+  /\b\d+\.?\d*\s*s(?:econds?)?\s+(?:over|duration|cycle|loop)/i, // "2.5 seconds over", "4 second cycle"
+  /(?:over|duration|cycle|loop)\s+\d+\.?\d*\s*s/i, // "over 2.5s"
+  /#[0-9a-fA-F]{3,6}\b/,               // hex color values
+  /rgba?\s*\(/i,                        // rgba/rgb color functions
+  /radial.{0,20}gradient|gradient.{0,20}radial/i, // radial gradient specifics
+  /\bglow\s+(?:radius|size|spread|color)\b/i,  // glow implementation details
+  /easing\s+function|cubic.bezier/i,   // animation easing details
+]
+
+// Fast structural check: does this spec content contain visual/animation details
+// that should never appear in a PM product spec?
+function hasVisualDetails(specContent: string): boolean {
+  // Only scan criteria lines (lines starting with - or digits in ## sections)
+  const criteriaLines = specContent
+    .split("\n")
+    .filter(l => /^\s*[-\d]/.test(l))
+  return criteriaLines.some(line => VISUAL_DETAIL_PATTERNS.some(p => p.test(line)))
+}
+
+// Second-pass Haiku call: strip visual/animation/technical details from a spec
+// that already has them. Called only when hasVisualDetails() fires — not on every patch.
+async function stripVisualDetailsFromSpec(specContent: string): Promise<string> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    system: `You are a product spec cleaner. Remove all visual, animation, and technical implementation details from acceptance criteria and edge cases. The PM spec describes WHAT the user experiences — not HOW it looks or is implemented.
+
+Remove from every criterion:
+- Specific opacity percentages (e.g. "25% → 35% opacity", "50–100% opacity")
+- Animation durations (e.g. "2.5 seconds", "4s cycle", "300ms")
+- Color values (hex, rgba, color names)
+- Gradient specifics (radial vs linear, direction, stops)
+- Glow implementation details (radius, spread, combined vs separate)
+- Easing functions (cubic-bezier, ease-in-out)
+- Pixel measurements
+
+Replace with the behavior the criterion is describing, without the visual specifics. If a criterion is ONLY a visual implementation detail with no underlying user behavior, remove it entirely.
+
+Output the full spec with all sections preserved. No preamble, no explanation — output only the cleaned spec content.`,
+    messages: [{ role: "user", content: specContent }],
+  })
+  const cleaned = response.content[0].type === "text" ? response.content[0].text.trim() : specContent
+  return cleaned || specContent
+}
+
 export async function patchProductSpecWithRecommendations(params: {
   featureName: string
   question: string          // original blocking questions escalated to PM/Architect
@@ -77,7 +130,18 @@ RULES — follow exactly:
     return null
   }
 
-  const mergedSpec = applySpecPatch(existingSpec, patch)
+  let mergedSpec = applySpecPatch(existingSpec, patch)
+
+  // Structural post-patch audit: if the merged spec contains visual/animation details
+  // that Haiku was supposed to strip (Rule 3) but didn't, run a second focused pass to
+  // remove them before saving. This catches opacity values, animation durations, hex
+  // colors, gradient specifics, etc. that should never appear in a PM product spec.
+  if (hasVisualDetails(mergedSpec)) {
+    console.log(`[ESCALATION] product spec writeback: visual details detected in patch for feature=${featureName} — running strip pass`)
+    mergedSpec = await stripVisualDetailsFromSpec(mergedSpec)
+    console.log(`[ESCALATION] product spec writeback: visual detail strip pass complete for feature=${featureName}`)
+  }
+
   await saveApprovedSpec({ featureName, filePath: productSpecPath, content: mergedSpec })
   console.log(`[ESCALATION] product spec writeback: patched ${productSpecPath} on main with confirmed PM recommendations`)
   return mergedSpec

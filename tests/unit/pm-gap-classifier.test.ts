@@ -320,4 +320,29 @@ describe("classifyForPmGaps — producer tests (system prompt contains format in
     // Must be in the output format instructions, not just as a category name
     expect(systemPrompt).toMatch(/DESIGN:.*one sentence|output.*DESIGN:|DESIGN:.*visual/)
   })
+
+  it("system prompt explicitly classifies 'PM spec says X, design spec says Y — which is right?' as DESIGN-scope for visual/animation details", async () => {
+    // Root cause of Apr 2026 misclassification: design agent asked which animation opacity
+    // value was correct (PM spec: 25%→35% over 2.5s, design spec: 50-100% over 4s).
+    // Classifier saw "PM spec" and returned GAP: instead of DESIGN:.
+    // System prompt must explicitly address this pattern.
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must state that spec contradictions on visual/animation values are always DESIGN-scope
+    expect(systemPrompt.toLowerCase()).toMatch(/spec.*contradiction|contradiction.*spec|contradict.*visual|visual.*contradict/)
+    // Must name the specific patterns that triggered the misclassification
+    expect(systemPrompt.toLowerCase()).toMatch(/opacity|animation.*duration|duration.*animation/)
+    // Must explicitly say NEVER classify as PM gap
+    expect(systemPrompt.toLowerCase()).toMatch(/never.*classify.*pm|always.*design|design.*scope/)
+  })
+
+  it("system prompt lists opacity cycles and animation durations as DESIGN-scope examples — not PM-scope", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Opacity cycle and animation duration are canonical DESIGN examples after Apr 2026 incident
+    expect(systemPrompt.toLowerCase()).toMatch(/opacity.*cycle|opacity.*cycling|opacity.*percent/)
+    expect(systemPrompt.toLowerCase()).toMatch(/animation.*duration|duration.*animation|animation.*cycle/)
+  })
 })
