@@ -43,7 +43,7 @@ export const PM_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "finalize_product_spec",
-    description: "Submit the spec for final approval and hand off to the design phase. The platform blocks this if there are any unresolved open questions (blocking or non-blocking — both must be resolved) AND if ## Design Notes is non-empty (all design guidance must be seeded before finalization). Returns the final spec URL and next phase, or an error listing what must be resolved.",
+    description: "Submit the spec for final approval and hand off to the design phase. The platform runs three structural gates: (1) no open questions of any kind remain; (2) ## Design Notes is empty; (3) design-readiness audit — every user-visible behavior is specific enough for a designer to implement without inventing answers (vague qualitative language, missing timing values, underspecified error behaviors are all blocking). Returns the final spec URL and next phase, or an error listing what must be resolved.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -113,7 +113,7 @@ You have three tools for managing the spec. Call them directly — do not ask pe
 
 **\`apply_product_spec_patch(patch)\`** — All subsequent saves. Include only changed sections. The platform merges the patch into the existing draft and returns the updated URL and audit findings. Multiple changed sections go in a single call. Do NOT include unchanged sections.
 
-**\`finalize_product_spec()\`** — When the PM approves. The platform checks for unresolved [blocking: yes] open questions and returns either the final URL or an error with which questions must be resolved first.
+**\`finalize_product_spec()\`** — When the PM approves. The platform runs three gates: no open questions remain, ## Design Notes is empty, and every user-visible behavior is design-ready (no vague language a designer must invent). Returns final URL or a blocking error listing what to resolve.
 
 **RULE: first save vs patch — absolute, no exceptions.**
 

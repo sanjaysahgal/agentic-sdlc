@@ -9,7 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness } from "../../../runtime/spec-auditor"
-import { auditPhaseCompletion, PM_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } from "../../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -860,6 +860,11 @@ async function runPmAgent(params: {
         const designNotes = extractHandoffSection(existingDraft, "## Design Notes")
         if (designNotes.trim()) {
           return { error: `Approval blocked — ## Design Notes must be empty before finalization. Address or move each design note before submitting the final spec.` }
+        }
+        const designReadiness = await auditPhaseCompletion({ specContent: existingDraft, rubric: PM_DESIGN_READINESS_RUBRIC, featureName })
+        if (!designReadiness.ready) {
+          const findingLines = designReadiness.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+          return { error: `Approval blocked — spec is not design-ready. The following requirements are too vague for a designer to implement without inventing answers:\n${findingLines}\n\nResolve each before finalizing.` }
         }
         let finalContent = existingDraft
         const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })

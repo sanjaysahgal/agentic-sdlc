@@ -127,13 +127,15 @@ describe("blocking gate — PM agent", () => {
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
     // [0] classifyMessageScope, [1] runAgent (tool_use: finalize_product_spec),
-    // [2] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
+    // [2] auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC) → PASS,
+    // [3] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
       })                                                                                    // runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC)
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Product spec approved and saved!" }] }) // runAgent: end_turn
 
     await withConfirmedAgent("pm", async () => {

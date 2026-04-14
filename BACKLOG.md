@@ -41,6 +41,10 @@ Root cause: Slack Socket Mode pong timeout → reconnect → Slack retries the m
 
 ---
 
+~~### PM design-readiness gate — design agent must not be first to discover PM spec vagueness (2026-04-13)~~ ✅ Done (2026-04-13)
+
+`finalize_product_spec` now runs `auditPhaseCompletion(PM_DESIGN_READINESS_RUBRIC)` as a third structural gate. Catches vague sensory descriptors ("ambient", "soft"), missing numeric thresholds (session TTL without a value), and underspecified error UI behaviors before the spec reaches the design agent. Production incident: PM said "nothing blocking" after completion audit, design agent immediately found 2 PM-GAP items ("ambient awareness only", unspecified session TTL). Root cause: PM_RUBRIC and design rubric criterion 10 PART B check different things — PM_RUBRIC checks PM-completeness; PART B checks designer-readiness. New rubric bridges the gap. N49 integration test + 5 producer unit tests.
+
 ~~### Spec open questions architecture — holistic root cause fix (2026-04-13)~~ ✅ Done (2026-04-13)
 
 Each spec's `## Open Questions` now contains same-domain questions only (`[type: product]` in PM spec, `[type: design]` in design spec, `[type: engineering]` in engineering spec). Cross-domain routes through escalation tools or handoff sections. All three `finalize_*` handlers use `extractAllOpenQuestions` — both `[blocking: yes]` and `[blocking: no]` questions block finalization. New `## Design Notes` section in PM spec seeds design agent brief at finalization. New `## Design Assumptions` section in design spec seeds engineering spec draft at finalization via `seedHandoffSection`; cleared at engineering finalization via `clearHandoffSection`. Architect escalation writeback now routes to engineering spec (`patchEngineeringSpecWithDecision`) not product spec, for both design-originated and PM-originated arch escalation paths. New design rubric criterion 11 (no open questions). PM rubric criterion 3 and ENGINEER rubric criterion 6 updated to catch non-blocking questions. New integration tests N44, N44b, N46, N47 (×3), N48.

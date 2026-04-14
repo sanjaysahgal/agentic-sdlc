@@ -113,6 +113,23 @@ export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories 
 
 6. NON-GOALS COMPLETENESS — The ## Non-Goals section explicitly excludes at least one scope boundary that a reasonable engineer might otherwise include. An empty Non-Goals section or a vague "nothing out of scope" statement is a red flag.`
 
+// ─── PM Design-Readiness Rubric ────────────────────────────────────────────────
+//
+// Runs at PM finalization (inside finalize_product_spec handler) — not the PM_RUBRIC completeness
+// gate. Checks whether the spec provides enough concrete constraints for a designer to make
+// implementation decisions without inventing answers. Runs on the PM spec itself before it is
+// approved. Complements PM_RUBRIC criterion 2 (measurable criteria) — catches gaps that Sonnet
+// may miss in PM context but the designer would encounter immediately.
+
+export const PM_DESIGN_READINESS_RUBRIC = `1. DESIGN-READY REQUIREMENTS — Every user-visible behavior described in ## Acceptance Criteria, ## User Stories, and ## Edge Cases must be specific enough for a designer to make implementation decisions without inventing answers. Scan for:
+
+- Vague sensory or quality descriptors applied to UI elements or behaviors: "soft", "ambient", "subtle", "minimal", "appropriate", "smooth", "seamless", "non-intrusive", "clean", "polished", "gentle", "quiet", "unobtrusive" — each must be replaced with a concrete, observable UI behavior (e.g. "read-only banner, no interactive elements, does not overlay other content")
+- Undefined timing or threshold values: "quickly", "immediately", "eventually", "after some time", "after inactivity", or any mention of "TTL", "timeout", "session expiry", "limit", "quota", or "rate" that does not also name the actual numeric value in seconds or minutes
+- Underspecified error or edge behaviors: "handle gracefully", "show an error", "notify the user", "display a warning" — each must name the exact UI treatment (modal, inline text, toast, banner) and either the exact copy or a format with all variable slots filled
+- Undefined scope terms gating a user-visible experience: "premium users", "eligible accounts", "supported devices" — each must name the qualifying condition so the designer knows which state to design for which audience
+
+For each vague requirement, output exactly one FINDING line naming the specific requirement and one specific PM decision that would make it design-ready.`
+
 // ─── Design Rubric ─────────────────────────────────────────────────────────────
 
 // buildDesignRubric injects the team's target form factors into criterion 9.

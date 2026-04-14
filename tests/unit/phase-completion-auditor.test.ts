@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
-import { auditPhaseCompletion, PM_RUBRIC, DESIGN_RUBRIC, buildDesignRubric } from "../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, DESIGN_RUBRIC, buildDesignRubric } from "../../runtime/phase-completion-auditor"
 
 beforeEach(() => {
   mockCreate.mockReset()
@@ -361,5 +361,51 @@ describe("auditPhaseCompletion — network failure propagates immediately, no re
     await expect(auditPhaseCompletion({ specContent: "spec", rubric: PM_RUBRIC, featureName: "test" }))
       .rejects.toThrow()
     expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─── PM_DESIGN_READINESS_RUBRIC — producer tests ──────────────────────────────
+//
+// These tests verify the rubric instructs Sonnet to catch the specific classes of
+// design-blocking vagueness that caused the production incident: vague sensory
+// descriptors ("ambient") and missing concrete values (session TTL without a number).
+// Producer-consumer chain rule: the gate blocks on FINDING lines; these tests verify
+// the rubric actually instructs the model to produce FINDING lines for those classes.
+
+describe("PM_DESIGN_READINESS_RUBRIC — export and format", () => {
+  it("is exported as a non-empty string", () => {
+    expect(typeof PM_DESIGN_READINESS_RUBRIC).toBe("string")
+    expect(PM_DESIGN_READINESS_RUBRIC.length).toBeGreaterThan(0)
+  })
+
+  it("rubric instructs Sonnet to flag vague sensory descriptors — the 'ambient' class", () => {
+    // Must name at least the key words from the production incident
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("ambient")
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("soft")
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("subtle")
+  })
+
+  it("rubric instructs Sonnet to flag missing timing/threshold values — the 'session TTL' class", () => {
+    // Must instruct scanning for TTL/timeout/expiry mentions without a numeric value
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/ttl|timeout|session expiry|threshold/)
+    // Must require a concrete numeric value (seconds or minutes)
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/seconds|minutes|numeric|actual.+value/)
+  })
+
+  it("rubric instructs Sonnet to flag underspecified error/edge UI behaviors", () => {
+    // Must name vague behavior descriptions like "handle gracefully" or "show an error"
+    expect(PM_DESIGN_READINESS_RUBRIC).toContain("handle gracefully")
+    // Must require specifying the UI treatment (modal, inline, toast, banner)
+    expect(PM_DESIGN_READINESS_RUBRIC.toLowerCase()).toMatch(/modal|inline|toast|banner/)
+  })
+
+  it("rubric instructs Sonnet to output FINDING lines (producer side of the gate)", () => {
+    // The consumer (finalize_product_spec handler) checks designReadiness.ready and findings[].
+    // The producer (system prompt) must instruct Sonnet to output FINDING lines.
+    // auditPhaseCompletion system prompt always contains "FINDING:" — but this rubric must
+    // not accidentally suppress that by contradicting the output format.
+    // Verify the rubric text itself doesn't redefine the output format in a conflicting way.
+    expect(PM_DESIGN_READINESS_RUBRIC).not.toContain("output PASS")
+    expect(PM_DESIGN_READINESS_RUBRIC).not.toContain("[PM-GAP]") // not a design-agent tag
   })
 })
