@@ -3515,9 +3515,9 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     expect(getEscalationNotification("onboarding")).toBeNull()
 
-    // Injected message contains PM answer and original question
+    // Design agent was called with the resume directive
     const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
-      c[0]?.messages?.[0]?.content?.includes?.("guest session")
+      c[0]?.messages?.[0]?.content?.includes?.("PM decisions confirmed")
     )
     expect(agentCall).toBeDefined()
   })
