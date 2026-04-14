@@ -402,7 +402,7 @@ ${brief}`
           if (postPatchAudit && !postPatchAudit.ready) {
             // Spec still has gaps — set new pendingEscalation with all remaining gaps, don't resume design.
             // PM will be called again when user confirms, addressing ALL remaining gaps in one shot.
-            const remainingGaps = postPatchAudit.findings.map((f, i) => `${i + 1}. ${f}`).join("\n")
+            const remainingGaps = postPatchAudit.findings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
             setPendingEscalation(featureName, { targetAgent: "pm", question: remainingGaps })
             await client.chat.postMessage({
               channel: channelId,
