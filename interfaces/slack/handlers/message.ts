@@ -376,17 +376,43 @@ ${brief}`
         })
         setEscalationNotification(featureName, { targetAgent: "architect", question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       } else {
-        // PM is an AI agent — the user's "yes" is the authorization. Patch the spec immediately
-        // and resume design. No second confirmation needed; no hold state created.
-        // Eliminating the hold state eliminates the entire escalation-continuation bug class for PM.
+        // PM is an AI agent — the user's "yes" is the authorization. Patch the spec immediately,
+        // then run an adversarial audit on the patched content before resuming design.
+        // If the patched spec still has gaps the designer would have to invent, surface them all
+        // to PM now — one round, not iteratively through the design agent.
+        let patchedSpecContent: string | null = null
         if (capturedAgentResponse) {
-          await patchProductSpecWithRecommendations({
+          patchedSpecContent = await patchProductSpecWithRecommendations({
             featureName,
             question: pendingEscalation.question,
             recommendations: capturedAgentResponse,
             humanConfirmation: userMessage,
-          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+          }).catch(err => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
         }
+
+        // Post-patch adversarial gate: audit patched spec for any remaining designer decision gaps.
+        // Runs only when we have patched content — skips silently if patch failed (non-blocking).
+        if (patchedSpecContent) {
+          const postPatchAudit = await auditDownstreamReadiness({
+            specContent: patchedSpecContent,
+            downstreamRole: "designer",
+            featureName,
+          }).catch(err => { console.log(`[ESCALATION] post-patch audit failed (non-blocking): ${err}`); return null })
+
+          if (postPatchAudit && !postPatchAudit.ready) {
+            // Spec still has gaps — set new pendingEscalation with all remaining gaps, don't resume design.
+            // PM will be called again when user confirms, addressing ALL remaining gaps in one shot.
+            const remainingGaps = postPatchAudit.findings.map((f, i) => `${i + 1}. ${f}`).join("\n")
+            setPendingEscalation(featureName, { targetAgent: "pm", question: remainingGaps })
+            await client.chat.postMessage({
+              channel: channelId,
+              thread_ts: threadTs,
+              text: `*Product Manager* — Spec updated, but ${postPatchAudit.findings.length} gap${postPatchAudit.findings.length === 1 ? "" : "s"} still need product decisions before design can proceed:\n\n${remainingGaps}\n\nSay *yes* to bring the PM back in to resolve these now.`,
+            }).catch(err => console.log(`[ESCALATION] post-patch gap message failed (non-blocking): ${err}`))
+            return
+          }
+        }
+
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: threadTs,

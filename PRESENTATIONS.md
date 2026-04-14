@@ -85,7 +85,7 @@ This file is the single source of truth for every claim that appears across the 
 | Company | Archon Labs |
 | Product | Archon Dev |
 | Website | getarchon.dev |
-| Patent | USPTO provisional #64/015,378 — filed March 24, 2026 |
+| Patent | USPTO provisional #64/015,378 — filed March 24, 2026; Non-provisional #19/646,571 — filed April 14, 2026 (20 claims, 17 embodiments, 17 drawings) |
 | Founder | Sanjay Sahgal — 34 years shipping software at scale |
 
 ---

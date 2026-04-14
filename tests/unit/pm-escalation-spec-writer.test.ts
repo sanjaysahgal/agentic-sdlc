@@ -64,7 +64,7 @@ describe("patchProductSpecWithRecommendations — consumer (gate logic)", () => 
   it("returns early and skips Anthropic when readFile returns empty string (spec not on main)", async () => {
     mockReadFile.mockResolvedValue("")
 
-    await patchProductSpecWithRecommendations({
+    const result = await patchProductSpecWithRecommendations({
       featureName: "onboarding",
       question: BLOCKING_QUESTION,
       recommendations: RECOMMENDATIONS,
@@ -73,6 +73,7 @@ describe("patchProductSpecWithRecommendations — consumer (gate logic)", () => 
 
     expect(mockCreate).not.toHaveBeenCalled()
     expect(mockSaveApproved).not.toHaveBeenCalled()
+    expect(result).toBeNull()
   })
 
   it("calls Anthropic with the spec, question, and recommendations when spec exists", async () => {
@@ -97,7 +98,7 @@ describe("patchProductSpecWithRecommendations — consumer (gate logic)", () => 
     mockReadFile.mockResolvedValue(EXISTING_SPEC)
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_PATCH }] })
 
-    await patchProductSpecWithRecommendations({
+    const result = await patchProductSpecWithRecommendations({
       featureName: "onboarding",
       question: BLOCKING_QUESTION,
       recommendations: RECOMMENDATIONS,
@@ -110,6 +111,25 @@ describe("patchProductSpecWithRecommendations — consumer (gate logic)", () => 
     expect(saveArgs.filePath).toContain("onboarding.product.md")
     // Merged spec must contain the new acceptance criterion from the patch
     expect(saveArgs.content).toContain("once per session")
+    // Return value must be the merged spec content (for post-patch adversarial audit)
+    expect(result).not.toBeNull()
+    expect(result).toContain("once per session")
+  })
+
+  it("returns null when Anthropic returns text without ## headers (patch invalid)", async () => {
+    mockReadFile.mockResolvedValue(EXISTING_SPEC)
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "I have reviewed the recommendations and they look good." }],
+    })
+
+    const result = await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    expect(result).toBeNull()
   })
 
   it("skips saveApprovedSpec when Anthropic returns text without ## headers", async () => {

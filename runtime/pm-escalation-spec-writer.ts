@@ -15,7 +15,7 @@ export async function patchProductSpecWithRecommendations(params: {
   question: string          // original blocking questions escalated to PM/Architect
   recommendations: string  // PM/Architect agent response text (confirmed by human)
   humanConfirmation: string // what the human said when confirming
-}): Promise<void> {
+}): Promise<string | null> {
   const { featureName, question, recommendations, humanConfirmation } = params
   const { paths } = loadWorkspaceConfig()
   const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -23,7 +23,7 @@ export async function patchProductSpecWithRecommendations(params: {
   const existingSpec = await readFile(productSpecPath, "main")
   if (!existingSpec) {
     console.log(`[ESCALATION] product spec writeback: spec not found on main for feature=${featureName}, skipping`)
-    return
+    return null
   }
 
   const response = await client.messages.create({
@@ -63,10 +63,11 @@ RULES — follow exactly:
   const patch = response.content[0].type === "text" ? response.content[0].text.trim() : ""
   if (!patch || !patch.includes("##")) {
     console.log(`[ESCALATION] product spec writeback: Haiku returned no valid patch for feature=${featureName}, skipping`)
-    return
+    return null
   }
 
   const mergedSpec = applySpecPatch(existingSpec, patch)
   await saveApprovedSpec({ featureName, filePath: productSpecPath, content: mergedSpec })
   console.log(`[ESCALATION] product spec writeback: patched ${productSpecPath} on main with confirmed PM recommendations`)
+  return mergedSpec
 }

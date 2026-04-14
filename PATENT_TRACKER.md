@@ -13,7 +13,7 @@
 |---|------|---------------------|----------------|--------|
 | 1 | Create/verify USPTO.gov account at Patent Center | $0 | DIY | Done |
 | 2 | Confirm small entity eligibility — qualified (independent inventor, no assignments to large entities, income exceeds micro threshold) | $0 | DIY | Done |
-| 3 | Prepare specification document | $0 | DIY | Not started |
+| 3 | Prepare specification document | $0 | DIY | Done |
 | 3a | — Title of the Invention | — | DIY | Done |
 | 3b | — Cross-Reference to Related Applications (cite provisional) | — | DIY | Done |
 | 3c | — Field of the Invention | — | DIY | Done |
@@ -23,15 +23,14 @@
 | 3g | — Detailed Description of Preferred Embodiments (17 embodiments) | — | DIY | Done |
 | 3h | — Abstract | — | DIY | Done |
 | 4 | Prepare formal drawings (black & white line art, numbered refs, FIGs 1–17) — generated via Mermaid, SVG + PDF in docs/patent/drawings/ | $0 | DIY | Done |
-| 5 | Draft claims (27 total) | $0 | DIY | Done |
-| 5a | — Independent system claims (6) | — | DIY | Done |
-| 5b | — Independent method claims (6) | — | DIY | Done |
-| 5c | — Independent computer-readable medium claims (3) | — | DIY | Done |
-| 5d | — Dependent system claims (12) | — | DIY | Done |
-| 6 | Prepare Application Data Sheet (ADS) in Patent Center — filing as individual inventor, all data ready | $0 | DIY | Ready (fill in Patent Center at filing time) |
+| 5 | Draft claims (20 total — restructured from 27 to save $3,440) | $0 | DIY | Done |
+| 5a | — Independent claims (3: system, method, CRM) | — | DIY | Done |
+| 5b | — Dependent claims (17) | — | DIY | Done |
+| 6 | Prepare Application Data Sheet (ADS) — completed via Web ADS in Patent Center | $0 | DIY | Done |
 | 7 | Prepare Inventor's Oath/Declaration (form PTO/AIA/01) — completed and signed | $0 | DIY | Done |
-| 8 | File via Patent Center — upload all docs, pay fees | $900 | DIY | Not started |
-| 9 | Receive filing confirmation + application number | $0 | — | Waiting |
+| 8 | File via Patent Center — App #19/646,571, Confirmation #6659, filed 04/14/2026 | $730 | DIY | Done |
+| 8a | — File corrected ADS to add domestic benefit claim (provisional 64/015,378) | $0 | DIY | TODO |
+| 9 | Filing confirmation received — App #19/646,571 | $0 | — | Done |
 | 10 | Wait for examiner assignment (12–18 months) | $0 | — | Waiting |
 | 11 | Receive first Office Action | $0 | — | Waiting |
 | 12 | Respond to Office Action (3-month deadline) | $0–$4,000 | DIY or Attorney | Waiting |
@@ -62,13 +61,13 @@
 
 | Category | Estimated Cost |
 |----------|---------------|
-| Filing fees (step 8) | $900 |
+| Filing fees (step 8) | $730 (paid) |
 | Office Action response (if attorney for 101) | $0–$4,000 |
 | RCE if needed | $650 |
 | Issue fee | $600 |
-| **Total through grant** | **$1,500–$6,150** |
+| **Total through grant** | **$730–$5,980** |
 | Maintenance (full 20 years) | $7,000 |
-| **Lifetime total** | **$8,500–$13,150** |
+| **Lifetime total** | **$7,730–$12,980** |
 
 ---
 
@@ -76,10 +75,11 @@
 
 | Event | Date |
 |-------|------|
-| Provisional filed | _fill in_ |
-| Non-provisional deadline | _fill in_ |
-| Filing date | — |
-| First Office Action received | — |
+| Provisional filed | March 24, 2026 |
+| Non-provisional filed | April 14, 2026 |
+| Non-provisional App # | 19/646,571 |
+| Corrected ADS (domestic benefit claim) | TODO — file ASAP |
+| First Office Action expected | ~June–October 2027 |
 | Office Action response deadline | — |
 | Notice of Allowance | — |
 | Issue fee deadline | — |

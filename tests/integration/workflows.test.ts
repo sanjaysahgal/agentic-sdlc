@@ -5049,12 +5049,13 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     //   [0] classifyMessageScope → "feature-specific" (PM)
     //   [1] PM agent run → PM_RECOMMENDATIONS (1 item, 1 "My recommendation:" → no enforcement)
     //   [2] patchProductSpecWithRecommendations: Haiku call (spec found on main → generates patch)
-    //   [3] isOffTopicForAgent (design)
-    //   [4] isSpecStateQuery (design)
-    //   [5] auditPhaseCompletion — PM spec found on main, PM_RUBRIC audit fires
-    //   [6] runAgent (design)
-    //   [7] identifyUncommittedDecisions
-    //   [8] Gate4 classifyForPmGaps
+    //   [3] auditDownstreamReadiness(designer) → PASS (post-patch adversarial gate)
+    //   [4] isOffTopicForAgent (design)
+    //   [5] isSpecStateQuery (design)
+    //   [6] auditPhaseCompletion — PM spec found on main, PM_RUBRIC audit fires
+    //   [7] runAgent (design)
+    //   [8] identifyUncommittedDecisions
+    //   [9] Gate4 classifyForPmGaps
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
@@ -5062,13 +5063,14 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
       })                                                                                   // [1] PM agent run
       .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n1. Display 'Not signed in' indicator." }] }) // [2] patchProductSpec Haiku
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // [3] auditDownstreamReadiness(designer) → PASS
       // handleDesignPhase resumes (history=2, extractLockedDecisions skips):
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // [3] isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // [4] isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // [5] auditPhaseCompletion (PM spec found)
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // [6] runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [7] identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [8] Gate 4 classifyForPmGaps
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // [4] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // [5] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // [6] auditPhaseCompletion (PM spec found)
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // [7] runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [8] identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [9] Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -5857,5 +5859,117 @@ describe("Scenario N49 — finalize_product_spec blocked by PM_DESIGN_READINESS_
     // agent must have surfaced the finding to the PM
     const text = lastUpdateText(params.client)
     expect(text).toContain("ambient")
+  })
+})
+
+// ─── Scenario N50: Post-patch adversarial audit finds remaining gaps → design blocked ──────────
+//
+// After patchProductSpecWithRecommendations patches the spec, auditDownstreamReadiness(designer)
+// runs on the patched content. If it finds remaining gaps the designer would have to invent,
+// the platform sets a new pendingEscalation with ALL remaining gaps and does NOT resume design.
+// This eliminates the iterative "one gap per PM round" loop — all gaps surface at once.
+
+describe("Scenario N50 — post-patch adversarial audit blocks design resume when patched spec still has gaps", () => {
+  const THREAD = "workflow-n50"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setPendingEscalation("onboarding", {
+      targetAgent: "pm",
+      question: "1. What is the exact copy for the logged-out indicator?",
+      designContext: "",
+    })
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
+    clrEsc("onboarding")
+  })
+
+  it("auditDownstreamReadiness FINDING after patch → new pendingEscalation set, design does NOT resume", async () => {
+    const approvedSpec = "## Problem\nHelp users log in.\n\n## Acceptance Criteria\n1. Display logged-out indicator.\n"
+    const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.\n→ Note: Pending human PM confirmation before engineering handoff"
+
+    // spec found on main so patchProductSpecWithRecommendations returns patched content
+    mockGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(approvedSpec).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("not found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    // Call sequence:
+    //   [0] classifyMessageScope → "feature-specific" (PM)
+    //   [1] PM agent → PM_RECOMMENDATIONS (1 "My recommendation:" → no enforcement)
+    //   [2] patchProductSpecWithRecommendations: Haiku call → valid patch
+    //   [3] auditDownstreamReadiness(designer) → FINDING (remaining gap)
+    //   [4] NO design calls — platform blocks and posts gap message
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0]
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: PM_RECOMMENDATIONS }],
+      })                                                                                   // [1] PM agent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n1. Display 'Not signed in' indicator." }] }) // [2] patchProductSpec Haiku
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "FINDING: What happens when the user taps the 'Not signed in' indicator? | Designer needs to know the action: navigate to login, show modal, or no-op — PM must decide." }],
+      })                                                                                   // [3] auditDownstreamReadiness → FINDING
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // New pendingEscalation set with remaining gaps
+    const remaining = getPendingEscalation("onboarding")
+    expect(remaining).not.toBeNull()
+    expect(remaining!.targetAgent).toBe("pm")
+    expect(remaining!.question).toContain("1.")  // numbered gap
+
+    // Gap message posted — tells user to say "yes" to bring PM back
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const gapPost = postCalls.find((c: any) => c[0]?.text?.includes("gap") && c[0]?.text?.includes("yes"))
+    expect(gapPost).toBeDefined()
+
+    // Design agent did NOT resume — only 4 Anthropic calls (no isOffTopicForAgent etc.)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+  })
+
+  it("auditDownstreamReadiness PASS after patch → design resumes normally", async () => {
+    const approvedSpec = "## Problem\nHelp users log in.\n\n## Acceptance Criteria\n1. Display logged-out indicator.\n"
+    const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.\n→ Note: Pending human PM confirmation before engineering handoff"
+
+    mockGetContent.mockImplementation((params: any) => {
+      if (params?.path?.includes("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(approvedSpec).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("not found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: PM_RECOMMENDATIONS }],
+      })                                                                                   // PM agent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n1. Display 'Not signed in' indicator." }] }) // patchProductSpec Haiku
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })              // auditDownstreamReadiness → PASS
+      // design resumes:
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // Gate 4 classifyForPmGaps
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // pendingEscalation cleared — design resumed
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // Design agent called (runAgent happens)
+    const designCall = mockAnthropicCreate.mock.calls.find((c: any) => Array.isArray(c[0]?.system))
+    expect(designCall).toBeDefined()
   })
 })
