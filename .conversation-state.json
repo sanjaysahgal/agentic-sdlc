@@ -1,12 +1,5 @@
 {
   "pendingEscalations": {},
   "pendingApprovals": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "Define the retry behavior when the AI is unavailable during logged-out exploration — whether the user must resend the exact last message or can send any new message to trigger a retry attempt.",
-      "recommendations": "[1]. My recommendation: When the AI is unavailable during logged-out exploration, the user can send any new message to trigger a retry attempt — they are not required to resend the exact last message; if the AI remains unavailable, the same inline error reappears and the user can attempt again with another message.\n\n→ Rationale: Allowing any new message respects user autonomy and prevents the user from being stuck resending identical queries; it also allows the user to refine or clarify their intent if the AI failure suggests their original query may have been the issue.\n\n→ Note: Pending your approval — say yes to apply to the product spec\n\n---\n\nSay *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation.",
-      "originAgent": "design"
-    }
-  }
+  "escalationNotifications": {}
 }
