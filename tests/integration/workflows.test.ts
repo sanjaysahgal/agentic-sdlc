@@ -5045,19 +5045,36 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
 
     const PM_RECOMMENDATIONS = "1. My recommendation: Use 'Not signed in' — concise and universally understood.\n→ Rationale: Standard phrasing across industry; no ambiguity.\n→ Note: Pending human PM confirmation before engineering handoff"
 
-    // PM escalation path: classifyMessageScope + PM agent run
+    // Call sequence:
+    //   [0] classifyMessageScope → "feature-specific" (PM)
+    //   [1] PM agent run → PM_RECOMMENDATIONS (1 item, 1 "My recommendation:" → no enforcement)
+    //   [2] patchProductSpecWithRecommendations: Haiku call (spec found on main → generates patch)
+    //   [3] isOffTopicForAgent (design)
+    //   [4] isSpecStateQuery (design)
+    //   [5] auditPhaseCompletion — PM spec found on main, PM_RUBRIC audit fires
+    //   [6] runAgent (design)
+    //   [7] identifyUncommittedDecisions
+    //   [8] Gate4 classifyForPmGaps
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
-      })                                                                                  // PM agent run
+      })                                                                                   // [1] PM agent run
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n1. Display 'Not signed in' indicator." }] }) // [2] patchProductSpec Haiku
+      // handleDesignPhase resumes (history=2, extractLockedDecisions skips):
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // [3] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // [4] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ ready: true, findings: [] }) }] }) // [5] auditPhaseCompletion (PM spec found)
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // [6] runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [7] identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // [8] Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
     // PM agent should have gotten the product spec — verify via the content passed to the Anthropic call.
-    // The second Anthropic call (index 1) is the PM agent run — its system prompt includes currentDraft.
+    // Call index [1] is the PM agent run — its system prompt includes currentDraft.
     // system is an array of cache-control blocks: [{ type: "text", text: "...", cache_control: {...} }]
     const pmCall = mockAnthropicCreate.mock.calls[1]
     const systemBlocks = pmCall[0].system as Array<{ type: string; text: string }>
@@ -5065,11 +5082,15 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     // The approved spec is injected via context.currentDraft in the PM system prompt
     expect(systemText).toContain("Help users onboard")
 
-    // escalationNotification must be set (PM produced recommendations and was @mentioned)
+    // New one-step behavior: escalationNotification is NOT set for PM — design resumes immediately.
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notification = getEscalationNotification("onboarding")
-    expect(notification).not.toBeNull()
-    expect(notification!.recommendations).toContain("My recommendation")
+    expect(notification).toBeNull()
+
+    // Closure message posted
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    expect(closurePost).toBeDefined()
   })
 })
 
