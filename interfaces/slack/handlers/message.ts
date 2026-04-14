@@ -437,7 +437,7 @@ ${brief}`
             return
           }
 
-          const injectedMessage = `PM answered the blocking question and updated the product spec. The PM gap is now closed. Resume design — begin your response by listing each confirmed PM decision you are applying to the design spec, then proceed with the updates.`
+          const injectedMessage = `PM decisions confirmed and product spec updated. Continue the design.`
           await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
             await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages, client, update })
           }})
