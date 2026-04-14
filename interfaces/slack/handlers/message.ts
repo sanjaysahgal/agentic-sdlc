@@ -364,14 +364,38 @@ ${brief}`
           }
         }
       }})
-      await client.chat.postMessage({
-        channel: channelId,
-        thread_ts: threadTs,
-        text: `${mention} — review the recommendations above and reply here to confirm or adjust. Once you reply, the design agent will use each confirmed recommendation to unblock and advance the design spec.`,
-      })
-      // Clear only after @mention posted — ensures network failures don't silently drop the escalation
+      // Clear after agent ran and output is captured — safe to commit now.
       clearPendingEscalation(featureName)
-      setEscalationNotification(featureName, { targetAgent: pendingEscalation.targetAgent, question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
+
+      if (isArchitectEscalation) {
+        // Architect is a human — hold for their reply before writing to the engineering spec.
+        await client.chat.postMessage({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `${mention} — review the recommendations above and reply here to confirm or adjust. Once you reply, the design agent will use each confirmed recommendation to unblock and advance the design spec.`,
+        })
+        setEscalationNotification(featureName, { targetAgent: "architect", question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
+      } else {
+        // PM is an AI agent — the user's "yes" is the authorization. Patch the spec immediately
+        // and resume design. No second confirmation needed; no hold state created.
+        // Eliminating the hold state eliminates the entire escalation-continuation bug class for PM.
+        if (capturedAgentResponse) {
+          await patchProductSpecWithRecommendations({
+            featureName,
+            question: pendingEscalation.question,
+            recommendations: capturedAgentResponse,
+            humanConfirmation: userMessage,
+          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+        }
+        await client.chat.postMessage({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `*Product Manager* — Product spec updated with the confirmed decisions. The design team can now continue.`,
+        }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
+        await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
+          await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: "PM decisions confirmed and product spec updated. Continue the design.", userImages, client, update })
+        }})
+      }
       return
     }
     // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
