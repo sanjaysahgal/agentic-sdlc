@@ -2093,7 +2093,7 @@ describe("Scenario 22 — Action menu appended after design agent LLM response",
 
     // At least one drifted token from the fixture appears with Fix label
     expect(text).toContain("--bg")
-    expect(text).toContain("*Fix:*")
+    expect(text).toContain("*Recommended fix:*")
 
     // CTA for applying fixes
     expect(text).toContain("Say *fix 1 2 3* (or *fix all*)")
@@ -2164,7 +2164,7 @@ describe("Scenario 23 — State path shows all 4 action menu categories", () => 
 
     // At least one drifted token from the fixture appears with Fix label
     expect(text).toContain("--bg")
-    expect(text).toContain("*Fix:*")
+    expect(text).toContain("*Recommended fix:*")
 
     // CTA for applying fixes
     expect(text).toContain("Say *fix 1 2 3* (or *fix all*)")

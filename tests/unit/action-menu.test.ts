@@ -43,7 +43,7 @@ describe("buildActionMenu", () => {
     const result = buildActionMenu([
       { emoji: ":art:", label: "Brand Drift", issues: [item("glow-duration: spec `2.5s`", "change to `4s`")] },
     ])
-    expect(result).toContain("glow-duration: spec `2.5s` — *Fix:* change to `4s`")
+    expect(result).toContain("glow-duration: spec `2.5s` — *Recommended fix:* change to `4s`")
   })
 
   it("includes category header with emoji and issue count", () => {

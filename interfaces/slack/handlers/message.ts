@@ -112,7 +112,7 @@ export function buildActionMenu(categories: Array<{ emoji: string; label: string
   for (const cat of filled) {
     lines.push(`\n*${cat.emoji} ${cat.label} (${cat.issues.length}):*`)
     for (const item of cat.issues) {
-      lines.push(`${++n}. ${item.issue} — *Fix:* ${item.fix}`)
+      lines.push(`${++n}. ${item.issue} — *Recommended fix:* ${item.fix}`)
     }
   }
   lines.push(`\nSay *fix 1 2 3* (or *fix all*) to apply.`)
