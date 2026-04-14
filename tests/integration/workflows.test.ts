@@ -4884,6 +4884,8 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     const PARTIAL_ANSWER = "2. My recommendation: The logged-out indicator should display the text 'Session expired — tap to sign in again' and appear whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff\n\nFor item 1, I want to clarify what 'retry state' means before committing to a recommendation."
     const FULL_RECOMMENDATIONS = "1. My recommendation: The user should remain logged out with a clear, persistent error message on the sign-in screen.\n→ Rationale: Retaining context in a retry state adds complexity without meaningful benefit for auth failures.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: The logged-out indicator should display 'Session expired — tap to sign in again' whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff"
 
+    // After PM enforcement completes: patchProductSpecWithRecommendations (readFile→404, no Haiku)
+    // Then design agent resumes: history=4 (<6, extractLockedDecisions skips) → 5 design calls
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
@@ -4894,7 +4896,13 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: FULL_RECOMMENDATIONS }],
-      })                                                                                  // PM run 2 → 2 recommendations
+      })                                                                                  // PM run 2 → 2 recommendations (enforcement)
+      // handleDesignPhase resumes (history=4, extractLockedDecisions skips):
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -4904,15 +4912,19 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     const enforcementUpdate = updateCalls.find((c: any) => c[0]?.text?.includes("concrete recommendations"))
     expect(enforcementUpdate).toBeDefined()
 
-    // Stored recommendations must be the enforcement response (2 items)
+    // New one-step behavior: escalationNotification is NOT set for PM escalation.
+    // Design resumes immediately after spec patch — no hold state created.
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notification = getEscalationNotification("onboarding")
-    expect(notification).not.toBeNull()
-    expect(notification!.recommendations).toContain("remain logged out with a clear, persistent error message")
-    expect(notification!.recommendations).toContain("Session expired")
+    expect(notification).toBeNull()
 
-    // PM agent called twice (structural gate triggered re-run)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4) // classifyScope×2 + PM agent×2
+    // Closure message posted (confirms spec was updated)
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    expect(closurePost).toBeDefined()
+
+    // PM agent called twice (structural gate triggered re-run) + design agent called 5 times
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9) // 4 PM + 5 design
   })
 })
 
@@ -4952,14 +4964,21 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     const PM_RECOMMENDATIONS = "1. My recommendation: The logged-out indicator must be static — no animation, no expand, no popovers, no sign-up prompts.\n→ Rationale: Ambient awareness means presence without demand.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: Display 'Not signed in — your session will not be saved'.\n→ Rationale: Makes implications of logged-out state explicit.\n→ Note: Pending human PM confirmation before engineering handoff"
 
     // The router recovers confirmedAgent="ux-design" from pendingEscalation, then runs PM escalation.
-    // PM escalation path calls: classifyMessageScope (1 call) + PM agent run (1 call).
-    // Brief has 2 items and PM returns 2 recommendations → no enforcement re-run.
+    // PM path: classifyMessageScope (1) + PM agent run (1). 2 items → 2 recommendations → no enforcement.
+    // After PM: patchProductSpecWithRecommendations (readFile→404, skipped). Closure message posted.
+    // Design agent resumes: history=2 (<6, extractLockedDecisions skips) → 5 design calls.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
       })                                                                                  // PM agent run
+      // handleDesignPhase resumes (history=2, extractLockedDecisions skips):
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -4968,18 +4987,20 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     const { getPendingEscalation, getEscalationNotification } = await import("../../../runtime/conversation-store")
     expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // escalationNotification must be set (PM was @mentioned)
+    // New one-step behavior: escalationNotification is NOT set for PM — no hold state.
+    // Design resumes immediately after spec patch.
     const notification = getEscalationNotification("onboarding")
-    expect(notification).not.toBeNull()
-    expect(notification!.targetAgent).toBe("pm")
-    expect(notification!.recommendations).toContain("My recommendation")
+    expect(notification).toBeNull()
 
-    // PM @mention must have been posted
+    // Closure message posted (confirms spec was updated and design is resuming)
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const mentionCall = postCalls.find((c: any) =>
-      c[0]?.text?.includes("*Product Manager*") || c[0]?.text?.includes("PM") || c[0]?.text?.includes("recommendations")
+    const closurePost = postCalls.find((c: any) =>
+      c[0]?.text?.includes("Product spec updated") || c[0]?.text?.includes("Product Manager")
     )
-    expect(mentionCall).toBeDefined()
+    expect(closurePost).toBeDefined()
+
+    // Design agent ran: total = 2 PM + 5 design
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
   })
 })
 
