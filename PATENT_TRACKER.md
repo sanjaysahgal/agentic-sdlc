@@ -16,7 +16,7 @@
 | 3 | Prepare specification document | $0 | DIY | Not started |
 | 3a | — Title of the Invention | — | DIY | Done |
 | 3b | — Cross-Reference to Related Applications (cite provisional) | — | DIY | Done |
-| 3c | — Field of the Invention | — | DIY | Not started |
+| 3c | — Field of the Invention | — | DIY | Done |
 | 3d | — Background of the Invention | — | DIY | Not started |
 | 3e | — Summary of the Invention | — | DIY | Not started |
 | 3f | — Brief Description of the Drawings | — | DIY | Not started |
