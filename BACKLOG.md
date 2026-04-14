@@ -617,6 +617,20 @@ All three spec-producing agents are upgraded simultaneously. This is one step, n
 
 **Why before 2.5b and 2.6:** These upgrades change what the agents produce (new required spec sections, authoritative doc drafts). The spec schema enforcement step (Trust Step 4c) validates those sections. The spec validator (Step 4) enforces them at approval. Both downstream steps depend on knowing which sections are required — this step defines that.
 
+---
+
+### PM discussion and spec-save coexist in escalation-continuation turn — design resumes before discussion is acknowledged
+
+**The problem:** When the PM calls `apply_product_spec_patch` AND surfaces new discussion in the same response (e.g., a product vision conflict), the platform's `escalation-auto-close` fires on the save and immediately resumes the design agent. The PM's discussion text appears in the same Slack turn as the design agent's next response — the user never gets a chance to weigh in on the PM's discussion before design continues.
+
+**Root cause:** `escalation-auto-close` fires on any PM spec save, unconditionally. It doesn't check whether the PM's response also contains unresolved discussion or open recommendations.
+
+**Correct behavior:** If the PM saves AND discusses in the same turn, design should not auto-resume until the user acknowledges the discussion. One option: require PM to separate save turns from discussion turns via platform enforcement. Another: detect unresolved PM questions in the PM response text and hold design until acknowledged.
+
+**Impact:** Low frequency (only when PM combines save + discuss). Not a correctness failure — no decisions are lost. Design gaps surfaced in the same turn can be answered in the next PM round. UX confusion only.
+
+---
+
 **PM agent → CPO-level**
 
 Persona: leads product organizations of 50+ PMs, set company-level product vision, made portfolio-level tradeoffs, launched multiple 0→1 products, scaled to 100M+ users. Operates simultaneously at feature level (spec shaping) and product level (cross-feature vision coherence).
