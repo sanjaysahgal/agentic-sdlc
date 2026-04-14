@@ -453,7 +453,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(text).toContain("Say *yes*")
   })
 
-  it("Turn 2: user says yes → PM agent runs with brief, then @mention posted for human review", async () => {
+  it("Turn 2: user says yes → PM agent runs with brief, spec patched immediately, design agent resumes", async () => {
     setConfirmedAgent("onboarding", "ux-design")
     appendMessage("onboarding", { role: "user", content: "should we support social login?" })
     appendMessage("onboarding", { role: "assistant", content: "Should chips be permanent for authenticated users?\n\nDesign cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now." })
@@ -467,12 +467,31 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     })
     // Note: no productSpec set here — verified in separate test below
 
-    // PM agent runs — mock any Anthropic calls with a valid response
-    mockAnthropicCreate.mockResolvedValue({
-      content: [{ type: "text", text: "Recommendation: Yes, support Google OAuth as the primary social login method — it covers the majority of users and Health360 already uses Google Workspace." }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 10, output_tokens: 30 },
-    })
+    // Mock sequence:
+    //   PM run: classifyMessageScope → "feature-specific", PM agent → recommendation (1 "My recommendation:" line)
+    //   Enforcement gate: 1 required, 0 found ("Recommendation:" is not "My recommendation:") → enforcement re-run
+    //   Enforcement run: classifyMessageScope → "feature-specific", PM agent → proper format
+    //   patchProductSpecWithRecommendations: readFile(main) → 404 → skipped (no Haiku call)
+    //   handleDesignPhase: isOffTopicForAgent, isSpecStateQuery, runAgent, identifyUncommittedDecisions, Gate4 classifyForPmGaps
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (PM run 1)
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Recommendation: Yes, support Google OAuth." }],
+        usage: { input_tokens: 10, output_tokens: 30 },
+      })                                                                                  // PM run 1 (0 "My recommendation:" → enforcement fires)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (PM run 2)
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.\n→ Note: Pending human PM confirmation before engineering handoff" }],
+        usage: { input_tokens: 10, output_tokens: 30 },
+      })                                                                                  // PM run 2 (enforcement)
+      // handleDesignPhase calls:
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -480,23 +499,26 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     // PM agent was called
     expect(mockAnthropicCreate).toHaveBeenCalled()
 
-    // Human PM notified via separate postMessage to review recommendations
+    // Product spec updated closure message posted (not an @mention for human review)
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const reviewPost = postCalls.find((c: any) => c[0]?.text?.includes("review the recommendations above"))
-    expect(reviewPost).toBeDefined()
-    expect(reviewPost[0].text).toContain("Product Manager")
-    expect(reviewPost[0].text).toContain("reply here to confirm or adjust")
+    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    expect(closurePost).toBeDefined()
 
-    // Pending escalation cleared AFTER @mention posted — not before agent runs
-    // (guard against network failure losing escalation before PM is notified)
+    // No @mention "review and reply" message — PM is an AI agent, no human review needed
+    const reviewPost = postCalls.find((c: any) => c[0]?.text?.includes("review the recommendations above"))
+    expect(reviewPost).toBeUndefined()
+
+    // Pending escalation cleared
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     expect(getPendingEscalation("onboarding")).toBeNull()
 
-    // EscalationNotification set — waiting for human PM reply to resume design
+    // EscalationNotification is NOT set — PM escalation is one-step, design resumes immediately
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notif = getEscalationNotification("onboarding")
-    expect(notif).not.toBeNull()
-    expect(notif?.question).toBe("Should social login be supported?")
+    expect(notif).toBeNull()
+
+    // Design agent ran (more than just PM calls were made)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9) // 4 PM + 5 design
   })
 
   it("Turn 2 with productSpec — approved product spec injected into PM brief so agent has full context", async () => {
