@@ -472,7 +472,8 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     //   Enforcement gate: 1 required, 0 found ("Recommendation:" is not "My recommendation:") → enforcement re-run
     //   Enforcement run: classifyMessageScope → "feature-specific", PM agent → proper format
     //   patchProductSpecWithRecommendations: readFile(main) → 404 → skipped (no Haiku call)
-    //   handleDesignPhase: isOffTopicForAgent, isSpecStateQuery, runAgent, identifyUncommittedDecisions, Gate4 classifyForPmGaps
+    //   handleDesignPhase: isOffTopicForAgent, isSpecStateQuery, extractLockedDecisions (history=6≥6),
+    //     runAgent, identifyUncommittedDecisions, Gate4 classifyForPmGaps
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (PM run 1)
       .mockResolvedValueOnce({
@@ -486,9 +487,10 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
         content: [{ type: "text", text: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.\n→ Note: Pending human PM confirmation before engineering handoff" }],
         usage: { input_tokens: 10, output_tokens: 30 },
       })                                                                                  // PM run 2 (enforcement)
-      // handleDesignPhase calls:
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })             // isSpecStateQuery
+      // handleDesignPhase calls (history=6 after 2 PM runs appended 4 messages):
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })              // extractLockedDecisions (history=6≥6)
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
       .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
@@ -518,7 +520,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     expect(notif).toBeNull()
 
     // Design agent ran (more than just PM calls were made)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9) // 4 PM + 5 design
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(10) // 4 PM + 6 design (extractLockedDecisions fires at history=6)
   })
 
   it("Turn 2 with productSpec — approved product spec injected into PM brief so agent has full context", async () => {
@@ -4675,6 +4677,9 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
 
     // Mock sequence: first PM run returns clarification-stall (0 "My recommendation:" occurrences)
     // Structural gate fires (0 < 1 required) → enforcement re-run → proper recommendation
+    // After PM completes: patchProductSpecWithRecommendations (readFile→404, no Haiku) + closure message posted
+    // Then design agent resumes: history=4 (<6, extractLockedDecisions skips)
+    // Design calls: isOffTopicForAgent + isSpecStateQuery + runAgent + identifyUncommittedDecisions + Gate4
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
@@ -4685,28 +4690,38 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PROPER_RECOMMENDATIONS }],
-      })                                                                                  // PM agent run 2 → recommendation
+      })                                                                                  // PM agent run 2 → proper recommendations
+      // handleDesignPhase resumes (history=4, extractLockedDecisions skips):
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })          // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })              // Gate 4 classifyForPmGaps
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // escalationNotification must reflect the SECOND response (enforcement output)
+    // New one-step behavior: escalationNotification is NOT set for PM escalation.
+    // Design resumes immediately — no hold state, no @mention for human review.
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     const notification = getEscalationNotification("onboarding")
-    expect(notification).not.toBeNull()
-    expect(notification!.recommendations).toContain("My recommendation: The nudge should be dismissable")
-    expect(notification!.recommendations).not.toContain("Before I give recommendations")
+    expect(notification).toBeNull()
 
-    // pendingEscalation cleared after @mention
+    // pendingEscalation cleared
     expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // Closure message posted (not an @mention for human review)
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    expect(closurePost).toBeDefined()
 
     // Platform emitted enforcement update (structural gate fired)
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const enforcementUpdate = updateCalls.find((c: any) => c[0]?.text?.includes("concrete recommendations"))
     expect(enforcementUpdate).toBeDefined()
 
-    // Anthropic called 4 times: classifyScope×2 + PM agent×2
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // Anthropic called 9 times: classifyScope×2 + PM agent×2 + design agent×5 (history=4, no extractLockedDecisions)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
   })
 })
 

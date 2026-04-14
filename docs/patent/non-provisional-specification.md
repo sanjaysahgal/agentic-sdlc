@@ -486,7 +486,7 @@ The proactive audit architecture ensures that a human could not approve a specif
 
 10. The system of claim 1, wherein CI/CD pipeline logic is centralized in a dedicated platform repository and consumed by application repositories via a reusable workflow invocation mechanism, with no pipeline logic duplicated in application repositories.
 
-11. The system of claim 1, wherein open questions within specification artifacts are tagged with machine-readable metadata comprising a type field indicating the responsible review domain and a blocking field indicating whether the question prevents phase advancement, and wherein a phase gate enforces resolution of all open questions — both blocking and non-blocking — before permitting lifecycle phase transition.
+11. The system of claim 1, wherein open questions within specification artifacts are tagged with machine-readable metadata comprising a type field indicating the responsible review domain and a blocking field indicating whether the question prevents phase advancement, and wherein a phase gate enforces resolution of all open questions, including both blocking and non-blocking questions, before permitting lifecycle phase transition.
 
 12. The system of claim 1, further comprising a human interaction layer that is decoupled from agent orchestration logic via a defined event protocol, wherein substitution of one interface implementation for another requires no modification to agent, routing, state management, or conflict detection components.
 
@@ -496,7 +496,7 @@ The proactive audit architecture ensures that a human could not approve a specif
 
 15. The system of claim 4, wherein the plurality of independent enforcement gate modules comprises: a pre-run structural gate that evaluates version control and platform state before agent invocation to determine if required actions should be triggered regardless of agent behavior; a post-run output verification gate that inspects agent responses for required elements including tool calls, structured tags, and prose patterns; a state-based finalization gate that blocks irreversible operations when platform-detected conditions are not met; an always-on proactive audit that runs on every message and injects findings into agent context as platform notices; and a fallback classification gate using a secondary language model to resolve ambiguous output.
 
-16. The system of claim 4, wherein the enforcement gate modules verify product-domain compliance including specification adherence to upstream product requirements, brand token consistency with authoritative brand guidelines, design decision integrity across specification chain artifacts, and cross-phase artifact coherence — in addition to or instead of security, safety, or code quality compliance.
+16. The system of claim 4, wherein the enforcement gate modules verify product-domain compliance including specification adherence to upstream product requirements, brand token consistency with authoritative brand guidelines, design decision integrity across specification chain artifacts, and cross-phase artifact coherence, in addition to or instead of security, safety, or code quality compliance.
 
 17. The system of claim 5, wherein the production outcome metrics include one or more of: user adoption rates, revenue impact, deployment reliability, customer acquisition metrics, engagement metrics, and retention metrics; and wherein the behavioral parameter adjustment module adjusts one or more of: rubric criteria weights, agent persona emphasis, context injection priority, and escalation sensitivity thresholds.
 
@@ -528,18 +528,5 @@ The proactive audit architecture ensures that a human could not approve a specif
 
 ## Abstract
 
-A system and method for deterministic platform-enforced orchestration of stateless artificial intelligence agents across multi-phase expert workflows, wherein a version control repository serves as the sole authoritative state store. Workflow phases are inferred from version control state (branch existence, file merge status) without a separate database. AI agents are stateless functions receiving fresh context on each invocation, enabling deterministic replay. Specification artifacts are validated synchronously against upstream documents with re-read verification enforcing human compliance. A single agent switches behavioral modes based on detected phase via system prompt injection. All tenant-specific configuration is externalized to a workspace configuration object, enabling zero-code-change multi-tenant onboarding. Open questions within specifications are tagged with machine-readable metadata enabling automated phase gating. Agent behavior compliance is verified by deterministic platform enforcement gates that operate independently of prompt instructions, correcting non-compliant agent output structurally — enforcing product-domain concerns including specification adherence, brand consistency, and cross-phase artifact coherence. A cross-phase escalation protocol enables downstream agents to invoke upstream agents directly in the current conversation thread. A closed-loop adaptation mechanism feeds production outcome metrics back into agent behavioral parameters, enabling self-improvement without human intervention. Multiple domain-specific specification chains are composed through typed handoff interfaces for cross-domain coordination. The platform autonomously generates new agent configurations including enforcement rules without code changes, enabling self-extension to new domains. The invention is applicable to any domain requiring coordinated multi-phase expert workflows including software development, finance, marketing, sales, and go-to-market planning.
+A system and method for orchestrating stateless AI agents across multi-phase expert workflows using version control as the sole state store, wherein workflow phases are inferred from branch and file state without a separate database, agents receive fresh relevance-filtered context on each stateless invocation, specification artifacts are validated synchronously against upstream documents with re-read verification, deterministic platform enforcement gates verify agent behavior compliance independently of prompt instructions, a cross-phase escalation protocol enables downstream agents to invoke upstream agents within the current conversation thread, production outcome metrics feed back into agent behavioral parameters via closed-loop adaptation, multiple domain-specific specification chains compose through typed handoff interfaces, and the platform autonomously generates new agent configurations including enforcement rules without code changes, applicable to any domain requiring coordinated multi-phase expert workflows.
 
----
-
-## Notes for Filing
-
-_[INTERNAL — remove before filing]_
-
-- [ ] Complete formal drawings (FIGs. 1–17)
-- [ ] Final prior art search verification
-- [ ] Review all claims for independent defensibility
-- [ ] Prepare Application Data Sheet (ADS)
-- [ ] Prepare Inventor's Oath/Declaration (PTO/AIA/01)
-- [ ] Convert to DOCX format for USPTO filing (avoids $400 non-DOCX surcharge)
-- [ ] File via Patent Center as Small Entity
