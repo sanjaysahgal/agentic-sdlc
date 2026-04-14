@@ -5951,3 +5951,113 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     expect(closurePost).toBeDefined()
   })
 })
+
+// ─── Scenario N51: PM spec sanitizer strips design-scope content at save time ──
+//
+// sanitizePmSpecDraft() runs before every GitHub write in save_product_spec_draft
+// and apply_product_spec_patch. Design-scope sections (## Design Direction, etc.)
+// and cross-domain open questions ([type: engineering], [type: design]) must be
+// stripped from the saved content — regardless of what the PM agent writes.
+//
+// This is a structural gate: the PM agent cannot bypass it by including design
+// content in its spec output.
+
+describe("Scenario N51 — PM spec sanitizer strips design-scope content before save", () => {
+  const THREAD = "workflow-n51"
+
+  beforeEach(() => { clearHistory("n51feature") })
+  afterEach(() => { clearHistory("n51feature") })
+
+  it("save_product_spec_draft: ## Design Direction section stripped before GitHub save", async () => {
+    setConfirmedAgent("n51feature", "pm")
+
+    const specWithDesignSection = [
+      "## Problem",
+      "Users cannot onboard without an account.",
+      "",
+      "## Acceptance Criteria",
+      "- User can register with email.",
+      "",
+      "## Design Direction",
+      "**Dark mode primary.** Color palette:",
+      "- Background: #0A0E27",
+      "- Accent: rgba(139, 127, 232, 0.8)",
+      "",
+      "## Edge Cases",
+      "- Network failure shows error.",
+    ].join("\n")
+
+    // PM call sequence: classifyMessageScope → runAgent (tool_use: save_product_spec_draft) → runAgent (end_turn)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "save_product_spec_draft", input: { content: specWithDesignSection } }],
+      })
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Draft saved." }] })
+
+    const params = makeParams(THREAD, "feature-n51feature", "update the spec")
+    await handleFeatureChannelMessage(params)
+
+    // Sanitizer must have stripped ## Design Direction before the GitHub write
+    const savedContent = Buffer.from(
+      mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+        c[0]?.path?.includes("n51feature.product.md")
+      )?.[0]?.content ?? "",
+      "base64"
+    ).toString()
+
+    expect(savedContent).not.toContain("## Design Direction")
+    expect(savedContent).not.toContain("#0A0E27")
+    expect(savedContent).not.toContain("rgba(139")
+    // PM-scope content preserved
+    expect(savedContent).toContain("## Problem")
+    expect(savedContent).toContain("## Acceptance Criteria")
+    expect(savedContent).toContain("## Edge Cases")
+  })
+
+  it("apply_product_spec_patch: [type: engineering] open question stripped before GitHub save", async () => {
+    setConfirmedAgent("n51feature", "pm")
+
+    // Existing draft has no open questions — patch introduces a cross-domain one
+    mockGetContent.mockResolvedValue({
+      data: {
+        content: Buffer.from("## Problem\nUsers cannot onboard.\n\n## Acceptance Criteria\n- User can register.", "utf-8").toString("base64"),
+        sha: "abc123",
+        type: "file",
+      },
+    })
+    mockPaginate.mockResolvedValue([{ name: "n51feature-product", commit: { sha: "abc" } }])
+
+    const patch = [
+      "## Open Questions",
+      "- [type: product] [blocking: yes] What is the error recovery path for failed SSO?",
+      "- [type: engineering] [blocking: no] Session TTL — needs infrastructure confirmation.",
+    ].join("\n")
+
+    // PM call sequence: classifyMessageScope → runAgent (tool_use: apply_product_spec_patch) → runAgent (end_turn)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t2", name: "apply_product_spec_patch", input: { patch } }],
+      })
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Questions added." }] })
+
+    const params = makeParams(THREAD, "feature-n51feature", "add open questions")
+    await handleFeatureChannelMessage(params)
+
+    const savedContent = Buffer.from(
+      mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+        c[0]?.path?.includes("n51feature.product.md")
+      )?.[0]?.content ?? "",
+      "base64"
+    ).toString()
+
+    // Engineering question stripped; product question preserved
+    expect(savedContent).not.toContain("[type: engineering]")
+    expect(savedContent).not.toContain("Session TTL")
+    expect(savedContent).toContain("[type: product]")
+    expect(savedContent).toContain("failed SSO")
+  })
+})

@@ -18,6 +18,7 @@ import { applySpecPatch } from "../../../runtime/spec-patcher"
 import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
 import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
+import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -819,7 +820,11 @@ async function runPmAgent(params: {
     tools: readOnly ? undefined : PM_TOOLS,
     toolHandler: readOnly ? undefined : async (name, input) => {
       if (name === "save_product_spec_draft") {
-        const content = input.content as string
+        const rawContent = input.content as string
+        // Structural gate: strip design-scope sections and cross-domain open questions
+        // before any audit or save. PM spec must contain only PM-scope content.
+        const sanitized = sanitizePmSpecDraft(rawContent)
+        const content = sanitized.content
         await update("_Auditing spec against product vision and architecture..._")
         const audit = await auditSpecDraft({
           draft: content,
@@ -835,13 +840,19 @@ async function runPmAgent(params: {
         const { githubOwner, githubRepo } = loadWorkspaceConfig()
         const url = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${pmFilePath}`
         const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
-        return { result: { url, audit: auditOut } }
+        const sanitizeNote = sanitized.wasModified
+          ? { strippedSections: sanitized.strippedSections, strippedOpenQuestions: sanitized.strippedOpenQuestions }
+          : undefined
+        return { result: { url, audit: auditOut, ...(sanitizeNote ? { sanitized: sanitizeNote } : {}) } }
       }
       if (name === "apply_product_spec_patch") {
         const patch = input.patch as string
         const branchName = `spec/${featureName}-product`
         const existingDraft = await readFile(pmFilePath, branchName)
-        const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
+        const rawMerged = applySpecPatch(existingDraft ?? "", patch)
+        // Structural gate: strip design-scope sections and cross-domain open questions
+        const sanitized = sanitizePmSpecDraft(rawMerged)
+        const mergedDraft = sanitized.content
         await update("_Auditing patch against product vision and architecture..._")
         const audit = await auditSpecDraft({
           draft: mergedDraft,
