@@ -286,6 +286,41 @@ export async function handleFeatureChannelMessage(params: {
         ? (roles.architectUser ? `<@${roles.architectUser}>` : `*Architect*`)
         : (roles.pmUser ? `<@${roles.pmUser}>` : `*Product Manager*`)
       const agentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
+
+      // PRE-ESCALATION AUDIT — runs BEFORE PM brief is built, BEFORE PM agent is called.
+      // For PM escalation only: read approved spec, find ALL designer gaps, merge into one brief.
+      // Front-loading prevents the infinite loop where a post-patch audit audits the ENTIRE spec,
+      // finds pre-existing gaps unrelated to the current escalation, creates a new pendingEscalation,
+      // PM answers some, audit fires again, repeat forever.
+      // One comprehensive brief → one PM call → spec patched once → design resumes. No loop.
+      let comprehensiveQuestion = pendingEscalation.question
+      if (!isArchitectEscalation) {
+        const productSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
+        const currentProductSpec = pendingEscalation.productSpec ||
+          await readFile(productSpecPath, "main").catch(() => null)
+
+        if (currentProductSpec) {
+          const preEscalationAudit = await auditDownstreamReadiness({
+            specContent: currentProductSpec,
+            downstreamRole: "designer",
+            featureName,
+          }).catch(err => { console.log(`[ESCALATION] pre-escalation audit failed (non-blocking): ${err}`); return null })
+
+          if (preEscalationAudit && !preEscalationAudit.ready && preEscalationAudit.findings.length > 0) {
+            // Merge: existing design-identified questions + audit-identified gaps.
+            // Renumber sequentially so PM gets a clean unified numbered brief.
+            const existingLines = pendingEscalation.question.trim().split("\n").filter(l => l.trim())
+            const auditLines = preEscalationAudit.findings.map(f => f.issue)
+            const allItems = [
+              ...existingLines.map(l => l.replace(/^\d+\.\s*/, "")), // strip existing numbers
+              ...auditLines,
+            ]
+            comprehensiveQuestion = allItems.map((item, i) => `${i + 1}. ${item}`).join("\n")
+            console.log(`[ESCALATION] pre-escalation audit merged ${existingLines.length} design gaps + ${auditLines.length} audit gaps → ${allItems.length} total items in PM brief`)
+          }
+        }
+      }
+
       // Run the PM/Architect agent with the blocking questions as a brief so it produces
       // concrete decisions before the human is notified — not a raw question dump.
       // Brief is forceful and decision-framed: the agent must make calls, not present options.
@@ -304,7 +339,7 @@ For each numbered item, respond with the same number so the human can follow alo
 Do not ask for more context. Do not present multiple options. Do not explain why you cannot decide. Pick the best answer and state it. End with exactly this sentence on its own line: "Once you approve these recommendations, I'll update the product spec to reflect each confirmed decision."${productSpecSection}
 
 BLOCKING ITEMS:
-${pendingEscalation.question}`
+${comprehensiveQuestion}`
 
       const archBrief = `DESIGN TEAM ESCALATION — ARCHITECT RECOMMENDATIONS NEEDED TO UNBLOCK DESIGN.
 
@@ -345,7 +380,7 @@ ${pendingEscalation.question}`
           await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
           // Structural enforcement: verify the response contains a recommendation for every brief item.
           // One enforcement cycle — if the second run also fails, we use whatever was returned.
-          const requiredCount = countBriefItems(pendingEscalation.question)
+          const requiredCount = countBriefItems(comprehensiveQuestion)
           if (countRecommendations(capturedAgentResponse) < requiredCount) {
             console.log(`[ESCALATION] PM recommendation gate failed — expected ${requiredCount}, got ${countRecommendations(capturedAgentResponse)} — re-running with enforcement override`)
             await update("_Giving you concrete recommendations for every item..._")
@@ -376,41 +411,17 @@ ${brief}`
         })
         setEscalationNotification(featureName, { targetAgent: "architect", question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       } else {
-        // PM is an AI agent — the user's "yes" is the authorization. Patch the spec immediately,
-        // then run an adversarial audit on the patched content before resuming design.
-        // If the patched spec still has gaps the designer would have to invent, surface them all
-        // to PM now — one round, not iteratively through the design agent.
-        let patchedSpecContent: string | null = null
+        // PM is an AI agent — the user's "yes" is the authorization.
+        // Pre-escalation audit already ran above and merged all gaps into comprehensiveQuestion.
+        // PM agent already ran with the comprehensive brief in withThinking above.
+        // Just patch the spec and resume design — no loop possible.
         if (capturedAgentResponse) {
-          patchedSpecContent = await patchProductSpecWithRecommendations({
+          await patchProductSpecWithRecommendations({
             featureName,
-            question: pendingEscalation.question,
+            question: comprehensiveQuestion,
             recommendations: capturedAgentResponse,
             humanConfirmation: userMessage,
-          }).catch(err => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
-        }
-
-        // Post-patch adversarial gate: audit patched spec for any remaining designer decision gaps.
-        // Runs only when we have patched content — skips silently if patch failed (non-blocking).
-        if (patchedSpecContent) {
-          const postPatchAudit = await auditDownstreamReadiness({
-            specContent: patchedSpecContent,
-            downstreamRole: "designer",
-            featureName,
-          }).catch(err => { console.log(`[ESCALATION] post-patch audit failed (non-blocking): ${err}`); return null })
-
-          if (postPatchAudit && !postPatchAudit.ready) {
-            // Spec still has gaps — set new pendingEscalation with all remaining gaps, don't resume design.
-            // PM will be called again when user confirms, addressing ALL remaining gaps in one shot.
-            const remainingGaps = postPatchAudit.findings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
-            setPendingEscalation(featureName, { targetAgent: "pm", question: remainingGaps })
-            await client.chat.postMessage({
-              channel: channelId,
-              thread_ts: threadTs,
-              text: `*Product Manager* — Spec updated, but ${postPatchAudit.findings.length} gap${postPatchAudit.findings.length === 1 ? "" : "s"} still need product decisions before design can proceed:\n\n${remainingGaps}\n\nSay *yes* to bring the PM back in to resolve these now.`,
-            }).catch(err => console.log(`[ESCALATION] post-patch gap message failed (non-blocking): ${err}`))
-            return
-          }
+          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
         }
 
         await client.chat.postMessage({
