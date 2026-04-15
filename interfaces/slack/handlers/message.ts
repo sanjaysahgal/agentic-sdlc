@@ -1645,7 +1645,11 @@ async function runDesignAgent(params: {
       // if items remain and progress was made, re-runs automatically (max MAX_FIX_PASSES passes).
       // User never re-engages. Agent prose is suppressed between passes. Platform composes final message.
       let prevItemCount = autoFixItems.length
-      let residualItems = [...autoFixItems]
+      let residualItems: ActionItem[] = []
+      // selectedResidual = intersection of targeted items and fresh audit — tracks only what the
+      // user asked to fix. For "fix all" this equals residualItems. For "fix 1 3" this excludes
+      // other open items the user didn't target, so loop termination and message composition are correct.
+      let selectedResidual = [...autoFixItems]
       let fixAllComplete = false
       let lastFreshBrand = [] as ReturnType<typeof auditBrandTokens>
       let lastFreshAnim = [] as ReturnType<typeof auditAnimationTokens>
@@ -1657,7 +1661,7 @@ async function runDesignAgent(params: {
         if (pass > 1) {
           await update(`_Continuing fix-all (pass ${pass} of ${MAX_FIX_PASSES})..._`)
           enrichedUserMessageDesign = buildEnrichedMessage({ userMessage: `[PLATFORM: fix-all pass ${pass}]`, lockedDecisions: lockedDecisionsDesign, priorContext: "" }) +
-            `\n\n[PLATFORM FIX-ALL PASS ${pass} — ${residualItems.length} item${residualItems.length === 1 ? "" : "s"} still unresolved:\n${residualItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+            `\n\n[PLATFORM FIX-ALL PASS ${pass} — ${selectedResidual.length} item${selectedResidual.length === 1 ? "" : "s"} still unresolved:\n${selectedResidual.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
         }
 
         const passResponse = await runAgent({
@@ -1699,9 +1703,15 @@ async function runDesignAgent(params: {
           ...(lastFreshReadiness && !lastFreshReadiness.ready ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation })) : []),
         ]
 
-        if (residualItems.length === 0) { fixAllComplete = true; break }
-        if (residualItems.length >= prevItemCount) break  // no progress — stop
-        prevItemCount = residualItems.length
+        // selectedResidual: which of the originally-targeted items still remain after this pass.
+        // For "fix all": same as residualItems (all fresh audit findings are targeted).
+        // For "fix 1 3": only the 2 targeted items that still appear in the fresh audit — other
+        // open items (e.g. item 2) are not counted as "no progress" against the target set.
+        selectedResidual = autoFixItems.filter(a => residualItems.some(r => r.issue === a.issue))
+
+        if (selectedResidual.length === 0) { fixAllComplete = true; break }
+        if (selectedResidual.length >= prevItemCount) break  // no progress on targeted items — stop
+        prevItemCount = selectedResidual.length
       }
 
       // Single preview upload after all passes (individual apply_design_spec_patch calls skipped upload)
@@ -1715,19 +1725,20 @@ async function runDesignAgent(params: {
         }).catch(() => {})
       }
 
-      const totalFixed = autoFixItems.length - residualItems.length
+      const totalFixed = autoFixItems.length - selectedResidual.length
       const totalItems = autoFixItems.length + pmGapItems.length
       let fixAllResponse: string
       if (fixAllComplete) {
         fixAllResponse = `Fixed all ${totalItems} item${totalItems === 1 ? "" : "s"}.${patchAppliedThisTurn && lastGeneratedPreviewHtml ? " Preview above." : ""}\n\nSay *approved* to move to engineering.${pmGapItems.length > 0 ? `\n\n_${pmGapItems.length} item${pmGapItems.length === 1 ? "" : "s"} require PM decisions — say *yes* to escalate._` : ""}`
       } else {
-        const residualMenu = buildActionMenu([
-          { emoji: ":art:", label: "Brand Drift", issues: [...lastFreshBrand.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })), ...lastFreshAnim.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` }))] },
-          { emoji: ":jigsaw:", label: "Missing Brand Tokens", issues: lastFreshMissing.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })) },
-          { emoji: ":mag:", label: "Design Quality", issues: lastFreshQualityRaw.map(splitQualityIssue) },
-          { emoji: ":white_check_mark:", label: "Design Readiness Gaps", issues: lastFreshReadiness && !lastFreshReadiness.ready ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation })) : [] },
+        // For partial fix: show only the un-fixed targeted items in the action menu
+        const selectedResidualMenu = buildActionMenu([
+          { emoji: ":art:", label: "Brand Drift", issues: selectedResidual.filter(i => lastFreshBrand.some(d => i.issue.startsWith(d.token))) },
+          { emoji: ":jigsaw:", label: "Missing Brand Tokens", issues: selectedResidual.filter(i => i.issue.includes("not referenced in spec")) },
+          { emoji: ":mag:", label: "Design Quality", issues: selectedResidual.filter(i => lastFreshQualityRaw.map(splitQualityIssue).some(q => q.issue === i.issue)) },
+          { emoji: ":white_check_mark:", label: "Design Readiness Gaps", issues: selectedResidual.filter(i => lastFreshReadiness && !lastFreshReadiness.ready && lastFreshReadiness.findings.some(f => f.issue === i.issue)) },
         ])
-        fixAllResponse = `Fixed ${totalFixed} of ${totalItems} item${totalItems === 1 ? "" : "s"}. ${residualItems.length} item${residualItems.length === 1 ? "" : "s"} still need attention:${residualMenu}`
+        fixAllResponse = `Fixed ${totalFixed} of ${totalItems} item${totalItems === 1 ? "" : "s"}. ${selectedResidual.length} item${selectedResidual.length === 1 ? "" : "s"} still need attention:${selectedResidualMenu}`
       }
 
       await update(`${prefix}${fixAllResponse}`)
