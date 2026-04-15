@@ -17,6 +17,7 @@ import { extractBlockingQuestions, extractAllOpenQuestions, extractDesignAssumpt
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
 import { classifyForArchGap } from "../../../runtime/arch-gap-classifier"
+import { classifyFixIntent } from "../../../runtime/fix-intent-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
 import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
 import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
@@ -1326,7 +1327,18 @@ async function runDesignAgent(params: {
   // Fix-all intent — detected before enriching the message so the PLATFORM FIX-ALL block
   // can be appended with the authoritative item list built from the same pre-run audit data.
   // Same source of truth as buildActionMenu — no drift between what's shown and what's fixed.
-  const fixIntent = parseFixAllIntent(userMessage)
+  // Fast path: keyword match on prescribed format ("fix all", "fix 1 3") — no API cost.
+  // Fallback: Haiku classifier for natural English ("go ahead and fix all of these").
+  // Pre-filter: only run Haiku when message contains a plausible fix-intent word —
+  // avoids adding a Haiku call to every normal turn.
+  // Safe default: Haiku errors → NOT-FIX, never accidentally enters the loop.
+  // Only "fix" and "apply" are unambiguous fix-intent signals that won't appear in
+  // platform-generated briefs (which contain "update", "resolve", "address", etc.).
+  const FIX_PREFILTER = /\b(fix|apply)\b/i
+  let fixIntent = parseFixAllIntent(userMessage)
+  if (!fixIntent.isFixAll && FIX_PREFILTER.test(userMessage)) {
+    fixIntent = await classifyFixIntent(userMessage).catch(() => ({ isFixAll: false, selectedIndices: null }))
+  }
   const allActionItems = [
     ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
     ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
