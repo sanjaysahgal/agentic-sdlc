@@ -33,6 +33,30 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Platform status line suppressed for architect escalations — agent can claim "engineering-ready" with open rubric findings (2026-04-15)
+
+When the design agent calls `offer_architect_escalation`, `escalationJustOffered=true` was suppressing both the action menu AND the platform status line. This let the agent's prose ("Design spec is complete and engineering-ready") go unchallenged even when the rubric showed 10 remaining findings. The suppression was designed for PM escalations (user can't act on design items while PM gap is open) but was incorrectly applied to arch escalations where non-arch design gaps remain.
+
+**Fix:** `escalationJustOfferedPm` replaces `escalationJustOffered` as the platform status line gate — PM escalations suppress the prefix (correct), arch escalations do not (correct). Action menu stays suppressed for all escalations. Fixed in this commit.
+
+---
+
+### `auditSpecRenderAmbiguity` JSON truncation — fails silently on large specs (2026-04-15)
+
+`max_tokens: 500` caused Haiku to truncate its JSON array output at ~500 tokens (~2000 chars). As the design spec grew past 40k chars, every `auditSpecRenderAmbiguity` call failed with unterminated JSON. The repair also failed ("No bracket-delimited content found"). Quality ambiguities were silently dropped — 7 consecutive failures observed in live testing with a 48k-char spec.
+
+**Fix:** Raised `max_tokens` to `2048` in `runtime/spec-auditor.ts`. Fixed in this commit.
+
+---
+
+### Continuation loop — agent runs unbounded tool calls within a single continuation pass (2026-04-15)
+
+The platform's continuation loop gives the agent a free-running turn (no tool call limit, no `maxTokens` cap on `runAgent`). In live testing, the pass-1 continuation ran for 7+ minutes making 7 patches and 3 self-`run_phase_completion_audit` calls. The loop IS bounded at 2 passes, but within each pass the agent can call tools indefinitely. This re-introduces a mild form of "agent controls completion" within the continuation window.
+
+**Fix (deferred):** Pass a `maxToolCalls` cap (e.g., 5) to the continuation `runAgent` call. Or set a timeout on the continuation pass. Low urgency — bounded by 2 passes total regardless.
+
+---
+
 ### Escalation cascade — one pending slot forces multiple user round trips for PM + architect gaps (2026-04-14)
 
 The platform has one `pendingEscalation` slot (PM or architect, never both simultaneously). When a design agent turn has both PM gaps and architect gaps, the PM gap is escalated first; the architect gap is classified but dropped. It resurfaces only when the design agent runs again after PM answers. This creates N separate user-facing round trips (each requiring "yes") where ideally there would be 1: all gaps resolved in sequence automatically.

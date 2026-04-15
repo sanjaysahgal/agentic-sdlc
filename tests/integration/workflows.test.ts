@@ -6457,3 +6457,145 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
     expect(text).not.toContain("OPEN ITEMS")
   })
 })
+
+// ─── N56: Platform status line scope — arch vs PM escalation ──────────────────
+//
+// Platform status prefix ("Platform audit: N items remain") must be visible when
+// an architect escalation fires but design items remain — the arch question does not
+// resolve all design gaps, and the agent must not claim "engineering-ready" unchallenged.
+//
+// For PM escalations, the prefix is correctly suppressed (user cannot act on design
+// items while PM gaps are open).
+describe("Scenario N56 — platform status line: visible for arch escalation, suppressed for PM escalation", () => {
+  const THREAD = "workflow-n56"
+
+  const DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to the app.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("architect escalation with remaining design items — platform status line IS shown", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT).toString("base64"), sha: "abc" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] designReadinessNotice audit → 1 design finding (NOT PM-GAP)
+    //   [3] runAgent: tool_use → offer_architect_escalation
+    //   [4] runAgent: end_turn
+    //   [5] identifyUncommittedDecisions → none (didSave=false: offer_architect_escalation not in designSaveTools)
+    //   Total: 6 calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] pre-run audit: 1 design finding
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Prompt bar height undefined | add 48px height spec" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-56-1", name: "offer_architect_escalation", input: {
+          question: "How is logged-out conversation data stored and recovered after sign-in?",
+        }}],
+      })
+      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Escalated the storage question to the architect." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })     // [5] identifyUncommittedDecisions
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "continue with the design"),
+      client,
+    })
+
+    const text = lastUpdateText(client)
+    // Platform status line MUST appear — arch escalation does not close design gaps
+    expect(text).toContain("Platform audit: 1 item")
+    // Action menu still suppressed (escalation is pending — user cannot act yet)
+    expect(text).not.toContain("OPEN ITEMS")
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+  })
+
+  it("PM escalation with remaining design items — platform status line is suppressed", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT).toString("base64"), sha: "abc" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] designReadinessNotice audit → 1 design finding (NOT PM-GAP)
+    //   [3] runAgent: tool_use → offer_pm_escalation
+    //   [4] classifyForPmGaps (Gate 2 — runs inside offer_pm_escalation tool handler) → 1 GAP accepted
+    //   [5] runAgent: end_turn (agent receives tool result, concludes turn)
+    //   [6] identifyUncommittedDecisions → none (didSave=false)
+    //   Total: 7 calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] pre-run audit: 1 design finding
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Prompt bar height undefined | add 48px height spec" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-56-2", name: "offer_pm_escalation", input: {
+          question: "What is the session expiry duration?",
+        }}],
+      })
+      .mockResolvedValueOnce({                                                   // [4] classifyForPmGaps: 1 PM gap accepted
+        content: [{ type: "text", text: "GAP: What is the session expiry duration?" }],
+      })
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Escalated session expiry to PM." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })     // [6] identifyUncommittedDecisions
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "continue with the design"),
+      client,
+    })
+
+    const text = lastUpdateText(client)
+    // Platform status line MUST be absent for PM escalation (user cannot act on design items yet)
+    expect(text).not.toContain("Platform audit:")
+    // Assertive override fires for PM escalation
+    expect(text).toContain("Design cannot move forward")
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+  })
+})

@@ -2074,10 +2074,16 @@ async function runDesignAgent(params: {
   // Platform status line: authoritative audit count prepended when items remain.
   // Structural condition (action menu non-empty) — no text-pattern detection of agent prose.
   // This ensures the platform's ground truth is always visible regardless of what the agent said.
+  //
+  // Suppression rule: suppress ONLY for PM escalations — user cannot act on design items until
+  // PM gaps close, so showing a count with no action menu is misleading. For architect escalations,
+  // the count stays visible: the arch question does not resolve all design gaps, and the agent
+  // must not be able to claim "engineering-ready" when the rubric shows items remaining.
+  const escalationJustOfferedPm = escalationJustOffered && getPendingEscalation(featureName)?.targetAgent === "pm"
   const totalEffectiveItems = effectiveBrandDrifts.length + effectiveAnimDrifts.length +
     effectiveMissingTokens.length + effectiveDeterministicQuality.length +
     effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).length
-  const platformStatusPrefix = (!escalationJustOffered && totalEffectiveItems > 0)
+  const platformStatusPrefix = (!escalationJustOfferedPm && totalEffectiveItems > 0)
     ? `_Platform audit: ${totalEffectiveItems} item${totalEffectiveItems === 1 ? "" : "s"} remain before engineering handoff._\n\n`
     : ""
 
