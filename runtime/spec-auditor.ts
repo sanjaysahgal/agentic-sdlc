@@ -184,7 +184,7 @@ export async function auditSpecRenderAmbiguity(designSpec: string, options?: { f
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: `You are auditing a design spec for rendering consistency. Identify elements where two different HTML renderers given the same spec would produce different output because the spec doesn't define the value explicitly.
 
 Flag ONLY elements where a renderer must make an unspecified choice:

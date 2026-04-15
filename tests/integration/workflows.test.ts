@@ -6802,3 +6802,113 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     expect(userTurn?.content).toBe("go ahead and fix all of these")
   })
 })
+
+// ─── N59: Fix-all no-progress detection — loop breaks after pass 1 ────────────
+//
+// When the post-pass re-audit returns the same number of findings as before
+// (readiness criteria still failing after the agent's patches), the loop must
+// break after pass 1 rather than running all MAX_FIX_PASSES passes.
+//
+// Root cause of prior bug: selectedResidual used exact-string matching of
+// LLM-generated readiness issue text. The auditor produces different text each
+// call for the same conceptual finding, so mismatches falsely signaled "progress"
+// and the loop ran all 3 passes re-applying the same patches.
+//
+// Fix: for "fix all" (selectedIndices=null), selectedResidual = residualItems
+// directly — fresh count is the authoritative ground truth.
+//
+// This test verifies: 1 finding in, 1 finding out (different text) → break after
+// 1 pass → "Fixed 0 of 1 item" → exactly 8 Anthropic calls (not 16 or 24).
+
+describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass 1 when count unchanged", () => {
+  const THREAD = "workflow-n59"
+
+  const SIMPLE_DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to the app.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("post-pass audit returns same count (different text) → breaks after 1 pass, reports 0 fixed", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence (identical shape to N54, but post-pass audit is NOT PASS):
+    //   [0] isOffTopicForAgent    → false
+    //   [1] isSpecStateQuery      → false
+    //   [2] auditPhaseCompletion pre-run → 1 finding (text A)
+    //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
+    //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → []
+    //   [5] runAgent pass 1 end_turn
+    //   [6] auditSpecRenderAmbiguity post-pass re-audit → []
+    //   [7] auditPhaseCompletion post-pass → 1 finding (text B, different from text A)
+    //       selectedResidual = residualItems (length 1) >= prevItemCount (1) → break
+    // Total: 8 calls. Loop does NOT run pass 2 (would be 8 more calls if it did).
+    //
+    // The different finding text (text B ≠ text A) is the critical part of this test:
+    // it proves the fix uses count-based comparison, not text matching.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] pre-run: 1 finding (text A)
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-59-1", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Applied patch." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
+      .mockResolvedValueOnce({                                                   // [7] post-pass audit: 1 finding (text B — different wording)
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Home screen lacks empty state — no illustration, guidance copy, or CTA defined | specify empty state layout with illustration placeholder and action button" }],
+        stop_reason: "end_turn",
+      })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "fix all"),
+      client,
+    })
+
+    // Loop broke after pass 1 — exactly 8 calls (not 16 or 24 for 2 or 3 passes)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+
+    // Platform reports 0 items fixed (count-based: 1 pre-run → 1 post-pass → no progress)
+    const text = lastUpdateText(client)
+    expect(text).toContain("Fixed 0 of 1 item")
+    // Residual item appears in the action menu
+    expect(text).toContain("OPEN ITEMS")
+
+    // Preview still uploaded (patches were applied even though rubric criteria unmet)
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
+  })
+})

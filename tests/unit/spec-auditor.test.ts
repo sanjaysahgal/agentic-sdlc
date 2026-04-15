@@ -108,12 +108,12 @@ No additional requirements.
     expect(result).toEqual([])
   })
 
-  it("requests at least 2048 max_tokens to avoid truncation on large specs", async () => {
+  it("requests at least 4096 max_tokens to avoid truncation on large specs (≥48KB real specs)", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
     const call = mockCreate.mock.calls[0][0]
-    expect(call.max_tokens).toBeGreaterThanOrEqual(2048)
+    expect(call.max_tokens).toBeGreaterThanOrEqual(4096)
   })
 
   it("Haiku prompt includes animation spec requirement for sheets and modals", async () => {

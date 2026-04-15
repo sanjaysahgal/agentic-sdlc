@@ -1752,10 +1752,18 @@ async function runDesignAgent(params: {
         ]
 
         // selectedResidual: which of the originally-targeted items still remain after this pass.
-        // For "fix all": same as residualItems (all fresh audit findings are targeted).
-        // For "fix 1 3": only the 2 targeted items that still appear in the fresh audit — other
-        // open items (e.g. item 2) are not counted as "no progress" against the target set.
-        selectedResidual = autoFixItems.filter(a => residualItems.some(r => r.issue === a.issue))
+        // For "fix all" (selectedIndices=null): fresh audit IS the ground truth — use residualItems
+        //   directly. Exact-string matching of LLM-generated readiness issue text is unreliable:
+        //   the auditor doesn't produce identical text across calls for the same conceptual finding,
+        //   so matching would falsely detect "progress" when none occurred.
+        // For "fix 1,3" (selectedIndices set): match by issue text to track which numbered items
+        //   the user targeted. Brand/quality text is deterministic; readiness text is still
+        //   unreliable here but this is the best available proxy for targeted-item tracking.
+        if (fixIntent.selectedIndices === null) {
+          selectedResidual = residualItems
+        } else {
+          selectedResidual = autoFixItems.filter(a => residualItems.some(r => r.issue === a.issue))
+        }
 
         if (selectedResidual.length === 0) { fixAllComplete = true; break }
         if (selectedResidual.length >= prevItemCount) break  // no progress on targeted items — stop
