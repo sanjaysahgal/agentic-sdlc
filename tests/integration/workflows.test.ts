@@ -60,7 +60,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }))
 
 
-import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
+import { handleFeatureChannelMessage, clearPhaseAuditCaches } from "../../../interfaces/slack/handlers/message"
 import {
   clearHistory,
   clearLegacyMessages,
@@ -6288,5 +6288,172 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     const history = getHistory("onboarding")
     const userTurn = history.find(m => m.role === "user")
     expect(userTurn?.content).toBe("fix all")
+  })
+})
+
+// ─── N55: Post-patch continuation loop — normal turns auto-complete ────────────
+//
+// Validates the architectural fix for "agent addresses subset of findings" failure class.
+// When the agent makes spec patches in a normal turn (not "fix all"), the platform
+// re-audits from GitHub and automatically continues fixing remaining design items.
+// The user sends one message and gets a single response reflecting ground truth.
+//
+// This test verifies: platform continues for design-only items; does NOT loop for PM-GAP
+// items (those go through Gate 2 escalation); effective data drives the action menu.
+
+describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-completes design items", () => {
+  const THREAD = "workflow-n55"
+
+  const DESIGN_DRAFT_WITH_ISSUE = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to the app.",
+  ].join("\n")
+
+  const DESIGN_DRAFT_CLEAN = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to Health360.\n\n## Empty State\nIllustration + CTA.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("normal agent turn with patches → platform re-audits → continuation pass runs → clean action menu", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // First read (pre-run): original draft with issue
+    // Second read (post-patch): patched draft that still has 1 remaining design item
+    // Third read (post-continuation pass): clean draft
+    let readCount = 0
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        readCount++
+        const content = readCount <= 2 ? DESIGN_DRAFT_WITH_ISSUE : DESIGN_DRAFT_CLEAN
+        return { data: { type: "file", content: Buffer.from(content).toString("base64"), sha: `sha-${readCount}` } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence for normal path with post-patch continuation:
+    //   [0] isOffTopicForAgent       → false
+    //   [1] isSpecStateQuery         → false
+    //   [2] auditPhaseCompletion pre-run → 1 design finding (NOT [PM-GAP])
+    //   [3] runAgent normal turn: tool_use → apply_design_spec_patch
+    //   [4] auditSpecRenderAmbiguity (saveDesignDraft) → []
+    //   [5] runAgent normal turn: end_turn
+    //   [6] Post-patch re-audit: auditPhaseCompletion → 1 finding remains (designResidual.length=1)
+    //   [7] Continuation pass agent: end_turn
+    //   [8] Post-continuation re-audit: auditPhaseCompletion → PASS
+    // identifyUncommittedDecisions: SKIPPED (didSave=true, apply_design_spec_patch in designSaveTools)
+    // Gate 4 (classifyForPmGaps): SKIPPED (didSave=true guard at line 1997)
+    // Total: 9 Anthropic calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] pre-run audit: 1 design finding
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state | add illustration and CTA" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-55-1", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\n### Home\nDescription: Welcome to Health360.",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Updated the Home screen description." }],
+      })
+      .mockResolvedValueOnce({                                                   // [6] post-patch re-audit: 1 still remains
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state | add illustration and CTA" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [7] continuation pass: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Added empty state." }],
+      })
+      .mockResolvedValueOnce({                                                   // [8] post-continuation re-audit: PASS
+        content: [{ type: "text", text: "PASS" }],
+        stop_reason: "end_turn",
+      })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "update the home screen"),
+      client,
+    })
+
+    // Platform status line should be ABSENT — all items resolved by continuation
+    const text = lastUpdateText(client)
+    expect(text).not.toContain("Platform audit:")
+    // No action menu — spec is clean after continuation
+    expect(text).not.toContain("OPEN ITEMS")
+
+    // Exactly 9 Anthropic calls (identifyUncommittedDecisions and Gate 4 skipped: didSave=true)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
+  })
+
+  it("normal agent turn with patches — PM-GAP finding NOT fixed in continuation, surfaces via Gate 2 escalation", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT_WITH_ISSUE).toString("base64"), sha: "abc" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Post-patch audit returns a PM-GAP finding → continuation loop skips it (PM gaps need escalation)
+    // → Gate 2 fires and sets pending escalation
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // pre-run audit: PM-GAP finding
+        content: [{ type: "text", text: "FINDING: [PM-GAP] [blocking: yes] Session expiry behavior undefined | PM must decide timeout duration" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-55-2", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\n### Home\nDescription: Welcome to Health360.",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({                                                   // runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Updated home screen. PM decision needed." }],
+      })
+      .mockResolvedValueOnce({                                                   // post-patch re-audit: PM-GAP survives
+        content: [{ type: "text", text: "FINDING: [PM-GAP] [blocking: yes] Session expiry behavior undefined | PM must decide" }],
+        stop_reason: "end_turn",
+      })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "update the home screen"),
+      client,
+    })
+
+    // Gate 2 fires — PM escalation message shown, not a fixable action menu
+    const text = lastUpdateText(client)
+    expect(text).toContain("Design cannot move forward")
+    expect(text).not.toContain("OPEN ITEMS")
   })
 })

@@ -47,6 +47,13 @@ function specFingerprint(content: string): string {
   return `${content.length}:${content.slice(0, 100)}:${content.slice(-50)}`
 }
 
+// Exported for test isolation only — clears module-level audit caches between test runs.
+// Never call in production code.
+export function clearPhaseAuditCaches(): void {
+  phaseEntryAuditCache.clear()
+  designReadinessFindingsCache.clear()
+}
+
 
 // Detects when the design agent correctly identified PM gaps in prose but did not call
 // offer_pm_escalation. Signals: response contains PM-escalation language — either an explicit
@@ -1436,6 +1443,13 @@ async function runDesignAgent(params: {
   // Tool handler extracted as named const so the fix-all loop can reuse it across passes
   // without re-creating the closure on each call.
   const designToolHandler = readOnly ? undefined : async (name: string, input: Record<string, unknown>) => {
+      // During fix-all passes, block escalation tool calls — they would set stale pending state
+      // that persists after the loop exits. The fix-all contract is: only spec patches this turn.
+      // Any PM/architect gaps will surface in the action menu after fix-all completes.
+      if (fixIntent.isFixAll && (name === "offer_pm_escalation" || name === "offer_architect_escalation")) {
+        console.log(`[FIX-ALL] Blocked ${name} during fix-all — deferring to post-loop action menu`)
+        return { result: `[Fix-all mode] Escalation tools are suspended during fix-all passes. Apply all spec patches first via apply_design_spec_patch. Any PM or architect gaps will be surfaced in the structured action menu after fix-all completes — do not call escalation tools.` }
+      }
       if (name === "save_design_spec_draft") {
         return saveDesignDraft(input.content as string)
       }
@@ -1637,6 +1651,16 @@ async function runDesignAgent(params: {
       return { error: `Unknown tool: ${name}` }
   }
 
+  // Effective audit variables — initialized from pre-run audit data.
+  // The post-patch continuation loop (below, in the normal path) updates these to reflect
+  // the spec state AFTER the agent's patches, replacing stale pre-run data.
+  // All downstream consumers (Gate 2, action menu, platform status line) read these.
+  let effectiveBrandDrifts = brandDriftsDesign
+  let effectiveAnimDrifts = animDriftsDesign
+  let effectiveMissingTokens = missingTokensDesign
+  let effectiveDeterministicQuality = qualityIssues  // strings, not ActionItems
+  let effectiveReadinessFindings = designReadinessFindings
+
   let response: string
   try {
     if (fixIntent.isFixAll && autoFixItems.length > 0) {
@@ -1756,6 +1780,99 @@ async function runDesignAgent(params: {
       toolHandler: designToolHandler,
       toolCallsOut: toolCallsOutDesign,
     })
+
+    // Post-patch platform continuation loop — extends platform-owned completion to ALL normal-path
+    // patch-producing turns, not just explicit "fix all" requests.
+    //
+    // Root cause this closes: the agent decides which subset of findings to address per turn.
+    // This is prompt-dependent behavior — a behavior that "usually works" is not shippable.
+    //
+    // Fix: after the agent makes any spec patches, the PLATFORM re-audits from GitHub (fresh,
+    // not stale pre-run data) and automatically continues fixing remaining design items (brand
+    // drift, quality, rubric gaps without [PM-GAP] tag). PM/architect gaps are left for the
+    // escalation gates below — they require user decisions, not more agent passes.
+    //
+    // Completion is structurally verified by the platform (re-audit after each pass), not by
+    // trusting the agent's prose claims. Max 2 continuation passes to bound latency.
+    if (patchAppliedThisTurn && !readOnly) {
+      const runFreshDesignAudit = async (draft: string) => {
+        const freshBrand = context.brand ? auditBrandTokens(draft, context.brand) : []
+        const freshAnim = context.brand ? auditAnimationTokens(draft, context.brand) : []
+        const freshMissing = context.brand ? auditMissingBrandTokens(draft, context.brand) : []
+        const freshDeterministicQuality = [...auditRedundantBranding(draft), ...auditCopyCompleteness(draft)]
+        const freshReadiness = await auditPhaseCompletion({
+          specContent: draft,
+          rubric: buildDesignRubric(targetFormFactors),
+          featureName,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+          approvedProductSpec: context.approvedProductSpec,
+        }).catch(() => null)
+        return { freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness }
+      }
+
+      let freshDraft = await readFile(designFilePath, designBranchName).catch(() => null)
+      if (freshDraft) {
+        let { freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness } = await runFreshDesignAudit(freshDraft)
+
+        // Design-only residual: everything that isn't a PM-GAP (which needs escalation, not more patches)
+        const computeDesignResidual = (
+          b: ReturnType<typeof auditBrandTokens>,
+          a: ReturnType<typeof auditAnimationTokens>,
+          m: ReturnType<typeof auditMissingBrandTokens>,
+          q: string[],
+          r: Awaited<ReturnType<typeof auditPhaseCompletion>> | null,
+        ): ActionItem[] => [
+          ...b.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+          ...a.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+          ...m.map(m2 => ({ issue: `${m2.token} not referenced in spec`, fix: `add with value \`${m2.brandValue}\`` })),
+          ...q.map(splitQualityIssue),
+          ...(r && !r.ready ? r.findings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })) : []),
+        ]
+
+        let designResidual = computeDesignResidual(freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
+        let contPrevCount = designResidual.length
+
+        for (let contPass = 1; contPass <= 2 && designResidual.length > 0; contPass++) {
+          await update(`_Platform: ${designResidual.length} item${designResidual.length === 1 ? "" : "s"} remain after patches — continuing..._`)
+          const continuationMsg = buildEnrichedMessage({ userMessage: `[PLATFORM: continuation pass ${contPass}]`, lockedDecisions: lockedDecisionsDesign, priorContext: "" }) +
+            `\n\n[PLATFORM CONTINUATION — ${designResidual.length} design item${designResidual.length === 1 ? "" : "s"} still unresolved after your patches. Apply ALL remaining fixes via apply_design_spec_patch. Do not ask for confirmation. Output ≤2 sentences after all patches complete.\n${designResidual.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+
+          const contResponse = await runAgent({
+            systemPrompt,
+            history: historyDesign,
+            userMessage: continuationMsg,
+            userImages: [],
+            historyLimit: DESIGN_HISTORY_LIMIT,
+            tools: readOnly ? undefined : DESIGN_TOOLS,
+            toolHandler: designToolHandler,
+            toolCallsOut: toolCallsOutDesign,
+          })
+
+          appendMessage(featureName, { role: "user", content: `[PLATFORM: continuation pass ${contPass}]` })
+          appendMessage(featureName, { role: "assistant", content: contResponse })
+
+          freshDraft = await readFile(designFilePath, designBranchName).catch(() => null)
+          if (!freshDraft) break
+
+          ;({ freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness } = await runFreshDesignAudit(freshDraft))
+          designResidual = computeDesignResidual(freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
+          if (designResidual.length >= contPrevCount) break  // no progress — stop
+          contPrevCount = designResidual.length
+        }
+
+        // Propagate fresh audit state to all downstream consumers:
+        // Gate 2 (PM gap check), Gate 4 (Haiku classifier), action menu, and platform status line.
+        // This is the critical correctness step: stale pre-run data showed items the agent just fixed.
+        // designReadinessFindings is `let` — reassign it so Gate 2 reads post-patch PM gaps.
+        effectiveBrandDrifts = freshBrand
+        effectiveAnimDrifts = freshAnim
+        effectiveMissingTokens = freshMissing
+        effectiveDeterministicQuality = freshDeterministicQuality
+        effectiveReadinessFindings = freshReadiness && !freshReadiness.ready ? freshReadiness.findings : []
+        designReadinessFindings = effectiveReadinessFindings
+      }
+    }
   } catch (err: unknown) {
     // If a save tool already ran successfully, the spec is on GitHub — the error happened
     // in the final end-turn Anthropic call (generating the summary text), not in the save.
@@ -1921,36 +2038,50 @@ async function runDesignAgent(params: {
 
   appendMessage(featureName, { role: "assistant", content: finalResponse })
 
-  // Platform-enforced structured action menu — built from pre-computed audit data, appended
-  // after the agent prose. This is structural (not a system prompt instruction) so it appears
-  // on every response that has open issues regardless of how the agent phrased things.
+  // Platform-enforced structured action menu — built from EFFECTIVE audit data (post-patch
+  // if the agent made patches this turn; pre-run otherwise). Effective variables are kept in
+  // sync with the actual spec state, so the action menu reflects what actually remains rather
+  // than stale pre-run findings that the agent may have already fixed.
   const actionMenu = escalationJustOffered ? "" : buildActionMenu([
     {
       emoji: ":art:",
       label: "Brand Drift",
       issues: [
-        ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
-        ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+        ...effectiveBrandDrifts.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+        ...effectiveAnimDrifts.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
       ],
     },
     {
       emoji: ":jigsaw:",
       label: "Missing Brand Tokens",
-      issues: missingTokensDesign.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
+      issues: effectiveMissingTokens.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
     },
     {
       emoji: ":mag:",
       label: "Design Quality",
-      issues: qualityIssues.map(splitQualityIssue),
+      issues: effectiveDeterministicQuality.map(splitQualityIssue),
     },
     {
       emoji: ":white_check_mark:",
       label: "Design Readiness Gaps",
-      issues: designReadinessFindings.map(f => ({ issue: f.issue, fix: f.recommendation })),
+      // Filter out PM-GAP items — they are handled by the escalation gates (Gate 2/N18).
+      // Showing them in the action menu when escalation is NOT pending is misleading since
+      // the user can't "fix 1" a PM decision — only escalate it.
+      issues: effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })),
     },
   ])
 
-  await update(`${prefix}${finalResponse}${uncommittedNote}${actionMenu}`)
+  // Platform status line: authoritative audit count prepended when items remain.
+  // Structural condition (action menu non-empty) — no text-pattern detection of agent prose.
+  // This ensures the platform's ground truth is always visible regardless of what the agent said.
+  const totalEffectiveItems = effectiveBrandDrifts.length + effectiveAnimDrifts.length +
+    effectiveMissingTokens.length + effectiveDeterministicQuality.length +
+    effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).length
+  const platformStatusPrefix = (!escalationJustOffered && totalEffectiveItems > 0)
+    ? `_Platform audit: ${totalEffectiveItems} item${totalEffectiveItems === 1 ? "" : "s"} remain before engineering handoff._\n\n`
+    : ""
+
+  await update(`${prefix}${platformStatusPrefix}${finalResponse}${uncommittedNote}${actionMenu}`)
 }
 
 async function runArchitectAgent(params: {

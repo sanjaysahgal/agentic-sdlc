@@ -47,26 +47,21 @@ Additionally, the agent only surfaces a subset of audit findings per turn. On a 
 
 ---
 
-### `offer_pm_escalation` blocked during fix-all — stale escalation persists after loop exits (2026-04-14)
+~~### `offer_pm_escalation` blocked during fix-all — stale escalation persists after loop exits (2026-04-14)~~ ✅ Done (2026-04-14)
 
-During the fix-all loop, the design agent called `offer_pm_escalation` (a new PM question it identified while patching). The fix-all loop used the same `designToolHandler` which executes the escalation tool and calls `setPendingEscalation`. The fix-all path exits via `return` before the normal post-agent escalation handling — but the pending escalation state is still set. On the next user message, the platform sees the pending escalation and surfaces it, even though the user expected a clean "fix all" completion.
-
-**Fix:** In fix-all mode, the tool handler should block all tool calls except `apply_design_spec_patch`. When `offer_pm_escalation` is called in fix-all mode, return a message to the agent: "Fix-all mode: only `apply_design_spec_patch` is permitted in this pass. Note this as a PM question for after fix-all completes." Do NOT call `setPendingEscalation`. After the fix-all loop completes, if any PM questions were noted, surface them separately.
-
-**Location:** `designToolHandler` in `interfaces/slack/handlers/message.ts` — add a guard at the top of the handler when `fixIntent.isFixAll` is true.
+Fix-all tool guard added at top of `designToolHandler`: when `fixIntent.isFixAll`, any call to `offer_pm_escalation` or `offer_architect_escalation` is immediately blocked with a structured message directing the agent to only use `apply_design_spec_patch`. `setPendingEscalation` is never called during fix-all passes. PM/architect gaps identified during fix-all are surfaced in the action menu after the loop exits (built from `residualItems`). N55 test 1 + N55 test 2 cover the complete scenario.
 
 ---
 
-### Agent prose contradicts platform audit — misleads user when items remain (2026-04-14)
+~~### Agent prose contradicts platform audit — misleads user when items remain (2026-04-14)~~ ✅ Done (2026-04-14)
 
-In the normal (non-fix-all) path, after the design agent runs and patches the spec, the agent's closing prose can claim "The spec is engineering-ready" or blame the platform ("the audit may have cached an older version") even when the platform audit shows 13 open items. The platform output is correct, but the agent's prose actively undermines trust.
+Platform status line added: when `totalEffectiveItems > 0` after a turn (computed from effective audit variables, not stale pre-run data), the platform prepends `_Platform audit: N items remain before engineering handoff._` before the agent response. Fires on structural condition (`totalEffectiveItems > 0`) — no text-pattern detection. Also fixed the root cause: post-patch continuation loop (see below) means effective items are usually 0 after patches, making the status line a rare safety net rather than a routine occurrence.
 
-**Fix:** When the action menu is non-empty (residual items exist), the platform prepends its own authoritative status line before the agent response:
-`_Platform audit: N items remain before engineering handoff._`
+---
 
-This fires on the structural condition (action menu non-empty) — no text-pattern detection of agent prose needed. The platform's line visually contradicts the agent's claim and makes the authoritative state clear. Optionally: strip the agent's final paragraph when it contains "engineering-ready" or "ready to approve" — but the prepend alone closes the trust gap.
+~~### Post-patch continuation loop — normal turns must not hand completion back to the agent (2026-04-14)~~ ✅ Done (2026-04-14)
 
-**Location:** `interfaces/slack/handlers/message.ts` — in the normal-path `await update(...)` call, when `buildActionMenu(...)` returns non-empty string.
+Root cause: every normal design agent turn handed completion control back to the agent. The agent addressed whatever subset of findings it chose per turn — prompt-dependent behavior that cannot be shipped. Fix: when any `apply_design_spec_patch` runs in a normal (non-fix-all) turn, the platform re-audits from GitHub (fresh read, never stale `currentDraft`) and runs up to 2 additional continuation passes if design items remain. Loop terminates on clean audit or no-progress (same count as previous pass). PM-GAP items excluded from continuation — those go through Gate 2 escalation. Effective variables (`effectiveBrandDrifts`, `effectiveAnimDrifts`, `effectiveMissingTokens`, `effectiveDeterministicQuality`, `effectiveReadinessFindings`) propagate fresh post-patch state to Gate 2, action menu, and platform status line — stale pre-run data is never surfaced after patches. `clearPhaseAuditCaches()` exported from `message.ts` for test isolation. N55 integration scenario (2 tests) added.
 
 ---
 
