@@ -113,7 +113,7 @@ Updated screen content.`
     expect(result).toContain("Open Questions")
   })
 
-  it("handles subsections (### headings) correctly — treats ## section as atomic unit", () => {
+  it("subsection-level merge — patch of one ### preserves sibling ### sections", () => {
     const existing = `# Feature — Design Spec
 
 ## Screens
@@ -121,16 +121,50 @@ Updated screen content.`
 Original Screen 1 content.
 
 ### Screen 2
-Screen 2 content.`
+Screen 2 content.
+
+### Screen 3
+Screen 3 content.`
 
     const patch = `## Screens
 ### Screen 1
-updated`
+updated content for screen 1`
 
     const result = applySpecPatch(existing, patch)
-    // The entire ## Screens section is replaced with the patch version
-    expect(result).toContain("### Screen 1\nupdated")
-    // Screen 2 is gone because the patch replaced the entire ## Screens section
-    expect(result).not.toContain("Screen 2 content.")
+    // Patched subsection is updated
+    expect(result).toContain("### Screen 1\nupdated content for screen 1")
+    // Sibling subsections are preserved — this was the bug
+    expect(result).toContain("Screen 2 content.")
+    expect(result).toContain("Screen 3 content.")
+  })
+
+  it("subsection-level merge — new ### subsection is appended, existing preserved", () => {
+    const existing = `# Feature — Design Spec
+
+## Screens
+### Screen 1
+Existing screen 1 content.`
+
+    const patch = `## Screens
+### Screen 2
+New screen 2 content.`
+
+    const result = applySpecPatch(existing, patch)
+    expect(result).toContain("Existing screen 1 content.")
+    expect(result).toContain("New screen 2 content.")
+  })
+
+  it("flat ## section with no ### subsections still replaces wholesale", () => {
+    const existing = `# Feature — Design Spec
+
+## Screens
+flat content, no subsections`
+
+    const patch = `## Screens
+updated flat content`
+
+    const result = applySpecPatch(existing, patch)
+    expect(result).toContain("updated flat content")
+    expect(result).not.toContain("flat content, no subsections")
   })
 })

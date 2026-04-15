@@ -222,18 +222,20 @@ Return ONLY the JSON array, no preamble or explanation.`,
     messages: [{ role: "user", content: designSpec }],
   })
 
-  const text = response.content[0].type === "text" ? response.content[0].text.trim() : "[]"
+  const rawText = response.content[0].type === "text" ? response.content[0].text.trim() : "[]"
+  // Strip markdown code fences before parsing — LLM sometimes wraps output in ```json ... ```
+  const text = rawText.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim()
   let llmAmbiguities: string[] = []
   try {
     const parsed = JSON.parse(text)
     llmAmbiguities = Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
   } catch (e) {
     console.warn(`[auditSpecRenderAmbiguity] JSON parse failed on LLM output: "${text.slice(0, 120)}". Error: ${e instanceof Error ? e.message : String(e)}. Attempting repair...`)
-    // Attempt to extract a JSON array from within the output (LLM sometimes adds preamble/postamble)
-    const bracketMatch = text.match(/\[\s*([\s\S]*?)\s*\]/)
+    // Attempt to extract a JSON array from within the output using greedy match to capture full array
+    const bracketMatch = text.match(/\[[\s\S]*\]/)
     if (bracketMatch) {
       try {
-        const repaired = JSON.parse(`[${bracketMatch[1]}]`)
+        const repaired = JSON.parse(bracketMatch[0])
         llmAmbiguities = Array.isArray(repaired) ? repaired.filter((s): s is string => typeof s === "string") : []
         console.warn(`[auditSpecRenderAmbiguity] JSON repair succeeded. Extracted ${llmAmbiguities.length} finding(s).`)
       } catch {
