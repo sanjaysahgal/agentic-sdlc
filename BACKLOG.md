@@ -33,6 +33,16 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### `offer_pm_escalation` blocked during fix-all — stale escalation persists after loop exits (2026-04-14)
+
+During the fix-all loop, the design agent called `offer_pm_escalation` (a new PM question it identified while patching). The fix-all loop used the same `designToolHandler` which executes the escalation tool and calls `setPendingEscalation`. The fix-all path exits via `return` before the normal post-agent escalation handling — but the pending escalation state is still set. On the next user message, the platform sees the pending escalation and surfaces it, even though the user expected a clean "fix all" completion.
+
+**Fix:** In fix-all mode, the tool handler should block all tool calls except `apply_design_spec_patch`. When `offer_pm_escalation` is called in fix-all mode, return a message to the agent: "Fix-all mode: only `apply_design_spec_patch` is permitted in this pass. Note this as a PM question for after fix-all completes." Do NOT call `setPendingEscalation`. After the fix-all loop completes, if any PM questions were noted, surface them separately.
+
+**Location:** `designToolHandler` in `interfaces/slack/handlers/message.ts` — add a guard at the top of the handler when `fixIntent.isFixAll` is true.
+
+---
+
 ### Agent prose contradicts platform audit — misleads user when items remain (2026-04-14)
 
 In the normal (non-fix-all) path, after the design agent runs and patches the spec, the agent's closing prose can claim "The spec is engineering-ready" or blame the platform ("the audit may have cached an older version") even when the platform audit shows 13 open items. The platform output is correct, but the agent's prose actively undermines trust.
