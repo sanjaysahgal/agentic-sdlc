@@ -146,6 +146,21 @@ function isStandaloneConfirmation(message: string): boolean {
   return true
 }
 
+// Detects "fix all" / "fix 1 2 3" / "fix 1, 2, 3" intent from platform-prescribed structured input.
+// No Haiku — this is machine-prescribed format, not human free-text. Keywords are valid here.
+// Returns isFixAll=true when the platform should run the fix-all loop, with optional selectedIndices
+// (null = fix everything, array = fix specific 1-based item numbers from the action menu).
+export function parseFixAllIntent(message: string): { isFixAll: boolean; selectedIndices: number[] | null } {
+  const trimmed = message.toLowerCase().trim()
+  if (/^fix\s+all\b/.test(trimmed)) return { isFixAll: true, selectedIndices: null }
+  const indexMatch = trimmed.match(/^fix\s+([\d\s,]+)$/)
+  if (indexMatch) {
+    const indices = indexMatch[1].split(/[\s,]+/).map(Number).filter(n => n > 0)
+    if (indices.length > 0) return { isFixAll: true, selectedIndices: indices }
+  }
+  return { isFixAll: false, selectedIndices: null }
+}
+
 
 // Returns the current phase of a feature by reading GitHub state.
 // Falls back to "product-spec-in-progress" if GitHub is unavailable.
@@ -1167,6 +1182,7 @@ async function runDesignAgent(params: {
   await update("_UX Designer is reading the spec and design context..._")
   const historyDesign = getHistory(featureName)
   const DESIGN_HISTORY_LIMIT = 20
+  const MAX_FIX_PASSES = 3
   const [context, lockedDecisionsDesign, priorContextDesign] = await Promise.all([
     loadDesignAgentContext(featureName),
     extractLockedDecisions(historyDesign).catch(() => ""),
@@ -1297,7 +1313,28 @@ async function runDesignAgent(params: {
     }
   }
 
-  const enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice
+  // Fix-all intent — detected before enriching the message so the PLATFORM FIX-ALL block
+  // can be appended with the authoritative item list built from the same pre-run audit data.
+  // Same source of truth as buildActionMenu — no drift between what's shown and what's fixed.
+  const fixIntent = parseFixAllIntent(userMessage)
+  const allActionItems = [
+    ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+    ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+    ...missingTokensDesign.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
+    ...qualityIssues.map(splitQualityIssue),
+    ...designReadinessFindings.map(f => ({ issue: f.issue, fix: f.recommendation })),
+  ]
+  const itemsToFix = !fixIntent.isFixAll ? [] :
+    fixIntent.selectedIndices
+      ? allActionItems.filter((_, i) => fixIntent.selectedIndices!.includes(i + 1))
+      : allActionItems
+  const autoFixItems = itemsToFix.filter(item => !item.issue.includes("[PM-GAP]"))
+  const pmGapItems = itemsToFix.filter(item => item.issue.includes("[PM-GAP]"))
+  const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
+    ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+    : ""
+
+  let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice
   const systemPrompt = buildDesignSystemBlocks(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -1396,16 +1433,9 @@ async function runDesignAgent(params: {
   // audit below can reference the same constant without duplication.
   const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
 
-  let response: string
-  try {
-    response = await runAgent({
-    systemPrompt,
-    history: historyDesign,
-    userMessage: enrichedUserMessageDesign,
-    userImages,
-    historyLimit: DESIGN_HISTORY_LIMIT,
-    tools: readOnly ? undefined : DESIGN_TOOLS,
-    toolHandler: readOnly ? undefined : async (name, input) => {
+  // Tool handler extracted as named const so the fix-all loop can reuse it across passes
+  // without re-creating the closure on each call.
+  const designToolHandler = readOnly ? undefined : async (name: string, input: Record<string, unknown>) => {
       if (name === "save_design_spec_draft") {
         return saveDesignDraft(input.content as string)
       }
@@ -1605,9 +1635,116 @@ async function runDesignAgent(params: {
         return { result: { url, nextPhase: "engineering" } }
       }
       return { error: `Unknown tool: ${name}` }
-    },
-    toolCallsOut: toolCallsOutDesign,
-  })
+  }
+
+  let response: string
+  try {
+    if (fixIntent.isFixAll && autoFixItems.length > 0) {
+      // Platform-controlled fix-all completion loop (Embodiment 13).
+      // Platform extracts authoritative item list → runs agent → re-audits from fresh GitHub read →
+      // if items remain and progress was made, re-runs automatically (max MAX_FIX_PASSES passes).
+      // User never re-engages. Agent prose is suppressed between passes. Platform composes final message.
+      let prevItemCount = autoFixItems.length
+      let residualItems = [...autoFixItems]
+      let fixAllComplete = false
+      let lastFreshBrand = [] as ReturnType<typeof auditBrandTokens>
+      let lastFreshAnim = [] as ReturnType<typeof auditAnimationTokens>
+      let lastFreshMissing = [] as ReturnType<typeof auditMissingBrandTokens>
+      let lastFreshQualityRaw: string[] = []
+      let lastFreshReadiness: Awaited<ReturnType<typeof auditPhaseCompletion>> | null = null
+
+      for (let pass = 1; pass <= MAX_FIX_PASSES; pass++) {
+        if (pass > 1) {
+          await update(`_Continuing fix-all (pass ${pass} of ${MAX_FIX_PASSES})..._`)
+          enrichedUserMessageDesign = buildEnrichedMessage({ userMessage: `[PLATFORM: fix-all pass ${pass}]`, lockedDecisions: lockedDecisionsDesign, priorContext: "" }) +
+            `\n\n[PLATFORM FIX-ALL PASS ${pass} — ${residualItems.length} item${residualItems.length === 1 ? "" : "s"} still unresolved:\n${residualItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+        }
+
+        const passResponse = await runAgent({
+          systemPrompt,
+          history: historyDesign,
+          userMessage: enrichedUserMessageDesign,
+          userImages: pass === 1 ? userImages : [],
+          historyLimit: DESIGN_HISTORY_LIMIT,
+          tools: readOnly ? undefined : DESIGN_TOOLS,
+          toolHandler: designToolHandler,
+          toolCallsOut: toolCallsOutDesign,
+        })
+
+        appendMessage(featureName, { role: "user", content: pass === 1 ? userMessage : `[PLATFORM: fix-all pass ${pass}]` })
+        appendMessage(featureName, { role: "assistant", content: passResponse })
+
+        // Re-audit from fresh GitHub read — currentDraft is stale after patches
+        const freshDraft = await readFile(designFilePath, designBranchName).catch(() => null)
+        if (!freshDraft) break
+
+        lastFreshBrand = context.brand ? auditBrandTokens(freshDraft, context.brand) : []
+        lastFreshAnim = context.brand ? auditAnimationTokens(freshDraft, context.brand) : []
+        lastFreshMissing = context.brand ? auditMissingBrandTokens(freshDraft, context.brand) : []
+        lastFreshQualityRaw = await auditSpecRenderAmbiguity(freshDraft, { formFactors: targetFormFactors }).catch(() => [] as string[])
+        lastFreshReadiness = await auditPhaseCompletion({
+          specContent: freshDraft,
+          rubric: buildDesignRubric(targetFormFactors),
+          featureName,
+          productVision: context.productVision,
+          systemArchitecture: context.systemArchitecture,
+          approvedProductSpec: context.approvedProductSpec,
+        }).catch(() => null)
+
+        residualItems = [
+          ...lastFreshBrand.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+          ...lastFreshAnim.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
+          ...lastFreshMissing.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
+          ...lastFreshQualityRaw.map(splitQualityIssue),
+          ...(lastFreshReadiness && !lastFreshReadiness.ready ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation })) : []),
+        ]
+
+        if (residualItems.length === 0) { fixAllComplete = true; break }
+        if (residualItems.length >= prevItemCount) break  // no progress — stop
+        prevItemCount = residualItems.length
+      }
+
+      // Single preview upload after all passes (individual apply_design_spec_patch calls skipped upload)
+      if (patchAppliedThisTurn && lastGeneratedPreviewHtml) {
+        client.files.uploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          content: lastGeneratedPreviewHtml,
+          filename: `${featureName}.preview.html`,
+          title: `${featureName} — Design Preview`,
+        }).catch(() => {})
+      }
+
+      const totalFixed = autoFixItems.length - residualItems.length
+      const totalItems = autoFixItems.length + pmGapItems.length
+      let fixAllResponse: string
+      if (fixAllComplete) {
+        fixAllResponse = `Fixed all ${totalItems} item${totalItems === 1 ? "" : "s"}.${patchAppliedThisTurn && lastGeneratedPreviewHtml ? " Preview above." : ""}\n\nSay *approved* to move to engineering.${pmGapItems.length > 0 ? `\n\n_${pmGapItems.length} item${pmGapItems.length === 1 ? "" : "s"} require PM decisions — say *yes* to escalate._` : ""}`
+      } else {
+        const residualMenu = buildActionMenu([
+          { emoji: ":art:", label: "Brand Drift", issues: [...lastFreshBrand.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })), ...lastFreshAnim.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` }))] },
+          { emoji: ":jigsaw:", label: "Missing Brand Tokens", issues: lastFreshMissing.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })) },
+          { emoji: ":mag:", label: "Design Quality", issues: lastFreshQualityRaw.map(splitQualityIssue) },
+          { emoji: ":white_check_mark:", label: "Design Readiness Gaps", issues: lastFreshReadiness && !lastFreshReadiness.ready ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation })) : [] },
+        ])
+        fixAllResponse = `Fixed ${totalFixed} of ${totalItems} item${totalItems === 1 ? "" : "s"}. ${residualItems.length} item${residualItems.length === 1 ? "" : "s"} still need attention:${residualMenu}`
+      }
+
+      await update(`${prefix}${fixAllResponse}`)
+      return
+    }
+
+    // Normal path (non-fix-all)
+    response = await runAgent({
+      systemPrompt,
+      history: historyDesign,
+      userMessage: enrichedUserMessageDesign,
+      userImages,
+      historyLimit: DESIGN_HISTORY_LIMIT,
+      tools: readOnly ? undefined : DESIGN_TOOLS,
+      toolHandler: designToolHandler,
+      toolCallsOut: toolCallsOutDesign,
+    })
   } catch (err: unknown) {
     // If a save tool already ran successfully, the spec is on GitHub — the error happened
     // in the final end-turn Anthropic call (generating the summary text), not in the save.

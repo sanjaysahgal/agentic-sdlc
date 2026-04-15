@@ -6184,3 +6184,109 @@ describe("Scenario N53 — Multi-patch turn posts exactly one preview", () => {
     expect(uploadCall.filename).toBe("onboarding.preview.html")
   })
 })
+
+// ─── N54: Fix-all completion loop — platform-controlled multi-pass fix-and-verify ──
+//
+// Validates Embodiment 13: platform extracts authoritative item list → runs agent →
+// re-audits from fresh GitHub read → posts to Slack only when audit is clean.
+// Agent prose is suppressed between passes. Platform composes the final message.
+// User says "fix all" once and gets a single response: "Fixed all N items."
+
+describe("Scenario N54 — fix-all completion loop: platform composes result, never trusts agent self-report", () => {
+  const THREAD = "workflow-n54"
+
+  // Design spec draft with no quality issues (no [TBD] brackets, no narrative copy problems).
+  // Only the readiness finding (from mocked auditPhaseCompletion) contributes to allActionItems.
+  // Note: auditSpecRenderAmbiguity runs auditCopyCompleteness deterministically in addition to LLM.
+  // Using a clean draft ensures zero deterministic quality issues so residualItems=[] after fix.
+  const SIMPLE_DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to the app.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+  })
+
+  it("'fix all' with 1 open readiness item → loop runs → 'Fixed all 1 item' when post-pass audit is clean", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // GitHub: simple design spec draft on design branch (no quality issues).
+    // All other file reads (productVision, systemArchitecture, PM spec, etc.) → 404.
+    // auditSpecDraft skips LLM call when productVision/systemArchitecture/productSpec are all null.
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent    → false
+    //   [1] isSpecStateQuery      → false
+    //   [2] auditPhaseCompletion pre-run (design readiness, cache miss) → 1 finding
+    //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
+    //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
+    //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → [] (no render issues)
+    //   [5] runAgent pass 1 end_turn
+    //   [6] auditSpecRenderAmbiguity post-pass re-audit → [] (patched draft is clean)
+    //   [7] auditPhaseCompletion post-pass → PASS (ready: true, no findings)
+    // Total: 8 Anthropic calls. No identifyUncommittedDecisions — fix-all path returns early.
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] auditPhaseCompletion pre-run
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-54-1", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"\n\n## Empty State\nIllustration + descriptive copy + CTA.",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Applied the fix. Spec updated." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // [7] auditPhaseCompletion post-pass
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "fix all"),
+      client,
+    })
+
+    // Platform composes the completion message — not agent prose
+    const text = lastUpdateText(client)
+    expect(text).toContain("Fixed all 1 item")
+    // No action menu when all items are fixed
+    expect(text).not.toContain("OPEN ITEMS")
+    // User is directed to approve
+    expect(text).toContain("approved")
+
+    // Single preview upload — one per turn, not one per patch
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
+
+    // Exact call count: 8 Anthropic calls
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+
+    // Original user message stored in history (not the enriched PLATFORM FIX-ALL version)
+    const history = getHistory("onboarding")
+    const userTurn = history.find(m => m.role === "user")
+    expect(userTurn?.content).toBe("fix all")
+  })
+})

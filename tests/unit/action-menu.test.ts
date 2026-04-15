@@ -14,7 +14,7 @@ vi.mock("../../../runtime/workspace-config", () => ({
 }))
 vi.mock("@anthropic-ai/sdk", () => ({ default: vi.fn() }))
 
-import { buildActionMenu, splitQualityIssue, getChannelState, setChannelState, channelStateStore } from "../../../interfaces/slack/handlers/message"
+import { buildActionMenu, splitQualityIssue, getChannelState, setChannelState, channelStateStore, parseFixAllIntent } from "../../../interfaces/slack/handlers/message"
 
 const item = (issue: string, fix: string) => ({ issue, fix })
 
@@ -122,5 +122,53 @@ describe("splitQualityIssue", () => {
     const result = splitQualityIssue("issue part — fix part — extra info")
     expect(result.issue).toBe("issue part")
     expect(result.fix).toBe("fix part — extra info")
+  })
+})
+
+describe("parseFixAllIntent", () => {
+  it("detects 'fix all' (lowercase)", () => {
+    const r = parseFixAllIntent("fix all")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toBeNull()
+  })
+
+  it("detects 'Fix All' (mixed case)", () => {
+    const r = parseFixAllIntent("Fix All")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toBeNull()
+  })
+
+  it("detects 'fix all' with trailing words", () => {
+    const r = parseFixAllIntent("fix all now")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toBeNull()
+  })
+
+  it("detects 'fix 1 3' as specific indices", () => {
+    const r = parseFixAllIntent("fix 1 3")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toEqual([1, 3])
+  })
+
+  it("detects 'fix 1, 2, 3' (comma-separated)", () => {
+    const r = parseFixAllIntent("fix 1, 2, 3")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toEqual([1, 2, 3])
+  })
+
+  it("returns isFixAll=false for generic messages", () => {
+    const r = parseFixAllIntent("what's blocking us")
+    expect(r.isFixAll).toBe(false)
+    expect(r.selectedIndices).toBeNull()
+  })
+
+  it("returns isFixAll=false for bare 'fix' with no items", () => {
+    const r = parseFixAllIntent("fix")
+    expect(r.isFixAll).toBe(false)
+  })
+
+  it("returns isFixAll=false for unrelated messages", () => {
+    const r = parseFixAllIntent("approved")
+    expect(r.isFixAll).toBe(false)
   })
 })
