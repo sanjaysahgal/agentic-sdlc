@@ -1659,21 +1659,23 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
     //   [2] runAgent (tool_use)      → offer_architect_escalation
-    //   [3] runAgent (end_turn)      → text after tool result
-    //   [4] identifyUncommittedDecisions → none
+    //   [3] classifyForArchGap       → "ARCH-GAP" (genuine UI-blocking question — accepted)
+    //   [4] runAgent (end_turn)      → text after tool result
+    //   [5] identifyUncommittedDecisions → none
     // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })         // [1] isSpecStateQuery
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
-        content: [{ type: "tool_use", id: "t1", name: "offer_architect_escalation", input: { question: "Where is user state persisted between logged-out and logged-in sessions?" } }],
-      })                                                                              // runAgent: tool_use
+        content: [{ type: "tool_use", id: "t1", name: "offer_architect_escalation", input: { question: "Does the API support streaming responses? I need to decide whether to show a typing indicator or a loading spinner." } }],
+      })                                                                              // [2] runAgent: tool_use
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "ARCH-GAP" }] })      // [3] classifyForArchGap: accepted
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
-        content: [{ type: "text", text: "I've flagged this for the architect — design is paused until they weigh in on the storage model." }],
-      })                                                                              // runAgent: end_turn
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })          // identifyUncommittedDecisions
+        content: [{ type: "text", text: "I've flagged this for the architect — design is paused until they weigh in on streaming support." }],
+      })                                                                              // [4] runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })          // [5] identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "how should we handle session carry-over?")
     await handleFeatureChannelMessage(params)
@@ -1682,7 +1684,7 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     const pending = getPendingEscalation("onboarding")
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("architect")
-    expect(pending?.question).toContain("user state persisted")
+    expect(pending?.question).toContain("streaming responses")
 
     const text = lastUpdateText(params.client)
     expect(text).toContain("architect")
@@ -6503,10 +6505,11 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
     //   [0] isOffTopicForAgent → false
     //   [1] isSpecStateQuery → false
     //   [2] designReadinessNotice audit → 1 design finding (NOT PM-GAP)
-    //   [3] runAgent: tool_use → offer_architect_escalation
-    //   [4] runAgent: end_turn
-    //   [5] identifyUncommittedDecisions → none (didSave=false: offer_architect_escalation not in designSaveTools)
-    //   Total: 6 calls
+    //   [3] runAgent: tool_use → offer_architect_escalation (genuine ARCH-GAP question)
+    //   [4] classifyForArchGap (Gate) → "ARCH-GAP" (accepted — UI differs based on answer)
+    //   [5] runAgent: end_turn (agent receives "Escalation offer stored." result)
+    //   [6] identifyUncommittedDecisions → none (didSave=false)
+    //   Total: 7 calls
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -6517,14 +6520,15 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-56-1", name: "offer_architect_escalation", input: {
-          question: "How is logged-out conversation data stored and recovered after sign-in?",
+          question: "Does the API support streaming responses? I need to decide whether to show a typing indicator or a loading spinner.",
         }}],
       })
-      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "ARCH-GAP" }] }) // [4] classifyForArchGap: accepted
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
         stop_reason: "end_turn",
-        content: [{ type: "text", text: "Escalated the storage question to the architect." }],
+        content: [{ type: "text", text: "Escalated the streaming question to the architect." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })     // [5] identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })     // [6] identifyUncommittedDecisions
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -6539,7 +6543,7 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
     expect(text).toContain("Platform audit: 1 item")
     // Action menu still suppressed (escalation is pending — user cannot act yet)
     expect(text).not.toContain("OPEN ITEMS")
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
   })
 
   it("PM escalation with remaining design items — platform status line is suppressed", async () => {
@@ -6597,5 +6601,98 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
     // Assertive override fires for PM escalation
     expect(text).toContain("Design cannot move forward")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+  })
+})
+
+// ─── N57: Arch escalation gate — implementation questions rejected ──────────────
+//
+// When the design agent calls offer_architect_escalation with an implementation-only
+// question (UI is identical regardless of the answer), the platform gate (classifyForArchGap)
+// rejects the escalation and returns a structured rejection directing the agent to add
+// a ## Design Assumptions entry instead. No pending escalation is stored.
+//
+// This is structural — the gate fires on every offer_architect_escalation call,
+// regardless of what the agent says. The agent cannot route around it.
+describe("Scenario N57 — arch escalation gate rejects implementation-only questions", () => {
+  const THREAD = "workflow-n57"
+
+  const DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to the app.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    clearPendingEscalation("onboarding")
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    clearPendingEscalation("onboarding")
+  })
+
+  it("implementation-only question → gate rejects, no pending escalation stored", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT).toString("base64"), sha: "abc" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] designReadinessNotice audit → 1 design finding
+    //   [3] runAgent: tool_use → offer_architect_escalation with implementation question
+    //   [4] classifyForArchGap (Gate) → "DESIGN-ASSUMPTION" (rejected — no setPendingEscalation)
+    //   [5] runAgent: end_turn (agent received rejection message, concludes turn)
+    //   [6] identifyUncommittedDecisions → none (!didSave && !agentStillSeeking)
+    //   [7] Gate 4 classifyForPmGaps — fires because agentCalledEscalation=false
+    //       (rejected tool call never stores pending escalation) → 0 PM gaps
+    //   Total: 8 calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] pre-run audit: 1 design finding
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Prompt bar height undefined | add 48px height spec" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-57-1", name: "offer_architect_escalation", input: {
+          question: "How are logged-out conversations stored — client-side localStorage or server-side session?",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "DESIGN-ASSUMPTION" }] }) // [4] gate: rejected
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn (after rejection)
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Noted — I will add this as a Design Assumption." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })     // [6] identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })     // [7] Gate 4: 0 PM gaps
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "continue with the design"),
+      client,
+    })
+
+    // Gate rejected — no pending escalation stored
+    expect(getPendingEscalation("onboarding")).toBeNull()
+    // Design items remain → platform status line still shows (no suppression without pending escalation)
+    const text = lastUpdateText(client)
+    expect(text).toContain("Platform audit: 1 item")
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
   })
 })

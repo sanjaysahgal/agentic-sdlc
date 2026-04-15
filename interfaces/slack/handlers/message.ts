@@ -16,6 +16,7 @@ import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractAllOpenQuestions, extractDesignAssumptions, extractHandoffSection, extractSpecTextLiterals } from "../../../runtime/spec-utils"
 import { applySpecPatch } from "../../../runtime/spec-patcher"
 import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
+import { classifyForArchGap } from "../../../runtime/arch-gap-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
 import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
 import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
@@ -1560,9 +1561,18 @@ async function runDesignAgent(params: {
         }
       }
       if (name === "offer_architect_escalation") {
+        const archQuestion = input.question as string
+        // Gate: classify whether this is a true design-blocking architectural unknown
+        // or an implementation detail the designer should state as a design assumption.
+        const archGapClass = await classifyForArchGap(archQuestion)
+        if (archGapClass === "DESIGN-ASSUMPTION") {
+          return {
+            result: `[PLATFORM REJECTION] This question is an implementation detail — the UI design does not depend on the answer. Do NOT escalate this to the architect.\n\nInstead:\n1. Decide the user-visible behavior (e.g. "conversation is preserved when the user signs in").\n2. Add an entry to the ## Design Assumptions section documenting what the architect will need to confirm.\n3. Continue designing — the architect resolves this during engineering, not before.\n\nExample Design Assumption entry: "- Conversation data is preserved on sign-in via server-side or client-side storage (implementation TBD by architect)."`,
+          }
+        }
         setPendingEscalation(featureName, {
           targetAgent: "architect",
-          question: input.question as string,
+          question: archQuestion,
           designContext: context.currentDraft ?? "",
         })
         return {
