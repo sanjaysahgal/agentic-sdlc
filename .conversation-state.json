@@ -1,12 +1,5 @@
 {
   "pendingEscalations": {},
   "pendingApprovals": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "Define whether the Auth Sheet should use returning-user framing (\"Welcome back.\") or neutral framing (\"Sign in or sign up.\") when the same sheet serves both new and returning users, since the messaging will influence how users perceive the onboarding moment.",
-      "recommendations": "[1]. My recommendation: The Auth Sheet uses neutral framing — \"Sign in or sign up.\" with supporting text like \"Access your health data and personalized coaching\" — rather than returning-user framing; this respects AC#26 (identical UI and messaging for new and returning users) and avoids confusing new users who may see \"Welcome back\" on their first visit.\n\n→ Rationale: Neutral framing is truthful for both personas, reduces cognitive overhead, and aligns with the architectural pattern of letting SSO handle user distinction transparently; it also respects the principle that the product should not guess user intent.\n\n→ Note: Pending your approval — say yes to apply to the product spec\n\n---\n\nSay *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation.",
-      "originAgent": "design"
-    }
-  }
+  "escalationNotifications": {}
 }

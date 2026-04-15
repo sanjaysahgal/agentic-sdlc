@@ -49,6 +49,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "python3 -c \"\nimport sys, json, subprocess, os, datetime, re\ndata = json.load(sys.stdin)\nmsg = data.get('message', '')\nis_slack = bool(re.search(r'\\\\[[0-9]+:[0-9]+ [AP]M\\\\]|Health360SDLC|UX Designer|Product Manager', msg))\nif is_slack:\n    log_file = '/Users/ssahgal/Developer/agentic-sdlc/logs/bot-' + datetime.date.today().isoformat() + '.log'\n    if os.path.exists(log_file):\n        result = subprocess.run(['tail', '-150', log_file], capture_output=True, text=True)\n        ctx = '[AUTO LOG CONTEXT] Slack paste detected — bot logs (last 150 lines):\\\\n' + result.stdout\n        print(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': ctx}}))\n    else:\n        print(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': '[AUTO LOG CONTEXT] Slack paste detected but no log file for today: ' + log_file}}))\n\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
