@@ -1781,7 +1781,9 @@ async function runDesignAgent(params: {
         }).catch(() => {})
       }
 
-      const totalFixed = autoFixItems.length - selectedResidual.length
+      // Clamp at 0: patches may add content that triggers new issues (fresh count > original).
+      // selectedResidual = residualItems for "fix all" — can exceed autoFixItems.length.
+      const totalFixed = Math.max(0, autoFixItems.length - selectedResidual.length)
       const totalItems = autoFixItems.length + pmGapItems.length
       let fixAllResponse: string
       if (fixAllComplete) {

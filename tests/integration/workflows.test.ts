@@ -6912,3 +6912,99 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
   })
 })
+
+// ─── N60: Fix-all regression guard — fresh count exceeds pre-run count ────────
+//
+// When the agent's patches add new content that triggers additional issues
+// (post-pass audit returns MORE items than pre-run audit), totalFixed must not
+// be negative. Real incident (2026-04-15): pre-run=8, post-pass=26 (patches
+// added spec sections with new ambiguities) → "Fixed -18 of 8 items".
+//
+// Fix: Math.max(0, autoFixItems.length - selectedResidual.length).
+// Loop termination is correct (26 >= 8 → break after pass 1).
+// Message must read "Fixed 0 of 1 item. 2 items still need attention:" (not negative).
+
+describe("Scenario N60 — fix-all regression guard: post-patch fresh count exceeds pre-run count", () => {
+  const THREAD = "workflow-n60"
+
+  const SIMPLE_DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    "Description: Welcome to the app.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("post-pass returns 2 findings when pre-run had 1 → Fixed 0 (not -1), 2 items in menu", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence — identical shape to N59 except [7] returns 2 findings.
+    // autoFixItems.length = 1 (pre-run), residualItems.length = 2 (post-pass).
+    // selectedResidual = residualItems = 2 items (fix-all path).
+    // 2 >= 1 (prevItemCount) → break (regression = no-progress).
+    // totalFixed = Math.max(0, 1 - 2) = 0 (not -1).
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] pre-run: 1 finding
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-60-1", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"\n\n## Auth Sheet\n[new section with new ambiguities]",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Applied patch." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
+      .mockResolvedValueOnce({                                                   // [7] post-pass: 2 findings (more than pre-run)
+        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Home screen empty state still missing | add empty state\nFINDING: [type: design] [blocking: yes] Auth Sheet entry animation not specified | specify slide-up or fade-in" }],
+        stop_reason: "end_turn",
+      })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "fix all"),
+      client,
+    })
+
+    // Loop broke after pass 1 — exactly 8 calls
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+
+    const text = lastUpdateText(client)
+    // totalFixed clamped at 0 — not -1
+    expect(text).toContain("Fixed 0 of 1 item")
+    // 2 residual items shown in action menu (fresh state)
+    expect(text).toContain("OPEN ITEMS")
+    // Confirm no negative number appears in the message
+    expect(text).not.toMatch(/Fixed -\d/)
+
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
+  })
+})
