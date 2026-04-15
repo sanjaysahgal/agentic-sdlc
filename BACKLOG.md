@@ -33,6 +33,19 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Agent prose contradicts platform audit — misleads user when items remain (2026-04-14)
+
+In the normal (non-fix-all) path, after the design agent runs and patches the spec, the agent's closing prose can claim "The spec is engineering-ready" or blame the platform ("the audit may have cached an older version") even when the platform audit shows 13 open items. The platform output is correct, but the agent's prose actively undermines trust.
+
+**Fix:** When the action menu is non-empty (residual items exist), the platform prepends its own authoritative status line before the agent response:
+`_Platform audit: N items remain before engineering handoff._`
+
+This fires on the structural condition (action menu non-empty) — no text-pattern detection of agent prose needed. The platform's line visually contradicts the agent's claim and makes the authoritative state clear. Optionally: strip the agent's final paragraph when it contains "engineering-ready" or "ready to approve" — but the prepend alone closes the trust gap.
+
+**Location:** `interfaces/slack/handlers/message.ts` — in the normal-path `await update(...)` call, when `buildActionMenu(...)` returns non-empty string.
+
+---
+
 ### Stale open questions — design spec open questions already answered in product spec are not detected (2026-04-14)
 
 `auditSpecDraft` checks for conflicts and gaps between design spec and product spec, but does not check whether open questions in the design spec's `## Open Questions` section are already answered in the product spec. When the PM later locks an AC that answers a design open question, the question remains in the spec indefinitely and blocks finalization via `extractAllOpenQuestions`.
