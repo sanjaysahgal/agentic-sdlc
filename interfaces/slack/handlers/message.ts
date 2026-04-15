@@ -1350,7 +1350,11 @@ async function runDesignAgent(params: {
     fixIntent.selectedIndices
       ? allActionItems.filter((_, i) => fixIntent.selectedIndices!.includes(i + 1))
       : allActionItems
-  const autoFixItems = itemsToFix.filter(item => !item.issue.includes("[PM-GAP]"))
+  // autoFixItems: excludes readiness findings — they resolve by ADDING missing spec content,
+  // which causes the spec to grow and introduces new quality issues (unbounded growth).
+  // Readiness items appear in the action menu but are never injected into [PLATFORM FIX-ALL].
+  const preRunReadinessIssues = new Set(designReadinessFindings.map(f => f.issue))
+  const autoFixItems = itemsToFix.filter(item => !item.issue.includes("[PM-GAP]") && !preRunReadinessIssues.has(item.issue))
   const pmGapItems = itemsToFix.filter(item => item.issue.includes("[PM-GAP]"))
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
@@ -1704,6 +1708,7 @@ async function runDesignAgent(params: {
       let lastFreshMissing = [] as ReturnType<typeof auditMissingBrandTokens>
       let lastFreshQualityRaw: string[] = []
       let lastFreshReadiness: Awaited<ReturnType<typeof auditPhaseCompletion>> | null = null
+      let lastFreshReadinessItems: ActionItem[] = []
 
       for (let pass = 1; pass <= MAX_FIX_PASSES; pass++) {
         if (pass > 1) {
@@ -1743,26 +1748,30 @@ async function runDesignAgent(params: {
           approvedProductSpec: context.approvedProductSpec,
         }).catch(() => null)
 
-        residualItems = [
+        // freshFixableItems: brand + quality only (deterministic, surgical, can be auto-patched).
+        // Readiness findings are tracked separately — they're never injected into [PLATFORM FIX-ALL]
+        // because resolving them requires adding missing spec content, which triggers new quality
+        // issues as the spec grows → unbounded growth if auto-patched.
+        const freshFixableItems: ActionItem[] = [
           ...lastFreshBrand.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
           ...lastFreshAnim.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
           ...lastFreshMissing.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
           ...lastFreshQualityRaw.map(splitQualityIssue),
-          ...(lastFreshReadiness && !lastFreshReadiness.ready ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation })) : []),
         ]
+        lastFreshReadinessItems = lastFreshReadiness && !lastFreshReadiness.ready
+          ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation }))
+          : []
+        residualItems = [...freshFixableItems, ...lastFreshReadinessItems]
 
-        // selectedResidual: which of the originally-targeted items still remain after this pass.
-        // For "fix all" (selectedIndices=null): fresh audit IS the ground truth — use residualItems
-        //   directly. Exact-string matching of LLM-generated readiness issue text is unreliable:
-        //   the auditor doesn't produce identical text across calls for the same conceptual finding,
-        //   so matching would falsely detect "progress" when none occurred.
-        // For "fix 1,3" (selectedIndices set): match by issue text to track which numbered items
-        //   the user targeted. Brand/quality text is deterministic; readiness text is still
-        //   unreliable here but this is the best available proxy for targeted-item tracking.
+        // selectedResidual tracks only fixable items (brand + quality):
+        // - "fix all": fresh fixable count IS the ground truth for no-progress detection.
+        //   Readiness text is non-deterministic across LLM calls so text-matching is unreliable;
+        //   count-based detection on fixable items only is correct.
+        // - "fix 1,3": match by issue text from targeted fixable items only.
         if (fixIntent.selectedIndices === null) {
-          selectedResidual = residualItems
+          selectedResidual = freshFixableItems
         } else {
-          selectedResidual = autoFixItems.filter(a => residualItems.some(r => r.issue === a.issue))
+          selectedResidual = autoFixItems.filter(a => freshFixableItems.some(r => r.issue === a.issue))
         }
 
         if (selectedResidual.length === 0) { fixAllComplete = true; break }
@@ -1787,16 +1796,26 @@ async function runDesignAgent(params: {
       const totalItems = autoFixItems.length + pmGapItems.length
       let fixAllResponse: string
       if (fixAllComplete) {
-        fixAllResponse = `Fixed all ${totalItems} item${totalItems === 1 ? "" : "s"}.${patchAppliedThisTurn && lastGeneratedPreviewHtml ? " Preview above." : ""}\n\nSay *approved* to move to engineering.${pmGapItems.length > 0 ? `\n\n_${pmGapItems.length} item${pmGapItems.length === 1 ? "" : "s"} require PM decisions — say *yes* to escalate._` : ""}`
+        // All fixable (brand+quality) items resolved. Readiness gaps may still remain — they
+        // require designer judgment to add missing spec content; not auto-patchable.
+        if (lastFreshReadinessItems.length > 0) {
+          const readinessMenu = buildActionMenu([
+            { emoji: ":white_check_mark:", label: "Design Readiness Gaps", issues: lastFreshReadinessItems },
+          ])
+          fixAllResponse = `Fixed all ${totalItems} quality item${totalItems === 1 ? "" : "s"}.${patchAppliedThisTurn && lastGeneratedPreviewHtml ? " Preview above." : ""} ${lastFreshReadinessItems.length} readiness gap${lastFreshReadinessItems.length === 1 ? "" : "s"} require designer decisions before approving:${readinessMenu}`
+        } else {
+          fixAllResponse = `Fixed all ${totalItems} item${totalItems === 1 ? "" : "s"}.${patchAppliedThisTurn && lastGeneratedPreviewHtml ? " Preview above." : ""}\n\nSay *approved* to move to engineering.${pmGapItems.length > 0 ? `\n\n_${pmGapItems.length} item${pmGapItems.length === 1 ? "" : "s"} require PM decisions — say *yes* to escalate._` : ""}`
+        }
       } else {
-        // For partial fix: show only the un-fixed targeted items in the action menu
+        // For partial fix: show unfixed quality items + all remaining readiness gaps
+        const totalResidual = selectedResidual.length + lastFreshReadinessItems.length
         const selectedResidualMenu = buildActionMenu([
           { emoji: ":art:", label: "Brand Drift", issues: selectedResidual.filter(i => lastFreshBrand.some(d => i.issue.startsWith(d.token))) },
           { emoji: ":jigsaw:", label: "Missing Brand Tokens", issues: selectedResidual.filter(i => i.issue.includes("not referenced in spec")) },
           { emoji: ":mag:", label: "Design Quality", issues: selectedResidual.filter(i => lastFreshQualityRaw.map(splitQualityIssue).some(q => q.issue === i.issue)) },
-          { emoji: ":white_check_mark:", label: "Design Readiness Gaps", issues: selectedResidual.filter(i => lastFreshReadiness && !lastFreshReadiness.ready && lastFreshReadiness.findings.some(f => f.issue === i.issue)) },
+          { emoji: ":white_check_mark:", label: "Design Readiness Gaps", issues: lastFreshReadinessItems },
         ])
-        fixAllResponse = `Fixed ${totalFixed} of ${totalItems} item${totalItems === 1 ? "" : "s"}. ${selectedResidual.length} item${selectedResidual.length === 1 ? "" : "s"} still need attention:${selectedResidualMenu}`
+        fixAllResponse = `Fixed ${totalFixed} of ${totalItems} item${totalItems === 1 ? "" : "s"}. ${totalResidual} item${totalResidual === 1 ? "" : "s"} still need attention:${selectedResidualMenu}`
       }
 
       await update(`${prefix}${fixAllResponse}`)

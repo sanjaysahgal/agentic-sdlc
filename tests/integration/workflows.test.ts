@@ -6197,14 +6197,19 @@ describe("Scenario N53 — Multi-patch turn posts exactly one preview", () => {
 describe("Scenario N54 — fix-all completion loop: platform composes result, never trusts agent self-report", () => {
   const THREAD = "workflow-n54"
 
-  // Design spec draft with no quality issues (no [TBD] brackets, no narrative copy problems).
-  // Only the readiness finding (from mocked auditPhaseCompletion) contributes to allActionItems.
-  // Note: auditSpecRenderAmbiguity runs auditCopyCompleteness deterministically in addition to LLM.
-  // Using a clean draft ensures zero deterministic quality issues so residualItems=[] after fix.
+  // Pre-patch draft: tagline missing terminal punctuation → auditCopyCompleteness returns 1 issue.
+  // auditSpecRenderAmbiguity (post-pass) combines deterministic + LLM results.
+  // mockGetContent returns PATCHED_DESIGN_DRAFT for reads 4+ (after the patcher save) —
+  // patched draft has tagline with period → auditCopyCompleteness = [] → fixAllComplete = true.
   const SIMPLE_DESIGN_DRAFT = [
     "## Screens",
     "### Home",
-    "Description: Welcome to the app.",
+    'Tagline: "Welcome to Health360"',
+  ].join("\n")
+  const PATCHED_DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    'Tagline: "Welcome to Health360."',  // period added — no quality issue
   ].join("\n")
 
   beforeEach(() => {
@@ -6219,15 +6224,19 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     clearSummaryCache("onboarding")
   })
 
-  it("'fix all' with 1 open readiness item → loop runs → 'Fixed all 1 item' when post-pass audit is clean", async () => {
+  it("'fix all' with 1 open quality item → loop runs → 'Fixed all 1 item' when post-pass audit is clean", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
-    // GitHub: simple design spec draft on design branch (no quality issues).
-    // All other file reads (productVision, systemArchitecture, PM spec, etc.) → 404.
-    // auditSpecDraft skips LLM call when productVision/systemArchitecture/productSpec are all null.
+    // 4 reads of design.md in sequence: context load, pre-run audit, patcher merge-read, post-pass fresh.
+    // Reads 1-3: SIMPLE_DESIGN_DRAFT (tagline missing period → 1 quality issue).
+    // Read 4 (post-pass): PATCHED_DESIGN_DRAFT (tagline WITH period → no quality issue).
+    // auditSpecRenderAmbiguity combines deterministic + LLM: patched draft gives zero issues → fixAllComplete.
+    let readCount = 0
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
-        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+        readCount++
+        const draft = readCount >= 4 ? PATCHED_DESIGN_DRAFT : SIMPLE_DESIGN_DRAFT
+        return { data: { type: "file", content: Buffer.from(draft).toString("base64"), sha: "abc123" } }
       }
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
@@ -6235,7 +6244,8 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent    → false
     //   [1] isSpecStateQuery      → false
-    //   [2] auditPhaseCompletion pre-run (design readiness, cache miss) → 1 finding
+    //   [2] auditPhaseCompletion pre-run → PASS (no readiness findings; quality is the sole issue)
+    //       autoFixItems = 1 quality item from auditCopyCompleteness (deterministic, no LLM)
     //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
     //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
     //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → [] (no render issues)
@@ -6246,10 +6256,7 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
-      .mockResolvedValueOnce({                                                   // [2] auditPhaseCompletion pre-run
-        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
-        stop_reason: "end_turn",
-      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [2] auditPhaseCompletion pre-run → PASS
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-54-1", name: "apply_design_spec_patch", input: {
@@ -6711,10 +6718,16 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
 describe("Scenario N58 — natural English fix intent: Haiku fallback triggers platform fix-all loop", () => {
   const THREAD = "workflow-n58"
 
+  // Same draft setup as N54: pre-patch has quality issue, post-patch returns clean draft.
   const SIMPLE_DESIGN_DRAFT = [
     "## Screens",
     "### Home",
-    "Description: Welcome to the app.",
+    'Tagline: "Welcome to Health360"',
+  ].join("\n")
+  const PATCHED_DESIGN_DRAFT = [
+    "## Screens",
+    "### Home",
+    'Tagline: "Welcome to Health360."',
   ].join("\n")
 
   beforeEach(() => {
@@ -6732,9 +6745,13 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
   it("'go ahead and fix all of these' → Haiku classifies FIX-ALL → loop runs → 'Fixed all 1 item'", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
+    // Reads 1-3: SIMPLE (quality issue). Read 4+ (post-pass fresh): PATCHED (no quality issue).
+    let readCount = 0
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
-        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+        readCount++
+        const draft = readCount >= 4 ? PATCHED_DESIGN_DRAFT : SIMPLE_DESIGN_DRAFT
+        return { data: { type: "file", content: Buffer.from(draft).toString("base64"), sha: "abc123" } }
       }
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
@@ -6742,7 +6759,8 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent    → false
     //   [1] isSpecStateQuery      → false
-    //   [2] auditPhaseCompletion pre-run (design readiness, cache miss) → 1 finding
+    //   [2] auditPhaseCompletion pre-run → PASS (no readiness; quality is the sole issue)
+    //       autoFixItems = 1 quality item from auditCopyCompleteness (deterministic, no LLM)
     //   [3] classifyFixIntent (Haiku fallback — "fix" matched prefilter, fast path missed) → "FIX-ALL"
     //   [4] runAgent pass 1 tool_use → apply_design_spec_patch
     //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
@@ -6755,10 +6773,7 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
-      .mockResolvedValueOnce({                                                   // [2] auditPhaseCompletion pre-run
-        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
-        stop_reason: "end_turn",
-      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [2] auditPhaseCompletion pre-run → PASS
       .mockResolvedValueOnce({ content: [{ type: "text", text: "FIX-ALL" }] }) // [3] classifyFixIntent → FIX-ALL
       .mockResolvedValueOnce({                                                   // [4] runAgent: tool_use
         stop_reason: "tool_use",
@@ -6823,10 +6838,12 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
 describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass 1 when count unchanged", () => {
   const THREAD = "workflow-n59"
 
+  // Same quality-issue draft: tagline missing terminal punctuation → 1 pre-run quality item.
+  // Post-pass auditSpecRenderAmbiguity returns 1 different quality issue → same count → break.
   const SIMPLE_DESIGN_DRAFT = [
     "## Screens",
     "### Home",
-    "Description: Welcome to the app.",
+    'Tagline: "Welcome to Health360"',
   ].join("\n")
 
   beforeEach(() => {
@@ -6853,27 +6870,27 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
 
-    // Anthropic call sequence (identical shape to N54, but post-pass audit is NOT PASS):
+    // Anthropic call sequence:
     //   [0] isOffTopicForAgent    → false
     //   [1] isSpecStateQuery      → false
-    //   [2] auditPhaseCompletion pre-run → 1 finding (text A)
+    //   [2] auditPhaseCompletion pre-run → PASS (quality is the sole issue — 1 item from auditCopyCompleteness)
+    //       prevItemCount = 1 (the tagline-missing-period quality item)
     //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
     //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → []
     //   [5] runAgent pass 1 end_turn
-    //   [6] auditSpecRenderAmbiguity post-pass re-audit → []
-    //   [7] auditPhaseCompletion post-pass → 1 finding (text B, different from text A)
-    //       selectedResidual = residualItems (length 1) >= prevItemCount (1) → break
-    // Total: 8 calls. Loop does NOT run pass 2 (would be 8 more calls if it did).
+    //   [6] auditSpecRenderAmbiguity post-pass → [] (LLM part); but deterministic auditCopyCompleteness
+    //       on unchanged freshDraft (mockGetContent returns same SIMPLE_DESIGN_DRAFT) = 1 issue.
+    //       Combined: freshFixableItems.length = 1 = prevItemCount = 1 → no-progress → break.
+    //   [7] auditPhaseCompletion post-pass → PASS
+    // Total: 8 calls. Loop does NOT run pass 2.
     //
-    // The different finding text (text B ≠ text A) is the critical part of this test:
-    // it proves the fix uses count-based comparison, not text matching.
+    // Key: no-progress detected via count (1 in, 1 out), not text matching. Count-based detection
+    // catches both same-text AND different-text non-progress; the old text-matching approach
+    // would fail when LLM rephrases the same finding across audit calls.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
-      .mockResolvedValueOnce({                                                   // [2] pre-run: 1 finding (text A)
-        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
-        stop_reason: "end_turn",
-      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [2] auditPhaseCompletion pre-run → PASS
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-59-1", name: "apply_design_spec_patch", input: {
@@ -6885,11 +6902,8 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied patch." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
-      .mockResolvedValueOnce({                                                   // [7] post-pass audit: 1 finding (text B — different wording)
-        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Home screen lacks empty state — no illustration, guidance copy, or CTA defined | specify empty state layout with illustration placeholder and action button" }],
-        stop_reason: "end_turn",
-      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Tagline still ambiguous — heading text unspecified — add final copy"]' }] }) // [6] auditSpecRenderAmbiguity post-pass: 1 issue (different text)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [7] auditPhaseCompletion post-pass → PASS
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -6927,10 +6941,11 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
 describe("Scenario N60 — fix-all regression guard: post-patch fresh count exceeds pre-run count", () => {
   const THREAD = "workflow-n60"
 
+  // Same quality-issue draft: 1 pre-run quality item. Post-pass returns 2 items (more → regression guard).
   const SIMPLE_DESIGN_DRAFT = [
     "## Screens",
     "### Home",
-    "Description: Welcome to the app.",
+    'Tagline: "Welcome to Health360"',
   ].join("\n")
 
   beforeEach(() => {
@@ -6957,18 +6972,15 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
 
-    // Anthropic call sequence — identical shape to N59 except [7] returns 2 findings.
-    // autoFixItems.length = 1 (pre-run), residualItems.length = 2 (post-pass).
-    // selectedResidual = residualItems = 2 items (fix-all path).
+    // Anthropic call sequence — identical shape to N59 except [6] returns 2 quality issues.
+    // autoFixItems.length = 1 (pre-run quality), freshFixableItems.length = 2 (post-pass).
+    // selectedResidual = freshFixableItems = 2 items (fix-all path).
     // 2 >= 1 (prevItemCount) → break (regression = no-progress).
     // totalFixed = Math.max(0, 1 - 2) = 0 (not -1).
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
-      .mockResolvedValueOnce({                                                   // [2] pre-run: 1 finding
-        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state treatment for Home screen | add descriptive empty state with illustration and CTA" }],
-        stop_reason: "end_turn",
-      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [2] auditPhaseCompletion pre-run → PASS
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-60-1", name: "apply_design_spec_patch", input: {
@@ -6980,11 +6992,8 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied patch." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
-      .mockResolvedValueOnce({                                                   // [7] post-pass: 2 findings (more than pre-run)
-        content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Home screen empty state still missing | add empty state\nFINDING: [type: design] [blocking: yes] Auth Sheet entry animation not specified | specify slide-up or fade-in" }],
-        stop_reason: "end_turn",
-      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Home screen empty state still missing — add empty state", "Auth Sheet entry animation unspecified — specify slide-up or fade-in"]' }] }) // [6] auditSpecRenderAmbiguity post-pass: 2 issues (more than pre-run)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [7] auditPhaseCompletion post-pass → PASS
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
