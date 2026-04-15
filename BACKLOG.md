@@ -33,6 +33,20 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Escalation cascade — one pending slot forces multiple user round trips for PM + architect gaps (2026-04-14)
+
+The platform has one `pendingEscalation` slot (PM or architect, never both simultaneously). When a design agent turn has both PM gaps and architect gaps, the PM gap is escalated first; the architect gap is classified but dropped. It resurfaces only when the design agent runs again after PM answers. This creates N separate user-facing round trips (each requiring "yes") where ideally there would be 1: all gaps resolved in sequence automatically.
+
+Additionally, the agent only surfaces a subset of audit findings per turn. On a turn with 8 audit findings, the agent wrote prose covering 3 — the other 5 were not addressed and return on the next turn.
+
+**Root cause:** Escalation is sequential by design (single slot) and agent-turn coverage is prompt-dependent (no platform enforcement that all findings are addressed in one turn).
+
+**Fix:** After PM escalation is confirmed and the design agent resumes, the platform should automatically detect remaining architect gaps from the pre-run audit and escalate without requiring another user "yes." Sequential auto-processing within one user turn: PM answered → platform checks architect gaps → auto-escalates if found → architect answers → design agent resumes with all gaps resolved. The user "yes" should only be needed once per cluster of gaps, not once per gap type.
+
+**Related:** The fix-all loop already implements this pattern for design items. The same loop structure should apply to the escalation chain.
+
+---
+
 ### `offer_pm_escalation` blocked during fix-all — stale escalation persists after loop exits (2026-04-14)
 
 During the fix-all loop, the design agent called `offer_pm_escalation` (a new PM question it identified while patching). The fix-all loop used the same `designToolHandler` which executes the escalation tool and calls `setPendingEscalation`. The fix-all path exits via `return` before the normal post-agent escalation handling — but the pending escalation state is still set. On the next user message, the platform sees the pending escalation and surfaces it, even though the user expected a clean "fix all" completion.
