@@ -421,10 +421,12 @@ ${brief}`
       console.log(`[ROUTER] branch=pending-escalation-hold targetAgent=${pendingEscalation.targetAgent}`)
 
       const q = pendingEscalation.question
+      const pendingAgentLabel = pendingEscalation.targetAgent === "architect" ? "Architect" : "PM"
+      const pendingAgentFull = pendingEscalation.targetAgent === "architect" ? "the Architect" : "the PM"
       await client.chat.postMessage({
         channel: channelId,
         thread_ts: threadTs,
-        text: `Design is paused — the PM needs to resolve a blocking gap before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring the PM into this thread.`,
+        text: `Design is paused — ${pendingAgentFull} needs to resolve a blocking gap before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring ${pendingAgentLabel} into this thread.`,
       })
       return
     }
