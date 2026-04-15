@@ -6197,20 +6197,12 @@ describe("Scenario N53 — Multi-patch turn posts exactly one preview", () => {
 describe("Scenario N54 — fix-all completion loop: platform composes result, never trusts agent self-report", () => {
   const THREAD = "workflow-n54"
 
-  // Pre-patch draft: tagline missing terminal punctuation → auditCopyCompleteness returns 1 issue.
-  // auditSpecRenderAmbiguity (post-pass) combines deterministic + LLM results.
-  // mockGetContent returns PATCHED_DESIGN_DRAFT for reads 4+ (after the patcher save) —
-  // patched draft has tagline with period → auditCopyCompleteness = [] → fixAllComplete = true.
-  const SIMPLE_DESIGN_DRAFT = [
-    "## Screens",
-    "### Home",
-    'Tagline: "Welcome to Health360"',
-  ].join("\n")
-  const PATCHED_DESIGN_DRAFT = [
-    "## Screens",
-    "### Home",
-    'Tagline: "Welcome to Health360."',  // period added — no quality issue
-  ].join("\n")
+  // Pre-patch draft: --violet has wrong value (#8B7FE8 vs #7C6FCD from BRAND.md) → 1 brand drift.
+  // mockGetContent returns DRAFT_BRAND_CLEAN for reads 4+ (after the patcher save) —
+  // patched draft has correct --violet → auditBrandTokens = [] → fixAllComplete = true.
+  const BRAND_MD_FIXALL = "## Color Palette\n\n```\n--violet: #7C6FCD\n```"
+  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nContent.\n"
+  const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n"
 
   beforeEach(() => {
     clearHistory("onboarding")
@@ -6224,19 +6216,22 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     clearSummaryCache("onboarding")
   })
 
-  it("'fix all' with 1 open quality item → loop runs → 'Fixed all 1 item' when post-pass audit is clean", async () => {
+  it("'fix all' with 1 brand drift item → loop runs → 'Fixed all 1 item' when post-pass brand clean", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
-    // 4 reads of design.md in sequence: context load, pre-run audit, patcher merge-read, post-pass fresh.
-    // Reads 1-3: SIMPLE_DESIGN_DRAFT (tagline missing period → 1 quality issue).
-    // Read 4 (post-pass): PATCHED_DESIGN_DRAFT (tagline WITH period → no quality issue).
-    // auditSpecRenderAmbiguity combines deterministic + LLM: patched draft gives zero issues → fixAllComplete.
+    // 4 reads in sequence: context load, pre-run audit, patcher merge-read, post-pass fresh.
+    // Reads 1-3: DRAFT_WITH_BRAND_DRIFT (--violet wrong #8B7FE8 vs #7C6FCD from BRAND.md → 1 brand drift).
+    // Read 4+ (post-pass): DRAFT_BRAND_CLEAN (correct --violet → brand clean → fixAllComplete = true).
+    // BRAND.md is mocked to return BRAND_MD_FIXALL for all reads.
     let readCount = 0
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
         readCount++
-        const draft = readCount >= 4 ? PATCHED_DESIGN_DRAFT : SIMPLE_DESIGN_DRAFT
+        const draft = readCount >= 4 ? DRAFT_BRAND_CLEAN : DRAFT_WITH_BRAND_DRIFT
         return { data: { type: "file", content: Buffer.from(draft).toString("base64"), sha: "abc123" } }
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return { data: { type: "file", content: Buffer.from(BRAND_MD_FIXALL).toString("base64"), sha: "brand-sha" } }
       }
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
@@ -6244,9 +6239,9 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent    → false
     //   [1] isSpecStateQuery      → false
-    //   [2] auditPhaseCompletion pre-run → PASS (no readiness findings; quality is the sole issue)
-    //       autoFixItems = 1 quality item from auditCopyCompleteness (deterministic, no LLM)
-    //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
+    //   [2] auditPhaseCompletion pre-run → PASS (no readiness findings)
+    //       autoFixItems = 1 brand drift item (--violet: spec #8B7FE8 vs brand #7C6FCD)
+    //   [3] runAgent pass 1 tool_use → apply_design_spec_patch (patch the brand section)
     //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
     //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → [] (no render issues)
     //   [5] runAgent pass 1 end_turn
@@ -6260,7 +6255,7 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-54-1", name: "apply_design_spec_patch", input: {
-          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"\n\n## Empty State\nIllustration + descriptive copy + CTA.",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
@@ -6718,17 +6713,10 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
 describe("Scenario N58 — natural English fix intent: Haiku fallback triggers platform fix-all loop", () => {
   const THREAD = "workflow-n58"
 
-  // Same draft setup as N54: pre-patch has quality issue, post-patch returns clean draft.
-  const SIMPLE_DESIGN_DRAFT = [
-    "## Screens",
-    "### Home",
-    'Tagline: "Welcome to Health360"',
-  ].join("\n")
-  const PATCHED_DESIGN_DRAFT = [
-    "## Screens",
-    "### Home",
-    'Tagline: "Welcome to Health360."',
-  ].join("\n")
+  // Same draft setup as N54: pre-patch has brand drift, post-patch returns clean draft.
+  const BRAND_MD_FIXALL = "## Color Palette\n\n```\n--violet: #7C6FCD\n```"
+  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nContent.\n"
+  const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n"
 
   beforeEach(() => {
     clearHistory("onboarding")
@@ -6745,13 +6733,18 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
   it("'go ahead and fix all of these' → Haiku classifies FIX-ALL → loop runs → 'Fixed all 1 item'", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
-    // Reads 1-3: SIMPLE (quality issue). Read 4+ (post-pass fresh): PATCHED (no quality issue).
+    // Reads 1-3: DRAFT_WITH_BRAND_DRIFT (--violet wrong → 1 brand drift).
+    // Read 4+ (post-pass fresh): DRAFT_BRAND_CLEAN (correct --violet → brand clean → fixAllComplete).
+    // BRAND.md is mocked to return BRAND_MD_FIXALL for all reads.
     let readCount = 0
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
         readCount++
-        const draft = readCount >= 4 ? PATCHED_DESIGN_DRAFT : SIMPLE_DESIGN_DRAFT
+        const draft = readCount >= 4 ? DRAFT_BRAND_CLEAN : DRAFT_WITH_BRAND_DRIFT
         return { data: { type: "file", content: Buffer.from(draft).toString("base64"), sha: "abc123" } }
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return { data: { type: "file", content: Buffer.from(BRAND_MD_FIXALL).toString("base64"), sha: "brand-sha" } }
       }
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
@@ -6759,10 +6752,10 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent    → false
     //   [1] isSpecStateQuery      → false
-    //   [2] auditPhaseCompletion pre-run → PASS (no readiness; quality is the sole issue)
-    //       autoFixItems = 1 quality item from auditCopyCompleteness (deterministic, no LLM)
+    //   [2] auditPhaseCompletion pre-run → PASS (no readiness findings)
+    //       autoFixItems = 1 brand drift item (--violet: spec #8B7FE8 vs brand #7C6FCD)
     //   [3] classifyFixIntent (Haiku fallback — "fix" matched prefilter, fast path missed) → "FIX-ALL"
-    //   [4] runAgent pass 1 tool_use → apply_design_spec_patch
+    //   [4] runAgent pass 1 tool_use → apply_design_spec_patch (patch the brand section)
     //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
     //   [5] auditSpecRenderAmbiguity (inside saveDesignDraft) → [] (no render issues)
     //   [6] runAgent pass 1 end_turn
@@ -6778,7 +6771,7 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
       .mockResolvedValueOnce({                                                   // [4] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-58-1", name: "apply_design_spec_patch", input: {
-          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"\n\n## Empty State\nIllustration + descriptive copy + CTA.",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [5] auditSpecRenderAmbiguity (saveDesignDraft)
@@ -6838,13 +6831,10 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
 describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass 1 when count unchanged", () => {
   const THREAD = "workflow-n59"
 
-  // Same quality-issue draft: tagline missing terminal punctuation → 1 pre-run quality item.
-  // Post-pass auditSpecRenderAmbiguity returns 1 different quality issue → same count → break.
-  const SIMPLE_DESIGN_DRAFT = [
-    "## Screens",
-    "### Home",
-    'Tagline: "Welcome to Health360"',
-  ].join("\n")
+  // Brand drift draft: --violet wrong (#8B7FE8 vs #7C6FCD) → 1 pre-run brand drift item.
+  // Post-pass: same DRAFT_WITH_BRAND_DRIFT returned (drift persists) → freshFixableItems.length = 1 = prevItemCount → no-progress → break.
+  const BRAND_MD_FIXALL = "## Color Palette\n\n```\n--violet: #7C6FCD\n```"
+  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nContent.\n"
 
   beforeEach(() => {
     clearHistory("onboarding")
@@ -6860,12 +6850,17 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
     clearPhaseAuditCaches()
   })
 
-  it("post-pass audit returns same count (different text) → breaks after 1 pass, reports 0 fixed", async () => {
+  it("post-pass audit returns same count (brand drift persists) → breaks after 1 pass, reports 0 fixed", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
+    // All reads return DRAFT_WITH_BRAND_DRIFT — brand drift never patched away.
+    // BRAND.md mocked to return BRAND_MD_FIXALL for all reads.
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
-        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+        return { data: { type: "file", content: Buffer.from(DRAFT_WITH_BRAND_DRIFT).toString("base64"), sha: "abc123" } }
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return { data: { type: "file", content: Buffer.from(BRAND_MD_FIXALL).toString("base64"), sha: "brand-sha" } }
       }
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
@@ -6873,20 +6868,19 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent    → false
     //   [1] isSpecStateQuery      → false
-    //   [2] auditPhaseCompletion pre-run → PASS (quality is the sole issue — 1 item from auditCopyCompleteness)
-    //       prevItemCount = 1 (the tagline-missing-period quality item)
+    //   [2] auditPhaseCompletion pre-run → PASS (no readiness findings)
+    //       autoFixItems = 1 brand drift item (--violet), prevItemCount = 1
     //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
     //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → []
     //   [5] runAgent pass 1 end_turn
-    //   [6] auditSpecRenderAmbiguity post-pass → [] (LLM part); but deterministic auditCopyCompleteness
-    //       on unchanged freshDraft (mockGetContent returns same SIMPLE_DESIGN_DRAFT) = 1 issue.
-    //       Combined: freshFixableItems.length = 1 = prevItemCount = 1 → no-progress → break.
+    //   [6] auditSpecRenderAmbiguity post-pass → [] (quality excluded from freshFixableItems anyway)
+    //       freshDraft = same DRAFT_WITH_BRAND_DRIFT → auditBrandTokens → 1 brand drift.
+    //       freshFixableItems.length = 1 = prevItemCount = 1 → no-progress → break.
     //   [7] auditPhaseCompletion post-pass → PASS
     // Total: 8 calls. Loop does NOT run pass 2.
     //
-    // Key: no-progress detected via count (1 in, 1 out), not text matching. Count-based detection
-    // catches both same-text AND different-text non-progress; the old text-matching approach
-    // would fail when LLM rephrases the same finding across audit calls.
+    // Key: no-progress detected via count (1 in, 1 out) using brand drift — same mechanism
+    // as quality-based detection but using the deterministic brand auditor, not LLM output.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -6894,7 +6888,7 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-59-1", name: "apply_design_spec_patch", input: {
-          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
@@ -6902,7 +6896,7 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied patch." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Tagline still ambiguous — heading text unspecified — add final copy"]' }] }) // [6] auditSpecRenderAmbiguity post-pass: 1 issue (different text)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass: [] (quality excluded; brand drift detected deterministically)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [7] auditPhaseCompletion post-pass → PASS
 
     const client = makeClient()
@@ -6941,12 +6935,13 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
 describe("Scenario N60 — fix-all regression guard: post-patch fresh count exceeds pre-run count", () => {
   const THREAD = "workflow-n60"
 
-  // Same quality-issue draft: 1 pre-run quality item. Post-pass returns 2 items (more → regression guard).
-  const SIMPLE_DESIGN_DRAFT = [
-    "## Screens",
-    "### Home",
-    'Tagline: "Welcome to Health360"',
-  ].join("\n")
+  // Pre-run: 1 brand drift (--violet wrong). Post-pass: 2 brand drifts (--violet AND --teal wrong).
+  // This simulates the regression: agent patch introduces new drift → freshFixableItems > autoFixItems.
+  const BRAND_MD_FIXALL = "## Color Palette\n\n```\n--violet: #7C6FCD\n--teal: #4FAFA8\n```"
+  // DRAFT_WITH_BRAND_DRIFT: --violet wrong, --teal correct → 1 drift, 0 missing → 1 autoFixItem.
+  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n- `--teal:` `#4FAFA8`\n\n## Screens\n### Home\nContent.\n"
+  // DRAFT_WITH_TWO_BRAND_DRIFTS: both --violet AND --teal wrong → 2 drifts → freshFixableItems = 2.
+  const DRAFT_WITH_TWO_BRAND_DRIFTS = "## Brand\n\n- `--violet:` `#8B7FE8`\n- `--teal:` `#99DADA`\n\n## Screens\n### Home\nContent.\n"
 
   beforeEach(() => {
     clearHistory("onboarding")
@@ -6965,15 +6960,24 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
   it("post-pass returns 2 findings when pre-run had 1 → Fixed 0 (not -1), 2 items in menu", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
+    // Reads 1-3: DRAFT_WITH_BRAND_DRIFT (1 brand drift: --violet only).
+    // Reads 4+: DRAFT_WITH_TWO_BRAND_DRIFTS (2 brand drifts: --violet AND --teal wrong).
+    // BRAND.md mocked to return BRAND_MD_FIXALL for all reads.
+    let readCount = 0
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
-        return { data: { type: "file", content: Buffer.from(SIMPLE_DESIGN_DRAFT).toString("base64"), sha: "abc123" } }
+        readCount++
+        const draft = readCount >= 4 ? DRAFT_WITH_TWO_BRAND_DRIFTS : DRAFT_WITH_BRAND_DRIFT
+        return { data: { type: "file", content: Buffer.from(draft).toString("base64"), sha: "abc123" } }
+      }
+      if (path === "specs/brand/BRAND.md") {
+        return { data: { type: "file", content: Buffer.from(BRAND_MD_FIXALL).toString("base64"), sha: "brand-sha" } }
       }
       throw Object.assign(new Error("Not Found"), { status: 404 })
     })
 
-    // Anthropic call sequence — identical shape to N59 except [6] returns 2 quality issues.
-    // autoFixItems.length = 1 (pre-run quality), freshFixableItems.length = 2 (post-pass).
+    // Anthropic call sequence — identical shape to N59 except post-pass fresh returns 2 brand drifts.
+    // autoFixItems.length = 1 (pre-run: 1 violet drift), freshFixableItems.length = 2 (post-pass: violet + teal).
     // selectedResidual = freshFixableItems = 2 items (fix-all path).
     // 2 >= 1 (prevItemCount) → break (regression = no-progress).
     // totalFixed = Math.max(0, 1 - 2) = 0 (not -1).
@@ -6984,7 +6988,7 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-60-1", name: "apply_design_spec_patch", input: {
-          patch: "## Screens\n### Home\nTagline: \"Welcome to Health360.\"\n\n## Auth Sheet\n[new section with new ambiguities]",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n- `--teal:` `#99DADA`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
@@ -6992,7 +6996,7 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied patch." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Home screen empty state still missing — add empty state", "Auth Sheet entry animation unspecified — specify slide-up or fade-in"]' }] }) // [6] auditSpecRenderAmbiguity post-pass: 2 issues (more than pre-run)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass: [] (quality excluded; brand drifts detected deterministically from DRAFT_WITH_TWO_BRAND_DRIFTS)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [7] auditPhaseCompletion post-pass → PASS
 
     const client = makeClient()

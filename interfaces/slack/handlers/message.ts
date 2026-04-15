@@ -1350,11 +1350,17 @@ async function runDesignAgent(params: {
     fixIntent.selectedIndices
       ? allActionItems.filter((_, i) => fixIntent.selectedIndices!.includes(i + 1))
       : allActionItems
-  // autoFixItems: excludes readiness findings — they resolve by ADDING missing spec content,
-  // which causes the spec to grow and introduces new quality issues (unbounded growth).
-  // Readiness items appear in the action menu but are never injected into [PLATFORM FIX-ALL].
+  // autoFixItems: only brand drift (token + animation + missing tokens).
+  // Quality issues and readiness findings are both excluded — the agent "fixes" them by writing
+  // new spec content, which grows the spec and triggers new quality findings (unbounded growth).
+  // Only brand drift is truly surgical: a specific value swap that cannot introduce new issues.
   const preRunReadinessIssues = new Set(designReadinessFindings.map(f => f.issue))
-  const autoFixItems = itemsToFix.filter(item => !item.issue.includes("[PM-GAP]") && !preRunReadinessIssues.has(item.issue))
+  const preRunQualityIssues = new Set(qualityIssues.map(q => splitQualityIssue(q).issue))
+  const autoFixItems = itemsToFix.filter(item =>
+    !item.issue.includes("[PM-GAP]") &&
+    !preRunReadinessIssues.has(item.issue) &&
+    !preRunQualityIssues.has(item.issue)
+  )
   const pmGapItems = itemsToFix.filter(item => item.issue.includes("[PM-GAP]"))
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
@@ -1748,15 +1754,13 @@ async function runDesignAgent(params: {
           approvedProductSpec: context.approvedProductSpec,
         }).catch(() => null)
 
-        // freshFixableItems: brand + quality only (deterministic, surgical, can be auto-patched).
-        // Readiness findings are tracked separately — they're never injected into [PLATFORM FIX-ALL]
-        // because resolving them requires adding missing spec content, which triggers new quality
-        // issues as the spec grows → unbounded growth if auto-patched.
+        // freshFixableItems: brand drift only (token + animation + missing tokens).
+        // Quality and readiness are both excluded from auto-patching — the agent "fixes" them
+        // by writing new spec content, causing unbounded spec growth.
         const freshFixableItems: ActionItem[] = [
           ...lastFreshBrand.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
           ...lastFreshAnim.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
           ...lastFreshMissing.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
-          ...lastFreshQualityRaw.map(splitQualityIssue),
         ]
         lastFreshReadinessItems = lastFreshReadiness && !lastFreshReadiness.ready
           ? lastFreshReadiness.findings.map(f => ({ issue: f.issue, fix: f.recommendation }))
