@@ -7119,3 +7119,128 @@ describe("Scenario N61 — Post-patch spec health invariant fires on bloating pa
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
   })
 })
+
+// ─── Scenario N62: Fix-all routes structural conflict to rewrite_design_spec ──
+//
+// When "fix all" is requested and the pre-run audit finds a structural conflict
+// (e.g. "## Screens section is defined twice"), singlePassFixItems is populated
+// and the fixAllNotice instructs the agent to use rewrite_design_spec (not patch).
+// The agent rewrites the spec, the fix-all loop detects no residual fixable items,
+// and the response confirms completion without leaking any internal tool names.
+//
+// This is the structural routing test: verifies rewrite_design_spec is selected
+// for structural conflicts, apply_design_spec_patch is NOT called for this turn.
+
+describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_spec", () => {
+  const THREAD = "workflow-n62"
+
+  // Spec with duplicate ## Screens section — structural conflict that triggers rewrite route
+  const SPEC_WITH_DUPLICATE =
+    "# Onboarding Design Spec\n\n## Screens\nScreen A.\n\n## Navigation\nTab bar.\n\n## Screens\nScreen B (duplicate).\n"
+  // Consolidated spec — one ## Screens, smaller than SPEC_WITH_DUPLICATE
+  const CONSOLIDATED_SPEC =
+    "# Onboarding Design Spec\n\n## Screens\nScreen A and Screen B consolidated.\n\n## Navigation\nTab bar.\n"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+    mockCreateOrUpdate.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("structural conflict finding routes to rewrite_design_spec, not apply_design_spec_patch", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Before rewrite: return SPEC_WITH_DUPLICATE. After rewrite committed: return CONSOLIDATED_SPEC.
+    // Flag-based (not readCount) — loadDesignAgentContext reads the spec before the agent runs.
+    let patchWritten = false
+    mockCreateOrUpdate.mockImplementation(async (_: unknown, params: { content?: string }) => {
+      patchWritten = true
+      return {}
+    })
+    mockGetContent.mockImplementation(async ({ path }: { path: string }) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        const content = patchWritten ? CONSOLIDATED_SPEC : SPEC_WITH_DUPLICATE
+        return { data: { type: "file", content: Buffer.from(content).toString("base64"), sha: "sha-1" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence (normal path — fix-all loop only runs when autoFixItems.length > 0,
+    // i.e. brand drift. Structural readiness findings go via singlePassFixItems notice in the
+    // normal agent call, not the fix-all loop):
+    //   [0] isOffTopicForAgent    → false
+    //   [1] isSpecStateQuery      → false
+    //   [2] auditPhaseCompletion pre-run → FINDING with "defined twice" (structural conflict)
+    //       → singlePassFixItems = [finding], structuralFixItems = [finding]
+    //       → fixAllNotice injected into enrichedUserMessage, instructs rewrite_design_spec
+    //   [3] runAgent: tool_use → rewrite_design_spec with CONSOLIDATED_SPEC
+    //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → []
+    //   [5] runAgent: end_turn → "Consolidated the duplicate sections."
+    //   → patchAppliedThisTurn=true → runFreshDesignAudit fires (deterministic + 1 LLM):
+    //   [6] auditPhaseCompletion post-patch (runFreshDesignAudit) → PASS
+    //       designResidual = [] → continuation loop does NOT run
+    //       health invariant: CONSOLIDATED_SPEC < SPEC_WITH_DUPLICATE → bloated=false, degraded=false
+    //   Total: 7 Anthropic calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                  // [2] pre-run audit: structural FINDING
+        content: [{ type: "text", text: "FINDING: Screens section is defined twice | Remove the duplicate and consolidate into one section" }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({                                                  // [3] runAgent: tool_use → rewrite
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-n62-1", name: "rewrite_design_spec", input: {
+          content: CONSOLIDATED_SPEC,
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // [4] auditSpecRenderAmbiguity (saveDesignDraft)
+      .mockResolvedValueOnce({                                                  // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Consolidated the duplicate sections." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })   // [6] auditPhaseCompletion post-patch → PASS
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "fix all"),
+      client,
+    })
+
+    // rewrite_design_spec was called — design spec write to GitHub contains CONSOLIDATED_SPEC
+    // (saveDesignDraft calls createOrUpdateFileContents twice: once for the spec, once for the preview HTML)
+    const designSpecWrite = mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+      c[0]?.path?.includes("onboarding.design.md")
+    )
+    expect(designSpecWrite).toBeDefined()
+    const writtenContent = Buffer.from(
+      designSpecWrite?.[0]?.content ?? "",
+      "base64",
+    ).toString("utf-8")
+    expect(writtenContent).toBe(CONSOLIDATED_SPEC)
+
+    // Post-patch preview upload fired (patchAppliedThisTurn=true, normal path line 2034)
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
+
+    // Response is normal path — agent prose present, no fix-all loop completion message
+    const text = lastUpdateText(client)
+    // No internal tool names or platform markers leaked to Slack response
+    expect(text).not.toContain("[PLATFORM")
+    expect(text).not.toContain("rewrite_design_spec")
+    expect(text).not.toContain("apply_design_spec_patch")
+
+    // 7 Anthropic calls: 2 routing + 1 pre-audit + 2 agent turns + 1 save-audit + 1 post-patch audit
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+  })
+})
