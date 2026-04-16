@@ -1231,6 +1231,16 @@ describe("auditSpecRenderAmbiguity — producer tests (system prompt instructs J
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
     expect(systemPrompt.toLowerCase()).toMatch(/only.*array|array.*only|no preamble|return only/i)
   })
+
+  it("system prompt instructs Haiku to include issue AND proposed fix separated by ' — '", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Producer must instruct the LLM to emit "issue — fix" so splitQualityIssue always gets a recommendation
+    expect(systemPrompt).toContain(" — ")
+    expect(systemPrompt.toLowerCase()).toMatch(/proposed fix|fix|recommendation/i)
+  })
 })
 
 // ─── Network failure resilience — spec-auditor clients ────────────────────────

@@ -229,7 +229,7 @@ Do NOT flag:
 - Scrollbar treatment if the spec explicitly states "scrollbar hidden", "overflow: hidden", or any equivalent
 - Empty state if a screen is explicitly defined as always having data (e.g. a detail view only reachable from a populated list)
 
-Return a JSON array of strings. Each string names one specific ambiguity in ≤25 words. If the spec is fully specified for rendering, return: []
+Return a JSON array of strings. Each string contains the issue AND a specific proposed fix, separated by " — ". Format: "<concise issue in ≤15 words> — <specific proposed fix in ≤15 words>". Example: "Splash screen has no defined background color — set to --color-background-primary". If the spec is fully specified for rendering, return: []
 
 Return ONLY the JSON array, no preamble or explanation.`,
     messages: [{ role: "user", content: designSpec }],
