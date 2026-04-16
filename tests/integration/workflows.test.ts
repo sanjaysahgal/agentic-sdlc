@@ -1426,9 +1426,10 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
     //   [0] isOffTopicForAgent
     //   [1] isSpecStateQuery
     //   [2] runAgent (tool_use) → apply_design_spec_patch
-    //   [3] auditSpecRenderAmbiguity → ambiguities present  (generateDesignPreview is template-based)
+    //   [3] auditSpecRenderAmbiguity pass1 → issues found
+    //   [3b] auditSpecRenderAmbiguity pass2 → recommendations (two-pass approach)
     //   [4] runAgent (tool_use again) → apply_design_spec_patch (agent fixes ambiguities)
-    //   [5] auditSpecRenderAmbiguity → [] (resolved)
+    //   [5] auditSpecRenderAmbiguity pass1 → [] (resolved, no pass2 needed)
     //   [6] runAgent (end_turn) → response
     //   [7] identifyUncommittedDecisions
     // No design draft on branch → auditPhaseCompletion skipped
@@ -1439,12 +1440,13 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips positioned near the bottom." } }],
       })                                                                        // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Chat Home chips position is vague — must specify exact spacing from prompt bar"]' }] }) // auditSpecRenderAmbiguity → ambiguities
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Chat Home chips position is vague"]' }] }) // auditSpecRenderAmbiguity pass1 → issues
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["set 12px above the prompt bar"]' }] })     // auditSpecRenderAmbiguity pass2 → recommendations
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t2", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips: 12px above the prompt bar." } }],
       })                                                                        // runAgent: tool_use (agent patches ambiguity)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity → resolved
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity pass1 → resolved
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated chip positioning to 12px above the prompt bar." }] }) // runAgent: end_turn
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
 
