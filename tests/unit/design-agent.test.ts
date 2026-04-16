@@ -507,6 +507,31 @@ None.
     expect(result).not.toContain("Spec gap")
   })
 
+  it("CTA gates on openItemCount when no blocking questions and no uncommitted decisions", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoQuestions, specUrl: SPEC_URL, openItemCount: 8 })
+    expect(result).toContain("Resolve the 8 open items below")
+    expect(result).toContain("then say *approved* to move to engineering")
+    expect(result).not.toContain("Say *approved* to move to engineering")
+  })
+
+  it("CTA gates on openItemCount=1 with singular wording", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoQuestions, specUrl: SPEC_URL, openItemCount: 1 })
+    expect(result).toContain("Resolve the 1 open item below")
+    // CTA uses singular "item" not "items"
+    expect(result).not.toContain("1 open items")
+  })
+
+  it("CTA offers approval when openItemCount is 0", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftNoQuestions, specUrl: SPEC_URL, openItemCount: 0 })
+    expect(result).toContain("Say *approved* to move to engineering")
+  })
+
+  it("openItemCount does not gate approval when blocking questions also present (blocking has higher priority)", () => {
+    const result = buildDesignStateResponse({ featureName: "onboarding", draftContent: draftWithBlocking, specUrl: SPEC_URL, openItemCount: 5 })
+    expect(result).toContain("Resolve the blocking question")
+    expect(result).not.toContain("Resolve the 5 open items")
+  })
+
 })
 
 describe("buildDesignSystemPrompt — PATCH enforcement rules", () => {

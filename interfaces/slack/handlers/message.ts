@@ -43,6 +43,11 @@ const phaseEntryAuditCache = new Map<string, string>()
 // action menu on cache hits without re-parsing the notice string.
 const designReadinessFindingsCache = new Map<string, Array<{ issue: string; recommendation: string }>>()
 
+// Cache for LLM render ambiguity results from auditSpecRenderAmbiguity.
+// Populated by state queries; consumed by subsequent regular-path messages without extra LLM calls.
+// Key: `render-ambiguity:${featureName}:${specFingerprint}` — invalidates automatically on spec edits.
+const renderAmbiguitiesCache = new Map<string, string[]>()
+
 // Lightweight content fingerprint — fast, no crypto dependency.
 // Detects any edit to spec content including manual edits mid-phase.
 function specFingerprint(content: string): string {
@@ -54,6 +59,7 @@ function specFingerprint(content: string): string {
 export function clearPhaseAuditCaches(): void {
   phaseEntryAuditCache.clear()
   designReadinessFindingsCache.clear()
+  renderAmbiguitiesCache.clear()
 }
 
 
@@ -1124,9 +1130,17 @@ async function runDesignAgent(params: {
       // Full 4-pass quality audit — deterministic checks + Haiku semantic pass.
       // Runs on every state query regardless of how it's phrased — same audit that runs
       // on the design agent LLM path, now consistent across both paths (Principle 7).
-      const stateQualityIssues = draftContent
-        ? await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
-        : []
+      // Results cached by spec fingerprint — regular-path messages reuse them without extra LLM calls.
+      let stateQualityIssues: string[] = []
+      if (draftContent) {
+        const stateQCacheKey = `render-ambiguity:${featureName}:${specFingerprint(draftContent)}`
+        if (renderAmbiguitiesCache.has(stateQCacheKey)) {
+          stateQualityIssues = renderAmbiguitiesCache.get(stateQCacheKey)!
+        } else {
+          stateQualityIssues = await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
+          renderAmbiguitiesCache.set(stateQCacheKey, stateQualityIssues)
+        }
+      }
 
       // Missing brand tokens — same computation as LLM path.
       const missingTokensState = brandContent && draftContent ? auditMissingBrandTokens(draftContent, brandContent) : []
@@ -1181,7 +1195,9 @@ async function runDesignAgent(params: {
         },
       ])
 
-      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions })
+      const stateOpenItemCount = brandDrifts.length + animationDrifts.length + missingTokensState.length +
+        stateQualityIssues.length + readinessFindingsState.length
+      const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions, openItemCount: stateOpenItemCount })
       appendMessage(featureName, { role: "user", content: userMessage })
       appendMessage(featureName, { role: "assistant", content: msg })
       await update(msg + stateActionMenu)
@@ -1277,8 +1293,16 @@ async function runDesignAgent(params: {
   const redundantBrandingIssues = designDraftContent ? auditRedundantBranding(designDraftContent) : []
   const copyCompletenessIssues = designDraftContent ? auditCopyCompleteness(designDraftContent) : []
   const qualityIssues = [...redundantBrandingIssues, ...copyCompletenessIssues]
-  const qualityNotice = qualityIssues.length > 0
-    ? `\n\n[PLATFORM NOTICE — DESIGN QUALITY: ${qualityIssues.length} issue${qualityIssues.length === 1 ? "" : "s"} blocking approval:\n${qualityIssues.map((i, n) => `${n + 1}. ${i}`).join("\n")}\nThe platform displays these in a structured block. DO NOT restate them in your response. Apply any quality fixes the user requested and keep your prose to ≤3 sentences.]`
+
+  // Use cached LLM render ambiguities if populated by a recent state query for this spec version.
+  // State queries write to this cache; regular-path messages read from it at zero LLM cost.
+  // Falls back to deterministic-only qualityIssues when the cache is cold (no prior state query).
+  const preRunLlmQuality: string[] = designDraftContent
+    ? (renderAmbiguitiesCache.get(`render-ambiguity:${featureName}:${specFingerprint(designDraftContent)}`) ?? qualityIssues)
+    : qualityIssues
+
+  const qualityNotice = preRunLlmQuality.length > 0
+    ? `\n\n[PLATFORM NOTICE — DESIGN QUALITY: ${preRunLlmQuality.length} issue${preRunLlmQuality.length === 1 ? "" : "s"} blocking approval:\n${preRunLlmQuality.map((i, n) => `${n + 1}. ${i}`).join("\n")}\nThe platform displays these in a structured block. DO NOT restate them in your response. Apply any quality fixes the user requested and keep your prose to ≤3 sentences.]`
     : ""
   if (designDraftContent) {
     const dfp = specFingerprint(designDraftContent)
@@ -1343,7 +1367,7 @@ async function runDesignAgent(params: {
     ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
     ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
     ...missingTokensDesign.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
-    ...qualityIssues.map(splitQualityIssue),
+    ...preRunLlmQuality.map(splitQualityIssue),
     ...designReadinessFindings.map(f => ({ issue: f.issue, fix: f.recommendation })),
   ]
   const itemsToFix = !fixIntent.isFixAll ? [] :
@@ -1355,7 +1379,7 @@ async function runDesignAgent(params: {
   // new spec content, which grows the spec and triggers new quality findings (unbounded growth).
   // Only brand drift is truly surgical: a specific value swap that cannot introduce new issues.
   const preRunReadinessIssues = new Set(designReadinessFindings.map(f => f.issue))
-  const preRunQualityIssues = new Set(qualityIssues.map(q => splitQualityIssue(q).issue))
+  const preRunQualityIssues = new Set(preRunLlmQuality.map(q => splitQualityIssue(q).issue))
   const autoFixItems = itemsToFix.filter(item =>
     !item.issue.includes("[PM-GAP]") &&
     !preRunReadinessIssues.has(item.issue) &&
@@ -1692,7 +1716,8 @@ async function runDesignAgent(params: {
   let effectiveBrandDrifts = brandDriftsDesign
   let effectiveAnimDrifts = animDriftsDesign
   let effectiveMissingTokens = missingTokensDesign
-  let effectiveDeterministicQuality = qualityIssues  // strings, not ActionItems
+  let effectiveDeterministicQuality = qualityIssues  // strings, not ActionItems — used in continuation loop
+  let effectiveLlmQuality = preRunLlmQuality  // strings — used in action menu (LLM + deterministic when cache warm)
   let effectiveReadinessFindings = designReadinessFindings
 
   let response: string
@@ -1926,6 +1951,7 @@ async function runDesignAgent(params: {
         effectiveAnimDrifts = freshAnim
         effectiveMissingTokens = freshMissing
         effectiveDeterministicQuality = freshDeterministicQuality
+        effectiveLlmQuality = freshDeterministicQuality  // post-patch: use deterministic (LLM call deferred to next state query)
         effectiveReadinessFindings = freshReadiness && !freshReadiness.ready ? freshReadiness.findings : []
         designReadinessFindings = effectiveReadinessFindings
       }
@@ -2116,7 +2142,7 @@ async function runDesignAgent(params: {
     {
       emoji: ":mag:",
       label: "Design Quality",
-      issues: effectiveDeterministicQuality.map(splitQualityIssue),
+      issues: effectiveLlmQuality.map(splitQualityIssue),
     },
     {
       emoji: ":white_check_mark:",
@@ -2138,7 +2164,7 @@ async function runDesignAgent(params: {
   // must not be able to claim "engineering-ready" when the rubric shows items remaining.
   const escalationJustOfferedPm = escalationJustOffered && getPendingEscalation(featureName)?.targetAgent === "pm"
   const totalEffectiveItems = effectiveBrandDrifts.length + effectiveAnimDrifts.length +
-    effectiveMissingTokens.length + effectiveDeterministicQuality.length +
+    effectiveMissingTokens.length + effectiveLlmQuality.length +
     effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).length
   const platformStatusPrefix = (!escalationJustOfferedPm && totalEffectiveItems > 0)
     ? `_Platform audit: ${totalEffectiveItems} item${totalEffectiveItems === 1 ? "" : "s"} remain before engineering handoff._\n\n`

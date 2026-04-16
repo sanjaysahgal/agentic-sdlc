@@ -1022,11 +1022,12 @@ describe("Scenario 12 — State query preview freshness", () => {
       .mockRejectedValueOnce(new Error("Not Found")) // 5. approvedProductSpec
       .mockResolvedValueOnce({ data: { content: Buffer.from(SAVED_HTML).toString("base64"), type: "file" } }) // 6. saved preview HTML
 
-    // Anthropic: [0] identifyUncommittedDecisions → none, [1] auditSpecRenderAmbiguity → [] findings,
-    // auditPhaseCompletion may be a cache hit from the first Scenario 12 test (same spec + featureName).
+    // Anthropic: [0] identifyUncommittedDecisions → none, [1] auditSpecRenderAmbiguity → [] findings (if cache miss),
+    // auditPhaseCompletion may also be a cache hit from the first Scenario 12 test (same spec + featureName).
+    // Both auditSpecRenderAmbiguity and auditPhaseCompletion may be cached — identifyUncommittedDecisions always fires.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] }) // auditSpecRenderAmbiguity (if cache miss)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // auditPhaseCompletion (if cache miss)
 
     const client = makeClient()
@@ -1039,10 +1040,10 @@ describe("Scenario 12 — State query preview freshness", () => {
     expect(uploadCall?.title).not.toContain("committed spec")
     expect(uploadCall?.content).toBe(SAVED_HTML)
 
-    // 2-3 Anthropic calls — identifyUncommittedDecisions + auditSpecRenderAmbiguity always fire;
-    // auditPhaseCompletion fires only on cache miss (may be populated by previous Scenario 12 test).
+    // 1-3 Anthropic calls — identifyUncommittedDecisions always fires;
+    // auditSpecRenderAmbiguity and auditPhaseCompletion may both be cache hits from the first Scenario 12 test.
     // (generateDesignPreview was NOT called — saved GitHub file served directly)
-    expect(mockAnthropicCreate.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(mockAnthropicCreate.mock.calls.length).toBeGreaterThanOrEqual(1)
   })
 
   it("state query completes with preview when uncommitted decisions exist", async () => {

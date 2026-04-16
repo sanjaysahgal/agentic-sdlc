@@ -564,8 +564,9 @@ export function buildDesignStateResponse(params: {
   previewNote?: string | null
   specGap?: string | null
   uncommittedDecisions?: string
+  openItemCount?: number
 }): string {
-  const { featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions } = params
+  const { featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions, openItemCount } = params
 
   if (!draftContent) {
     const pendingSection = uncommittedDecisions
@@ -656,13 +657,15 @@ export function buildDesignStateResponse(params: {
   }
 
   // ── Conditional CTA — one clear next step, priority-ordered ──
-  // Uncommitted decisions > blocking questions > all-clear.
+  // Uncommitted decisions > blocking questions > platform open items > all-clear.
   // Approval is not offered until all gates are clear.
   lines.push("")
   if (hasUncommitted) {
     lines.push(`Save the pending decisions above first — say *save those*, then come back to approve.`)
   } else if (blocking.length > 0) {
     lines.push(`Resolve the blocking question${blocking.length !== 1 ? "s" : ""} above, then say *approved* to move to engineering.`)
+  } else if ((openItemCount ?? 0) > 0) {
+    lines.push(`Resolve the ${openItemCount} open item${openItemCount !== 1 ? "s" : ""} below, then say *approved* to move to engineering.`)
   } else {
     lines.push(`Say *approved* to move to engineering.`)
   }
