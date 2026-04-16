@@ -11,6 +11,10 @@ const { githubOwner: owner, githubRepo: repo } = loadWorkspaceConfig()
 const platformOwner = process.env.PLATFORM_GITHUB_OWNER ?? owner
 const platformRepo  = process.env.PLATFORM_GITHUB_REPO  ?? repo
 
+// Dry-run mode: set SIMULATE_DRY_RUN=true to log writes without executing them.
+// Used by scripts/simulate-agent.ts — never set in production.
+const isDryRun = () => process.env.SIMULATE_DRY_RUN === "true"
+
 // Read a file from the repo. Returns empty string if not found.
 export async function readFile(path: string, ref?: string): Promise<string> {
   try {
@@ -75,6 +79,7 @@ export async function saveDraftSpec(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveDraftSpec: would write ${filePath} (${content.length} chars)`); return }
   try {
     await saveDraftFile({
       branch: `spec/${featureName}-product`,
@@ -96,6 +101,7 @@ export async function saveDraftDesignSpec(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveDraftDesignSpec: would write ${filePath} (${content.length} chars)`); return }
   try {
     await saveDraftFile({
       branch: `spec/${featureName}-design`,
@@ -175,6 +181,7 @@ export async function saveApprovedSpec(params: {
   content: string
 }): Promise<"already-on-main" | "saved"> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveApprovedSpec: would approve ${filePath} (${content.length} chars)`); return "saved" }
   const branch = `spec/${featureName}-product`
 
   // Check if already on main — if so, update in place
@@ -211,6 +218,7 @@ export async function saveAgentFeedback(params: {
   submittedBy?: string
 }): Promise<void> {
   const { feedback, submittedBy } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveAgentFeedback: would open issue "${feedback.slice(0, 60)}..."`); return }
   const body = submittedBy
     ? `**Submitted by:** ${submittedBy}\n\n${feedback}`
     : feedback
@@ -242,6 +250,7 @@ export async function saveApprovedDesignSpec(params: {
   content: string
 }): Promise<"already-on-main" | "saved"> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveApprovedDesignSpec: would approve ${filePath} (${content.length} chars)`); return "saved" }
 
   let mainFileSha: string | undefined
   try {
@@ -278,6 +287,7 @@ export async function saveDraftEngineeringSpec(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveDraftEngineeringSpec: would write ${filePath} (${content.length} chars)`); return }
   try {
     await saveDraftFile({
       branch: `spec/${featureName}-engineering`,
@@ -299,6 +309,7 @@ export async function saveApprovedEngineeringSpec(params: {
   content: string
 }): Promise<"already-on-main" | "saved"> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveApprovedEngineeringSpec: would approve ${filePath} (${content.length} chars)`); return "saved" }
 
   let mainFileSha: string | undefined
   try {
@@ -416,6 +427,7 @@ export async function clearHandoffSection(params: {
   sectionHeading: string  // e.g. "## Design Assumptions"
 }): Promise<void> {
   const { featureName, filePath, sectionHeading } = params
+  if (isDryRun()) { console.log(`[DRY RUN] clearHandoffSection: would clear "${sectionHeading}" from ${filePath} on main`); return }
 
   const existing = await readFile(filePath, "main")
   if (!existing) {
@@ -462,6 +474,7 @@ export async function saveDraftHtmlPreview(params: {
   content: string
 }): Promise<void> {
   const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveDraftHtmlPreview: would write ${filePath} (${content.length} chars)`); return }
   try {
     await saveDraftFile({
       branch: `spec/${featureName}-design`,
@@ -513,6 +526,7 @@ export async function createSpecPR(params: {
   prBody: string
 }): Promise<string> {
   const { featureName, filePath, content, prTitle, prBody } = params
+  if (isDryRun()) { console.log(`[DRY RUN] createSpecPR: would open PR "${prTitle}" for ${filePath}`); return "https://github.com/dry-run/pr/0" }
   const branch = `spec/${featureName}-product`
 
   // Get main branch SHA
@@ -563,6 +577,7 @@ export async function saveUserFeedback(params: {
   userMessage: string
   reactingUser: string
 }): Promise<void> {
+  if (isDryRun()) { console.log(`[DRY RUN] saveUserFeedback: would append ${params.rating} reaction to feedback log`); return }
   const feedbackPath = "specs/feedback/reactions.jsonl"
   try {
     // Read existing file (returns "" if not found — readFile swallows 404s)

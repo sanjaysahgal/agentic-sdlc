@@ -200,8 +200,8 @@ describe("buildDesignSystemPrompt", () => {
 })
 
 describe("DESIGN_TOOLS structure", () => {
-  it("exports 8 tools", () => {
-    expect(DESIGN_TOOLS).toHaveLength(8)
+  it("exports 9 tools", () => {
+    expect(DESIGN_TOOLS).toHaveLength(9)
   })
 
   it("includes save_design_spec_draft as first tool", () => {
@@ -212,28 +212,32 @@ describe("DESIGN_TOOLS structure", () => {
     expect(DESIGN_TOOLS[1].name).toBe("apply_design_spec_patch")
   })
 
-  it("includes generate_design_preview as third tool", () => {
-    expect(DESIGN_TOOLS[2].name).toBe("generate_design_preview")
+  it("includes rewrite_design_spec as third tool", () => {
+    expect(DESIGN_TOOLS[2].name).toBe("rewrite_design_spec")
   })
 
-  it("includes fetch_url as fourth tool", () => {
-    expect(DESIGN_TOOLS[3].name).toBe("fetch_url")
+  it("includes generate_design_preview as fourth tool", () => {
+    expect(DESIGN_TOOLS[3].name).toBe("generate_design_preview")
   })
 
-  it("includes offer_pm_escalation as fifth tool", () => {
-    expect(DESIGN_TOOLS[4].name).toBe("offer_pm_escalation")
+  it("includes fetch_url as fifth tool", () => {
+    expect(DESIGN_TOOLS[4].name).toBe("fetch_url")
   })
 
-  it("includes offer_architect_escalation as sixth tool", () => {
-    expect(DESIGN_TOOLS[5].name).toBe("offer_architect_escalation")
+  it("includes offer_pm_escalation as sixth tool", () => {
+    expect(DESIGN_TOOLS[5].name).toBe("offer_pm_escalation")
   })
 
-  it("includes run_phase_completion_audit as seventh tool", () => {
-    expect(DESIGN_TOOLS[6].name).toBe("run_phase_completion_audit")
+  it("includes offer_architect_escalation as seventh tool", () => {
+    expect(DESIGN_TOOLS[6].name).toBe("offer_architect_escalation")
   })
 
-  it("includes finalize_design_spec as eighth tool", () => {
-    expect(DESIGN_TOOLS[7].name).toBe("finalize_design_spec")
+  it("includes run_phase_completion_audit as eighth tool", () => {
+    expect(DESIGN_TOOLS[7].name).toBe("run_phase_completion_audit")
+  })
+
+  it("includes finalize_design_spec as ninth tool", () => {
+    expect(DESIGN_TOOLS[8].name).toBe("finalize_design_spec")
   })
 
   it("save_design_spec_draft requires content parameter", () => {
@@ -244,6 +248,16 @@ describe("DESIGN_TOOLS structure", () => {
   it("apply_design_spec_patch requires patch parameter", () => {
     const tool = DESIGN_TOOLS.find(t => t.name === "apply_design_spec_patch")!
     expect(tool.input_schema.required).toContain("patch")
+  })
+
+  it("rewrite_design_spec requires content parameter", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "rewrite_design_spec")!
+    expect(tool.input_schema.required).toContain("content")
+  })
+
+  it("rewrite_design_spec description names structural cleanup as its purpose", () => {
+    const tool = DESIGN_TOOLS.find(t => t.name === "rewrite_design_spec")!
+    expect(tool.description).toMatch(/structural cleanup|duplicate section|consolidat/i)
   })
 
   it("generate_design_preview requires specContent parameter", () => {

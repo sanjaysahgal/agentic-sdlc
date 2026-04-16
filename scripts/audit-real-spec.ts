@@ -1,17 +1,32 @@
-import { config } from "dotenv"
-config({ path: "/Users/ssahgal/Developer/agentic-sdlc/.env" })
-
+import "dotenv/config"
 import { readFile } from "../runtime/github-client"
+import { loadWorkspaceConfig } from "../runtime/workspace-config"
 import { auditSpecRenderAmbiguity } from "../runtime/spec-auditor"
 import { auditPhaseCompletion, buildDesignRubric } from "../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../runtime/brand-auditor"
 
 async function main() {
-  const spec = await readFile("specs/features/onboarding/onboarding.design.md", "spec/onboarding-design")
-  if (!spec) { console.log("NOT FOUND"); return }
+  const args = process.argv.slice(2)
+  const featureIdx = args.indexOf("--feature")
+  const featureName = featureIdx !== -1 ? args[featureIdx + 1] : null
+
+  if (!featureName) {
+    console.error("Usage: audit-real-spec.ts --feature <name>")
+    console.error("  --feature  required: feature name (e.g. onboarding)")
+    process.exit(1)
+  }
+
+  const config = loadWorkspaceConfig()
+  const { paths } = config
+
+  const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
+  const designBranch = `spec/${featureName}-design`
+
+  const spec = await readFile(designSpecPath, designBranch)
+  if (!spec) { console.log("NOT FOUND:", designSpecPath, "on", designBranch); return }
   console.log("Spec length:", spec.length, "chars\n")
 
-  const brandMd = await readFile("specs/brand/BRAND.md")
+  const brandMd = await readFile(paths.brand)
 
   console.log("=== BRAND DRIFT ===")
   if (brandMd) {
@@ -25,7 +40,7 @@ async function main() {
     console.log("Missing tokens:", missingTokens.length)
     missingTokens.forEach((m, i) => console.log(`  ${i+1}. ${m.token}`))
   } else {
-    console.log("No BRAND.md found")
+    console.log("No brand file found at:", paths.brand)
   }
 
   console.log("\n=== QUALITY (auditSpecRenderAmbiguity) ===")
@@ -36,12 +51,12 @@ async function main() {
   quality.forEach((q, i) => console.log(`  ${i+1}. ${q}`))
 
   console.log("\n=== READINESS (auditPhaseCompletion) ===")
-  const productSpec = await readFile("specs/product/PRODUCT_VISION.md")
-  const sysArch = await readFile("specs/architecture/system-architecture.md")
+  const productSpec = await readFile(paths.productVision)
+  const sysArch = await readFile(paths.systemArchitecture)
   const readiness = await auditPhaseCompletion({
     specContent: spec,
     rubric: buildDesignRubric(["mobile", "desktop"]),
-    featureName: "onboarding",
+    featureName,
     productVision: productSpec || undefined,
     systemArchitecture: sysArch || undefined,
   }).catch(e => { console.log("ERROR:", e.message); return null })

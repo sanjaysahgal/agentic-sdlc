@@ -86,4 +86,22 @@ describe("loadWorkspaceConfig", () => {
     expect(config.paths.productVision).toBe("docs/vision.md")
     expect(config.paths.featuresRoot).toBe("features")
   })
+
+  it("uses default maxAllowedSpecGrowthRatio of 1.2 when unset", () => {
+    process.env.PRODUCT_NAME = "AcmeApp"
+    process.env.GITHUB_OWNER = "acme"
+    process.env.GITHUB_REPO = "my-app"
+    delete process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO
+    const config = loadWorkspaceConfig()
+    expect(config.maxAllowedSpecGrowthRatio).toBe(1.2)
+  })
+
+  it("reads maxAllowedSpecGrowthRatio from MAX_ALLOWED_SPEC_GROWTH_RATIO env var", () => {
+    process.env.PRODUCT_NAME = "AcmeApp"
+    process.env.GITHUB_OWNER = "acme"
+    process.env.GITHUB_REPO = "my-app"
+    process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO = "1.5"
+    const config = loadWorkspaceConfig()
+    expect(config.maxAllowedSpecGrowthRatio).toBe(1.5)
+  })
 })

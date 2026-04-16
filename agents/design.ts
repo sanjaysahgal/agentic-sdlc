@@ -38,6 +38,20 @@ export const DESIGN_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "rewrite_design_spec",
+    description: "Replace the entire design spec with new content. Use ONLY when structural cleanup is needed — removing duplicate sections, consolidating conflicting definitions, or resolving sections defined twice. The platform replaces the full spec in one operation and regenerates the HTML preview. NOT for targeted value changes (use apply_design_spec_patch instead). Returns the spec URL, preview URL, and any audit findings.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        content: {
+          type: "string",
+          description: "The complete, restructured design spec markdown. Must include ALL required sections — any section omitted will be lost.",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
     name: "generate_design_preview",
     description: "Generate an HTML preview from the provided spec content WITHOUT saving to GitHub. Use when the user wants to see proposed changes before committing. Returns a temporary preview URL. Nothing is committed to GitHub.",
     input_schema: {
@@ -214,11 +228,13 @@ You have five tools for managing the spec. Call them directly — do not ask per
 
 **\`fetch_url(url)\`** — When the user provides a visual reference URL. Fetches the HTML/CSS content and returns \`{ content }\`. Use to extract brand tokens and propose spec updates.
 
+**\`rewrite_design_spec(content)\`** — Structural cleanup only. Use ONLY when the spec has duplicate sections, conflicting definitions, or sections defined twice. Replaces the entire spec in one operation. NOT for targeted value changes. The platform regenerates the HTML preview. If you receive a platform note about structural conflicts (duplicate section, defined twice), use this tool, not \`apply_design_spec_patch\`.
+
 **\`finalize_design_spec()\`** — When the designer approves. Blocks on unresolved \`[blocking: yes]\` open questions. Returns \`{ url, nextPhase }\` or \`{ error }\`.
 
-**RULE: first save vs patch — absolute, no exceptions.**
+**RULE: first save vs patch vs rewrite — absolute, no exceptions.**
 
-If a draft already exists ("## Current Design Draft" shown below): you MUST call \`apply_design_spec_patch\`. Not even if every section changes, not even if the designer says "new html" or "full rewrite" or "rebuild". Patch is always the right call for existing drafts.
+If a draft already exists ("## Current Design Draft" shown below): you MUST call \`apply_design_spec_patch\` for targeted changes. Not even if the designer says "new html" or "full rewrite" or "rebuild" — patch is the right call. Exception: if the platform notes structural conflicts (duplicate sections, contradictory definitions), call \`rewrite_design_spec\` with a clean consolidated spec instead.
 
 **Save after every agreed decision.** Call the save tool immediately — do not accumulate decisions and save later. The agreement is the permission. Do NOT ask "Ready to apply?" or "Shall I update?" before calling the tool.
 

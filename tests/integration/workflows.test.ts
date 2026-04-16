@@ -7022,3 +7022,100 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
   })
 })
+
+// ─── Scenario N61: Post-patch spec health invariant ────────────────────────
+//
+// After the agent applies patches, the platform compares pre-run vs post-run
+// spec size and finding count. If the spec bloated beyond maxAllowedSpecGrowthRatio
+// (default 1.2 = 20%), the platform surfaces a human-friendly bloat warning and
+// returns early — no action menu, no preview upload.
+//
+// This is a structural gate: arithmetic comparison, no LLM, fires on every patch turn.
+// Principle 8: platform enforcement first.
+
+describe("Scenario N61 — Post-patch spec health invariant fires on bloating patch", () => {
+  const THREAD = "workflow-n61"
+
+  const SHORT_SPEC = "# Onboarding Design Spec\n\n## Screens\nScreen 1.\n"
+  // Bloated spec is >> 110% of SHORT_SPEC (test uses 1.1 ratio cap for reliability)
+  const BLOATED_SPEC = SHORT_SPEC + "Duplicate content added by patch. ".repeat(200)
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+    process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO = "1.1"
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    delete process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO
+  })
+
+  it("patch that bloats spec beyond growth ratio triggers health warning and exits early", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Before patch write: short spec. After patch write: bloated spec (simulates what was committed).
+    // Flag-based (not readCount-based) because loadDesignAgentContext also reads the design spec
+    // before the agent runs — a readCount approach would return BLOATED_SPEC prematurely.
+    let patchWritten = false
+    mockCreateOrUpdate.mockImplementation(async () => { patchWritten = true; return {} })
+    mockGetContent.mockImplementation(async ({ path }: { path: string }) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        const content = patchWritten ? BLOATED_SPEC : SHORT_SPEC
+        return { data: { type: "file", content: Buffer.from(content).toString("base64"), sha: "sha-1" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] auditPhaseCompletion pre-run → PASS (short spec, no findings)
+    //   [3] runAgent: tool_use → apply_design_spec_patch
+    //   [4] auditSpecRenderAmbiguity (saveDesignDraft) → []
+    //   [5] runAgent: end_turn
+    //   [6] auditPhaseCompletion post-patch (runFreshDesignAudit) → PASS
+    //   → Health invariant fires (bloated > 110%) → returns early
+    //   Total: 7 Anthropic calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })  // [2] pre-run audit: PASS
+      .mockResolvedValueOnce({                                                  // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-n61-1", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\nScreen 1.\n" + "Added content: ".repeat(200),
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // [4] auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({                                                  // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Updated the screens section." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })  // [6] post-patch audit: PASS
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "update the screens section"),
+      client,
+    })
+
+    // Health invariant fired: response contains bloat warning in human-friendly language
+    const text = lastUpdateText(client)
+    expect(text).toContain("wasn't in better shape")
+    expect(text).toContain("grew significantly")
+
+    // Platform returned early: no preview upload (health check fires before post-patch preview point)
+    expect(client.files.uploadV2).not.toHaveBeenCalled()
+
+    // 7 Anthropic calls (health check is arithmetic — no extra LLM call)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+  })
+})

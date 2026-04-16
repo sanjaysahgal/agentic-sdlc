@@ -1328,7 +1328,7 @@ async function runDesignAgent(params: {
           console.log(`[ESCALATION] Gate 1 [PM-GAP] findings:\n${productFindingsPreRun.map(f => f.issue).join("\n")}`)
         }
         const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. The platform displays these in a structured block — DO NOT restate or list them in your response. For product gaps, call offer_pm_escalation. For architecture gaps, call offer_architect_escalation. For design gaps you own, fix them when the user asks. Keep your prose to ≤3 sentences.\n${findingLines}]`
+        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. The platform displays these in a structured block — DO NOT restate or list them in your response. For product gaps, escalate to the PM. For architecture gaps, escalate to the Architect. For design gaps you own, fix them when the user asks. Keep your prose to ≤3 sentences.\n${findingLines}]`
       } else if (designAuditResult?.ready) {
         console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: PASS — no findings`)
         designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
@@ -1393,10 +1393,15 @@ async function runDesignAgent(params: {
     !item.issue.includes("[PM-GAP]") &&
     (preRunReadinessIssues.has(item.issue) || preRunQualityIssues.has(item.issue))
   )
+  // Split singlePassFixItems: structural conflicts route to rewrite_design_spec, others to patch.
+  const isStructuralConflict = (issue: string) =>
+    /duplicate|defined twice|conflicting|appears twice|multiple.*section/i.test(issue)
+  const structuralFixItems = singlePassFixItems.filter(item => isStructuralConflict(item.issue))
+  const targetedFixItems = singlePassFixItems.filter(item => !isStructuralConflict(item.issue))
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : (fixIntent.isFixAll && singlePassFixItems.length > 0)
-    ? `\n\n[PLATFORM FIX-ALL — Address the design issues listed below by making targeted additions or corrections to the relevant spec sections. Do not rewrite or restructure existing content. Use apply_design_spec_patch for each change. Do not ask for confirmation. Output ≤2 sentences after completing all changes.\n${singlePassFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+    ? `\n\n[PLATFORM FIX-ALL — Address the design issues listed below.${structuralFixItems.length > 0 ? ` For structural conflicts (duplicate sections, contradictory definitions): use rewrite_design_spec with a clean consolidated spec. For all other items: make targeted additions or corrections via apply_design_spec_patch.` : " Make targeted additions or corrections to the relevant spec sections via apply_design_spec_patch."} Do not ask for confirmation. Output ≤2 sentences after completing all changes.\n${singlePassFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : ""
 
   let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice
@@ -1496,7 +1501,7 @@ async function runDesignAgent(params: {
   // injected into the user message — no work is lost on long threads.
   // designSaveTools is declared here so both the runAgent try-catch and the post-response
   // audit below can reference the same constant without duplication.
-  const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "finalize_design_spec"]
+  const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "rewrite_design_spec", "finalize_design_spec"]
 
   // Tool handler extracted as named const so the fix-all loop can reuse it across passes
   // without re-creating the closure on each call.
@@ -1506,7 +1511,7 @@ async function runDesignAgent(params: {
       // Any PM/architect gaps will surface in the action menu after fix-all completes.
       if (fixIntent.isFixAll && (name === "offer_pm_escalation" || name === "offer_architect_escalation")) {
         console.log(`[FIX-ALL] Blocked ${name} during fix-all — deferring to post-loop action menu`)
-        return { result: `[Fix-all mode] Escalation tools are suspended during fix-all passes. Apply all spec patches first via apply_design_spec_patch. Any PM or architect gaps will be surfaced in the structured action menu after fix-all completes — do not call escalation tools.` }
+        return { result: `[Fix-all mode] Escalation is suspended during fix-all passes. Apply all spec patches first. Any PM or architect gaps will be surfaced in the structured action menu after fix-all completes — do not escalate during this pass.` }
       }
       if (name === "save_design_spec_draft") {
         return saveDesignDraft(input.content as string)
@@ -1517,6 +1522,10 @@ async function runDesignAgent(params: {
         const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
         patchAppliedThisTurn = true
         return saveDesignDraft(mergedDraft, { skipSlackUpload: true })
+      }
+      if (name === "rewrite_design_spec") {
+        patchAppliedThisTurn = true
+        return saveDesignDraft(input.content as string, { skipSlackUpload: true })
       }
       if (name === "generate_design_preview") {
         // Serve the HTML that was saved when the spec was last committed.
@@ -1924,6 +1933,12 @@ async function runDesignAgent(params: {
         let designResidual = computeDesignResidual(freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
         let contPrevCount = designResidual.length
 
+        // Capture pre-run state BEFORE continuation passes update findings.
+        // designReadinessFindings here is still the pre-agent-run value — correct baseline.
+        const preRunSpecSize = designDraftContent?.length ?? 0
+        const preRunFindingCount = designReadinessFindings.length + preRunLlmQuality.length
+        const { maxAllowedSpecGrowthRatio } = loadWorkspaceConfig()
+
         for (let contPass = 1; contPass <= 2 && designResidual.length > 0; contPass++) {
           await update(`_Platform: ${designResidual.length} item${designResidual.length === 1 ? "" : "s"} remain after patches — continuing..._`)
           const continuationMsg = buildEnrichedMessage({ userMessage: `[PLATFORM: continuation pass ${contPass}]`, lockedDecisions: lockedDecisionsDesign, priorContext: "" }) +
@@ -1963,6 +1978,31 @@ async function runDesignAgent(params: {
         effectiveLlmQuality = freshDeterministicQuality  // post-patch: use deterministic (LLM call deferred to next state query)
         effectiveReadinessFindings = freshReadiness && !freshReadiness.ready ? freshReadiness.findings : []
         designReadinessFindings = effectiveReadinessFindings
+
+        // Post-patch spec health invariant (Principle 8 — arithmetic gate, no LLM).
+        // Fires after every turn that modifies the spec — not phrasing-dependent.
+        // Compares pre-run vs post-run spec size and finding count.
+        // Blocks if the spec grew beyond the configured ratio OR gained more findings.
+        // preRunSpecSize and preRunFindingCount were captured before the continuation loop
+        // where designReadinessFindings still had the pre-agent-run values.
+        const postRunSpecSize = freshDraft.length
+        const postRunFindingCount = effectiveReadinessFindings.length + effectiveDeterministicQuality.length
+        const bloated = preRunSpecSize > 0 && postRunSpecSize > preRunSpecSize * maxAllowedSpecGrowthRatio
+        const degraded = postRunFindingCount > preRunFindingCount
+
+        if (bloated || degraded) {
+          let healthMsg = "The spec wasn't in better shape after that update:"
+          if (bloated) {
+            const growthPct = Math.round((postRunSpecSize / preRunSpecSize - 1) * 100)
+            healthMsg += `\n- It grew significantly (${growthPct}% larger than before). There may be duplicate or conflicting sections — consolidating them may help more than another targeted patch.`
+          }
+          if (degraded) {
+            healthMsg += `\n- There are more issues now (${postRunFindingCount}) than before (${preRunFindingCount}). The update may have introduced new conflicts.`
+          }
+          healthMsg += "\n\nSay *try again* and I'll take a different approach, or we can review what changed together."
+          await update(healthMsg)
+          return
+        }
       }
     }
   } catch (err: unknown) {

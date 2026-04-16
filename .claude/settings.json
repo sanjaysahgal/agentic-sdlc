@@ -45,6 +45,19 @@
           {
             "type": "command",
             "command": "FILE=$(jq -r '.tool_input.file_path // \"\"' 2>/dev/null); echo \"$FILE\" | grep -q 'agentic-health360' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"agentic-health360 is a read-only customer repo. Fix the platform parser instead of modifying the customer repo. See Principle 3a in CLAUDE.md.\"}}' || true"
+          },
+          {
+            "type": "command",
+            "command": "python3 /Users/ssahgal/Developer/agentic-sdlc/scripts/hooks/check-hardcoding.py 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/ssahgal/Developer/agentic-sdlc/scripts/hooks/check-plan.py 2>/dev/null || true"
           }
         ]
       }

@@ -10,6 +10,7 @@ export type WorkspaceConfig = {
   githubRepo: string         // GitHub repo name
   mainChannel: string        // Main Slack channel for the concierge (e.g. "all-health360")
   targetFormFactors: string[]  // Form factors the design must specify layout for, e.g. ["mobile", "desktop"]
+  maxAllowedSpecGrowthRatio: number  // Post-patch health gate: max ratio of spec size increase before bloat warning (default 1.2 = 20%)
   roles: {
     pmUser: string           // Slack user ID for the PM — used by Orchestrator alerts
     designerUser: string     // Slack user ID for the designer
@@ -46,6 +47,7 @@ export function loadWorkspaceConfig(): WorkspaceConfig {
       .split(",")
       .map(f => f.trim())
       .filter(Boolean),
+    maxAllowedSpecGrowthRatio: parseFloat(process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO ?? "1.2"),
     roles: {
       pmUser:         process.env.SLACK_PM_USER         ?? "",
       designerUser:   process.env.SLACK_DESIGNER_USER   ?? "",

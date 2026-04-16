@@ -654,3 +654,88 @@ describe("saveUserFeedback", () => {
     await expect(saveUserFeedback(baseParams)).resolves.toBeUndefined()
   })
 })
+
+// ─── dry-run mode ────────────────────────────────────────────────────────────
+
+describe("dry-run mode (SIMULATE_DRY_RUN=true)", () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, SIMULATE_DRY_RUN: "true" }
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
+  it("saveDraftSpec: skips all GitHub writes in dry-run", async () => {
+    await saveDraftSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.product.md",
+      content: "# Spec",
+    })
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+    expect(mockCreateRef).not.toHaveBeenCalled()
+  })
+
+  it("saveApprovedSpec: returns 'saved' without writing in dry-run", async () => {
+    const result = await saveApprovedSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.product.md",
+      content: "# Final",
+    })
+    expect(result).toBe("saved")
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it("saveDraftEngineeringSpec: skips all GitHub writes in dry-run", async () => {
+    await saveDraftEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      content: "# Engineering",
+    })
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it("saveApprovedEngineeringSpec: returns 'saved' without writing in dry-run", async () => {
+    const result = await saveApprovedEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      content: "# Final Engineering",
+    })
+    expect(result).toBe("saved")
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it("createSpecPR: returns dry-run URL without creating anything", async () => {
+    const url = await createSpecPR({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.product.md",
+      content: "# Spec",
+      prTitle: "Spec: onboarding",
+      prBody: "Product spec.",
+    })
+    expect(url).toContain("dry-run")
+    expect(mockCreatePR).not.toHaveBeenCalled()
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it("saveAgentFeedback: skips issue creation in dry-run", async () => {
+    await saveAgentFeedback({ feedback: "Great response." })
+    expect(mockCreateIssue).not.toHaveBeenCalled()
+  })
+
+  it("saveUserFeedback: skips file write in dry-run", async () => {
+    await saveUserFeedback({
+      timestamp: "2024-01-01T00:00:00.000Z",
+      channel: "C123",
+      messageTs: "1234.5678",
+      rating: "positive",
+      agentResponse: "response",
+      userMessage: "message",
+      reactingUser: "U456",
+    })
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+})
