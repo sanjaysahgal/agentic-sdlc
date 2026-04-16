@@ -33,6 +33,30 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### simulate-regression.ts — 5 real-LLM regression scenarios for structural platform behavior (2026-04-16)
+
+`scripts/simulate-regression.ts` closes the producer–consumer chain gap exposed in live testing today: N62 tests the consumer (platform handles `rewrite_design_spec` calls correctly) but no test verifies the real model, given the fix-all notice, actually *chooses* `rewrite_design_spec` for structural conflicts instead of `apply_design_spec_patch`.
+
+**5 scenarios required:**
+
+| ID | Intent | What the platform must do — asserted structurally |
+|---|---|---|
+| S1 | Fix brand issues | `apply_design_spec_patch` called ≥1 time; spec size stable (±5%); brand finding count decreases |
+| S2 | Clean up structural conflicts / duplicates | `rewrite_design_spec` called ≥1 time AND `apply_design_spec_patch` count = 0 for that turn; post-run finding count lower than pre-run |
+| S3 | Ask about current state / readiness | CTA item count in response equals total finding count from last audit |
+| S4 | Express approval — when open items exist | `finalize_design_spec` NOT called; response does not contain commitment phrase ("moving to engineering", "approved") |
+| S5 | Trigger patch that grows spec >20% | Health invariant fires — response contains degradation warning; platform does not emit "spec updated" success |
+
+**All 5 also assert:** response text contains no `[PLATFORM`, no internal tool function names.
+
+S2 is the critical new scenario — proves structural conflicts reliably route to `rewrite_design_spec` not `apply_design_spec_patch` across any phrasing.
+
+All scenarios derive coordinates from `WorkspaceConfig`, no hardcoded customer values. Use `--dry-run` (default) so no GitHub writes during CI.
+
+**Root cause being closed:** Live "fix 3-23" Slack run showed the agent used `apply_design_spec_patch` for 9 structural conflict findings despite the fixAllNotice routing instruction. The continuation pass now routes correctly in code (committed), but producer compliance under the real model has never been verified end-to-end.
+
+---
+
 ### Platform status line suppressed for architect escalations — agent can claim "engineering-ready" with open rubric findings (2026-04-15)
 
 When the design agent calls `offer_architect_escalation`, `escalationJustOffered=true` was suppressing both the action menu AND the platform status line. This let the agent's prose ("Design spec is complete and engineering-ready") go unchallenged even when the rubric showed 10 remaining findings. The suppression was designed for PM escalations (user can't act on design items while PM gap is open) but was incorrectly applied to arch escalations where non-arch design gaps remain.
