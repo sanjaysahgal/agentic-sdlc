@@ -1386,8 +1386,17 @@ async function runDesignAgent(params: {
     !preRunQualityIssues.has(item.issue)
   )
   const pmGapItems = itemsToFix.filter(item => item.issue.includes("[PM-GAP]"))
+  // singlePassFixItems: quality + readiness items that need one agent pass (no convergence loop).
+  // Excluded from autoFixItems (brand drift only) because quality/readiness "fixes" add spec content
+  // rather than swap values — the loop would cause unbounded spec growth. One pass is safe.
+  const singlePassFixItems = itemsToFix.filter(item =>
+    !item.issue.includes("[PM-GAP]") &&
+    (preRunReadinessIssues.has(item.issue) || preRunQualityIssues.has(item.issue))
+  )
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+    : (fixIntent.isFixAll && singlePassFixItems.length > 0)
+    ? `\n\n[PLATFORM FIX-ALL — Address the design issues listed below by making targeted additions or corrections to the relevant spec sections. Do not rewrite or restructure existing content. Use apply_design_spec_patch for each change. Do not ask for confirmation. Output ≤2 sentences after completing all changes.\n${singlePassFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : ""
 
   let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice
