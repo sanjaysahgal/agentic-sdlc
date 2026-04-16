@@ -108,12 +108,24 @@ No additional requirements.
     expect(result).toEqual([])
   })
 
-  it("requests at least 4096 max_tokens to avoid truncation on large specs (≥48KB real specs)", async () => {
+  it("requests at least 8192 max_tokens to avoid truncation on large specs with many findings", async () => {
+    // 26 verbose findings at ~150 chars each = ~3900 chars, which exceeded the old 4096-token limit.
+    // Now set to 8192 (Haiku's maximum) so even worst-case specs don't get truncated.
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
     const call = mockCreate.mock.calls[0][0]
-    expect(call.max_tokens).toBeGreaterThanOrEqual(4096)
+    expect(call.max_tokens).toBeGreaterThanOrEqual(8192)
+  })
+
+  it("Haiku prompt includes per-finding brevity cap to keep output within token budget", async () => {
+    // Producer test: prompt must instruct the model to keep each finding brief.
+    // Without this, 26 findings at ~150 chars each hit the token ceiling and get truncated.
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toMatch(/≤\d+\s*words/i)
   })
 
   it("Haiku prompt includes animation spec requirement for sheets and modals", async () => {

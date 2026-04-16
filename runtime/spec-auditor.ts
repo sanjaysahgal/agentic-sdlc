@@ -184,7 +184,7 @@ export async function auditSpecRenderAmbiguity(designSpec: string, options?: { f
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: `You are auditing a design spec for rendering consistency. Identify elements where two different HTML renderers given the same spec would produce different output because the spec doesn't define the value explicitly.
 
 Flag ONLY elements where a renderer must make an unspecified choice:
@@ -216,7 +216,7 @@ Do NOT flag:
 - Scrollbar treatment if the spec explicitly states "scrollbar hidden", "overflow: hidden", or any equivalent
 - Empty state if a screen is explicitly defined as always having data (e.g. a detail view only reachable from a populated list)
 
-Return a JSON array of strings. Each string names one specific ambiguity. If the spec is fully specified for rendering, return: []
+Return a JSON array of strings. Each string names one specific ambiguity in ≤25 words. If the spec is fully specified for rendering, return: []
 
 Return ONLY the JSON array, no preamble or explanation.`,
     messages: [{ role: "user", content: designSpec }],
