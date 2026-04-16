@@ -33,6 +33,16 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### `auditSpecDraft` false positive — flags PM-spec-covered items as gaps (2026-04-16)
+
+`auditSpecDraft` receives `productVision` + `systemArchitecture` but not the feature PM spec. When a feature PM spec explicitly covers something (e.g. AC#23: "60 minutes of inactivity"), `auditSpecDraft` still surfaces it as a gap because it never sees the PM spec.
+
+**Fix:** Add `approvedProductSpec?: string` param to `auditSpecDraft`. When provided, inject it into the Haiku prompt with an instruction: "If the feature PM spec already explicitly covers this item, do not flag it as a gap." Pass it from every call site (spec state query path + LLM path) the same way `approvedProductSpec` was added to `auditPhaseCompletion` and `classifyForPmGaps`.
+
+**Applies to all agents:** PM spec is available at every call site (it's already read into `approvedPmSpecContent` in the spec state path). No new GitHub reads required.
+
+---
+
 ### simulate-regression.ts — 5 real-LLM regression scenarios for structural platform behavior (2026-04-16)
 
 `scripts/simulate-regression.ts` closes the producer–consumer chain gap exposed in live testing today: N62 tests the consumer (platform handles `rewrite_design_spec` calls correctly) but no test verifies the real model, given the fix-all notice, actually *chooses* `rewrite_design_spec` for structural conflicts instead of `apply_design_spec_patch`.
