@@ -1396,6 +1396,12 @@ async function runDesignAgent(params: {
     /duplicate|defined twice|conflicting|appears twice|multiple.*section/i.test(issue)
   const structuralFixItems = singlePassFixItems.filter(item => isStructuralConflict(item.issue))
   const targetedFixItems = singlePassFixItems.filter(item => !isStructuralConflict(item.issue))
+  // Platform enforcement: when ALL fix items are structural conflicts, remove apply_design_spec_patch
+  // from the tool list entirely — the agent physically cannot call the wrong tool.
+  // Structural enforcement (Principle 8): tool-list restriction, not a prompt instruction.
+  const designToolsForFixAll = (fixIntent.isFixAll && singlePassFixItems.length > 0 && targetedFixItems.length === 0)
+    ? DESIGN_TOOLS.filter(t => t.name !== "apply_design_spec_patch")
+    : DESIGN_TOOLS
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : (fixIntent.isFixAll && singlePassFixItems.length > 0)
@@ -1770,7 +1776,7 @@ async function runDesignAgent(params: {
           userMessage: enrichedUserMessageDesign,
           userImages: pass === 1 ? userImages : [],
           historyLimit: DESIGN_HISTORY_LIMIT,
-          tools: readOnly ? undefined : DESIGN_TOOLS,
+          tools: readOnly ? undefined : designToolsForFixAll,
           toolHandler: designToolHandler,
           toolCallsOut: toolCallsOutDesign,
         })
@@ -1944,11 +1950,12 @@ async function runDesignAgent(params: {
           await update(`_Platform: ${designResidual.length} item${designResidual.length === 1 ? "" : "s"} remain after patches — continuing..._`)
           const contStructural = designResidual.filter(item => isStructuralConflict(item.issue))
           const contTargeted = designResidual.filter(item => !isStructuralConflict(item.issue))
-          const contRouting = contStructural.length > 0
-            ? ` For structural conflicts (duplicate sections, contradictory definitions): use rewrite_design_spec with a clean consolidated spec. For all other items: use apply_design_spec_patch.`
-            : ` Use apply_design_spec_patch for each remaining item.`
+          // Platform enforcement: strip apply_design_spec_patch when all residual items are structural.
+          const contTools = (contTargeted.length === 0)
+            ? DESIGN_TOOLS.filter(t => t.name !== "apply_design_spec_patch")
+            : DESIGN_TOOLS
           const continuationMsg = buildEnrichedMessage({ userMessage: `[PLATFORM: continuation pass ${contPass}]`, lockedDecisions: lockedDecisionsDesign, priorContext: "" }) +
-            `\n\n[PLATFORM CONTINUATION — ${designResidual.length} design item${designResidual.length === 1 ? "" : "s"} still unresolved after your patches.${contRouting} Do not ask for confirmation. Output ≤2 sentences after all changes complete.\n${designResidual.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+            `\n\n[PLATFORM CONTINUATION — ${designResidual.length} design item${designResidual.length === 1 ? "" : "s"} still unresolved after your patches. ${contStructural.length > 0 ? "Use rewrite_design_spec with a clean consolidated spec." : "Use apply_design_spec_patch for each remaining item."} Do not ask for confirmation. Output ≤2 sentences after all changes complete.\n${designResidual.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
 
           const contResponse = await runAgent({
             systemPrompt,
@@ -1956,7 +1963,7 @@ async function runDesignAgent(params: {
             userMessage: continuationMsg,
             userImages: [],
             historyLimit: DESIGN_HISTORY_LIMIT,
-            tools: readOnly ? undefined : DESIGN_TOOLS,
+            tools: readOnly ? undefined : contTools,
             toolHandler: designToolHandler,
             toolCallsOut: toolCallsOutDesign,
           })
