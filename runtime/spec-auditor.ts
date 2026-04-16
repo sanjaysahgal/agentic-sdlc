@@ -195,77 +195,92 @@ export async function auditSpecRenderAmbiguity(designSpec: string, options?: { f
     ? `- Layout defined for only one form factor when the spec targets ${options.formFactors.join(", ")}: flag any screen that has layout details but doesn't specify how it adapts across all target form factors`
     : ""
 
-  const response = await client.messages.create({
+  // Two-pass design: Pass 1 identifies issues, Pass 2 generates recommendations.
+  // Structural enforcement: recommendations are produced by a call designed only to answer
+  // "what would you do?" — structurally cannot produce hedges. No pattern-matching needed.
+
+  // Pass 1 — identify genuine render ambiguities (issues only, no recommendations)
+  const issuesResponse = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 8192,
-    system: `You are auditing a design spec for rendering consistency. Identify elements where two different HTML renderers given the same spec would produce different output because the spec doesn't define the value explicitly.
+    max_tokens: 4096,
+    system: `You are a senior UX designer reviewing a design spec. Identify elements where a developer implementing from this spec would be genuinely stuck — forced to make a visual choice with no right answer because the spec doesn't define it.
 
-Flag ONLY elements where a renderer must make an unspecified choice:
+Only flag elements where two competent developers would make different choices. Do not flag elements with a single obvious interpretation or where standard defaults apply.
+
+Flag ONLY:
 - Screens with no title/subtitle defined and no explicit "no title" or "no subtitle" statement
-- UI element positions described only as relative ("between X and Y", "near the bottom") without exact pixel spacing
-- Sheets, modals, or overlays with no entry direction (from bottom, from top, overlay fade-in)
-- Sheets, modals, or overlays with no entry/exit animation, timing, or easing specified (e.g. defined as "bottom sheet" but no slide-up animation duration or easing)
-- Interactive element text (button labels, chip labels, placeholder text) not defined in the spec
-- Animation behavior described vaguely ("smooth transition") without timing values when the spec references an animation
-- UI copy that is stated as "TBD", "to be determined", "placeholder", or any equivalent deferral — these are not defined values and cannot be rendered consistently
-- Screen states (loading, empty, error) that are named in the state list but have no visual description — named without definition is not defined
-- Values that appear with two different specifications within the same spec (e.g. a color token defined as two different hex codes in different sections)
-- Language that two renderers would interpret differently: "near the top", "slightly", "subtle", "prominent", "appropriate" used in place of a specific measurement or value${formFactorCheck ? `\n${formFactorCheck}` : ""}
-- Suggestion chips or action chips described without a concrete position anchor relative to a fixed layout element: if chips can be interpreted as floating in the vertical center of the screen OR pinned near a fixed element (prompt bar, nav bar, bottom edge), the spec must say which — "horizontal row" alone is ambiguous
-- Auth or SSO buttons containing both an icon/logo and label text without specifying their internal horizontal arrangement — flag if the spec does not say how icon and text are positioned relative to each other (e.g. "icon left, text centered", "both centered as a unit with 8px gap"); "full-width stacked" does not resolve this
-- User-facing copy defined in the spec (taglines, subheadings, button labels, error messages, nudge text) that appears to be a grammatically incomplete sentence — specifically: sentence-case multi-word strings that do not end with a period, exclamation mark, or question mark when a complete sentence is clearly intended (e.g. "All your health. One conversation" ends mid-thought; a full sentence would end with a period). Do NOT flag identifiers, brand names, or single-word labels.
+- UI element positions described only as relative without exact pixel spacing
+- Sheets, modals, or overlays with no entry direction or animation timing/easing specified
+- Interactive element text (button labels, chip labels, placeholder text) not defined
+- Animation behavior described vaguely without timing values
+- UI copy stated as "TBD", "to be determined", "placeholder", or any deferral
+- Screen states named in the state list but with no visual description
+- Values appearing with two different specifications within the same spec
+- Language two developers would implement differently: "near the top", "slightly", "subtle", "prominent"${formFactorCheck ? `\n${formFactorCheck}` : ""}
+- Suggestion chips or action chips with no concrete position anchor
+- Auth or SSO buttons with no internal icon+text arrangement specified
+- Grammatically incomplete user-facing copy (sentence-case strings ending mid-thought)
 
-Design quality issues that would block a senior design review (flag these the same as structural ambiguities — a spec that ships with these is not a 10/10):
-- Horizontally scrollable rows (chip rows, tag rows, carousels) with no scrollbar treatment defined — native browser scrollbars show on all platforms and look unfinished; spec must say "scrollbar hidden" or define a custom treatment
-- Dynamic content areas (message threads, health data feeds, activity logs) with no empty state defined — what the user sees before any data exists must be specified
-- Primary interactive elements (buttons, chips) with no explicit minimum touch target size — 44×44pt minimum is required for accessible mobile UX; if the spec defines a smaller visual size it must also specify the tap target expansion
-- Copy that states the obvious given established visual context: an auth heading that repeats the app name already shown in the nav bar, a tooltip that restates its button label, a confirmation dialog that describes what the user just did in the same words the user used to trigger it
+Design quality gaps (same severity):
+- Horizontally scrollable rows with no scrollbar treatment
+- Dynamic content areas with no empty state defined
+- Primary interactive elements with no minimum touch target size
+- Copy redundantly restating visually established context
 
-Do NOT flag:
-- General aesthetic descriptions ("minimal", "dark, premium feel")
-- Elements that have an explicit "none" or "no X" statement
-- Brand token values — color drift is handled by a separate brand auditor
-- Implementation details and accessibility notes
-- Scrollbar treatment if the spec explicitly states "scrollbar hidden", "overflow: hidden", or any equivalent
-- Empty state if a screen is explicitly defined as always having data (e.g. a detail view only reachable from a populated list)
+Do NOT flag: general aesthetics, elements with explicit "none" statements, brand token values, implementation details, scrollbar treatment when explicitly specified, empty state when screen is always-populated.
 
-Return a JSON array of strings. Each string contains the issue AND a specific proposed fix, separated by " — ". Format: "<concise issue in ≤15 words> — <specific proposed fix in ≤15 words>". Example: "Splash screen has no defined background color — set to --color-background-primary". If the spec is fully specified for rendering, return: []
-
-Return ONLY the JSON array, no preamble or explanation.`,
+Return a JSON array of issue strings only. Each issue ≤15 words. If the spec is fully specified, return: []
+Return ONLY the JSON array, no preamble.`,
     messages: [{ role: "user", content: designSpec }],
   })
 
-  const rawText = response.content[0].type === "text" ? response.content[0].text.trim() : "[]"
-  // Strip markdown code fences before parsing — LLM sometimes wraps output in ```json ... ```
-  const text = rawText.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim()
-  let llmAmbiguities: string[] = []
-  try {
-    const parsed = JSON.parse(text)
-    llmAmbiguities = Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
-  } catch (e) {
-    console.warn(`[auditSpecRenderAmbiguity] JSON parse failed on LLM output: "${text.slice(0, 120)}". Error: ${e instanceof Error ? e.message : String(e)}. Attempting repair...`)
-    // Attempt to extract a JSON array from within the output using greedy match to capture full array
-    const bracketMatch = text.match(/\[[\s\S]*\]/)
-    if (bracketMatch) {
-      try {
-        const repaired = JSON.parse(bracketMatch[0])
-        llmAmbiguities = Array.isArray(repaired) ? repaired.filter((s): s is string => typeof s === "string") : []
-        console.warn(`[auditSpecRenderAmbiguity] JSON repair succeeded. Extracted ${llmAmbiguities.length} finding(s).`)
-      } catch {
-        console.warn(`[auditSpecRenderAmbiguity] JSON repair failed. Ambiguities for this audit will be empty.`)
-        llmAmbiguities = []
+  const parseJsonArray = (raw: string, label: string): string[] => {
+    const text = raw.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim()
+    try {
+      const parsed = JSON.parse(text)
+      return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
+    } catch {
+      const bracketMatch = text.match(/\[[\s\S]*\]/)
+      if (bracketMatch) {
+        try { return JSON.parse(bracketMatch[0]).filter((s: unknown): s is string => typeof s === "string") } catch {}
       }
-    } else {
-      console.warn(`[auditSpecRenderAmbiguity] No bracket-delimited content found in LLM output. Ambiguities will be empty.`)
-      llmAmbiguities = []
+      console.warn(`[auditSpecRenderAmbiguity] ${label}: JSON parse failed, returning []`)
+      return []
     }
   }
 
-  const findings = [...undefinedScreens, ...copyIssues, ...brandingIssues, ...llmAmbiguities]
-  console.log(
-    `[AUDITOR] auditSpecRenderAmbiguity: ${findings.length} finding(s)` +
-    ` (screens=${undefinedScreens.length} copy=${copyIssues.length} branding=${brandingIssues.length} llm=${llmAmbiguities.length})`
+  const issues = parseJsonArray(
+    issuesResponse.content[0].type === "text" ? issuesResponse.content[0].text : "[]",
+    "pass1"
   )
+
+  if (issues.length === 0) {
+    const findings = [...undefinedScreens, ...copyIssues, ...brandingIssues]
+    console.log(`[AUDITOR] auditSpecRenderAmbiguity: ${findings.length} finding(s) (screens=${undefinedScreens.length} copy=${copyIssues.length} branding=${brandingIssues.length} llm=0)`)
+    return findings
+  }
+
+  // Pass 2 — generate opinionated recommendation for each issue.
+  // This call only answers "what would you do?" — structurally produces decisions, not analysis.
+  const recsResponse = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1000,
+    system: `You are a senior UX designer with decades of experience. For each issue listed, state exactly what you would specify — one concrete action. You are giving direction to a developer who is waiting to implement.
+
+Return a JSON array of recommendation strings, one per issue, in the same order. Each recommendation ≤12 words. Imperative: "align left edge to username", "use slide-up 280ms ease-out", "set to --muted token".
+Return ONLY the JSON array.`,
+    messages: [{ role: "user", content: issues.map((issue, i) => `${i + 1}. ${issue}`).join("\n") }],
+  })
+
+  const recommendations = parseJsonArray(
+    recsResponse.content[0].type === "text" ? recsResponse.content[0].text : "[]",
+    "pass2"
+  )
+
+  const llmAmbiguities = issues.map((issue, i) => `${issue} — ${recommendations[i] ?? "specify explicitly in spec"}`)
+
+  const findings = [...undefinedScreens, ...copyIssues, ...brandingIssues, ...llmAmbiguities]
+  console.log(`[AUDITOR] auditSpecRenderAmbiguity: ${findings.length} finding(s) (screens=${undefinedScreens.length} copy=${copyIssues.length} branding=${brandingIssues.length} llm=${llmAmbiguities.length})`)
   return findings
 }
 

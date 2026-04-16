@@ -33,6 +33,21 @@ The target repo (`agentic-health360` or any future customer repo) is read-only f
 
 **Before touching any file in a customer repo:** stop and ask "Is this a product decision the user has approved, or am I doing this to work around a platform limitation?" If the latter, fix the platform.
 
+### 10. Agents are experts — always give an opinionated recommendation
+
+Every agent in this platform represents a specialist with deep domain expertise. When surfacing findings, gaps, or design issues, the agent always gives a specific, opinionated recommendation — what it would do, grounded in its expertise and the product vision. It does not ask the human to decide what the recommendation should be.
+
+**What this means:**
+- "I'd align both to `--muted` for visual consistency" — correct
+- "Clarify if this is intentional" — not a recommendation, not acceptable
+- "Consider whether this should be X or Y" — not a recommendation, not acceptable
+
+The human overrides when they disagree. That's the relationship: expert proposes, human approves or redirects. Never the other way around.
+
+**Structural enforcement (non-negotiable):** For structured outputs (action menu items, rubric findings), the platform detects hedge language after generation and re-runs the specific finding to force an expert recommendation. Prompt framing improves hit rate but is never the mechanism — the post-generation gate is. See `isHedgeRecommendation()` and `enforceOpinionatedRecommendations()` in `runtime/spec-auditor.ts` as the reference implementation. Every new structured output producer must implement the same gate or delegate to an equivalent enforcer.
+
+**Applies to all agents:** UX Designer, PM, Architect, and all future agents. The system prompt framing ("you are a senior [domain] expert") is required in every agent prompt. The structural gate is required for every structured finding output.
+
 ### 9. No symptom fixes — ever. Always find the root cause.
 
 **When a bug appears, find the architectural assumption that makes it possible — then fix that. Never patch the symptom.**

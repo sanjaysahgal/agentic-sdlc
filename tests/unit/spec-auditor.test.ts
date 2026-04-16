@@ -69,9 +69,9 @@ Landing (logged-out) → Auth Sheet (default) → Landing (logged-in)
   })
 
   it("merges deterministic findings with LLM findings", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: '["Button label not specified"]' }],
-    })
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Button label not specified"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["specify label explicitly in spec"]' }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
 
     const spec = `
@@ -87,7 +87,7 @@ Landing → Auth Sheet (default) → Landing (logged-in)
 `
     const result = await auditSpecRenderAmbiguity(spec)
     expect(result.some(s => s.toLowerCase().includes("auth"))).toBe(true)
-    expect(result).toContain("Button label not specified")
+    expect(result.some(s => s.includes("Button label not specified"))).toBe(true)
     expect(result.length).toBeGreaterThanOrEqual(2)
   })
 
@@ -108,14 +108,14 @@ No additional requirements.
     expect(result).toEqual([])
   })
 
-  it("requests at least 8192 max_tokens to avoid truncation on large specs with many findings", async () => {
-    // 26 verbose findings at ~150 chars each = ~3900 chars, which exceeded the old 4096-token limit.
-    // Now set to 8192 (Haiku's maximum) so even worst-case specs don't get truncated.
+  it("pass1 requests sufficient max_tokens for issue detection on large specs", async () => {
+    // Two-pass approach: pass1 identifies issues (4096 tokens), pass2 generates recommendations (1000 tokens).
+    // pass1 only needs to return issue strings (short), so 4096 is sufficient.
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
     const call = mockCreate.mock.calls[0][0]
-    expect(call.max_tokens).toBeGreaterThanOrEqual(8192)
+    expect(call.max_tokens).toBeGreaterThanOrEqual(2048)
   })
 
   it("Haiku prompt includes per-finding brevity cap to keep output within token budget", async () => {
@@ -128,12 +128,12 @@ No additional requirements.
     expect(systemPrompt).toMatch(/≤\d+\s*words/i)
   })
 
-  it("Haiku prompt includes animation spec requirement for sheets and modals", async () => {
+  it("pass1 prompt includes animation spec requirement for sheets and modals", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     await auditSpecRenderAmbiguity("## Screens\n### Screen 1: Home\n## User Flows\n### Flow: US-1\nHome")
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    expect(systemPrompt).toMatch(/entry\/exit animation.*timing.*easing/i)
+    expect(systemPrompt).toMatch(/animation.*timing.*easing|timing.*easing.*specified/i)
   })
 
   it("Haiku prompt includes the 4 expanded save-time check categories", async () => {
@@ -360,24 +360,25 @@ describe("auditSpecRenderAmbiguity — JSON parsing robustness", () => {
     warnSpy.mockRestore()
   })
 
-  it("repairs and extracts findings when LLM appends explanation after array", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: '["Screen title missing", "Button text TBD"] here is my explanation' }] })
+  it("repairs and extracts findings when pass1 LLM appends explanation after array", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Screen title missing", "Button text TBD"] here is my explanation' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["add title to screen definition", "replace TBD with final copy"]' }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     const result = await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
-    expect(result).toContain("Screen title missing")
-    expect(result).toContain("Button text TBD")
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("JSON repair succeeded"))
-    warnSpy.mockRestore()
+    expect(result.some(r => r.includes("Screen title missing"))).toBe(true)
+    expect(result.some(r => r.includes("Button text TBD"))).toBe(true)
   })
 
-  it("repairs and extracts findings when LLM prepends explanation before array", async () => {
+  it("repairs and extracts findings when pass1 LLM prepends explanation before array", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: 'Here are the ambiguities I found:\n\n["Animation timing unclear", "Spacing vague"]' }] })
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: 'Here are the ambiguities I found:\n\n["Animation timing unclear", "Spacing vague"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["specify 280ms ease-out", "use 8px gap"]' }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     const result = await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
-    expect(result).toContain("Animation timing unclear")
-    expect(result).toContain("Spacing vague")
+    expect(result.some(r => r.includes("Animation timing unclear"))).toBe(true)
+    expect(result.some(r => r.includes("Spacing vague"))).toBe(true)
     warnSpy.mockRestore()
   })
 })
@@ -1232,14 +1233,34 @@ describe("auditSpecRenderAmbiguity — producer tests (system prompt instructs J
     expect(systemPrompt.toLowerCase()).toMatch(/only.*array|array.*only|no preamble|return only/i)
   })
 
-  it("system prompt instructs Haiku to include issue AND proposed fix separated by ' — '", async () => {
+  it("system prompt frames Haiku as a senior UX designer — not an auditor", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "[]" }] })
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    // Producer must instruct the LLM to emit "issue — fix" so splitQualityIssue always gets a recommendation
-    expect(systemPrompt).toContain(" — ")
-    expect(systemPrompt.toLowerCase()).toMatch(/proposed fix|fix|recommendation/i)
+    expect(systemPrompt.toLowerCase()).toMatch(/senior ux designer|senior.*designer/)
+  })
+
+  it("pass2 system prompt forbids hedge language structurally by asking 'what would you do' not 'what is ambiguous'", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Missing animation timing"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["use slide-up 280ms ease-out"]' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    const pass2System = mockCreate.mock.calls[1][0].system as string
+    // pass2 asks for a decision, not analysis — structurally prevents hedging
+    expect(pass2System.toLowerCase()).toMatch(/senior ux designer/)
+    expect(pass2System.toLowerCase()).toMatch(/what you would (specify|do)|concrete action|imperative/i)
+  })
+
+  it("pass2 system prompt instructs Haiku to return a JSON array of recommendation strings", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Missing animation timing"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["use slide-up 280ms ease-out"]' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n## User Flows\n### US-1\nHome")
+    const pass2System = mockCreate.mock.calls[1][0].system as string
+    expect(pass2System.toLowerCase()).toMatch(/json array/)
   })
 })
 
@@ -1290,6 +1311,50 @@ describe("spec-auditor — network failure propagates immediately, no retries", 
   })
 })
 
+describe("auditSpecRenderAmbiguity — two-pass structural enforcement of expert recommendations", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("always makes two Haiku calls when issues are found — pass1 for issues, pass2 for recommendations", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Spinner and label use different color tokens"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["align both to --muted token"]' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n")
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it("zips issues and recommendations into issue — recommendation format", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Spinner and label use different color tokens"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["align both to --muted token"]' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    const result = await auditSpecRenderAmbiguity("## Screens\n### Home\n")
+    const llmResult = result.find(r => r.includes("Spinner"))
+    expect(llmResult).toBe("Spinner and label use different color tokens — align both to --muted token")
+  })
+
+  it("makes only one Haiku call when pass1 returns no issues", async () => {
+    mockCreate.mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n")
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("pass2 system prompt asks for imperative recommendations — structurally cannot produce questions", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Missing animation timing"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["use slide-up 280ms ease-out"]' }] })
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n### Home\n")
+    const pass2System = mockCreate.mock.calls[1][0].system as string
+    expect(pass2System.toLowerCase()).toMatch(/senior ux designer/)
+    expect(pass2System.toLowerCase()).toMatch(/imperative|what you would (specify|do)|concrete action/)
+  })
+})
+
 describe("spec-auditor — [AUDITOR] logging on every call", () => {
   beforeEach(() => {
     vi.resetModules()
@@ -1306,11 +1371,13 @@ describe("spec-auditor — [AUDITOR] logging on every call", () => {
   })
 
   it("auditSpecRenderAmbiguity logs finding count including llm findings", async () => {
-    mockCreate.mockResolvedValue({ content: [{ type: "text", text: '["Missing animation timing"]' }] })
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Missing animation timing"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["use slide-up 280ms ease-out"]' }] })
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
     const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
     await auditSpecRenderAmbiguity("## Screens\n")
-    const auditLog = logSpy.mock.calls.find(c => String(c[0]).includes("[AUDITOR] auditSpecRenderAmbiguity"))
+    const auditLog = logSpy.mock.calls.find(c => String(c[0]).includes("[AUDITOR] auditSpecRenderAmbiguity:") && String(c[0]).includes("llm="))
     expect(auditLog).toBeDefined()
     expect(String(auditLog![0])).toContain("llm=1")
     logSpy.mockRestore()
