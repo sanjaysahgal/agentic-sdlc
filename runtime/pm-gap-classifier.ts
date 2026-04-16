@@ -13,6 +13,9 @@ Ask yourself for each item:
 2. "Is this a visual or UX decision the designer owns independently — element type, placement, timing, animation, visual treatment?" → YES → design-scope (DESIGN:)
 3. "Does answering this require designing a schema, mechanism, or technical approach?" → YES → architecture-scope (ARCH:)
 
+CRITICAL RULE — check the approved PM spec first:
+If the Approved Product Spec is provided, read it before classifying anything. If a question is already explicitly answered in the approved PM spec — even partially, even in a different section — classify it as DESIGN (the designer should read the spec). Only flag GAP: for questions the approved PM spec genuinely does not address at all.
+
 PM-scope (flag with GAP:):
 - Undefined user-facing behavior: what happens to the user in a given situation that the PM spec never defined
 - Missing error experiences: what the user sees/feels when something fails — not how the error is handled technically

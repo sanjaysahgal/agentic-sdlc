@@ -355,4 +355,17 @@ describe("classifyForPmGaps — producer tests (system prompt contains format in
     expect(systemPrompt.toLowerCase()).toMatch(/opacity.*cycle|opacity.*cycling|opacity.*percent/)
     expect(systemPrompt.toLowerCase()).toMatch(/animation.*duration|duration.*animation|animation.*cycle/)
   })
+
+  it("system prompt instructs Haiku to check the approved PM spec before classifying — already-answered questions are DESIGN not GAP", async () => {
+    // Root cause of Apr 2026 false positive: session expiry duration (AC#23: 60 min) was
+    // explicitly in the approved PM spec but Gate 4 classifier still returned GAP:.
+    // The classifier had the PM spec as context but no explicit instruction to cross-reference it.
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })
+    await classifyForPmGaps({ agentResponse: "some prose" })
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Must instruct classifier to read the PM spec first before classifying
+    expect(systemPrompt.toLowerCase()).toMatch(/read.*spec.*first|check.*spec.*first|approved.*spec.*first|spec.*before classif/)
+    // Must instruct that already-answered questions are NOT PM gaps
+    expect(systemPrompt.toLowerCase()).toMatch(/already.*answered|answered.*already|already.*explicit|explicit.*answer/)
+  })
 })
