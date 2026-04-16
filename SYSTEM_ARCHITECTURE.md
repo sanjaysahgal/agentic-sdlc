@@ -163,7 +163,7 @@ Every decision point emits a single line using a consistent `[COMPONENT] message
 |---|---|---|
 | `[ROUTER]` | `runtime/agent-router.ts`, `interfaces/slack/handlers/message.ts` | Intent classification result, agent selected, phase detected, off-topic/state-query boolean, routing branch taken |
 | `[CONTEXT]` | `runtime/context-loader.ts`, `runtime/conversation-summarizer.ts` | Feature name, hit/miss per GitHub path, summarizer input/output sizes, uncommitted decision scan result |
-| `[AUDITOR]` | `runtime/phase-completion-auditor.ts`, `runtime/brand-auditor.ts` | Phase completion ready/not-ready + finding count, brand/animation drift count |
+| `[AUDITOR]` | `runtime/phase-completion-auditor.ts`, `runtime/brand-auditor.ts`, `runtime/spec-auditor.ts` | Phase completion ready/not-ready + finding count + each finding individually (`[AUDITOR] auditPhaseCompletion[N]: issue → recommendation`); brand/animation drift count + each drift token; render ambiguity count + each finding (`[AUDITOR] auditSpecRenderAmbiguity[N]: issue — recommendation`). Every finding visible in logs without Slack inspection. |
 | `[GITHUB]` | `runtime/github-client.ts` | Every file read (hit/404), every draft/approved save (success/error), PR URL on creation |
 | `[STORE]` | `runtime/conversation-store.ts` | Pending escalation set/clear (with targetAgent), pending approval set/clear, disk persistence errors |
 | `[CLASSIFIER]` | `runtime/pm-gap-classifier.ts` | PM gap count, architect item count, design item count + first 100 chars of each |

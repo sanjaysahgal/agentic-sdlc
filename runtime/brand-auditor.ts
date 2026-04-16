@@ -131,6 +131,7 @@ export function auditAnimationTokens(specContent: string, brandMd: string): Anim
     }
   }
   console.log(`[AUDITOR] auditAnimationTokens: ${drifts.length === 0 ? "clean" : `${drifts.length} drift(s)`}`)
+  drifts.forEach((d, i) => console.log(`[AUDITOR] auditAnimationTokens[${i + 1}]: ${d.param} spec=${d.specValue} brand=${d.brandValue}`))
   return drifts
 }
 
@@ -172,6 +173,7 @@ export function auditBrandTokens(specContent: string, brandMd: string): BrandDri
     brandValue: brandTokens.get(token)!,
   }))
   console.log(`[AUDITOR] auditBrandTokens: ${drifts.length === 0 ? "clean" : `${drifts.length} drift(s)`}`)
+  drifts.forEach((d, i) => console.log(`[AUDITOR] auditBrandTokens[${i + 1}]: ${d.token} spec=${d.specValue} brand=${d.brandValue}`))
   return drifts
 }
 
@@ -197,5 +199,6 @@ export function auditMissingBrandTokens(specContent: string, brandMd: string): A
     }
   }
   console.log(`[AUDITOR] auditMissingBrandTokens: ${missing.length === 0 ? "all tokens present" : `${missing.length} missing`}`)
+  missing.forEach((m, i) => console.log(`[AUDITOR] auditMissingBrandTokens[${i + 1}]: ${m.token} (brand=${m.brandValue})`))
   return missing
 }

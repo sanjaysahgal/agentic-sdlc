@@ -96,6 +96,7 @@ ${specContent}`,
   }
 
   console.log(`[AUDITOR] auditPhaseCompletion: feature=${featureName} → ready=false findings=${findings.length}`)
+  findings.forEach((f, i) => console.log(`[AUDITOR] auditPhaseCompletion[${i + 1}]: ${f.issue} → ${f.recommendation}`))
   return { ready: false, findings }
 }
 

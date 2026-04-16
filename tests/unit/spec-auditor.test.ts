@@ -1383,6 +1383,20 @@ describe("spec-auditor — [AUDITOR] logging on every call", () => {
     logSpy.mockRestore()
   })
 
+  it("auditSpecRenderAmbiguity logs each finding individually with index", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Missing animation timing", "Undefined hover state"]' }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: '["use slide-up 280ms ease-out", "set background to --surface-hover"]' }] })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n")
+    const perFindingLogs = logSpy.mock.calls.filter(c => String(c[0]).match(/\[AUDITOR\] auditSpecRenderAmbiguity\[\d+\]/))
+    expect(perFindingLogs).toHaveLength(2)
+    expect(String(perFindingLogs[0][0])).toContain("[AUDITOR] auditSpecRenderAmbiguity[1]:")
+    expect(String(perFindingLogs[1][0])).toContain("[AUDITOR] auditSpecRenderAmbiguity[2]:")
+    logSpy.mockRestore()
+  })
+
   it("auditSpecDecisions logs [AUDITOR] prefix on ok result", async () => {
     mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})

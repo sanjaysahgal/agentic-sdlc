@@ -612,3 +612,27 @@ describe("auditDownstreamReadiness — producer tests (system prompt content)", 
     expect(call.model).toContain("sonnet")
   })
 })
+
+describe("auditPhaseCompletion — per-finding logging", () => {
+  it("logs each finding individually with index when findings exist", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "FINDING: Screen layout is undefined | specify 12-column grid layout\nFINDING: Loading state missing | add skeleton screen component" }],
+    })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    await auditPhaseCompletion({ specContent: "# Spec", rubric: PM_RUBRIC, featureName: "test" })
+    const perFindingLogs = logSpy.mock.calls.filter(c => String(c[0]).match(/\[AUDITOR\] auditPhaseCompletion\[\d+\]/))
+    expect(perFindingLogs).toHaveLength(2)
+    expect(String(perFindingLogs[0][0])).toContain("[AUDITOR] auditPhaseCompletion[1]:")
+    expect(String(perFindingLogs[1][0])).toContain("[AUDITOR] auditPhaseCompletion[2]:")
+    logSpy.mockRestore()
+  })
+
+  it("does not log per-finding lines when result is PASS", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "PASS" }] })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    await auditPhaseCompletion({ specContent: "# Spec", rubric: PM_RUBRIC, featureName: "test" })
+    const perFindingLogs = logSpy.mock.calls.filter(c => String(c[0]).match(/\[AUDITOR\] auditPhaseCompletion\[\d+\]/))
+    expect(perFindingLogs).toHaveLength(0)
+    logSpy.mockRestore()
+  })
+})

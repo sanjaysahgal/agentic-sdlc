@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { readFileSync } from "fs"
 import { join } from "path"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens, BrandDrift, AnimationDrift } from "../../runtime/brand-auditor"
@@ -388,5 +388,27 @@ describe("auditBrandTokens — boundary conditions", () => {
     const violetDrifts = drifts.filter(d => d.token === "--violet")
     expect(violetDrifts).toHaveLength(1)
     expect(violetDrifts[0].specValue).toBe("#8B7FE8") // first drifted value wins
+  })
+})
+
+describe("brand-auditor — per-finding logging", () => {
+  it("auditBrandTokens logs each drift with token, spec value, and brand value", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    auditBrandTokens(REAL_SPEC_DRIFTED, REAL_BRAND_MD)
+    const perFindingLogs = logSpy.mock.calls.filter(c => String(c[0]).match(/\[AUDITOR\] auditBrandTokens\[\d+\]/))
+    // At least one per-finding log — exact count depends on fixture drift count
+    expect(perFindingLogs.length).toBeGreaterThan(0)
+    // Each line includes spec= and brand= values
+    expect(String(perFindingLogs[0][0])).toContain("spec=")
+    expect(String(perFindingLogs[0][0])).toContain("brand=")
+    logSpy.mockRestore()
+  })
+
+  it("auditBrandTokens logs no per-finding lines when spec is canonical", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    auditBrandTokens(REAL_SPEC_CANONICAL, REAL_BRAND_MD)
+    const perFindingLogs = logSpy.mock.calls.filter(c => String(c[0]).match(/\[AUDITOR\] auditBrandTokens\[\d+\]/))
+    expect(perFindingLogs).toHaveLength(0)
+    logSpy.mockRestore()
   })
 })

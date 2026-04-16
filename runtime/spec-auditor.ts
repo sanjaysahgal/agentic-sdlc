@@ -281,6 +281,7 @@ Return ONLY the JSON array.`,
 
   const findings = [...undefinedScreens, ...copyIssues, ...brandingIssues, ...llmAmbiguities]
   console.log(`[AUDITOR] auditSpecRenderAmbiguity: ${findings.length} finding(s) (screens=${undefinedScreens.length} copy=${copyIssues.length} branding=${brandingIssues.length} llm=${llmAmbiguities.length})`)
+  findings.forEach((f, i) => console.log(`[AUDITOR] auditSpecRenderAmbiguity[${i + 1}]: ${f}`))
   return findings
 }
 
