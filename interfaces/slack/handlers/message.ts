@@ -1393,6 +1393,7 @@ async function runDesignAgent(params: {
     !item.issue.includes("[PM-GAP]") &&
     (preRunReadinessIssues.has(item.issue) || preRunQualityIssues.has(item.issue))
   )
+  console.log(`[FIX-ALL] intent=${JSON.stringify(fixIntent)} allActionItems=${allActionItems.length} itemsToFix=${itemsToFix.length} autoFixItems=${autoFixItems.length} singlePassFixItems=${singlePassFixItems.length} pmGapItems=${pmGapItems.length}`)
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : (fixIntent.isFixAll && singlePassFixItems.length > 0)
