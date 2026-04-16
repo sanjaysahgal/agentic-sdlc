@@ -67,18 +67,31 @@ ${draft}`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "OK"
 
-  if (/^ok$/i.test(text)) return { status: "ok" }
+  if (/^ok$/i.test(text)) {
+    console.log(`[AUDITOR] auditSpecDraft: feature=${featureName} → ok`)
+    return { status: "ok" }
+  }
 
   // Case-insensitive, handles extra spaces before colon and leading whitespace/newlines
   const conflictMatch = text.match(/^[\s]*CONFLICT\s*:\s*([\s\S]*?)$/im)
-  if (conflictMatch) return { status: "conflict", message: conflictMatch[1].trim() }
+  if (conflictMatch) {
+    const result: AuditResult = { status: "conflict", message: conflictMatch[1].trim() }
+    console.log(`[AUDITOR] auditSpecDraft: feature=${featureName} → conflict: ${result.message.slice(0, 100)}`)
+    return result
+  }
 
   const gapMatch = text.match(/^[\s]*GAP\s*:\s*([\s\S]*?)$/im)
-  if (gapMatch) return { status: "gap", message: gapMatch[1].trim() }
+  if (gapMatch) {
+    const result: AuditResult = { status: "gap", message: gapMatch[1].trim() }
+    console.log(`[AUDITOR] auditSpecDraft: feature=${featureName} → gap: ${result.message.slice(0, 100)}`)
+    return result
+  }
 
   // Unexpected format — don't block the save
+  console.log(`[AUDITOR] auditSpecDraft: feature=${featureName} → ok (unexpected format)`)
   return { status: "ok" }
 }
+
 
 // ─── Render ambiguity audit ────────────────────────────────────────────────────
 // Identifies elements in a design spec that are too vague for consistent rendering.
@@ -248,7 +261,12 @@ Return ONLY the JSON array, no preamble or explanation.`,
     }
   }
 
-  return [...undefinedScreens, ...copyIssues, ...brandingIssues, ...llmAmbiguities]
+  const findings = [...undefinedScreens, ...copyIssues, ...brandingIssues, ...llmAmbiguities]
+  console.log(
+    `[AUDITOR] auditSpecRenderAmbiguity: ${findings.length} finding(s)` +
+    ` (screens=${undefinedScreens.length} copy=${copyIssues.length} branding=${brandingIssues.length} llm=${llmAmbiguities.length})`
+  )
+  return findings
 }
 
 // ─── Decision audit ────────────────────────────────────────────────────────────
@@ -315,7 +333,10 @@ ${specContent}`,
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "OK"
 
-  if (text === "OK" || !text.includes("MISMATCH:")) return { status: "ok" }
+  if (text === "OK" || !text.includes("MISMATCH:")) {
+    console.log(`[AUDITOR] auditSpecDecisions: ok`)
+    return { status: "ok" }
+  }
 
   const corrections: DecisionCorrection[] = []
   for (const line of text.split("\n")) {
@@ -326,7 +347,11 @@ ${specContent}`,
     }
   }
 
-  if (corrections.length === 0) return { status: "ok" }
+  if (corrections.length === 0) {
+    console.log(`[AUDITOR] auditSpecDecisions: ok`)
+    return { status: "ok" }
+  }
+  console.log(`[AUDITOR] auditSpecDecisions: ${corrections.length} correction(s)`)
   return { status: "corrections", corrections }
 }
 
@@ -362,7 +387,12 @@ If fewer than 2 decisions are clearly locked, output: none`,
   })
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "none"
-  if (text === "none" || !text.includes("•")) return ""
+  if (text === "none" || !text.includes("•")) {
+    console.log(`[AUDITOR] extractLockedDecisions: none`)
+    return ""
+  }
+  const count = (text.match(/•/g) ?? []).length
+  console.log(`[AUDITOR] extractLockedDecisions: ${count} decision(s)`)
   return text
 }
 

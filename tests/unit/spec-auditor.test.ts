@@ -1279,3 +1279,50 @@ describe("spec-auditor — network failure propagates immediately, no retries", 
     expect(mockCreate).toHaveBeenCalledTimes(1)
   })
 })
+
+describe("spec-auditor — [AUDITOR] logging on every call", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockCreate.mockReset()
+  })
+
+  it("auditSpecDraft logs [AUDITOR] prefix on ok result", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    const { auditSpecDraft } = await import("../../runtime/spec-auditor")
+    await auditSpecDraft({ draft: "spec", productVision: "vision", systemArchitecture: "arch", featureName: "myfeature" })
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("[AUDITOR] auditSpecDraft: feature=myfeature"))
+    logSpy.mockRestore()
+  })
+
+  it("auditSpecRenderAmbiguity logs finding count including llm findings", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: '["Missing animation timing"]' }] })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    const { auditSpecRenderAmbiguity } = await import("../../runtime/spec-auditor")
+    await auditSpecRenderAmbiguity("## Screens\n")
+    const auditLog = logSpy.mock.calls.find(c => String(c[0]).includes("[AUDITOR] auditSpecRenderAmbiguity"))
+    expect(auditLog).toBeDefined()
+    expect(String(auditLog![0])).toContain("llm=1")
+    logSpy.mockRestore()
+  })
+
+  it("auditSpecDecisions logs [AUDITOR] prefix on ok result", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "OK" }] })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    const { auditSpecDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 4 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await auditSpecDecisions({ specContent: "spec content", history })
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("[AUDITOR] auditSpecDecisions:"))
+    logSpy.mockRestore()
+  })
+
+  it("extractLockedDecisions logs [AUDITOR] prefix when none found", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "none" }] })
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    const { extractLockedDecisions } = await import("../../runtime/spec-auditor")
+    const history = Array.from({ length: 8 }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` }))
+    await extractLockedDecisions(history)
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("[AUDITOR] extractLockedDecisions:"))
+    logSpy.mockRestore()
+  })
+})
