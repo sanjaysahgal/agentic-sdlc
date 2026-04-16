@@ -1326,10 +1326,10 @@ async function runDesignAgent(params: {
           console.log(`[ESCALATION] Gate 1 [PM-GAP] findings:\n${productFindingsPreRun.map(f => f.issue).join("\n")}`)
         }
         const findingLines = designAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. The platform displays these in a structured block — DO NOT restate or list them in your response. For product gaps, escalate to the PM. For architecture gaps, escalate to the Architect. For design gaps you own, fix them when the user asks. Keep your prose to ≤3 sentences.\n${findingLines}]`
+        designReadinessNotice = `\n\n[DESIGN REVIEW — ${designAuditResult.findings.length} gap${designAuditResult.findings.length === 1 ? "" : "s"} blocking engineering handoff. These are displayed to the user in a structured block — DO NOT restate or list them in your response. Do NOT ask clarifying questions — your recommendation for each is stated. Do NOT reference "the platform" in your response; speak as the UX Designer throughout. For product gaps, escalate to the PM. For architecture gaps, escalate to the Architect. For design gaps you own, fix them when the user asks. Keep your prose to ≤2 sentences.\n${findingLines}]`
       } else if (designAuditResult?.ready) {
         console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: PASS — no findings`)
-        designReadinessNotice = `\n\n[PLATFORM DESIGN READINESS — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
+        designReadinessNotice = `\n\n[DESIGN REVIEW — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
       }
       phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
       designReadinessFindingsCache.set(designCacheKey, designReadinessFindings)
@@ -1947,7 +1947,7 @@ async function runDesignAgent(params: {
         const { maxAllowedSpecGrowthRatio } = loadWorkspaceConfig()
 
         for (let contPass = 1; contPass <= 2 && designResidual.length > 0; contPass++) {
-          await update(`_Platform: ${designResidual.length} item${designResidual.length === 1 ? "" : "s"} remain after patches — continuing..._`)
+          await update(`_${designResidual.length} item${designResidual.length === 1 ? "" : "s"} remaining — continuing..._`)
           const contStructural = designResidual.filter(item => isStructuralConflict(item.issue))
           const contTargeted = designResidual.filter(item => !isStructuralConflict(item.issue))
           // Platform enforcement: strip apply_design_spec_patch when all residual items are structural.
@@ -2226,7 +2226,7 @@ async function runDesignAgent(params: {
     effectiveMissingTokens.length + effectiveLlmQuality.length +
     effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).length
   const platformStatusPrefix = (!escalationJustOfferedPm && totalEffectiveItems > 0)
-    ? `_Platform audit: ${totalEffectiveItems} item${totalEffectiveItems === 1 ? "" : "s"} remain before engineering handoff._\n\n`
+    ? `_${totalEffectiveItems} item${totalEffectiveItems === 1 ? "" : "s"} to address before engineering handoff._\n\n`
     : ""
 
   await update(`${prefix}${platformStatusPrefix}${finalResponse}${uncommittedNote}${actionMenu}`)
