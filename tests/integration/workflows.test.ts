@@ -1871,7 +1871,7 @@ describe("Scenario 19 — Always-on phase completion audit injection", () => {
     // The runAgent call (index 3) received the enriched message with the audit injected
     const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
-    expect(userMsg?.content).toContain("[PLATFORM DESIGN READINESS")
+    expect(userMsg?.content).toContain("[DESIGN REVIEW")
     expect(userMsg?.content).toContain("Chip row has no concrete position anchor")
 
     // 6 total Anthropic calls (+1 for Haiku PM-gap classifier, returns NONE)
@@ -1901,7 +1901,7 @@ describe("Scenario 19 — Always-on phase completion audit injection", () => {
     // runAgent call (index 2) does NOT contain audit notice
     const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
-    expect(userMsg?.content).not.toContain("[PLATFORM DESIGN READINESS")
+    expect(userMsg?.content).not.toContain("[DESIGN REVIEW")
   })
 })
 
@@ -6407,7 +6407,7 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
 
     // Platform status line should be ABSENT — all items resolved by continuation
     const text = lastUpdateText(client)
-    expect(text).not.toContain("Platform audit:")
+    expect(text).not.toContain("to address before engineering handoff")
     // No action menu — spec is clean after continuation
     expect(text).not.toContain("OPEN ITEMS")
 
@@ -6467,7 +6467,7 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
 
 // ─── N56: Platform status line scope — arch vs PM escalation ──────────────────
 //
-// Platform status prefix ("Platform audit: N items remain") must be visible when
+// Platform status prefix ("N items to address before engineering handoff") must be visible when
 // an architect escalation fires but design items remain — the arch question does not
 // resolve all design gaps, and the agent must not claim "engineering-ready" unchallenged.
 //
@@ -6545,7 +6545,7 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
 
     const text = lastUpdateText(client)
     // Platform status line MUST appear — arch escalation does not close design gaps
-    expect(text).toContain("Platform audit: 1 item")
+    expect(text).toContain("1 item to address before engineering handoff")
     // Action menu still suppressed (escalation is pending — user cannot act yet)
     expect(text).not.toContain("OPEN ITEMS")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
@@ -6602,7 +6602,7 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
 
     const text = lastUpdateText(client)
     // Platform status line MUST be absent for PM escalation (user cannot act on design items yet)
-    expect(text).not.toContain("Platform audit:")
+    expect(text).not.toContain("to address before engineering handoff")
     // Assertive override fires for PM escalation
     expect(text).toContain("Design cannot move forward")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
@@ -6697,7 +6697,7 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
     expect(getPendingEscalation("onboarding")).toBeNull()
     // Design items remain → platform status line still shows (no suppression without pending escalation)
     const text = lastUpdateText(client)
-    expect(text).toContain("Platform audit: 1 item")
+    expect(text).toContain("1 item to address before engineering handoff")
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
   })
 })
