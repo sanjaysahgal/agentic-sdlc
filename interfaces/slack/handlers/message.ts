@@ -1184,14 +1184,12 @@ async function runDesignAgent(params: {
           issues: missingTokensState.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
         },
         {
-          emoji: ":mag:",
-          label: "Design Quality",
-          issues: stateQualityIssues.map(splitQualityIssue),
-        },
-        {
-          emoji: ":white_check_mark:",
-          label: "Design Readiness Gaps",
-          issues: readinessFindingsState.map(f => ({ issue: f.issue, fix: f.recommendation })),
+          emoji: ":pencil:",
+          label: "Design Issues",
+          issues: [
+            ...readinessFindingsState.map(f => ({ issue: f.issue, fix: f.recommendation })),
+            ...stateQualityIssues.map(splitQualityIssue),
+          ],
         },
       ])
 
@@ -2189,17 +2187,14 @@ async function runDesignAgent(params: {
       issues: effectiveMissingTokens.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
     },
     {
-      emoji: ":mag:",
-      label: "Design Quality",
-      issues: effectiveLlmQuality.map(splitQualityIssue),
-    },
-    {
-      emoji: ":white_check_mark:",
-      label: "Design Readiness Gaps",
-      // Filter out PM-GAP items — they are handled by the escalation gates (Gate 2/N18).
-      // Showing them in the action menu when escalation is NOT pending is misleading since
-      // the user can't "fix 1" a PM decision — only escalate it.
-      issues: effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })),
+      emoji: ":pencil:",
+      label: "Design Issues",
+      issues: [
+        // Readiness first — these block engineering handoff directly.
+        // PM-GAP items excluded — handled by escalation gates, not actionable here.
+        ...effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })),
+        ...effectiveLlmQuality.map(splitQualityIssue),
+      ],
     },
   ])
 

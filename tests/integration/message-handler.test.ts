@@ -296,10 +296,10 @@ describe("design state query — quality section", () => {
   // This test guards against the wiring bug where quality checks were only injected
   // into the design agent LLM path but state queries take an early-return path
   // (buildDesignStateResponse) and never reached them. Quality issues now appear
-  // in the action menu under "Design Quality" (same as the LLM path). This test
+  // in the action menu under "Design Issues" (same as the LLM path). This test
   // asserts quality findings surface on a state query without any trigger phrase.
 
-  it("surfaces Design Quality entries in action menu with redundant branding and copy findings on state query", async () => {
+  it("surfaces Design Issues entries in action menu with redundant branding and copy findings on state query", async () => {
     const { readFileSync } = await import("fs")
     const fixtureContent = readFileSync(
       "tests/fixtures/agent-output/onboarding-design-full.md",
@@ -337,9 +337,9 @@ describe("design state query — quality section", () => {
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const lastUpdate = updateCalls.at(-1)?.[0]?.text ?? ""
 
-    // Action menu with Design Quality category must be present — this is the wiring invariant
+    // Action menu with Design Issues category must be present — this is the wiring invariant
     expect(lastUpdate).toContain("*── OPEN ITEMS ──*")
-    expect(lastUpdate).toContain("Design Quality")
+    expect(lastUpdate).toContain("Design Issues")
 
     // Redundant branding (deterministic, from auditSpecRenderAmbiguity internal check)
     expect(lastUpdate).toContain("Sign in to Health360")

@@ -2256,7 +2256,7 @@ describe("Scenario 23 — State path shows all 4 action menu categories", () => 
     expect(text).toContain("Missing Brand Tokens")
 
     // readinessFindingsState.map() path exercised — finding returned by auditPhaseCompletion
-    expect(text).toContain("Design Readiness Gaps")
+    expect(text).toContain("Design Issues")
     expect(text).toContain("Screen coverage incomplete")
 
     clearHistory(FEATURE)
@@ -3902,7 +3902,7 @@ describe("Scenario N20 — Haiku classifier timeout surfaces as user-visible err
 // you read the feature-level PM spec, not the platform-level product vision.
 //
 // This test verifies: when the approved PM spec is in GitHub, it reaches auditPhaseCompletion,
-// and criterion 10 findings appear in the Design Readiness Gaps action menu block.
+// and criterion 10 findings appear in the Design Issues action menu block.
 
 describe("Scenario N21 — Design readiness audit criterion 10 fires when approvedProductSpec is available", () => {
   const THREAD = "workflow-n21"
@@ -3965,7 +3965,7 @@ describe("Scenario N21 — Design readiness audit criterion 10 fires when approv
     const params = makeParams(THREAD, "feature-onboarding", "what is the current state of the design?")
     await handleFeatureChannelMessage(params)
 
-    // Criterion 10 finding must appear in the Design Readiness Gaps section of the action menu.
+    // Criterion 10 finding must appear in the Design Issues section of the action menu.
     const text = lastUpdateText(params.client)
     expect(text).toContain("[type: product]")
     expect(text).toContain("Google OAuth2")
@@ -4054,7 +4054,7 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
     const text = lastUpdateText(params.client)
     expect(text).not.toContain("── OPEN ITEMS ──")
     expect(text).not.toContain("Brand Drift")
-    expect(text).not.toContain("Design Readiness Gaps")
+    expect(text).not.toContain("Design Issues")
 
     // Platform always overrides with structured gap list + assertionText — assertive verbs still present
     expect(text).toContain("Say *yes*")
