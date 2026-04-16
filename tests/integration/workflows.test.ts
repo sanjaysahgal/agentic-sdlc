@@ -7246,3 +7246,102 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
   })
 })
+
+// ─── Scenario N63: Health invariant fires when readiness count increases ───────
+//
+// After a patch, the platform compares pre-run readiness finding count vs
+// post-patch readiness finding count (same rubric both sides — apples-to-apples).
+// If post-patch count > pre-patch count, the patch introduced new conflicts.
+// Platform fires the health warning regardless of spec size.
+//
+// This test validates the degraded path (count increase) independently of
+// the bloat path (size increase) tested in N61.
+
+describe("Scenario N63 — Health invariant fires when readiness count increases after patch", () => {
+  const THREAD = "workflow-n63"
+
+  const SPEC_BEFORE = "# Onboarding Design Spec\n\n## Screens\nScreen 1.\n"
+  // After patch: spec is same size but now has a conflict (duplicate screen)
+  const SPEC_AFTER = "# Onboarding Design Spec\n\n## Screens\nScreen 1.\n\n## Screens\nScreen 1 (duplicate).\n"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("patch that increases readiness finding count triggers degraded warning and exits early", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    let patchWritten = false
+    mockCreateOrUpdate.mockImplementation(async () => { patchWritten = true; return {} })
+    mockGetContent.mockImplementation(async ({ path }: { path: string }) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        const content = patchWritten ? SPEC_AFTER : SPEC_BEFORE
+        return { data: { type: "file", content: Buffer.from(content).toString("base64"), sha: "sha-1" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] auditPhaseCompletion pre-run → PASS (0 findings) → preRunReadinessCount = 0
+    //   [3] runAgent: tool_use → apply_design_spec_patch
+    //   [4] auditSpecRenderAmbiguity (saveDesignDraft) → []
+    //   [5] runAgent: end_turn
+    //   [6] auditPhaseCompletion (runFreshDesignAudit initial) → 1 finding → designResidual = [1]
+    //   [7] continuation runAgent: end_turn (no patches — designResidual not reduced)
+    //   [8] auditPhaseCompletion (runFreshDesignAudit re-audit) → 1 finding → 1 >= 1 → break
+    //   → Health invariant fires (postRunReadinessCount=1 > preRunReadinessCount=0)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })   // [2] pre-run: PASS (0 readiness findings)
+      .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t-n63-1", name: "apply_design_spec_patch", input: {
+          patch: "## Screens\nScreen 1.\n\n## Screens\nScreen 1 (duplicate).\n",
+        }}],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Updated the screens section." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: Screens defined twice | remove duplicate" }] })  // [6] post-patch: 1 finding → designResidual=[1]
+      .mockResolvedValueOnce({                                                   // [7] continuation runAgent: end_turn (no patches)
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Noted the conflict." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: Screens defined twice | remove duplicate" }] })  // [8] re-audit: still 1 finding → 1>=1 → break
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "update the screens section"),
+      client,
+    })
+
+    // Health invariant fired: response contains degraded warning
+    const text = lastUpdateText(client)
+    expect(text).toContain("wasn't in better shape")
+    expect(text).toContain("more spec gaps")
+
+    // Platform returned early: no preview upload
+    expect(client.files.uploadV2).not.toHaveBeenCalled()
+
+    // 9 calls: 2 routing + 1 pre-audit + 2 agent turns + 1 save-audit +
+    //          1 initial fresh-audit + 1 continuation agent + 1 re-audit
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
+  })
+})

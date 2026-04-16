@@ -1933,14 +1933,22 @@ async function runDesignAgent(params: {
 
         // Capture pre-run state BEFORE continuation passes update findings.
         // designReadinessFindings here is still the pre-agent-run value — correct baseline.
+        // Health invariant uses readiness count only — same rubric on both sides (apples-to-apples).
+        // LLM quality count is excluded: post-patch we switch to deterministic quality (fewer items
+        // by design), so comparing LLM pre-run vs deterministic post-run always shows false improvement.
         const preRunSpecSize = designDraftContent?.length ?? 0
-        const preRunFindingCount = designReadinessFindings.length + preRunLlmQuality.length
+        const preRunReadinessCount = designReadinessFindings.length
         const { maxAllowedSpecGrowthRatio } = loadWorkspaceConfig()
 
         for (let contPass = 1; contPass <= 2 && designResidual.length > 0; contPass++) {
           await update(`_Platform: ${designResidual.length} item${designResidual.length === 1 ? "" : "s"} remain after patches — continuing..._`)
+          const contStructural = designResidual.filter(item => isStructuralConflict(item.issue))
+          const contTargeted = designResidual.filter(item => !isStructuralConflict(item.issue))
+          const contRouting = contStructural.length > 0
+            ? ` For structural conflicts (duplicate sections, contradictory definitions): use rewrite_design_spec with a clean consolidated spec. For all other items: use apply_design_spec_patch.`
+            : ` Use apply_design_spec_patch for each remaining item.`
           const continuationMsg = buildEnrichedMessage({ userMessage: `[PLATFORM: continuation pass ${contPass}]`, lockedDecisions: lockedDecisionsDesign, priorContext: "" }) +
-            `\n\n[PLATFORM CONTINUATION — ${designResidual.length} design item${designResidual.length === 1 ? "" : "s"} still unresolved after your patches. Apply ALL remaining fixes via apply_design_spec_patch. Do not ask for confirmation. Output ≤2 sentences after all patches complete.\n${designResidual.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
+            `\n\n[PLATFORM CONTINUATION — ${designResidual.length} design item${designResidual.length === 1 ? "" : "s"} still unresolved after your patches.${contRouting} Do not ask for confirmation. Output ≤2 sentences after all changes complete.\n${designResidual.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
 
           const contResponse = await runAgent({
             systemPrompt,
@@ -1984,9 +1992,9 @@ async function runDesignAgent(params: {
         // preRunSpecSize and preRunFindingCount were captured before the continuation loop
         // where designReadinessFindings still had the pre-agent-run values.
         const postRunSpecSize = freshDraft.length
-        const postRunFindingCount = effectiveReadinessFindings.length + effectiveDeterministicQuality.length
+        const postRunReadinessCount = effectiveReadinessFindings.length
         const bloated = preRunSpecSize > 0 && postRunSpecSize > preRunSpecSize * maxAllowedSpecGrowthRatio
-        const degraded = postRunFindingCount > preRunFindingCount
+        const degraded = postRunReadinessCount > preRunReadinessCount
 
         if (bloated || degraded) {
           let healthMsg = "The spec wasn't in better shape after that update:"
@@ -1995,7 +2003,7 @@ async function runDesignAgent(params: {
             healthMsg += `\n- It grew significantly (${growthPct}% larger than before). There may be duplicate or conflicting sections — consolidating them may help more than another targeted patch.`
           }
           if (degraded) {
-            healthMsg += `\n- There are more issues now (${postRunFindingCount}) than before (${preRunFindingCount}). The update may have introduced new conflicts.`
+            healthMsg += `\n- There are more spec gaps now (${postRunReadinessCount}) than before (${preRunReadinessCount}). The patches may have introduced new conflicts rather than resolving them.`
           }
           healthMsg += "\n\nSay *try again* and I'll take a different approach, or we can review what changed together."
           await update(healthMsg)
