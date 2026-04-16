@@ -1,12 +1,5 @@
 {
   "pendingEscalations": {},
   "pendingApprovals": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. Define whether unauthenticated sessions should expire after inactivity (and if so, at what duration and warning threshold), or whether session persistence is a Phase 2 concern — this decision determines which warning experiences and carry-over scenarios are in scope for this release.",
-      "recommendations": "Good. The session TTL is now locked. Proceeding with the design recommendation:\n\n1. My recommendation: The warning banner should appear when 50 minutes of inactivity have elapsed (10 minutes before the 60-minute session expiry), giving the user a clear, non-dismissible alert with a \"Sign in now\" button that opens the Auth Sheet; the banner automatically clears if the user takes any action (send message, type, tap) that resets the inactivity timer, or if the session expires (at which point it is replaced by a session-expired inline error).\n→ Rationale: AC#8 specifies this exact behavior — non-dismissible warning at the 10-minute mark before expiry, clearing on user action or session expiry — and this design implements it directly without adding friction or complexity.\n→ Note: Pending your approval — say yes to apply to the product spec\n\nSay *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation.",
-      "originAgent": "design"
-    }
-  }
+  "escalationNotifications": {}
 }
