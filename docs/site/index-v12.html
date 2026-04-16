@@ -1048,6 +1048,7 @@
       <div class="chat-tab" data-tab="1">Design Agent</div>
       <div class="chat-tab" data-tab="2">Architect → PM Escalation</div>
       <div class="chat-tab" data-tab="3">QA Agent</div>
+      <div class="chat-tab" data-tab="4">Marketing Agent</div>
     </div>
     <div class="chat-body">
 
@@ -1184,12 +1185,46 @@
         </div>
       </div>
 
+      <!-- Marketing Agent -->
+      <div class="chat-thread" data-thread="4">
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Health score feature ships next week. Need a launch plan.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">MK</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Marketing Agent</div>
+            <div class="chat-text">I've read the approved product spec and design spec. Target audience is beginners who want encouragement, not clinical data. My recommendation: lead with the emotional benefit — "Your health, simplified" — not the feature itself. Three channels: in-app announcement, email to existing users, social proof via early adopter stories.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar human">H</div>
+          <div class="chat-bubble">
+            <div class="chat-sender human">Human</div>
+            <div class="chat-text">Go with it.</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar agent">MK</div>
+          <div class="chat-bubble">
+            <div class="chat-sender agent">Marketing Agent</div>
+            <div class="chat-text">Launch plan saved. Messaging aligned with approved product positioning.</div>
+            <div class="chat-commit">✓ health-score.marketing.md → go-to-market/health-score-launch</div>
+          </div>
+        </div>
+      </div>
+
     </div>
     <div class="chat-progress">
       <div class="chat-progress-dot active" data-dot="0"></div>
       <div class="chat-progress-dot" data-dot="1"></div>
       <div class="chat-progress-dot" data-dot="2"></div>
       <div class="chat-progress-dot" data-dot="3"></div>
+      <div class="chat-progress-dot" data-dot="4"></div>
     </div>
   </div>
 
@@ -1214,7 +1249,7 @@
 
       function startAuto() {
         autoTimer = setInterval(() => {
-          showThread((current + 1) % 4);
+          showThread((current + 1) % 5);
         }, 7000);
       }
 
@@ -1306,6 +1341,16 @@
     </div>
   </div>
 
+  <div class="github-callout" style="border-color:rgba(124,111,205,0.16); margin-top:1rem;">
+    <div class="github-callout-icon">◈</div>
+    <div>
+      <h4>The platform extends itself</h4>
+      <p>Need a new domain? Archon generates new agent configurations — persona, behavioral rules, enforcement gates, rubric criteria — without code changes. The same architecture that runs your PM agent can run a marketing agent, a finance agent, or any domain-expert workflow you define.</p>
+    </div>
+  </div>
+
+  <div style="margin-top:1.5rem; font-size:0.78rem; color:var(--subtle); text-align:center;">The same request-respond-commit pattern works across every domain — engineering, marketing, sales, growth. Same architecture, same enforcement, same audit trail.</div>
+
   <div class="how-cards">
     <div class="how-card">
       <div class="how-card-label ok">Spec → Code</div>
@@ -1318,9 +1363,9 @@
       <p>QA agent generates test plans from acceptance criteria and verifies against the full spec chain. The CI/CD pipeline handles preview deploy, sign-off, merge gate, and production — no manual steps.</p>
     </div>
     <div class="how-card">
-      <div class="how-card-label gap">Monitor and fix</div>
+      <div class="how-card-label gap">Launch → Grow → Adapt</div>
       <h4>The loop doesn't stop at launch</h4>
-      <p>Production monitoring, user feedback, and bug reports feed back into the same agent pipeline. Issues become specs. Specs become fixes. The platform closes the loop from production back to code.</p>
+      <p>Marketing, sales, and growth agents take the shipped product to market. Production metrics feed back into agent behavior automatically — the platform learns what works and adapts without manual intervention.</p>
     </div>
   </div>
 </section>
