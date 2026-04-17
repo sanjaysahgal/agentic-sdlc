@@ -4,7 +4,7 @@ import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setCon
 import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, getInProgressFeatures, readFile, preseedEngineeringSpec, seedHandoffSection, clearHandoffSection } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, saveDraftAuditCache, readDraftAuditCache, getInProgressFeatures, readFile, preseedEngineeringSpec, seedHandoffSection, clearHandoffSection } from "../../../runtime/github-client"
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
@@ -1134,11 +1134,24 @@ async function runDesignAgent(params: {
       let stateQualityIssues: string[] = []
       if (draftContent) {
         const stateQCacheKey = `render-ambiguity:${featureName}:${specFingerprint(draftContent)}`
+        const auditCacheFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
+        const fp = specFingerprint(draftContent)
         if (renderAmbiguitiesCache.has(stateQCacheKey)) {
+          // In-memory cache hit (same process, same spec version)
           stateQualityIssues = renderAmbiguitiesCache.get(stateQCacheKey)!
         } else {
-          stateQualityIssues = await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
-          renderAmbiguitiesCache.set(stateQCacheKey, stateQualityIssues)
+          // Try persistent GitHub cache (survives restarts, shared across users)
+          const persistedFindings = await readDraftAuditCache({ featureName, filePath: auditCacheFilePath, expectedFingerprint: fp }).catch(() => null)
+          if (persistedFindings) {
+            stateQualityIssues = persistedFindings
+            renderAmbiguitiesCache.set(stateQCacheKey, persistedFindings)
+          } else {
+            // Cache miss — run Haiku once and persist
+            stateQualityIssues = await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
+            renderAmbiguitiesCache.set(stateQCacheKey, stateQualityIssues)
+            // Persist to GitHub — non-blocking, non-fatal
+            saveDraftAuditCache({ featureName, filePath: auditCacheFilePath, content: { specFingerprint: fp, findings: stateQualityIssues } }).catch(() => {})
+          }
         }
       }
 
@@ -1846,6 +1859,11 @@ async function runDesignAgent(params: {
         lastFreshAnim = context.brand ? auditAnimationTokens(freshDraft, context.brand) : []
         lastFreshMissing = context.brand ? auditMissingBrandTokens(freshDraft, context.brand) : []
         lastFreshQualityRaw = await auditSpecRenderAmbiguity(freshDraft, { formFactors: targetFormFactors }).catch(() => [] as string[])
+        // Persist fresh render ambiguity results for this spec version — non-blocking
+        const freshFp = specFingerprint(freshDraft)
+        const freshAuditCachePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
+        renderAmbiguitiesCache.set(`render-ambiguity:${featureName}:${freshFp}`, lastFreshQualityRaw)
+        saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, findings: lastFreshQualityRaw } }).catch(() => {})
         lastFreshReadiness = await auditPhaseCompletion({
           specContent: freshDraft,
           rubric: buildDesignRubric(targetFormFactors),

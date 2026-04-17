@@ -58,7 +58,7 @@ vi.mock("../../runtime/workspace-config", () => ({
   }),
 }))
 
-import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, buildPreviewUrl, createSpecPR, saveAgentFeedback, saveUserFeedback } from "../../runtime/github-client"
+import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, buildPreviewUrl, createSpecPR, saveAgentFeedback, saveUserFeedback, saveDraftAuditCache, readDraftAuditCache } from "../../runtime/github-client"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -652,6 +652,77 @@ describe("saveUserFeedback", () => {
     mockCreateOrUpdateFileContents.mockRejectedValue(new Error("Network error"))
 
     await expect(saveUserFeedback(baseParams)).resolves.toBeUndefined()
+  })
+})
+
+// ─── saveDraftAuditCache ──────────────────────────────────────────────────────
+
+describe("saveDraftAuditCache", () => {
+  it("calls saveDraftFile with JSON-stringified content on the design branch", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    const content = { specFingerprint: "fp-abc", findings: ["Gap 1", "Gap 2"] }
+    await saveDraftAuditCache({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.audit-cache.json",
+      content,
+    })
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: Buffer.from(JSON.stringify(content, null, 2)).toString("base64"),
+        branch: "spec/onboarding-design",
+      })
+    )
+  })
+})
+
+// ─── readDraftAuditCache ─────────────────────────────────────────────────────
+
+describe("readDraftAuditCache", () => {
+  it("returns findings when fingerprint matches", async () => {
+    const cached = { specFingerprint: "fp-abc", findings: ["Gap 1", "Gap 2"] }
+    mockGetContent.mockResolvedValue({
+      data: { content: Buffer.from(JSON.stringify(cached)).toString("base64") },
+    })
+
+    const result = await readDraftAuditCache({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.audit-cache.json",
+      expectedFingerprint: "fp-abc",
+    })
+
+    expect(result).toEqual(["Gap 1", "Gap 2"])
+  })
+
+  it("returns null when fingerprint does not match", async () => {
+    const cached = { specFingerprint: "fp-old", findings: ["Gap 1"] }
+    mockGetContent.mockResolvedValue({
+      data: { content: Buffer.from(JSON.stringify(cached)).toString("base64") },
+    })
+
+    const result = await readDraftAuditCache({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.audit-cache.json",
+      expectedFingerprint: "fp-new",
+    })
+
+    expect(result).toBeNull()
+  })
+
+  it("returns null when file does not exist (404)", async () => {
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+
+    const result = await readDraftAuditCache({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.audit-cache.json",
+      expectedFingerprint: "fp-abc",
+    })
+
+    expect(result).toBeNull()
   })
 })
 

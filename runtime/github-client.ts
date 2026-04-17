@@ -489,6 +489,53 @@ export async function saveDraftHtmlPreview(params: {
   }
 }
 
+// Persists render ambiguity audit results to the design branch as JSON.
+// Keyed by spec fingerprint — survives bot restarts, shared across users.
+// Same spec version always shows the same findings (no LLM non-determinism on repeat queries).
+export async function saveDraftAuditCache(params: {
+  featureName: string
+  filePath: string
+  content: { specFingerprint: string; findings: string[] }
+}): Promise<void> {
+  const { featureName, filePath, content } = params
+  if (isDryRun()) { console.log(`[DRY RUN] saveDraftAuditCache: would write ${filePath}`); return }
+  try {
+    await saveDraftFile({
+      branch: `spec/${featureName}-design`,
+      filePath,
+      content: JSON.stringify(content, null, 2),
+      commitMessage: `[AUDIT] ${featureName} · render ambiguity cache`,
+    })
+    console.log(`[GITHUB] saveDraftAuditCache: ${filePath} → saved (${content.findings.length} findings)`)
+  } catch (err) {
+    console.log(`[GITHUB] saveDraftAuditCache: ${filePath} → error: ${err}`)
+    // Non-fatal — audit still works, just won't be cached for next restart
+  }
+}
+
+// Reads persisted render ambiguity audit cache from the design branch.
+// Returns null if no cache exists or if the spec fingerprint doesn't match.
+export async function readDraftAuditCache(params: {
+  featureName: string
+  filePath: string
+  expectedFingerprint: string
+}): Promise<string[] | null> {
+  const { featureName, filePath, expectedFingerprint } = params
+  try {
+    const raw = await readFile(filePath, `spec/${featureName}-design`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { specFingerprint: string; findings: string[] }
+    if (parsed.specFingerprint !== expectedFingerprint) {
+      console.log(`[GITHUB] readDraftAuditCache: fingerprint mismatch (cached=${parsed.specFingerprint.slice(0, 30)}… current=${expectedFingerprint.slice(0, 30)}…) — cache stale`)
+      return null
+    }
+    console.log(`[GITHUB] readDraftAuditCache: ${filePath} → hit (${parsed.findings.length} findings)`)
+    return parsed.findings
+  } catch {
+    return null
+  }
+}
+
 // Builds the htmlpreview.github.io URL for a design preview file on a branch.
 // Works for public repos. For private repos, user can view the raw file via GitHub UI.
 export function buildPreviewUrl(params: {

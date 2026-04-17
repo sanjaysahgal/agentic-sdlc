@@ -7514,3 +7514,90 @@ describe("Scenario N65 — Write gate strips spec-writing tools when fix intent 
     expect(toolNames).toContain("offer_pm_escalation")
   })
 })
+
+// ─── N66: Persistent render ambiguity audit cache — GitHub cache hit skips Haiku LLM call ──
+//
+// When the design branch contains a persisted audit cache file ({feature}.design-audit.json)
+// whose specFingerprint matches the current draft, the state query path reuses those findings
+// without calling auditSpecRenderAmbiguity (Haiku). This saves one LLM round-trip and keeps
+// findings deterministic across bot restarts.
+//
+// Without the persistent cache: 5 Anthropic calls (isOffTopicForAgent, isSpecStateQuery, auditSpecDraft, auditSpecRenderAmbiguity, auditPhaseCompletion)
+// With    the persistent cache: 4 Anthropic calls (auditSpecRenderAmbiguity skipped)
+
+describe("Scenario N66 — Persistent render ambiguity audit cache hit skips Haiku LLM call on state query", () => {
+  const THREAD = "workflow-n66"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearPhaseAuditCaches()
+    setConfirmedAgent("onboarding", "ux-design")
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+  })
+
+  it("GitHub-cached render ambiguity findings used when fingerprint matches — no auditSpecRenderAmbiguity call", async () => {
+    const designDraft = [
+      "## Screens",
+      "### Onboarding Welcome",
+      "Purpose: First screen after signup.",
+      "Auth: Users sign in via Google OAuth2.",
+      "## Acceptance Criteria",
+      "1. Sign-in indicator is soft and non-intrusive.",
+    ].join("\n")
+
+    const approvedProductSpec = "## Acceptance Criteria\n1. SSO sign-in required. Provider TBD by PM."
+    const productVision = "# Product Vision\n\nHealth app for conversations."
+
+    // Compute the same fingerprint the platform produces.
+    const fp = `${designDraft.length}:${designDraft.slice(0, 100)}:${designDraft.slice(-50)}`
+
+    // Persisted cache content — findings with a matching fingerprint.
+    const cachedAuditJson = JSON.stringify({
+      specFingerprint: fp,
+      findings: ["Screen 1a: prompt bar clipped on 320px viewport — add horizontal scroll or wrap"],
+    })
+
+    // GitHub: design draft + audit cache on branch, approved PM spec + product vision on main.
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(designDraft).toString("base64"), encoding: "base64" } }
+      }
+      if (path === "specs/features/onboarding/onboarding.design-audit.json") {
+        return { data: { type: "file", content: Buffer.from(cachedAuditJson).toString("base64"), encoding: "base64" } }
+      }
+      if (path === "specs/features/onboarding/onboarding.product.md") {
+        return { data: { type: "file", content: Buffer.from(approvedProductSpec).toString("base64"), encoding: "base64" } }
+      }
+      if (path === "specs/product/PRODUCT_VISION.md") {
+        return { data: { type: "file", content: Buffer.from(productVision).toString("base64"), encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic call sequence — state query path with persistent cache HIT:
+    //   [0] isOffTopicForAgent         → false
+    //   [1] isSpecStateQuery           → yes (routes to state path)
+    //   [2] auditSpecDraft             → OK
+    //   --- auditSpecRenderAmbiguity SKIPPED (persistent cache hit) ---
+    //   [3] auditPhaseCompletion       → PASS (no readiness findings)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "OK" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what is the current state of the design?")
+    await handleFeatureChannelMessage(params)
+
+    // Only 4 Anthropic calls — auditSpecRenderAmbiguity was skipped due to persistent cache hit.
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+
+    // Cached finding must appear in the Design Issues section of the action menu.
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("prompt bar clipped on 320px viewport")
+    expect(text).toContain("Design Issues")
+  })
+})
