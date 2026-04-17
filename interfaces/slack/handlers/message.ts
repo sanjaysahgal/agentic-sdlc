@@ -1185,11 +1185,13 @@ async function runDesignAgent(params: {
         },
         {
           emoji: ":pencil:",
-          label: "Design Issues",
-          issues: [
-            ...readinessFindingsState.map(f => ({ issue: f.issue, fix: f.recommendation })),
-            ...stateQualityIssues.map(splitQualityIssue),
-          ],
+          label: "Design Conflicts (blocking)",
+          issues: readinessFindingsState.map(f => ({ issue: f.issue, fix: f.recommendation })),
+        },
+        {
+          emoji: ":mag:",
+          label: "Render Precision (non-blocking)",
+          issues: stateQualityIssues.map(splitQualityIssue),
         },
       ])
 
@@ -2232,13 +2234,13 @@ async function runDesignAgent(params: {
     },
     {
       emoji: ":pencil:",
-      label: "Design Issues",
-      issues: [
-        // Readiness first — these block engineering handoff directly.
-        // PM-GAP items excluded — handled by escalation gates, not actionable here.
-        ...effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })),
-        ...effectiveLlmQuality.map(splitQualityIssue),
-      ],
+      label: "Design Conflicts (blocking)",
+      issues: effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })),
+    },
+    {
+      emoji: ":mag:",
+      label: "Render Precision (non-blocking)",
+      issues: effectiveLlmQuality.map(splitQualityIssue),
     },
   ])
 

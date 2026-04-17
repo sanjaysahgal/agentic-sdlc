@@ -2242,7 +2242,7 @@ describe("Scenario 23 — State path shows all 4 action menu categories", () => 
     expect(text).toContain("Missing Brand Tokens")
 
     // readinessFindingsState.map() path exercised — finding returned by auditPhaseCompletion
-    expect(text).toContain("Design Issues")
+    expect(text).toContain("Design Conflicts (blocking)")
     expect(text).toContain("Screen coverage incomplete")
 
     clearHistory(FEATURE)
@@ -4039,7 +4039,7 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
     const text = lastUpdateText(params.client)
     expect(text).not.toContain("── OPEN ITEMS ──")
     expect(text).not.toContain("Brand Drift")
-    expect(text).not.toContain("Design Issues")
+    expect(text).not.toContain("Design Conflicts (blocking)")
 
     // Platform always overrides with structured gap list + assertionText — assertive verbs still present
     expect(text).toContain("Say *yes*")
