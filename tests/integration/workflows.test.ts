@@ -7420,3 +7420,97 @@ describe("Scenario N64 — Audit-stripping gate blocks renderAmbiguities from to
     expect(resultText).not.toContain("qualityIssues")
   })
 })
+
+// ─── Scenario N65: Write gate strips spec-writing tools on non-fix normal turns ───────
+// When a draft exists with open action items and fix intent is NOT confirmed,
+// spec-writing tools must be stripped from the agent's tool list.
+// Historical violation (2026-04-17): user said "approving fixes for 2, 3, 5 and 8",
+// fix intent detection failed, agent ran with full tools and modified 20+ elements.
+
+describe("Scenario N65 — Write gate strips spec-writing tools when fix intent not confirmed", () => {
+  const THREAD = "n65-write-gate"
+  const DESIGN_DRAFT = [
+    "## Screens",
+    "### Screen 1a: Chat Home",
+    "Layout container with prompt bar.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("non-fix message with draft and open items → agent has no spec-writing tools", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Mock GitHub: design draft exists on branch, everything else 404
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md" && ref === "spec/onboarding-design") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT).toString("base64"), sha: "abc" } }
+      }
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT).toString("base64"), sha: "abc" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] auditPhaseCompletion (pre-run design readiness) → 1 FINDING (so allActionItems > 0)
+    //   [3] classifyFixIntent (Haiku fallback — FIX_PREFILTER matches "fixes") → NOT-FIX
+    //   [4] runAgent → end_turn (agent has no write tools, just responds)
+    //   [5] identifyUncommittedDecisions → none
+    //   [6] classifyForPmGaps (Gate 4 escalation classifier) → none
+    // Note: extractLockedDecisions skips Anthropic call (history.length < 6)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
+      .mockResolvedValueOnce({                                                   // [2] auditPhaseCompletion → 1 finding
+        content: [{ type: "text", text: "FINDING: Screen coverage incomplete | add Screen 2" }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "NOT-FIX" }] })  // [3] classifyFixIntent
+      .mockResolvedValueOnce({                                                   // [4] agent end_turn
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I recommend fixing Screen 1a positioning." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // [5] identifyUncommittedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PM_GAPS: 0\nARCHITECT_ITEMS: 0\nDESIGN_ITEMS: 0" }] })  // [6] classifyForPmGaps
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "approving fixes for 2 3 5 and 8"),
+      client,
+    })
+
+    // Find the runAgent call — the one with tools array that has more than 2 items
+    // (classifier calls may have tools but they're short; the agent call has the full tool set)
+    const agentCall = mockAnthropicCreate.mock.calls.find(call => {
+      const tools = call[0]?.tools
+      return tools && tools.length > 2
+    })
+
+    expect(agentCall).toBeTruthy()
+    const toolNames = agentCall![0].tools.map((t: any) => t.name)
+
+    // Write gate: spec-writing tools must NOT be present
+    expect(toolNames).not.toContain("save_design_spec_draft")
+    expect(toolNames).not.toContain("apply_design_spec_patch")
+    expect(toolNames).not.toContain("rewrite_design_spec")
+    expect(toolNames).not.toContain("finalize_design_spec")
+
+    // Non-writing tools should still be available
+    expect(toolNames).toContain("offer_pm_escalation")
+  })
+})

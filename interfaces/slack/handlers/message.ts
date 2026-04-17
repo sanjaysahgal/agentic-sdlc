@@ -1521,6 +1521,23 @@ async function runDesignAgent(params: {
   // audit below can reference the same constant without duplication.
   const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "rewrite_design_spec", "finalize_design_spec"]
 
+  // PLATFORM ENFORCEMENT (P0): Spec-writing tools are ONLY available when:
+  //   (a) No draft exists yet (initial spec creation), OR
+  //   (b) Fix intent is confirmed (user said "fix N N N" or "fix all")
+  // When a draft exists and there are open action items (review phase), the agent is read-only
+  // on normal conversational turns. This prevents the agent from making unauthorized changes
+  // when it misinterprets the user's message as an instruction to modify the spec.
+  // Historical violation (2026-04-17): user said "approving fixes for 2, 3, 5 and 8", fix intent
+  // detection failed, agent ran with full tool access and modified 20+ spec elements unauthorized.
+  const draftExistsWithOpenItems = !!designDraftContent && allActionItems.length > 0
+  const specWriteAllowed = !draftExistsWithOpenItems || fixIntent.isFixAll
+  const designToolsNormalPath = specWriteAllowed
+    ? DESIGN_TOOLS
+    : DESIGN_TOOLS.filter(t => !designSaveTools.includes(t.name))
+  if (!specWriteAllowed) {
+    console.log(`[WRITE-GATE] Spec-writing tools STRIPPED for normal turn (draft exists, ${allActionItems.length} open items, fix intent not confirmed)`)
+  }
+
   // PLATFORM ENFORCEMENT (P0): Audit findings must NEVER reach the agent as tool response data.
   // When audit results (render ambiguities, quality issues) are returned in tool responses,
   // the agent treats them as work to do and auto-patches in a divergent loop. This gate strips
@@ -1917,7 +1934,7 @@ async function runDesignAgent(params: {
       userMessage: enrichedUserMessageDesign,
       userImages,
       historyLimit: DESIGN_HISTORY_LIMIT,
-      tools: readOnly ? undefined : DESIGN_TOOLS,
+      tools: readOnly ? undefined : designToolsNormalPath,
       toolHandler: designToolHandler,
       toolCallsOut: toolCallsOutDesign,
     })

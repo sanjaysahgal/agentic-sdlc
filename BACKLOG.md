@@ -56,6 +56,12 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### ~~Write gate — spec-writing tools stripped on non-fix turns (2026-04-17)~~ ✅ DONE
+
+When a design draft exists with open action items and fix intent is NOT confirmed, spec-writing tools (`save_design_spec_draft`, `apply_design_spec_patch`, `rewrite_design_spec`, `finalize_design_spec`) are removed from the agent's tool list. The agent can analyze, recommend, and escalate but cannot modify the spec. Prevents unauthorized changes when fix intent detection fails (historical: agent modified 20+ elements when user approved only 4).
+
+---
+
 ### ~~Tool response audit-stripping gate — prevent divergent patch loops (2026-04-16)~~ ✅ DONE
 
 `saveDesignDraft` returned `renderAmbiguities` in the tool response. The Sonnet agent treated them as work to do, calling `apply_design_spec_patch` again in the same turn — each patch created new ambiguities, causing a divergent loop (spec oscillated 50K→31K→50K→... with findings growing 19→20→32). Root cause: audit findings meant for the user's action menu were leaked to the agent as actionable input.

@@ -181,6 +181,8 @@ All spec-producing agents (PM, design, architect) use the Anthropic native tool-
 
 Tool results carry structured data (spec URL, preview URL, brand drifts) back to the agent. The agent interprets results and either calls another tool or produces a final text response. No regex parsing, no PLATFORM OVERRIDE injection.
 
+**Write gate (P0):** When a design draft exists with open action items and fix intent is NOT confirmed, spec-writing tools are physically removed from the agent's tool list. The agent runs read-only — it can analyze, recommend, and escalate, but cannot modify the spec. This prevents unauthorized changes when the user's message is misinterpreted as a general instruction (e.g., "approving fixes for 2, 3, 5 and 8" bypassed fix intent detection, agent modified 20+ elements). Regression test N65 verifies the gate.
+
 **Audit-stripping gate (P0):** All tool responses pass through `stripAuditFromToolResult` before reaching the agent. This runtime gate removes keys in `AGENT_STRIPPED_KEYS` (`renderAmbiguities`, `qualityIssues`) — audit findings that are meant for the user's action menu, not for the agent to act on. Without this gate, the agent treats audit findings as work to do and calls `apply_design_spec_patch` again, creating a divergent loop (each patch creates new ambiguities → more patches → spec oscillates). The gate is structural: even if a future code change adds audit data to the tool response, it is stripped before the agent sees it.
 
 **Removed by this migration:**
