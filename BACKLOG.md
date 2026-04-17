@@ -33,6 +33,18 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Pre-design PM completeness gate — surface all PM gaps upfront before design starts (2026-04-16)
+
+PM gaps are currently discovered *incrementally* — as the design agent writes each section, it tests that section against the PM spec and surfaces a new gap. This causes a ping-pong: design works → finds gap → PM answers → design works more → finds another gap → repeat. Each round trip requires a user-facing "yes" to continue.
+
+**Root cause:** No single upfront sweep checks the entire PM spec for completeness before the design agent starts writing. `auditSpecDraft` approximates this but doesn't go deep enough against the full PM spec.
+
+**Fix:** Add a one-time "pre-design gate" that runs when the design agent first activates for a feature (confirmedAgent transitions to `ux-design`). The gate runs a comprehensive PM spec audit — using the same rubric logic as `classifyForPmGaps` but against the full PM spec holistically — and surfaces ALL PM gaps in a single list before any design work starts. The design agent does not write a single spec line until all PM gaps are resolved. This eliminates the incremental ping-pong by front-loading all PM discovery into one round trip.
+
+**Applies to:** Every design agent activation (new feature or re-activation after PM edits). Gate result cached by PM spec fingerprint — does not re-run if PM spec hasn't changed.
+
+---
+
 ### `auditSpecDraft` false positive — flags PM-spec-covered items as gaps (2026-04-16)
 
 `auditSpecDraft` receives `productVision` + `systemArchitecture` but not the feature PM spec. When a feature PM spec explicitly covers something (e.g. AC#23: "60 minutes of inactivity"), `auditSpecDraft` still surfaces it as a gap because it never sees the PM spec.
