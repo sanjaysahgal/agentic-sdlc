@@ -20,18 +20,26 @@ Examples that ARE fix requests:
 - "fix the first three"
 - "please fix 1 and 4"
 - "can you fix all"
+- "approving fixes for 2, 3, 5 and 8"
+- "approve fixes 1-5"
+- "fix 1 to 5 for now"
+- "fix first 5 recommendations"
+- "go ahead with 1 through 3"
+- "apply your recommendations for 1, 4, and 7"
+- "yes apply those fixes"
 
 Examples that are NOT fix requests:
 - "yes"
 - "sounds good"
 - "those all look right"
 - "I agree"
-- "approved"
+- "approved" (no items referenced)
 - "ok"
 - "looks good to me"
 - "yes I think those are valid issues"
 - "makes sense"
 - "what is item 3 about"
+- "tell me more about item 5"
 
 Respond with exactly one of:
 FIX-ALL

@@ -171,4 +171,22 @@ describe("parseFixAllIntent", () => {
     const r = parseFixAllIntent("approved")
     expect(r.isFixAll).toBe(false)
   })
+
+  it("detects 'fix 1-5' as range", () => {
+    const r = parseFixAllIntent("fix 1-5")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it("detects 'fix 1-3, 5, 7-9' as mixed range and individual", () => {
+    const r = parseFixAllIntent("fix 1-3, 5, 7-9")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toEqual([1, 2, 3, 5, 7, 8, 9])
+  })
+
+  it("detects 'fix 1-3 5 7-9' (space-separated ranges)", () => {
+    const r = parseFixAllIntent("fix 1-3 5 7-9")
+    expect(r.isFixAll).toBe(true)
+    expect(r.selectedIndices).toEqual([1, 2, 3, 5, 7, 8, 9])
+  })
 })
