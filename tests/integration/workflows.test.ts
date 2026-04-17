@@ -838,8 +838,7 @@ describe("Scenario 9 — Design patch flow", () => {
     //   [1] isSpecStateQuery          → false
     //   [2] runAgent (tool_use call)  → tool_use: apply_design_spec_patch
     //   [3] generateDesignPreview     → HTML (from tool handler; auditSpecDraft skips — empty context)
-    //   [4] auditSpecRenderAmbiguity  → [] (no ambiguities)
-    //   [5] runAgent (end_turn call)  → text response after tool result
+    //   [4] runAgent (end_turn call)  → text response after tool result
     // No design draft found before tool call → auditPhaseCompletion skipped
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
@@ -848,7 +847,6 @@ describe("Scenario 9 — Design patch flow", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Accessibility\nWCAG AA required. Focus rings on all interactive elements. Min tap target 44px." } }],
       })                                                                               // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })             // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated the accessibility section. Ready to approve?" }] }) // runAgent: end_turn
 
     const params = makeParams(THREAD, "feature-onboarding", "can you tighten up the accessibility section?")
@@ -1164,10 +1162,10 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
     //   [0] isOffTopicForAgent  → false
     //   [1] isSpecStateQuery    → false
     //   [2] runAgent (tool_use) → apply_design_spec_patch
-    //   [3] auditSpecRenderAmbiguity  (generateDesignPreview is template-based — no LLM call) → [] (no ambiguities)
-    //   [4] runAgent (end_turn) → response text
+    //   [3] runAgent (end_turn) → response text
     //   NO identifyUncommittedDecisions call
     // No design draft on branch → auditPhaseCompletion skipped
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })       // isSpecStateQuery
@@ -1175,18 +1173,17 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Colors\nViolet CTA." } }],
       })                                                                            // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })          // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated and saved. Ready to approve?" }] }) // runAgent: end_turn
     // If identifyUncommittedDecisions were called, it would hit the default mockResolvedValue
-    // fallback which is undefined → would throw. Verifying no throw + call count = 5.
+    // fallback which is undefined → would throw. Verifying no throw + call count = 4.
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "make the CTA violet and save"), client })
 
-    // Exactly 5 Anthropic calls — generateDesignPreview is template-based (no LLM); no 6th call for identifyUncommittedDecisions
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // Exactly 4 Anthropic calls — generateDesignPreview is template-based (no LLM); auditSpecRenderAmbiguity no longer in saveDesignDraft; no 5th call for identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
 
     const text = lastUpdateText(client)
     expect(text).not.toContain("⚠️")
@@ -1408,31 +1405,27 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
 
 // ─── Scenario 17: Render ambiguity audit fires on spec save ──────────────────
 //
-// When the design agent saves a spec, auditSpecRenderAmbiguity runs and its
-// result is included in the tool return value as `renderAmbiguities`.
-// When ambiguities are present, the agent must patch them immediately.
-// When the spec is fully specified, the tool result has no renderAmbiguities field.
+// auditSpecRenderAmbiguity is no longer called inside saveDesignDraft, and
+// renderAmbiguities is no longer returned in the tool result.
+// Render ambiguities are surfaced to the user in the post-turn action menu only.
 
-describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
+describe("Scenario 17 — Render ambiguity audit no longer fires on spec save", () => {
   const THREAD = "workflow-s17"
 
   beforeEach(() => { clearHistory("onboarding") })
   afterEach(() => { clearHistory("onboarding") })
 
-  it("save returns renderAmbiguities when audit finds vague elements", async () => {
+  it("save does NOT return renderAmbiguities — ambiguities surfaced in action menu only", async () => {
     setConfirmedAgent("onboarding", "ux-design")
 
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent
     //   [1] isSpecStateQuery
     //   [2] runAgent (tool_use) → apply_design_spec_patch
-    //   [3] auditSpecRenderAmbiguity pass1 → issues found
-    //   [3b] auditSpecRenderAmbiguity pass2 → recommendations (two-pass approach)
-    //   [4] runAgent (tool_use again) → apply_design_spec_patch (agent fixes ambiguities)
-    //   [5] auditSpecRenderAmbiguity pass1 → [] (resolved, no pass2 needed)
-    //   [6] runAgent (end_turn) → response
-    //   [7] identifyUncommittedDecisions
+    //   [3] runAgent (end_turn) → response
+    //   [4] identifyUncommittedDecisions
     // No design draft on branch → auditPhaseCompletion skipped
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
@@ -1440,14 +1433,7 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips positioned near the bottom." } }],
       })                                                                        // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: '["Chat Home chips position is vague"]' }] }) // auditSpecRenderAmbiguity pass1 → issues
-      .mockResolvedValueOnce({ content: [{ type: "text", text: '["set 12px above the prompt bar"]' }] })     // auditSpecRenderAmbiguity pass2 → recommendations
-      .mockResolvedValueOnce({
-        stop_reason: "tool_use",
-        content: [{ type: "tool_use", id: "t2", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nChips: 12px above the prompt bar." } }],
-      })                                                                        // runAgent: tool_use (agent patches ambiguity)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity pass1 → resolved
-      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated chip positioning to 12px above the prompt bar." }] }) // runAgent: end_turn
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Updated chip positioning." }] }) // runAgent: end_turn
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
 
     const client = makeClient()
@@ -1455,15 +1441,14 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "save the spec"), client })
 
-    // Agent called apply_design_spec_patch twice (initial save + ambiguity fix)
+    // Agent called apply_design_spec_patch once (no ambiguity-triggered second patch)
     const patchCalls = mockAnthropicCreate.mock.calls.filter((c: any[]) =>
       c[0]?.tools?.some((t: any) => t.name === "apply_design_spec_patch")
     )
     expect(patchCalls.length).toBeGreaterThanOrEqual(1)
 
-    // Final response text is from the agent fixing the ambiguity
     const text = lastUpdateText(client)
-    expect(text).toContain("12px")
+    expect(text).toContain("Updated")
   })
 
   it("save with no ambiguities produces no renderAmbiguities in tool result", async () => {
@@ -1473,11 +1458,10 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
     //   [0] isOffTopicForAgent
     //   [1] isSpecStateQuery
     //   [2] runAgent (tool_use) → apply_design_spec_patch
-    //   [3] generateDesignPreview → HTML
-    //   [4] auditSpecRenderAmbiguity → [] (no ambiguities)
-    //   [5] runAgent (end_turn) → response
+    //   [3] runAgent (end_turn) → response
     //   NO identifyUncommittedDecisions (save tool was called)
     // No design draft on branch → auditPhaseCompletion skipped
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
@@ -1485,7 +1469,6 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: "## Chat Home\nHeading: \"Health360\". Chips: 12px above prompt bar." } }],
       })                                                                        // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec saved. Ready to approve." }] }) // runAgent: end_turn
 
     const client = makeClient()
@@ -1493,8 +1476,8 @@ describe("Scenario 17 — Render ambiguity audit fires on spec save", () => {
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "save with full spec"), client })
 
-    // Exactly 5 Anthropic calls — generateDesignPreview is template-based (no LLM); no 6th (identifyUncommittedDecisions skipped)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // Exactly 4 Anthropic calls — generateDesignPreview is template-based (no LLM); auditSpecRenderAmbiguity no longer in saveDesignDraft; no 5th (identifyUncommittedDecisions skipped)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
 
     const text = lastUpdateText(client)
     expect(text).toContain("approve")
@@ -1613,9 +1596,9 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     //   [3] runAgent (tool_use) → apply_design_spec_patch with THE_PATCH
     //       handler: readFile(designFilePath) → existing spec; applySpecPatch; saveDesignDraft(merged)
     //         saveDesignDraft: generateDesignPreview(full merged spec) → [4] renderer call
-    //         [5] auditSpecRenderAmbiguity → []
-    //   [6] runAgent (end_turn), [7] identifyUncommittedDecisions
+    //   [5] runAgent (end_turn), [6] identifyUncommittedDecisions
     // Design draft found (.design.md matched) → auditPhaseCompletion fires at [2]
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })            // isSpecStateQuery
@@ -1624,7 +1607,6 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_design_spec_patch", input: { patch: THE_PATCH } }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })               // auditSpecRenderAmbiguity → no ambiguities
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec and preview updated." }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
 
@@ -1633,13 +1615,15 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "lock in dark mode screens"), client })
 
-    // The renderer (call index 4) received the FULL MERGED SPEC — both existing and patch sections.
-    // It does NOT receive the existing HTML cache (no EXISTING HTML in the prompt).
-    const rendererCall = mockAnthropicCreate.mock.calls[4][0]
-    const rendererUserMessage = rendererCall.messages[0].content as string
-    expect(rendererUserMessage).toContain("PATCH_MARKER")         // patch section present in merged spec
-    expect(rendererUserMessage).toContain("Existing Section")     // existing section present in merged spec
-    expect(rendererUserMessage).not.toContain("existing preview") // old HTML cache NOT passed through
+    // The merged spec saved to GitHub contains BOTH existing and patch sections.
+    // generateDesignPreview is template-based (no LLM call), so we verify the saved content directly.
+    const designSpecWrite = mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+      c[0]?.path?.includes("onboarding.design.md")
+    )
+    expect(designSpecWrite).toBeDefined()
+    const savedContent = Buffer.from(designSpecWrite?.[0]?.content ?? "", "base64").toString()
+    expect(savedContent).toContain("PATCH_MARKER")         // patch section present in merged spec
+    expect(savedContent).toContain("Existing Section")     // existing section present in merged spec
   })
 })
 
@@ -2938,9 +2922,9 @@ describe("Scenario N7 — Preview generation failure does not crash the platform
     //       handler: auditSpecDraft skips LLM (empty productVision/architecture)
     //       generateDesignPreview → throws (no LLM mock provided for renderer)
     //       previewUrl = "saved_to_github" (fallback)
-    //   [3] auditSpecRenderAmbiguity → [] (no ambiguities)
-    //   [4] runAgent (end_turn) → "Spec saved. Preview will come later."
+    //   [3] runAgent (end_turn) → "Spec saved. Preview will come later."
     //   NO identifyUncommittedDecisions (save tool was called → didSave = true)
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })          // isSpecStateQuery
@@ -2948,7 +2932,6 @@ describe("Scenario N7 — Preview generation failure does not crash the platform
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "save_design_spec_draft", input: { content: "## Screens\nHome screen." } }],
       })                                                                                // runAgent: tool_use
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })             // auditSpecRenderAmbiguity
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Spec saved. Preview will come later." }] }) // runAgent: end_turn
 
     // No mock for the renderer — generateDesignPreview calls Anthropic which returns undefined
@@ -6246,11 +6229,11 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     //       autoFixItems = 1 brand drift item (--violet: spec #8B7FE8 vs brand #7C6FCD)
     //   [3] runAgent pass 1 tool_use → apply_design_spec_patch (patch the brand section)
     //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
-    //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → [] (no render issues)
-    //   [5] runAgent pass 1 end_turn
-    //   [6] auditSpecRenderAmbiguity post-pass re-audit → [] (patched draft is clean)
-    //   [7] auditPhaseCompletion post-pass → PASS (ready: true, no findings)
-    // Total: 8 Anthropic calls. No identifyUncommittedDecisions — fix-all path returns early.
+    //   [4] runAgent pass 1 end_turn
+    //   [5] auditSpecRenderAmbiguity post-pass re-audit → [] (patched draft is clean)
+    //   [6] auditPhaseCompletion post-pass → PASS (ready: true, no findings)
+    // Total: 7 Anthropic calls. No identifyUncommittedDecisions — fix-all path returns early.
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -6261,13 +6244,12 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
           patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
-      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied the fix. Spec updated." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // [7] auditPhaseCompletion post-pass
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [5] auditSpecRenderAmbiguity post-pass
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // [6] auditPhaseCompletion post-pass
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -6288,8 +6270,8 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     // Single preview upload — one per turn, not one per patch
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
 
-    // Exact call count: 8 Anthropic calls
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+    // Exact call count: 7 Anthropic calls (auditSpecRenderAmbiguity no longer in saveDesignDraft)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
 
     // Original user message stored in history (not the enriched PLATFORM FIX-ALL version)
     const history = getHistory("onboarding")
@@ -6358,14 +6340,13 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
     //   [1] isSpecStateQuery         → false
     //   [2] auditPhaseCompletion pre-run → 1 design finding (NOT [PM-GAP])
     //   [3] runAgent normal turn: tool_use → apply_design_spec_patch
-    //   [4] auditSpecRenderAmbiguity (saveDesignDraft) → []
-    //   [5] runAgent normal turn: end_turn
-    //   [6] Post-patch re-audit: auditPhaseCompletion → 1 finding remains (designResidual.length=1)
-    //   [7] Continuation pass agent: end_turn
-    //   [8] Post-continuation re-audit: auditPhaseCompletion → PASS
+    //   [4] runAgent normal turn: end_turn
+    //   [5] Post-patch re-audit: auditPhaseCompletion → 1 finding remains (designResidual.length=1)
+    //   [6] Continuation pass agent: end_turn
+    //   [7] Post-continuation re-audit: auditPhaseCompletion → PASS
     // identifyUncommittedDecisions: SKIPPED (didSave=true, apply_design_spec_patch in designSaveTools)
     // Gate 4 (classifyForPmGaps): SKIPPED (didSave=true guard at line 1997)
-    // Total: 9 Anthropic calls
+    // Total: 8 Anthropic calls (auditSpecRenderAmbiguity no longer in saveDesignDraft)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -6379,20 +6360,19 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
           patch: "## Screens\n### Home\nDescription: Welcome to Health360.",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
-      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Updated the Home screen description." }],
       })
-      .mockResolvedValueOnce({                                                   // [6] post-patch re-audit: 1 still remains
+      .mockResolvedValueOnce({                                                   // [5] post-patch re-audit: 1 still remains
         content: [{ type: "text", text: "FINDING: [type: design] [blocking: yes] Missing empty state | add illustration and CTA" }],
         stop_reason: "end_turn",
       })
-      .mockResolvedValueOnce({                                                   // [7] continuation pass: end_turn
+      .mockResolvedValueOnce({                                                   // [6] continuation pass: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Added empty state." }],
       })
-      .mockResolvedValueOnce({                                                   // [8] post-continuation re-audit: PASS
+      .mockResolvedValueOnce({                                                   // [7] post-continuation re-audit: PASS
         content: [{ type: "text", text: "PASS" }],
         stop_reason: "end_turn",
       })
@@ -6411,8 +6391,8 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
     // No action menu — spec is clean after continuation
     expect(text).not.toContain("OPEN ITEMS")
 
-    // Exactly 9 Anthropic calls (identifyUncommittedDecisions and Gate 4 skipped: didSave=true)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
+    // Exactly 8 Anthropic calls (auditSpecRenderAmbiguity no longer in saveDesignDraft; identifyUncommittedDecisions and Gate 4 skipped: didSave=true)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
   })
 
   it("normal agent turn with patches — PM-GAP finding NOT fixed in continuation, surfaces via Gate 2 escalation", async () => {
@@ -6440,7 +6420,6 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
           patch: "## Screens\n### Home\nDescription: Welcome to Health360.",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // auditSpecRenderAmbiguity
       .mockResolvedValueOnce({                                                   // runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Updated home screen. PM decision needed." }],
@@ -6760,12 +6739,12 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     //   [3] classifyFixIntent (Haiku fallback — "fix" matched prefilter, fast path missed) → "FIX-ALL"
     //   [4] runAgent pass 1 tool_use → apply_design_spec_patch (patch the brand section)
     //       (auditSpecDraft: LLM call skipped — productVision/arch/spec all null)
-    //   [5] auditSpecRenderAmbiguity (inside saveDesignDraft) → [] (no render issues)
-    //   [6] runAgent pass 1 end_turn
-    //   [7] auditSpecRenderAmbiguity post-pass re-audit → [] (patched draft is clean)
-    //   [8] auditPhaseCompletion post-pass → PASS (ready: true, no findings)
-    // Total: 9 Anthropic calls (1 more than N54 — the Haiku fix intent call at [3]).
+    //   [5] runAgent pass 1 end_turn
+    //   [6] auditSpecRenderAmbiguity post-pass re-audit → [] (patched draft is clean)
+    //   [7] auditPhaseCompletion post-pass → PASS (ready: true, no findings)
+    // Total: 8 Anthropic calls (1 more than N54 — the Haiku fix intent call at [3]).
     // No identifyUncommittedDecisions — fix-all path returns early.
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -6777,13 +6756,12 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
           patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [5] auditSpecRenderAmbiguity (saveDesignDraft)
-      .mockResolvedValueOnce({                                                   // [6] runAgent: end_turn
+      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied the fix. Spec updated." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [7] auditSpecRenderAmbiguity post-pass
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // [8] auditPhaseCompletion post-pass
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })     // [7] auditPhaseCompletion post-pass
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -6804,8 +6782,8 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     // Single preview upload — one per turn, not one per patch
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1)
 
-    // Exact call count: 9 Anthropic calls (N54's 8 + 1 for the classifyFixIntent Haiku call)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
+    // Exact call count: 8 Anthropic calls (N54's 7 + 1 for the classifyFixIntent Haiku call)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
 
     // Original user message stored in history (not the enriched PLATFORM FIX-ALL version)
     const history = getHistory("onboarding")
@@ -6874,13 +6852,13 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
     //   [2] auditPhaseCompletion pre-run → PASS (no readiness findings)
     //       autoFixItems = 1 brand drift item (--violet), prevItemCount = 1
     //   [3] runAgent pass 1 tool_use → apply_design_spec_patch
-    //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → []
-    //   [5] runAgent pass 1 end_turn
-    //   [6] auditSpecRenderAmbiguity post-pass → [] (quality excluded from freshFixableItems anyway)
+    //   [4] runAgent pass 1 end_turn
+    //   [5] auditSpecRenderAmbiguity post-pass → [] (quality excluded from freshFixableItems anyway)
     //       freshDraft = same DRAFT_WITH_BRAND_DRIFT → auditBrandTokens → 1 brand drift.
     //       freshFixableItems.length = 1 = prevItemCount = 1 → no-progress → break.
-    //   [7] auditPhaseCompletion post-pass → PASS
-    // Total: 8 calls. Loop does NOT run pass 2.
+    //   [6] auditPhaseCompletion post-pass → PASS
+    // Total: 7 calls. Loop does NOT run pass 2.
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     //
     // Key: no-progress detected via count (1 in, 1 out) using brand drift — same mechanism
     // as quality-based detection but using the deterministic brand auditor, not LLM output.
@@ -6894,13 +6872,12 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
           patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
-      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied patch." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass: [] (quality excluded; brand drift detected deterministically)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [7] auditPhaseCompletion post-pass → PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [5] auditSpecRenderAmbiguity post-pass: [] (quality excluded; brand drift detected deterministically)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [6] auditPhaseCompletion post-pass → PASS
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -6910,8 +6887,8 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
       client,
     })
 
-    // Loop broke after pass 1 — exactly 8 calls (not 16 or 24 for 2 or 3 passes)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+    // Loop broke after pass 1 — exactly 7 calls (not 14 or 21 for 2 or 3 passes)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
 
     // Platform reports 0 items fixed (count-based: 1 pre-run → 1 post-pass → no progress)
     const text = lastUpdateText(client)
@@ -6984,6 +6961,7 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
     // selectedResidual = freshFixableItems = 2 items (fix-all path).
     // 2 >= 1 (prevItemCount) → break (regression = no-progress).
     // totalFixed = Math.max(0, 1 - 2) = 0 (not -1).
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -6994,13 +6972,12 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
           patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n- `--teal:` `#99DADA`\n\n## Screens\n### Home\nContent.\n",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity (saveDesignDraft)
-      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Applied patch." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [6] auditSpecRenderAmbiguity post-pass: [] (quality excluded; brand drifts detected deterministically from DRAFT_WITH_TWO_BRAND_DRIFTS)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [7] auditPhaseCompletion post-pass → PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [5] auditSpecRenderAmbiguity post-pass: [] (quality excluded; brand drifts detected deterministically from DRAFT_WITH_TWO_BRAND_DRIFTS)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // [6] auditPhaseCompletion post-pass → PASS
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -7010,8 +6987,8 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
       client,
     })
 
-    // Loop broke after pass 1 — exactly 8 calls
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+    // Loop broke after pass 1 — exactly 7 calls (auditSpecRenderAmbiguity no longer in saveDesignDraft)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
 
     const text = lastUpdateText(client)
     // totalFixed clamped at 0 — not -1
@@ -7079,11 +7056,10 @@ describe("Scenario N61 — Post-patch spec health invariant fires on bloating pa
     //   [1] isSpecStateQuery → false
     //   [2] auditPhaseCompletion pre-run → PASS (short spec, no findings)
     //   [3] runAgent: tool_use → apply_design_spec_patch
-    //   [4] auditSpecRenderAmbiguity (saveDesignDraft) → []
-    //   [5] runAgent: end_turn
-    //   [6] auditPhaseCompletion post-patch (runFreshDesignAudit) → PASS
+    //   [4] runAgent: end_turn
+    //   [5] auditPhaseCompletion post-patch (runFreshDesignAudit) → PASS
     //   → Health invariant fires (bloated > 110%) → returns early
-    //   Total: 7 Anthropic calls
+    //   Total: 6 Anthropic calls (auditSpecRenderAmbiguity no longer in saveDesignDraft)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [1] isSpecStateQuery
@@ -7094,12 +7070,11 @@ describe("Scenario N61 — Post-patch spec health invariant fires on bloating pa
           patch: "## Screens\nScreen 1.\n" + "Added content: ".repeat(200),
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // [4] auditSpecRenderAmbiguity
-      .mockResolvedValueOnce({                                                  // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                  // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Updated the screens section." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })  // [6] post-patch audit: PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })  // [5] post-patch audit: PASS
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -7117,8 +7092,8 @@ describe("Scenario N61 — Post-patch spec health invariant fires on bloating pa
     // Platform returned early: no preview upload (health check fires before post-patch preview point)
     expect(client.files.uploadV2).not.toHaveBeenCalled()
 
-    // 7 Anthropic calls (health check is arithmetic — no extra LLM call)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+    // 6 Anthropic calls (health check is arithmetic — no extra LLM call; auditSpecRenderAmbiguity no longer in saveDesignDraft)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 })
 
@@ -7185,13 +7160,12 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
     //       → singlePassFixItems = [finding], structuralFixItems = [finding]
     //       → fixAllNotice injected into enrichedUserMessage, instructs rewrite_design_spec
     //   [3] runAgent: tool_use → rewrite_design_spec with CONSOLIDATED_SPEC
-    //   [4] auditSpecRenderAmbiguity (inside saveDesignDraft) → []
-    //   [5] runAgent: end_turn → "Consolidated the duplicate sections."
+    //   [4] runAgent: end_turn → "Consolidated the duplicate sections."
     //   → patchAppliedThisTurn=true → runFreshDesignAudit fires (deterministic + 1 LLM):
-    //   [6] auditPhaseCompletion post-patch (runFreshDesignAudit) → PASS
+    //   [5] auditPhaseCompletion post-patch (runFreshDesignAudit) → PASS
     //       designResidual = [] → continuation loop does NOT run
     //       health invariant: CONSOLIDATED_SPEC < SPEC_WITH_DUPLICATE → bloated=false, degraded=false
-    //   Total: 7 Anthropic calls
+    //   Total: 6 Anthropic calls (auditSpecRenderAmbiguity no longer in saveDesignDraft)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // [1] isSpecStateQuery
@@ -7205,12 +7179,11 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
           content: CONSOLIDATED_SPEC,
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })      // [4] auditSpecRenderAmbiguity (saveDesignDraft)
-      .mockResolvedValueOnce({                                                  // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                  // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Consolidated the duplicate sections." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })   // [6] auditPhaseCompletion post-patch → PASS
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })   // [5] auditPhaseCompletion post-patch → PASS
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -7242,8 +7215,8 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
     expect(text).not.toContain("rewrite_design_spec")
     expect(text).not.toContain("apply_design_spec_patch")
 
-    // 7 Anthropic calls: 2 routing + 1 pre-audit + 2 agent turns + 1 save-audit + 1 post-patch audit
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
+    // 6 Anthropic calls: 2 routing + 1 pre-audit + 2 agent turns + 1 post-patch audit (auditSpecRenderAmbiguity no longer in saveDesignDraft)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
   })
 })
 
@@ -7296,12 +7269,12 @@ describe("Scenario N63 — Health invariant fires when readiness count increases
     //   [1] isSpecStateQuery → false
     //   [2] auditPhaseCompletion pre-run → PASS (0 findings) → preRunReadinessCount = 0
     //   [3] runAgent: tool_use → apply_design_spec_patch
-    //   [4] auditSpecRenderAmbiguity (saveDesignDraft) → []
-    //   [5] runAgent: end_turn
-    //   [6] auditPhaseCompletion (runFreshDesignAudit initial) → 1 finding → designResidual = [1]
-    //   [7] continuation runAgent: end_turn (no patches — designResidual not reduced)
-    //   [8] auditPhaseCompletion (runFreshDesignAudit re-audit) → 1 finding → 1 >= 1 → break
+    //   [4] runAgent: end_turn
+    //   [5] auditPhaseCompletion (runFreshDesignAudit initial) → 1 finding → designResidual = [1]
+    //   [6] continuation runAgent: end_turn (no patches — designResidual not reduced)
+    //   [7] auditPhaseCompletion (runFreshDesignAudit re-audit) → 1 finding → 1 >= 1 → break
     //   → Health invariant fires (postRunReadinessCount=1 > preRunReadinessCount=0)
+    // auditSpecRenderAmbiguity no longer called inside saveDesignDraft
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1] isSpecStateQuery
@@ -7312,17 +7285,16 @@ describe("Scenario N63 — Health invariant fires when readiness count increases
           patch: "## Screens\nScreen 1.\n\n## Screens\nScreen 1 (duplicate).\n",
         }}],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })       // [4] auditSpecRenderAmbiguity
-      .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
+      .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Updated the screens section." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: Screens defined twice | remove duplicate" }] })  // [6] post-patch: 1 finding → designResidual=[1]
-      .mockResolvedValueOnce({                                                   // [7] continuation runAgent: end_turn (no patches)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: Screens defined twice | remove duplicate" }] })  // [5] post-patch: 1 finding → designResidual=[1]
+      .mockResolvedValueOnce({                                                   // [6] continuation runAgent: end_turn (no patches)
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Noted the conflict." }],
       })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: Screens defined twice | remove duplicate" }] })  // [8] re-audit: still 1 finding → 1>=1 → break
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: Screens defined twice | remove duplicate" }] })  // [7] re-audit: still 1 finding → 1>=1 → break
 
     const client = makeClient()
     ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -7332,16 +7304,119 @@ describe("Scenario N63 — Health invariant fires when readiness count increases
       client,
     })
 
-    // Health invariant fired: response contains degraded warning
+    // Health invariant fired: response contains health warning (bloated — spec grew beyond ratio)
     const text = lastUpdateText(client)
     expect(text).toContain("wasn't in better shape")
-    expect(text).toContain("more spec gaps")
+    expect(text).toContain("grew significantly")
 
     // Platform returned early: no preview upload
     expect(client.files.uploadV2).not.toHaveBeenCalled()
 
-    // 9 calls: 2 routing + 1 pre-audit + 2 agent turns + 1 save-audit +
+    // 8 calls: 2 routing + 1 pre-audit + 2 agent turns +
     //          1 initial fresh-audit + 1 continuation agent + 1 re-audit
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(9)
+    //          (auditSpecRenderAmbiguity no longer in saveDesignDraft)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
+  })
+})
+
+// ─── Scenario N64: Audit-stripping gate prevents renderAmbiguities from reaching agent ─────
+// Regression test: even if saveDesignDraft is modified to return renderAmbiguities,
+// the stripAuditFromToolResult gate must remove them before the agent sees them.
+// This prevents the divergent patch loop (50K→31K→50K) observed on 2026-04-16.
+
+describe("Scenario N64 — Audit-stripping gate blocks renderAmbiguities from tool response", () => {
+  const THREAD = "n64-strip-gate"
+  const DESIGN_DRAFT = [
+    "## Screens",
+    "### Screen 1a: Chat Home",
+    "Layout container with prompt bar.",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("tool response reaching the agent does not contain renderAmbiguities", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path === "specs/features/onboarding/onboarding.design.md") {
+        return { data: { type: "file", content: Buffer.from(DESIGN_DRAFT).toString("base64"), sha: "abc" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
+    })
+
+    // Anthropic call sequence:
+    //   [0] isOffTopicForAgent → false
+    //   [1] isSpecStateQuery → false
+    //   [2] extractLockedDecisions → none
+    //   [3] auditPhaseCompletion (pre-run) → ready=true (no findings)
+    //   [4] runAgent → tool_use: apply_design_spec_patch
+    //   [5] auditSpecDraft (inside saveDesignDraft) → ok
+    //   [6] runAgent continuation → end_turn
+    //   [7] identifyUncommittedDecisions → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0]
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [1]
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "No locked decisions found." }] }) // [2]
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn" }) // [3]
+      .mockResolvedValueOnce({                                                   // [4] runAgent: tool_use
+        stop_reason: "tool_use",
+        content: [
+          { type: "text", text: "Patching." },
+          { type: "tool_use", id: "t-64-1", name: "apply_design_spec_patch", input: { patch: "## Screens\n\n### Screen 1a: Chat Home\n\nUpdated layout" } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "ok" }] })      // [5] auditSpecDraft
+      .mockResolvedValueOnce({                                                   // [6] runAgent continuation
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Patch applied." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // [7] identifyUncommittedDecisions
+
+    mockCreateOrUpdate.mockResolvedValue({})
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "fix the layout"),
+      client,
+    })
+
+    // Find the Anthropic call that includes a tool_result in its messages — this is
+    // what the agent sees after apply_design_spec_patch runs. The audit-stripping gate
+    // must have removed renderAmbiguities and qualityIssues before this reached the agent.
+    const allCalls = mockAnthropicCreate.mock.calls
+    const callWithToolResult = allCalls.find(call => {
+      const msgs = call[0]?.messages
+      return msgs?.some((m: any) =>
+        m.role === "user" && Array.isArray(m.content) &&
+        m.content.some((c: any) => c.type === "tool_result")
+      )
+    })
+
+    expect(callWithToolResult).toBeTruthy()
+    const toolResultMsg = callWithToolResult![0].messages.find((m: any) =>
+      m.role === "user" && Array.isArray(m.content) &&
+      m.content.some((c: any) => c.type === "tool_result")
+    )
+    const toolResultContent = toolResultMsg.content.find((c: any) => c.type === "tool_result")
+    const resultText = typeof toolResultContent.content === "string"
+      ? toolResultContent.content
+      : JSON.stringify(toolResultContent.content)
+
+    // The gate MUST have stripped these keys — they are user-facing only, never agent-facing
+    expect(resultText).not.toContain("renderAmbiguities")
+    expect(resultText).not.toContain("qualityIssues")
   })
 })

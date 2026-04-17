@@ -56,6 +56,14 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### ~~Tool response audit-stripping gate — prevent divergent patch loops (2026-04-16)~~ ✅ DONE
+
+`saveDesignDraft` returned `renderAmbiguities` in the tool response. The Sonnet agent treated them as work to do, calling `apply_design_spec_patch` again in the same turn — each patch created new ambiguities, causing a divergent loop (spec oscillated 50K→31K→50K→... with findings growing 19→20→32). Root cause: audit findings meant for the user's action menu were leaked to the agent as actionable input.
+
+**Fix (implemented):** (1) Removed `renderAmbiguities` from `saveDesignDraft` return value entirely — audit findings are user-facing only. (2) Added `stripAuditFromToolResult` runtime gate wrapping `designToolHandler` — strips `AGENT_STRIPPED_KEYS` (`renderAmbiguities`, `qualityIssues`) from every tool response before it reaches the agent. Even if a future code change adds them back to `saveDesignDraft`, the gate strips them at the boundary. (3) Regression test N64 verifies the gate works.
+
+---
+
 ### `auditSpecDraft` false positive — flags PM-spec-covered items as gaps (2026-04-16)
 
 `auditSpecDraft` receives `productVision` + `systemArchitecture` but not the feature PM spec. When a feature PM spec explicitly covers something (e.g. AC#23: "60 minutes of inactivity"), `auditSpecDraft` still surfaces it as a gap because it never sees the PM spec.

@@ -179,7 +179,9 @@ All spec-producing agents (PM, design, architect) use the Anthropic native tool-
 2. If `stop_reason === "tool_use"`: execute the platform `toolHandler` for each `tool_use` content block, inject `tool_result` messages, loop
 3. If `stop_reason === "end_turn"`: return the final text response
 
-Tool results carry structured data (spec URL, audit findings, preview URL) back to the agent. The agent interprets results and either calls another tool or produces a final text response. No regex parsing, no PLATFORM OVERRIDE injection.
+Tool results carry structured data (spec URL, preview URL, brand drifts) back to the agent. The agent interprets results and either calls another tool or produces a final text response. No regex parsing, no PLATFORM OVERRIDE injection.
+
+**Audit-stripping gate (P0):** All tool responses pass through `stripAuditFromToolResult` before reaching the agent. This runtime gate removes keys in `AGENT_STRIPPED_KEYS` (`renderAmbiguities`, `qualityIssues`) — audit findings that are meant for the user's action menu, not for the agent to act on. Without this gate, the agent treats audit findings as work to do and calls `apply_design_spec_patch` again, creating a divergent loop (each patch creates new ambiguities → more patches → spec oscillates). The gate is structural: even if a future code change adds audit data to the tool response, it is stripped before the agent sees it.
 
 **Removed by this migration:**
 - Text-block output parsers: `DRAFT_SPEC_START/END`, `DESIGN_PATCH_START/END`, `ENGINEERING_PATCH_START/END`, `PREVIEW_ONLY_START/END`, `INTENT: *`

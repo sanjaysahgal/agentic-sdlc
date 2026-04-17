@@ -1495,8 +1495,14 @@ async function runDesignAgent(params: {
 
     const brandDrifts = context.brand ? auditBrandTokens(content, context.brand) : []
     const specGap = audit.status === "gap" ? audit.message : null
-    const renderAmbiguities = await auditSpecRenderAmbiguity(content, { formFactors: targetFormFactors }).catch(() => [])
-    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined, renderAmbiguities: renderAmbiguities.length > 0 ? renderAmbiguities : undefined } }
+    // IMPORTANT: Render ambiguity findings are NOT returned in the tool response.
+    // When included, the Sonnet agent treats them as work to do and calls
+    // apply_design_spec_patch again, creating a divergent loop (each patch creates new
+    // ambiguities → more patches → more ambiguities, ad infinitum). The spec went from
+    // 50K → 31K → 50K with findings growing from 19 → 20 → 32 in a single turn.
+    // Render ambiguities are surfaced to the *user* in the post-turn action menu — never
+    // to the agent as actionable input. The agent only patches what the user approved.
+    return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined } }
   }
 
   // Design agent has a much larger context (system prompt + product vision + full draft spec)
@@ -1507,9 +1513,25 @@ async function runDesignAgent(params: {
   // audit below can reference the same constant without duplication.
   const designSaveTools = ["save_design_spec_draft", "apply_design_spec_patch", "rewrite_design_spec", "finalize_design_spec"]
 
+  // PLATFORM ENFORCEMENT (P0): Audit findings must NEVER reach the agent as tool response data.
+  // When audit results (render ambiguities, quality issues) are returned in tool responses,
+  // the agent treats them as work to do and auto-patches in a divergent loop. This gate strips
+  // audit-only keys from every tool response at the boundary — even if a future code change
+  // accidentally adds them back to saveDesignDraft, they are stripped here before reaching the agent.
+  // Keys on this list are user-facing (action menu) only, never agent-facing.
+  const AGENT_STRIPPED_KEYS = ["renderAmbiguities", "qualityIssues"] as const
+  const stripAuditFromToolResult = (result: { result?: unknown; error?: string }): typeof result => {
+    if (result.result && typeof result.result === "object" && result.result !== null) {
+      const cleaned = { ...result.result as Record<string, unknown> }
+      for (const key of AGENT_STRIPPED_KEYS) delete cleaned[key]
+      return { ...result, result: cleaned }
+    }
+    return result
+  }
+
   // Tool handler extracted as named const so the fix-all loop can reuse it across passes
   // without re-creating the closure on each call.
-  const designToolHandler = readOnly ? undefined : async (name: string, input: Record<string, unknown>) => {
+  const designToolHandlerRaw = readOnly ? undefined : async (name: string, input: Record<string, unknown>) => {
       // During fix-all passes, block escalation tool calls — they would set stale pending state
       // that persists after the loop exits. The fix-all contract is: only spec patches this turn.
       // Any PM/architect gaps will surface in the action menu after fix-all completes.
@@ -1730,6 +1752,13 @@ async function runDesignAgent(params: {
       }
       return { error: `Unknown tool: ${name}` }
   }
+
+  // Wrap the raw handler with the audit-stripping gate (P0 enforcement).
+  // Every tool response passes through stripAuditFromToolResult before reaching the agent.
+  const designToolHandler = designToolHandlerRaw
+    ? async (name: string, input: Record<string, unknown>) =>
+        stripAuditFromToolResult(await designToolHandlerRaw(name, input))
+    : undefined
 
   // Effective audit variables — initialized from pre-run audit data.
   // The post-patch continuation loop (below, in the normal path) updates these to reflect
