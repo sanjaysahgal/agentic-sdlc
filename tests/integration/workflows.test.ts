@@ -7601,3 +7601,8 @@ describe("Scenario N66 — Persistent render ambiguity audit cache hit skips Hai
     expect(text).toContain("Design Issues")
   })
 })
+
+// Note: parseFixAllIntent hyphen range support ("fix 1-5", "fix 1-3, 5, 7-9")
+// is covered by unit tests in tests/unit/action-menu.test.ts.
+// No new E2E scenario needed — the fix-all flow (N54, N58, N62) already tests
+// the platform path once parseFixAllIntent returns { isFixAll: true, selectedIndices }.

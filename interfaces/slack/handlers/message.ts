@@ -168,9 +168,24 @@ function isStandaloneConfirmation(message: string): boolean {
 export function parseFixAllIntent(message: string): { isFixAll: boolean; selectedIndices: number[] | null } {
   const trimmed = message.toLowerCase().trim()
   if (/^fix\s+all\b/.test(trimmed)) return { isFixAll: true, selectedIndices: null }
-  const indexMatch = trimmed.match(/^fix\s+([\d\s,]+)$/)
+  // Match "fix 1 2 3", "fix 1, 2, 3", "fix 1-5", "fix 1-3 5 7-9", "fix 1, 3-5, 8"
+  const indexMatch = trimmed.match(/^fix\s+([\d\s,\-]+)$/)
   if (indexMatch) {
-    const indices = indexMatch[1].split(/[\s,]+/).map(Number).filter(n => n > 0)
+    const parts = indexMatch[1].split(/[\s,]+/).filter(Boolean)
+    const indices: number[] = []
+    for (const part of parts) {
+      const rangeMatch = part.match(/^(\d+)-(\d+)$/)
+      if (rangeMatch) {
+        const start = Number(rangeMatch[1])
+        const end = Number(rangeMatch[2])
+        if (start > 0 && end >= start && end - start < 100) {
+          for (let i = start; i <= end; i++) indices.push(i)
+        }
+      } else {
+        const n = Number(part)
+        if (n > 0) indices.push(n)
+      }
+    }
     if (indices.length > 0) return { isFixAll: true, selectedIndices: indices }
   }
   return { isFixAll: false, selectedIndices: null }
