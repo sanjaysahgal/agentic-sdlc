@@ -1,12 +1,5 @@
 {
   "pendingEscalations": {},
   "pendingApprovals": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. Confirm the exact text content displayed in the persistent logged-out indicator (e.g., \"Not signed in\", \"You're exploring without an account\", or similar).\n2. Specify the product behavior when SSO authentication fails in the Auth Sheet — whether the user sees an error message, can retry, is returned to chat, or encounters a different experience.",
-      "recommendations": "1. My recommendation: The persistent logged-out indicator should display \"Not signed in\" — simple, direct, and immediately clear about the user's authentication state without implying judgment or limitation.\n→ Rationale: It directly answers AC#2 and #4 (persistent indicator of logged-out state) and aligns with Health360's minimalist design language; users know exactly why their data won't persist without explanation overhead.\n→ Note: Pending your approval — say yes to apply to the product spec\n\n2. My recommendation: When SSO authentication fails in the Auth Sheet, display a dismissible inline error message at the top of the Auth Sheet explaining the failure (e.g., \"Sign-in failed. Please check your connection and try again.\") with a \"Retry\" button; the user can retry unlimited times or dismiss the error and return to the logged-out chat.\n→ Rationale: AC#22 establishes the pattern for handling auth failures at initial load (dismissible retry affordance, no limit on retries); the same resilient pattern should apply to SSO failures mid-flow to avoid forcing users down an error recovery path they cannot escape.\n→ Note: Pending your approval — say yes to apply to the product spec\n\nSay *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation.",
-      "originAgent": "design"
-    }
-  }
+  "escalationNotifications": {}
 }
