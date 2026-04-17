@@ -1361,6 +1361,7 @@ async function runDesignAgent(params: {
   if (!fixIntent.isFixAll && FIX_PREFILTER.test(userMessage)) {
     fixIntent = await classifyFixIntent(userMessage).catch(() => ({ isFixAll: false, selectedIndices: null }))
   }
+  console.log(`[FIX-INTENT] isFixAll=${fixIntent.isFixAll} selectedIndices=${JSON.stringify(fixIntent.selectedIndices)}`)
   const allActionItems = [
     ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
     ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
@@ -1368,6 +1369,7 @@ async function runDesignAgent(params: {
     ...preRunLlmQuality.map(splitQualityIssue),
     ...designReadinessFindings.map(f => ({ issue: f.issue, fix: f.recommendation })),
   ]
+  console.log(`[FIX-INTENT] allActionItems=${allActionItems.length} (brand=${brandDriftsDesign.length} anim=${animDriftsDesign.length} missing=${missingTokensDesign.length} quality=${preRunLlmQuality.length} readiness=${designReadinessFindings.length})`)
   const itemsToFix = !fixIntent.isFixAll ? [] :
     fixIntent.selectedIndices
       ? allActionItems.filter((_, i) => fixIntent.selectedIndices!.includes(i + 1))
@@ -1402,12 +1404,18 @@ async function runDesignAgent(params: {
   const designToolsForFixAll = (fixIntent.isFixAll && singlePassFixItems.length > 0 && targetedFixItems.length === 0)
     ? DESIGN_TOOLS.filter(t => t.name !== "apply_design_spec_patch")
     : DESIGN_TOOLS
+  if (fixIntent.isFixAll) {
+    console.log(`[FIX-INTENT] itemsToFix=${itemsToFix.length} autoFixItems=${autoFixItems.length} singlePassFixItems=${singlePassFixItems.length} (structural=${structuralFixItems.length} targeted=${targetedFixItems.length})`)
+  }
   const fixAllNotice = (fixIntent.isFixAll && autoFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Apply ALL fixes below via apply_design_spec_patch. One patch per section. Do not ask for confirmation. Do not respond until every patch is applied. Output ≤2 sentences after all patches complete.\n${autoFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : (fixIntent.isFixAll && singlePassFixItems.length > 0)
     ? `\n\n[PLATFORM FIX-ALL — Address the design issues listed below.${structuralFixItems.length > 0 ? ` For structural conflicts (duplicate sections, contradictory definitions): use rewrite_design_spec with a clean consolidated spec. For all other items: make targeted additions or corrections via apply_design_spec_patch.` : " Make targeted additions or corrections to the relevant spec sections via apply_design_spec_patch."} Do not ask for confirmation. Output ≤2 sentences after completing all changes.\n${singlePassFixItems.map((item, i) => `${i + 1}. ${item.issue} — Fix: ${item.fix}`).join("\n")}]`
     : ""
 
+  if (fixIntent.isFixAll) {
+    console.log(`[FIX-INTENT] fixAllNotice=${fixAllNotice ? "GENERATED (" + fixAllNotice.length + " chars)" : "EMPTY — no items to fix"}`)
+  }
   let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice
   const systemPrompt = buildDesignSystemBlocks(context, featureName, readOnly)
 
