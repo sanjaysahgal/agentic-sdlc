@@ -684,7 +684,7 @@ describe("saveDraftAuditCache", () => {
 
 describe("readDraftAuditCache", () => {
   it("returns findings when fingerprint matches", async () => {
-    const cached = { specFingerprint: "fp-abc", findings: ["Gap 1", "Gap 2"] }
+    const cached = { specFingerprint: "fp-abc", renderAmbiguity: ["Gap 1", "Gap 2"] }
     mockGetContent.mockResolvedValue({
       data: { content: Buffer.from(JSON.stringify(cached)).toString("base64") },
     })
@@ -695,7 +695,7 @@ describe("readDraftAuditCache", () => {
       expectedFingerprint: "fp-abc",
     })
 
-    expect(result).toEqual(["Gap 1", "Gap 2"])
+    expect(result).toEqual({ specFingerprint: "fp-abc", renderAmbiguity: ["Gap 1", "Gap 2"] })
   })
 
   it("returns null when fingerprint does not match", async () => {

@@ -489,48 +489,73 @@ export async function saveDraftHtmlPreview(params: {
   }
 }
 
-// Persists render ambiguity audit results to the design branch as JSON.
+// Persists ALL LLM-based audit results to the design branch as a single JSON file.
 // Keyed by spec fingerprint — survives bot restarts, shared across users.
 // Same spec version always shows the same findings (no LLM non-determinism on repeat queries).
+// Stores both render ambiguity (string[]) and readiness (issue+recommendation pairs) findings.
+export interface DesignAuditCache {
+  specFingerprint: string
+  renderAmbiguity?: string[]
+  readiness?: Array<{ issue: string; recommendation: string }>
+}
+
 export async function saveDraftAuditCache(params: {
   featureName: string
   filePath: string
-  content: { specFingerprint: string; findings: string[] }
+  content: DesignAuditCache
 }): Promise<void> {
   const { featureName, filePath, content } = params
   if (isDryRun()) { console.log(`[DRY RUN] saveDraftAuditCache: would write ${filePath}`); return }
   try {
+    // Merge with existing cache to avoid overwriting one audit type when saving the other
+    const existing = await readFile(filePath, `spec/${featureName}-design`).catch(() => null)
+    let merged = content
+    if (existing) {
+      try {
+        const parsed = JSON.parse(existing) as DesignAuditCache
+        if (parsed.specFingerprint === content.specFingerprint) {
+          merged = { ...parsed, ...content }
+        }
+      } catch { /* ignore parse errors — overwrite */ }
+    }
     await saveDraftFile({
       branch: `spec/${featureName}-design`,
       filePath,
-      content: JSON.stringify(content, null, 2),
-      commitMessage: `[AUDIT] ${featureName} · render ambiguity cache`,
+      content: JSON.stringify(merged, null, 2),
+      commitMessage: `[AUDIT] ${featureName} · design audit cache`,
     })
-    console.log(`[GITHUB] saveDraftAuditCache: ${filePath} → saved (${content.findings.length} findings)`)
+    const counts = [
+      merged.renderAmbiguity ? `${merged.renderAmbiguity.length} render` : null,
+      merged.readiness ? `${merged.readiness.length} readiness` : null,
+    ].filter(Boolean).join(", ")
+    console.log(`[GITHUB] saveDraftAuditCache: ${filePath} → saved (${counts})`)
   } catch (err) {
     console.log(`[GITHUB] saveDraftAuditCache: ${filePath} → error: ${err}`)
-    // Non-fatal — audit still works, just won't be cached for next restart
   }
 }
 
-// Reads persisted render ambiguity audit cache from the design branch.
+// Reads persisted audit cache from the design branch.
 // Returns null if no cache exists or if the spec fingerprint doesn't match.
 export async function readDraftAuditCache(params: {
   featureName: string
   filePath: string
   expectedFingerprint: string
-}): Promise<string[] | null> {
+}): Promise<DesignAuditCache | null> {
   const { featureName, filePath, expectedFingerprint } = params
   try {
     const raw = await readFile(filePath, `spec/${featureName}-design`)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { specFingerprint: string; findings: string[] }
+    const parsed = JSON.parse(raw) as DesignAuditCache
     if (parsed.specFingerprint !== expectedFingerprint) {
-      console.log(`[GITHUB] readDraftAuditCache: fingerprint mismatch (cached=${parsed.specFingerprint.slice(0, 30)}… current=${expectedFingerprint.slice(0, 30)}…) — cache stale`)
+      console.log(`[GITHUB] readDraftAuditCache: fingerprint mismatch — cache stale`)
       return null
     }
-    console.log(`[GITHUB] readDraftAuditCache: ${filePath} → hit (${parsed.findings.length} findings)`)
-    return parsed.findings
+    const counts = [
+      parsed.renderAmbiguity ? `${parsed.renderAmbiguity.length} render` : null,
+      parsed.readiness ? `${parsed.readiness.length} readiness` : null,
+    ].filter(Boolean).join(", ")
+    console.log(`[GITHUB] readDraftAuditCache: ${filePath} → hit (${counts})`)
+    return parsed
   } catch {
     return null
   }

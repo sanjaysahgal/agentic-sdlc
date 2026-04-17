@@ -1955,8 +1955,12 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "approve the design spec", client))
 
-    // Hard gate fired — spec was NOT written to GitHub
-    expect(mockCreateOrUpdate).not.toHaveBeenCalled()
+    // Hard gate fired — design spec was NOT written to GitHub
+    // (audit cache writes are allowed — only the design spec itself must be blocked)
+    const designSpecWrite = mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+      c[0]?.path?.endsWith("onboarding.design.md")
+    )
+    expect(designSpecWrite).toBeUndefined()
 
     // Tool result delivered to the agent contained the brand drift error
     const runAgentAfterToolCall = mockAnthropicCreate.mock.calls[5][0]
@@ -7554,10 +7558,13 @@ describe("Scenario N66 — Persistent render ambiguity audit cache hit skips Hai
     // Compute the same fingerprint the platform produces.
     const fp = `${designDraft.length}:${designDraft.slice(0, 100)}:${designDraft.slice(-50)}`
 
-    // Persisted cache content — findings with a matching fingerprint.
+    // Persisted cache content — renderAmbiguity + readiness with a matching fingerprint.
+    // Both fields must be present so both the render ambiguity and readiness cache lookups
+    // hit the persistent cache (avoiding extra LLM calls for either).
     const cachedAuditJson = JSON.stringify({
       specFingerprint: fp,
-      findings: ["Screen 1a: prompt bar clipped on 320px viewport — add horizontal scroll or wrap"],
+      renderAmbiguity: ["Screen 1a: prompt bar clipped on 320px viewport — add horizontal scroll or wrap"],
+      readiness: [],
     })
 
     // GitHub: design draft + audit cache on branch, approved PM spec + product vision on main.
@@ -7581,19 +7588,19 @@ describe("Scenario N66 — Persistent render ambiguity audit cache hit skips Hai
     //   [0] isOffTopicForAgent         → false
     //   [1] isSpecStateQuery           → yes (routes to state path)
     //   [2] auditSpecDraft             → OK
-    //   --- auditSpecRenderAmbiguity SKIPPED (persistent cache hit) ---
-    //   [3] auditPhaseCompletion       → PASS (no readiness findings)
+    //   --- auditSpecRenderAmbiguity SKIPPED (persistent render cache hit) ---
+    //   --- auditPhaseCompletion SKIPPED (persistent readiness cache hit) ---
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "yes" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "OK" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })
 
     const params = makeParams(THREAD, "feature-onboarding", "what is the current state of the design?")
     await handleFeatureChannelMessage(params)
 
-    // Only 4 Anthropic calls — auditSpecRenderAmbiguity was skipped due to persistent cache hit.
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // Only 3 Anthropic calls — both auditSpecRenderAmbiguity and auditPhaseCompletion
+    // were skipped due to persistent cache hits (renderAmbiguity + readiness).
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
 
     // Cached finding must appear in the Design Issues section of the action menu.
     const text = lastUpdateText(params.client)

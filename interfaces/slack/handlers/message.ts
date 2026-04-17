@@ -1151,21 +1151,18 @@ async function runDesignAgent(params: {
         const stateQCacheKey = `render-ambiguity:${featureName}:${specFingerprint(draftContent)}`
         const auditCacheFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
         const fp = specFingerprint(draftContent)
+        // 3-tier cache lookup for render ambiguity
         if (renderAmbiguitiesCache.has(stateQCacheKey)) {
-          // In-memory cache hit (same process, same spec version)
           stateQualityIssues = renderAmbiguitiesCache.get(stateQCacheKey)!
         } else {
-          // Try persistent GitHub cache (survives restarts, shared across users)
-          const persistedFindings = await readDraftAuditCache({ featureName, filePath: auditCacheFilePath, expectedFingerprint: fp }).catch(() => null)
-          if (persistedFindings) {
-            stateQualityIssues = persistedFindings
-            renderAmbiguitiesCache.set(stateQCacheKey, persistedFindings)
+          const persistedCache = await readDraftAuditCache({ featureName, filePath: auditCacheFilePath, expectedFingerprint: fp }).catch(() => null)
+          if (persistedCache?.renderAmbiguity) {
+            stateQualityIssues = persistedCache.renderAmbiguity
+            renderAmbiguitiesCache.set(stateQCacheKey, persistedCache.renderAmbiguity)
           } else {
-            // Cache miss — run Haiku once and persist
             stateQualityIssues = await auditSpecRenderAmbiguity(draftContent, { formFactors: targetFormFactors }).catch(() => [] as string[])
             renderAmbiguitiesCache.set(stateQCacheKey, stateQualityIssues)
-            // Persist to GitHub — non-blocking, non-fatal
-            saveDraftAuditCache({ featureName, filePath: auditCacheFilePath, content: { specFingerprint: fp, findings: stateQualityIssues } }).catch(() => {})
+            saveDraftAuditCache({ featureName, filePath: auditCacheFilePath, content: { specFingerprint: fp, renderAmbiguity: stateQualityIssues } }).catch(() => {})
           }
         }
       }
@@ -1182,15 +1179,24 @@ async function runDesignAgent(params: {
         if (designReadinessFindingsCache.has(stateCacheKey)) {
           readinessFindingsState = designReadinessFindingsCache.get(stateCacheKey) ?? []
         } else {
-          const result = await auditPhaseCompletion({
-            specContent: draftContent,
-            rubric: buildDesignRubric(targetFormFactors),
-            featureName,
-            productVision: pvContent,
-            systemArchitecture: saContent,
-            approvedProductSpec: approvedPmSpecContent,
-          }).catch(() => null)
-          readinessFindingsState = result && !result.ready ? result.findings : []
+          // Try persistent GitHub cache for readiness findings
+          const auditCacheFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
+          const persistedCache = await readDraftAuditCache({ featureName, filePath: auditCacheFilePath, expectedFingerprint: dfp }).catch(() => null)
+          if (persistedCache?.readiness) {
+            readinessFindingsState = persistedCache.readiness
+          } else {
+            const result = await auditPhaseCompletion({
+              specContent: draftContent,
+              rubric: buildDesignRubric(targetFormFactors),
+              featureName,
+              productVision: pvContent,
+              systemArchitecture: saContent,
+              approvedProductSpec: approvedPmSpecContent,
+            }).catch(() => null)
+            readinessFindingsState = result && !result.ready ? result.findings : []
+            // Persist readiness findings — non-blocking
+            saveDraftAuditCache({ featureName, filePath: auditCacheFilePath, content: { specFingerprint: dfp, readiness: readinessFindingsState } }).catch(() => {})
+          }
           phaseEntryAuditCache.set(stateCacheKey, readinessFindingsState.length > 0 ? "[PLATFORM DESIGN READINESS]" : "")
           designReadinessFindingsCache.set(stateCacheKey, readinessFindingsState)
         }
@@ -1336,9 +1342,9 @@ async function runDesignAgent(params: {
     } else {
       const auditCacheFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
       const persisted = await readDraftAuditCache({ featureName, filePath: auditCacheFilePath, expectedFingerprint: fp }).catch(() => null)
-      if (persisted) {
-        preRunLlmQuality = persisted
-        renderAmbiguitiesCache.set(cacheKey, persisted)
+      if (persisted?.renderAmbiguity) {
+        preRunLlmQuality = persisted.renderAmbiguity
+        renderAmbiguitiesCache.set(cacheKey, persisted.renderAmbiguity)
       }
     }
   }
@@ -1354,6 +1360,19 @@ async function runDesignAgent(params: {
       designReadinessNotice = phaseEntryAuditCache.get(designCacheKey)!
       designReadinessFindings = designReadinessFindingsCache.get(designCacheKey) ?? []
     } else {
+      // Try persistent GitHub cache for readiness findings
+      const readinessCacheFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
+      const persistedReadiness = await readDraftAuditCache({ featureName, filePath: readinessCacheFilePath, expectedFingerprint: dfp }).catch(() => null)
+      if (persistedReadiness?.readiness && persistedReadiness.readiness.length > 0) {
+        designReadinessFindings = persistedReadiness.readiness
+        const productFindingsPreRun = designReadinessFindings.filter(f => f.issue.includes("[PM-GAP]"))
+        console.log(`[ESCALATION] Gate 1 (pre-run audit, cached) for ${featureName}: ${designReadinessFindings.length} total findings, ${productFindingsPreRun.length} [PM-GAP]`)
+        if (productFindingsPreRun.length > 0) {
+          console.log(`[ESCALATION] Gate 1 [PM-GAP] findings:\n${productFindingsPreRun.map(f => f.issue).join("\n")}`)
+        }
+        const findingLines = designReadinessFindings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+        designReadinessNotice = `\n\n[DESIGN REVIEW — ${designReadinessFindings.length} gap${designReadinessFindings.length === 1 ? "" : "s"} blocking engineering handoff. These are displayed to the user in a structured block — DO NOT restate or list them in your response. Do NOT ask clarifying questions — your recommendation for each is stated. Do NOT reference "the platform" in your response; speak as the UX Designer throughout. For product gaps, escalate to the PM. For architecture gaps, escalate to the Architect. For design gaps you own, fix them when the user asks. Keep your prose to ≤2 sentences.\n${findingLines}]`
+      } else {
       const designAuditResult = await auditPhaseCompletion({
         specContent: designDraftContent,
         rubric: buildDesignRubric(targetFormFactors),
@@ -1364,6 +1383,8 @@ async function runDesignAgent(params: {
       }).catch(() => null)
       if (designAuditResult && !designAuditResult.ready) {
         designReadinessFindings = designAuditResult.findings
+        // Persist readiness findings — non-blocking
+        saveDraftAuditCache({ featureName, filePath: readinessCacheFilePath, content: { specFingerprint: dfp, readiness: designReadinessFindings } }).catch(() => {})
         const productFindingsPreRun = designAuditResult.findings.filter(f => f.issue.includes("[PM-GAP]"))
         console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: ${designAuditResult.findings.length} total findings, ${productFindingsPreRun.length} [PM-GAP]`)
         if (productFindingsPreRun.length > 0) {
@@ -1374,7 +1395,10 @@ async function runDesignAgent(params: {
       } else if (designAuditResult?.ready) {
         console.log(`[ESCALATION] Gate 1 (pre-run audit) for ${featureName}: PASS — no findings`)
         designReadinessNotice = `\n\n[DESIGN REVIEW — Spec passed all design rubric criteria. You may confirm the spec is engineering-ready when asked.]`
+        // Persist empty readiness (ready=true means 0 findings)
+        saveDraftAuditCache({ featureName, filePath: readinessCacheFilePath, content: { specFingerprint: dfp, readiness: [] } }).catch(() => {})
       }
+      } // close persistent cache else
       phaseEntryAuditCache.set(designCacheKey, designReadinessNotice)
       designReadinessFindingsCache.set(designCacheKey, designReadinessFindings)
     }
@@ -1894,7 +1918,7 @@ async function runDesignAgent(params: {
         const freshFp = specFingerprint(freshDraft)
         const freshAuditCachePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
         renderAmbiguitiesCache.set(`render-ambiguity:${featureName}:${freshFp}`, lastFreshQualityRaw)
-        saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, findings: lastFreshQualityRaw } }).catch(() => {})
+        saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, renderAmbiguity: lastFreshQualityRaw } }).catch(() => {})
         lastFreshReadiness = await auditPhaseCompletion({
           specContent: freshDraft,
           rubric: buildDesignRubric(targetFormFactors),
@@ -1903,6 +1927,11 @@ async function runDesignAgent(params: {
           systemArchitecture: context.systemArchitecture,
           approvedProductSpec: context.approvedProductSpec,
         }).catch(() => null)
+        // Persist readiness findings for this new spec version — non-blocking
+        if (lastFreshReadiness) {
+          const readinessToCache = lastFreshReadiness.ready ? [] : lastFreshReadiness.findings
+          saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, readiness: readinessToCache } }).catch(() => {})
+        }
 
         // freshFixableItems: brand drift only (token + animation + missing tokens).
         // Quality and readiness are both excluded from auto-patching — the agent "fixes" them
