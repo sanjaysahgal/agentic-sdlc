@@ -56,6 +56,24 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### Health invariant must block save, not just response (2026-04-17)
+
+The health invariant (post-patch readiness count > pre-run count) blocks the Slack response but the spec changes are already committed to GitHub. The bad spec persists on the branch. Fix: save to a staging variable first, run the health invariant, only commit to GitHub if it passes. If it fails, revert to the pre-patch spec version on the branch.
+
+Historical: fix-all grew spec from 44K → 50K, health invariant blocked, but 50K spec remained on GitHub as the "current" draft.
+
+---
+
+### Deterministic readiness checks — replace LLM rubric floor (2026-04-17)
+
+`auditPhaseCompletion` uses Haiku to evaluate a rubric against the spec. It's non-deterministic — finds different issues every run (7 → 9 → 10 → 8). Fix-all never converges to 0 because Haiku keeps finding new precision items.
+
+Fix: add rule-based structural checks in `runtime/spec-auditor.ts` (same pattern as `auditBrandTokens`): duplicate section headings, conflicting pixel values for same gap, token mismatches (`--error` on `--warning` container), undefined screen references in flows, orphaned definitions. These run as the deterministic floor; the LLM rubric becomes supplementary.
+
+Applies to all agents — architect agent uses the same `auditPhaseCompletion` pattern and will hit the same non-convergence without this.
+
+---
+
 ### ~~Write gate — spec-writing tools stripped on non-fix turns (2026-04-17)~~ ✅ DONE
 
 When a design draft exists with open action items and fix intent is NOT confirmed, spec-writing tools (`save_design_spec_draft`, `apply_design_spec_patch`, `rewrite_design_spec`, `finalize_design_spec`) are removed from the agent's tool list. The agent can analyze, recommend, and escalate but cannot modify the spec. Prevents unauthorized changes when fix intent detection fails (historical: agent modified 20+ elements when user approved only 4).
