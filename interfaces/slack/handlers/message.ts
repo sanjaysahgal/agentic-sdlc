@@ -1320,12 +1320,28 @@ async function runDesignAgent(params: {
   const copyCompletenessIssues = designDraftContent ? auditCopyCompleteness(designDraftContent) : []
   const qualityIssues = [...redundantBrandingIssues, ...copyCompletenessIssues]
 
-  // Use cached LLM render ambiguities if populated by a recent state query for this spec version.
-  // State queries write to this cache; regular-path messages read from it at zero LLM cost.
-  // Falls back to deterministic-only qualityIssues when the cache is cold (no prior state query).
-  const preRunLlmQuality: string[] = designDraftContent
-    ? (renderAmbiguitiesCache.get(`render-ambiguity:${featureName}:${specFingerprint(designDraftContent)}`) ?? qualityIssues)
-    : qualityIssues
+  // Use cached LLM render ambiguities — same 3-tier lookup as state query path:
+  // 1. In-memory cache (same process, same spec version)
+  // 2. Persistent GitHub cache (survives restarts — {feature}.design-audit.json on design branch)
+  // 3. Falls back to deterministic-only qualityIssues (no LLM call on fix-all path)
+  // CRITICAL: Without the persistent cache check, bot restarts cause allActionItems to drop
+  // from 27 to 9 — the user's item numbers no longer match the platform's list.
+  let preRunLlmQuality: string[] = qualityIssues
+  if (designDraftContent) {
+    const fp = specFingerprint(designDraftContent)
+    const cacheKey = `render-ambiguity:${featureName}:${fp}`
+    const inMemory = renderAmbiguitiesCache.get(cacheKey)
+    if (inMemory) {
+      preRunLlmQuality = inMemory
+    } else {
+      const auditCacheFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
+      const persisted = await readDraftAuditCache({ featureName, filePath: auditCacheFilePath, expectedFingerprint: fp }).catch(() => null)
+      if (persisted) {
+        preRunLlmQuality = persisted
+        renderAmbiguitiesCache.set(cacheKey, persisted)
+      }
+    }
+  }
 
   const qualityNotice = preRunLlmQuality.length > 0
     ? `\n\n[PLATFORM NOTICE — DESIGN QUALITY: ${preRunLlmQuality.length} issue${preRunLlmQuality.length === 1 ? "" : "s"} blocking approval:\n${preRunLlmQuality.map((i, n) => `${n + 1}. ${i}`).join("\n")}\nThe platform displays these in a structured block. DO NOT restate them in your response. Apply any quality fixes the user requested and keep your prose to ≤3 sentences.]`
