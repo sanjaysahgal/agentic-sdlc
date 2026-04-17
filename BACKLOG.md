@@ -33,15 +33,26 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### PM finalization rubric false-negative — gaps slipping through the upfront audit (2026-04-16)
+
+The PM spec DOES have a comprehensive upfront audit at `finalize_product_spec`: `PM_RUBRIC` (criterion 1: every user story needs an error path), `PM_DESIGN_READINESS_RUBRIC` (criterion 3: every failing action needs a recovery UX), and `auditDownstreamReadiness` (adversarial designer persona). These rubrics were written to catch exactly the 2 gaps that slipped through on the onboarding spec:
+
+1. User Story 2 (returning user SSO sign-in) has no failure path — `PM_RUBRIC` criterion 1 should have caught this
+2. AC#2 "persistent indicator" never specifies display copy — `PM_DESIGN_READINESS_RUBRIC` criterion 2 should have caught this
+
+**Root cause:** Producer–consumer chain gap. The consumer (finalization gate blocks when Haiku returns findings) is tested. The producer (does the rubric actually generate findings for these specific PM spec gap patterns?) has never been verified with real Haiku output against a real PM spec. Haiku missed both on the onboarding spec — the spec was written in a way that made them non-obvious (SSO failure path implied by AC#11 "inline error", indicator copy assumed by design convention).
+
+**Fix:** Add real-Haiku-output fixtures for `PM_RUBRIC` and `PM_DESIGN_READINESS_RUBRIC` against the onboarding PM spec. Verify both gaps appear as findings. If they don't, sharpen the rubric criteria for those patterns. Apply producer test rule: commit fixture + test asserting finding count ≥ expected before the rubric is considered validated.
+
+**This is the actual root cause of the PM↔design ping-pong** — not the absence of an upfront audit, but a false-negative in the upfront audit that existed.
+
+---
+
 ### Pre-design PM completeness gate — surface all PM gaps upfront before design starts (2026-04-16)
 
-PM gaps are currently discovered *incrementally* — as the design agent writes each section, it tests that section against the PM spec and surfaces a new gap. This causes a ping-pong: design works → finds gap → PM answers → design works more → finds another gap → repeat. Each round trip requires a user-facing "yes" to continue.
+**Deferred:** The upfront gate already exists (`finalize_product_spec` audit). The real fix is the rubric false-negative item above — sharpen the rubric so it catches what it's supposed to catch. A second pre-design gate would still only be as good as its rubric. Fix the rubric first.
 
-**Root cause:** No single upfront sweep checks the entire PM spec for completeness before the design agent starts writing. `auditSpecDraft` approximates this but doesn't go deep enough against the full PM spec.
-
-**Fix:** Add a one-time "pre-design gate" that runs when the design agent first activates for a feature (confirmedAgent transitions to `ux-design`). The gate runs a comprehensive PM spec audit — using the same rubric logic as `classifyForPmGaps` but against the full PM spec holistically — and surfaces ALL PM gaps in a single list before any design work starts. The design agent does not write a single spec line until all PM gaps are resolved. This eliminates the incremental ping-pong by front-loading all PM discovery into one round trip.
-
-**Applies to:** Every design agent activation (new feature or re-activation after PM edits). Gate result cached by PM spec fingerprint — does not re-run if PM spec hasn't changed.
+Once the rubric is verified to catch all gap patterns, the remaining ping-pong (gaps discovered mid-design that weren't in the PM spec at finalization time) is genuinely incremental — design work exposing PM spec gaps that didn't exist when the spec was written. That's unavoidable and acceptable; only false-negatives on the existing spec at finalization time are fixable upfront.
 
 ---
 
