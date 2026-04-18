@@ -1598,10 +1598,17 @@ async function runDesignAgent(params: {
   // Historical violation (2026-04-17): user said "approving fixes for 2, 3, 5 and 8", fix intent
   // detection failed, agent ran with full tool access and modified 20+ spec elements unauthorized.
   const draftExistsWithOpenItems = !!designDraftContent && allActionItems.length > 0
-  const specWriteAllowed = !draftExistsWithOpenItems || fixIntent.isFixAll
+  // "approve/approved/finalize" messages must always have finalize_design_spec available.
+  // But "approving fixes for 2, 3, 5" is a fix intent, not an approval — exclude when numbers follow.
+  const isApprovalIntent = /\b(approv|finaliz)/i.test(userMessage) && !/\b(fix|fixes)\b/i.test(userMessage)
+  const specWriteAllowed = !draftExistsWithOpenItems || fixIntent.isFixAll || isApprovalIntent
+  // When write-gated: strip all save tools EXCEPT finalize_design_spec (approval path)
+  const writeGatedTools = DESIGN_TOOLS.filter(t =>
+    !designSaveTools.includes(t.name) || t.name === "finalize_design_spec"
+  )
   const designToolsNormalPath = specWriteAllowed
     ? DESIGN_TOOLS
-    : DESIGN_TOOLS.filter(t => !designSaveTools.includes(t.name))
+    : writeGatedTools
   if (!specWriteAllowed) {
     console.log(`[WRITE-GATE] Spec-writing tools STRIPPED for normal turn (draft exists, ${allActionItems.length} open items, fix intent not confirmed)`)
   }

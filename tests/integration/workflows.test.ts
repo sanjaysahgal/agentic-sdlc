@@ -7512,7 +7512,8 @@ describe("Scenario N65 — Write gate strips spec-writing tools when fix intent 
     expect(toolNames).not.toContain("save_design_spec_draft")
     expect(toolNames).not.toContain("apply_design_spec_patch")
     expect(toolNames).not.toContain("rewrite_design_spec")
-    expect(toolNames).not.toContain("finalize_design_spec")
+    // finalize_design_spec IS allowed through the write gate (approval path must remain open)
+    expect(toolNames).toContain("finalize_design_spec")
 
     // Non-writing tools should still be available
     expect(toolNames).toContain("offer_pm_escalation")
