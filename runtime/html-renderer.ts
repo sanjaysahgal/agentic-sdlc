@@ -185,25 +185,27 @@ export function renderFromSpec(
   const tealRgb = hexToRgb(teal)
 
   // Build heartbeat keyframe CSS from parsed opacity/scale values
-  function buildHeartbeatKeyframes(name: string, opacities: number[], scales: string[]): string {
-    const points = [0, 12, 36, 60, 100]
-    const defaultOpacities = [0.10, 0.15, 0.13, 0.10, 0.10]
-    const defaultScales = ["0.97", "1.20", "1.13", "0.98", "0.97"]
-    const ops = opacities.length >= 5 ? opacities : defaultOpacities
-    const sc = scales.length >= 5 ? scales : defaultScales
+  const defaultVioletOpacities = [0.55, 1.00, 0.70, 0.90, 0.58, 0.55]
+  const defaultTealOpacities = [0.50, 0.95, 0.65, 0.85, 0.53, 0.50]
+  const defaultScales = ["0.97", "1.20", "1.05", "1.13", "0.98", "0.97"]
+
+  function buildHeartbeatKeyframes(name: string, opacities: number[], scales: string[], fallbackOpacities: number[]): string {
+    const points = [0, 12, 24, 36, 60, 100]
+    const ops = opacities.length >= 6 ? opacities : fallbackOpacities
+    const sc = scales.length >= 6 ? scales : defaultScales
     return `@keyframes ${name} {\n` +
       points.map((p, i) => `  ${p}%  { opacity: ${ops[i].toFixed(2)}; transform: scale(${sc[i]}); }`).join("\n") +
       "\n}"
   }
 
-  const heartbeatVioletCss = buildHeartbeatKeyframes("heartbeat-violet", glow.violetOpacities, glow.violetScales)
-  const heartbeatTealCss = buildHeartbeatKeyframes("heartbeat-teal", glow.tealOpacities, glow.violetScales)
+  const heartbeatVioletCss = buildHeartbeatKeyframes("heartbeat-violet", glow.violetOpacities, glow.violetScales, defaultVioletOpacities)
+  const heartbeatTealCss = buildHeartbeatKeyframes("heartbeat-teal", glow.tealOpacities, glow.violetScales, defaultTealOpacities)
 
   // Chip buttons — use data-chip to safely handle apostrophes in chip text
   const chipsHtml = values.chips.map(chip =>
     `<button data-chip="${chip.replace(/"/g, "&quot;")}" @click="sendMsg($el.dataset.chip)"` +
-    ` style="background:${surface};color:${text};border:1px solid rgba(${tealRgb},0.15);` +
-    `border-radius:20px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;">${chip}</button>`
+    ` style="background:rgba(${tealRgb},0.08);color:${teal};border:1px solid rgba(${tealRgb},0.18);` +
+    `border-radius:20px;padding:8px 16px;font-size:13px;font-weight:600;letter-spacing:0.09em;cursor:pointer;white-space:nowrap;flex-shrink:0;">${chip}</button>`
   ).join("\n            ")
 
   // Placeholder chips shown when spec has none — shows correct spec layout (3 pills, proper
@@ -228,6 +230,9 @@ export function renderFromSpec(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <title>${values.wordmark} \u2014 Design Preview</title>
   <style>
     * { box-sizing: border-box; }
@@ -236,10 +241,12 @@ export function renderFromSpec(
     *::-webkit-scrollbar { display: none; }
     body {
       background-color: ${bg};
-      color: ${text};
+      color: #fff;
       margin: 0;
       min-height: 100vh;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -248,8 +255,11 @@ export function renderFromSpec(
     ${heartbeatVioletCss}
     ${heartbeatTealCss}
     @keyframes glow-shrink {
-      0%   { filter: blur(200px); opacity: 0.10; }
-      100% { filter: blur(100px); opacity: 0.04; }
+      0%   { filter: blur(200px); opacity: 0.55; }
+      100% { filter: blur(100px); opacity: 0.18; }
+    }
+    .glow-shrunk {
+      animation: glow-shrink 2s ease-out forwards !important;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes typing-bounce {
@@ -268,7 +278,7 @@ export function renderFromSpec(
       line-height: 1.4;
     }
     .msg-agent {
-      background: rgba(255,255,255,0.08);
+      background: ${surface};
       color: ${text};
       border-radius: 18px 18px 18px 4px;
       padding: 10px 14px;
@@ -380,14 +390,23 @@ export function renderFromSpec(
     ${values.wordmark} \xb7 Design Preview \xb7 ${values.chips.length} chips \xb7 BRAND.md \u2713
   </div>
 
+  <style>
+    @media (hover: none) and (pointer: coarse) {
+      body { padding: 0 !important; margin: 0 !important; }
+      .inspector-panel { display: none !important; }
+      .phone-frame { width: 100% !important; height: 100dvh !important; border-radius: 0 !important; border: none !important; }
+      .phone-frame .status-bar { display: none !important; }
+      .main-layout { gap: 0 !important; justify-content: stretch !important; }
+    }
+  </style>
   <!-- Main layout: phone frame + inspector panel -->
-  <div style="display:flex;gap:24px;align-items:flex-start;" x-data="appData()">
+  <div class="main-layout" style="display:flex;gap:24px;align-items:flex-start;" x-data="appData()">
 
     <!-- Phone frame: 390x844, owned by platform -->
-    <div style="width:390px;height:844px;background:${bg};border:1px solid rgba(255,255,255,0.12);border-radius:44px;overflow:hidden;display:flex;flex-direction:column;position:relative;flex-shrink:0;">
+    <div class="phone-frame" style="width:390px;height:844px;background:${bg};border:1px solid rgba(255,255,255,0.12);border-radius:44px;overflow:hidden;display:flex;flex-direction:column;position:relative;flex-shrink:0;">
 
       <!-- Status bar -->
-      <div style="padding:14px 24px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;">
+      <div class="status-bar" style="padding:14px 24px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;">
         <span>9:41</span>
         <div style="display:flex;gap:6px;align-items:center;">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="4" y="2.5" width="3" height="9.5" rx="1"/><rect x="8" y="1" width="3" height="11" rx="1"/><rect x="12" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
@@ -398,7 +417,7 @@ export function renderFromSpec(
 
       <!-- Nav bar -->
       <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:20px;font-weight:600;background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${values.wordmark}</span>
+        <span style="font-size:20px;font-weight:700;letter-spacing:-0.025em;background:linear-gradient(135deg,${violet} 20%,${teal} 80%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">${values.wordmark}</span>
         <button
           x-show="auth !== 'signed in'"
           @click="sheet = 'open'; inspectorMode = 'auth-default'"
@@ -413,13 +432,13 @@ export function renderFromSpec(
 
         <!-- Glow: two independent glows, violet + teal, per spec -->
         <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;z-index:0;">
-          <div style="position:absolute;left:20%;right:20%;bottom:15%;top:30%;
-            background:radial-gradient(ellipse at center,rgba(${violetRgb},0.12) 0%,rgba(${violetRgb},0.04) 50%,transparent 100%);
+          <div style="position:absolute;left:-20%;right:-20%;bottom:-10%;top:5%;
+            background:radial-gradient(ellipse at center,rgba(${violetRgb},0.42) 0%,rgba(${violetRgb},0.14) 40%,transparent 68%);
             filter:blur(${glow.blur});
             animation:heartbeat-violet ${glow.duration} ${glow.easing} infinite;"
             :class="{ 'glow-shrunk': msgs.length >= 4 }"></div>
-          <div style="position:absolute;left:25%;right:25%;bottom:10%;top:40%;
-            background:radial-gradient(ellipse at center,rgba(${tealRgb},0.10) 0%,rgba(${tealRgb},0.03) 50%,transparent 100%);
+          <div style="position:absolute;left:-10%;right:-10%;bottom:-5%;top:15%;
+            background:radial-gradient(ellipse at center,rgba(${tealRgb},0.34) 0%,rgba(${tealRgb},0.11) 40%,transparent 68%);
             filter:blur(${glow.blur});
             animation:heartbeat-teal ${glow.duration} ${glow.easing} infinite;
             animation-delay:${glow.delay};"
@@ -432,8 +451,8 @@ export function renderFromSpec(
         <div id="hero"
           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:40px 24px 0;overflow-y:auto;z-index:1;"
           :class="{ 'hidden': msgs.length > 0 || typing }">
-          <h1 style="font-size:28px;font-weight:600;margin:0 0 4px;text-align:center;
-            background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+          <h1 style="font-size:28px;font-weight:700;letter-spacing:-0.04em;margin:0 0 4px;text-align:center;
+            background:linear-gradient(135deg,${violet} 20%,${teal} 80%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
             ${values.wordmark}
           </h1>
           ${values.tagline ? `<p style="font-size:12px;color:rgba(248,248,247,0.45);margin:0;text-align:center;font-weight:400;">${values.tagline}</p>` : ""}
@@ -474,13 +493,13 @@ export function renderFromSpec(
         <!-- Auth sheet overlay -->
         <div x-show="sheet !== 'closed'" style="position:absolute;inset:0;z-index:10;">
           <div @click="sheet = 'closed'; inspectorMode = msgs.length > 0 ? 'in-conversation' : 'default'"
-            style="position:absolute;inset:0;background:rgba(0,0,0,0.6);"></div>
+            style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);"></div>
           <div style="position:absolute;bottom:0;left:0;right:0;background:${surface};border-radius:16px 16px 0 0;padding:24px 24px 32px;">
             <!-- Drag handle -->
             <div style="width:32px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;margin:0 auto 20px;"></div>
             <!-- Auth sheet heading — gradient text per spec -->
-            <h2 id="auth-sheet-heading" style="font-size:20px;font-weight:600;margin:0 0 8px;text-align:center;
-              background:linear-gradient(135deg,${violet},${teal});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+            <h2 id="auth-sheet-heading" style="font-size:20px;font-weight:700;letter-spacing:-0.025em;margin:0 0 8px;text-align:center;
+              background:linear-gradient(135deg,${violet} 20%,${teal} 80%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
               ${values.authHeading}
             </h2>
             <p style="font-size:14px;color:rgba(248,248,247,0.45);text-align:center;margin:0 0 24px;">Your conversation will be saved when you sign in.</p>
@@ -488,11 +507,11 @@ export function renderFromSpec(
             <!-- Glow behind SSO buttons — two independent glows per spec -->
             <div aria-hidden="true" style="position:absolute;left:0;right:0;bottom:60px;height:160px;pointer-events:none;overflow:hidden;">
               <div style="position:absolute;left:15%;right:50%;top:20%;bottom:0;
-                background:radial-gradient(ellipse at center,rgba(${violetRgb},0.12) 0%,rgba(${violetRgb},0.04) 50%,transparent 100%);
+                background:radial-gradient(ellipse at center,rgba(${violetRgb},0.42) 0%,rgba(${violetRgb},0.14) 40%,transparent 68%);
                 filter:blur(48px);
                 animation:heartbeat-violet ${glow.duration} ${glow.easing} infinite;"></div>
               <div style="position:absolute;left:50%;right:15%;top:20%;bottom:0;
-                background:radial-gradient(ellipse at center,rgba(${tealRgb},0.10) 0%,rgba(${tealRgb},0.03) 50%,transparent 100%);
+                background:radial-gradient(ellipse at center,rgba(${tealRgb},0.34) 0%,rgba(${tealRgb},0.11) 40%,transparent 68%);
                 filter:blur(48px);
                 animation:heartbeat-teal ${glow.duration} ${glow.easing} infinite;
                 animation-delay:${glow.delay};"></div>
@@ -533,7 +552,7 @@ export function renderFromSpec(
           x-model="draft"
           @keydown.enter="sendMsg(draft)"
           placeholder="${values.placeholder}"
-          style="flex:1;background:${surface};border:1px solid rgba(${tealRgb},0.15);border-radius:9999px;padding:10px 16px;font-size:14px;color:${text};outline:none;">
+          style="flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:10px 16px;font-size:14px;color:${text};outline:none;">
         <button
           @click="sendMsg(draft)"
           style="width:36px;height:36px;background:${violet};border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -543,7 +562,7 @@ export function renderFromSpec(
     </div>
 
     <!-- Inspector panel -->
-    <div style="width:240px;background:${surface};border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:16px;">
+    <div class="inspector-panel" style="width:240px;background:${surface};border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:16px;">
       <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;color:rgba(255,255,255,0.4);margin-bottom:16px;">INSPECTOR</div>
 
       <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;letter-spacing:0.06em;">CHAT HOME</div>

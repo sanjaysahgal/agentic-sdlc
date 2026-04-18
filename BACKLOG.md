@@ -56,6 +56,14 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### Auto-deploy design preview via CI/CD platform (2026-04-18)
+
+On every design spec save, auto-deploy the HTML preview to a persistent URL that PM, designer, and engineers can review on any device. The SDLC platform says "deploy this HTML"; the CI/CD platform (`agentic-cicd`) handles the how (Vercel, Netlify, S3, etc.). Add `previewDeployUrl` to `WorkspaceConfig` so the Slack response includes the live URL instead of a file attachment.
+
+Current state: manual Vercel deploy at https://health360-preview.vercel.app. Target: automatic on every `saveDraftHtmlPreview` call.
+
+---
+
 ### Health invariant must block save, not just response (2026-04-17)
 
 The health invariant (post-patch readiness count > pre-run count) blocks the Slack response but the spec changes are already committed to GitHub. The bad spec persists on the branch. Fix: save to a staging variable first, run the health invariant, only commit to GitHub if it passes. If it fails, revert to the pre-patch spec version on the branch.

@@ -258,10 +258,10 @@ describe("renderFromSpec — real onboarding fixtures", () => {
   })
 
   it("applies heartbeat opacity values from spec Brand section in real fixture", () => {
-    // Onboarding spec Brand section has 0.10 opacity at 0% keyframe
+    // BRAND.md specifies 0.55 at 0% keyframe for violet heartbeat (getarchon.dev match)
     const html = renderFromSpec(onboardingSpec, brandMd, "onboarding")
     expect(html).toContain("heartbeat-violet")
-    expect(html).toContain("0.10")
+    expect(html).toContain("0.55")
   })
 })
 
