@@ -161,7 +161,7 @@ Every decision point emits a single line using a consistent `[COMPONENT] message
 
 | Tag | File | What it logs |
 |---|---|---|
-| `[ROUTER]` | `runtime/agent-router.ts`, `interfaces/slack/handlers/message.ts` | Intent classification result, agent selected, phase detected, off-topic/state-query boolean, routing branch taken |
+| `[ROUTER]` | `runtime/agent-router.ts`, `interfaces/slack/handlers/message.ts` | Intent classification result, agent selected, phase detected, off-topic/state-query boolean, routing branch taken, agent-addressing override (`@pm:`, `@design:`, `@architect:` prefix overrides phase-based routing) |
 | `[CONTEXT]` | `runtime/context-loader.ts`, `runtime/conversation-summarizer.ts` | Feature name, hit/miss per GitHub path, summarizer input/output sizes, uncommitted decision scan result |
 | `[AUDITOR]` | `runtime/phase-completion-auditor.ts`, `runtime/brand-auditor.ts`, `runtime/spec-auditor.ts` | Phase completion ready/not-ready + finding count + each finding individually (`[AUDITOR] auditPhaseCompletion[N]: issue → recommendation`); brand/animation drift count + each drift token; render ambiguity count + each finding (`[AUDITOR] auditSpecRenderAmbiguity[N]: issue — recommendation`). Every finding visible in logs without Slack inspection. |
 | `[GITHUB]` | `runtime/github-client.ts` | Every file read (hit/404), every draft/approved save (success/error), PR URL on creation |

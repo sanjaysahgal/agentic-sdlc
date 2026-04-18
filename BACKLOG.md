@@ -56,6 +56,27 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### Mobile-responsive design preview renderer (2026-04-18)
+
+The HTML preview renderer (`runtime/html-renderer.ts`) produces a fixed 390×844px phone frame with absolute positioning. On real mobile devices, content is cut off, not fully visible, and not something a designer would sign off on. The renderer needs to produce responsive HTML that works on any viewport — same way a real app would. The desktop phone-frame + inspector mode stays for desktop review; mobile viewports get native responsive layout.
+
+This is platform-level — affects every customer's design preview, not just Health360.
+
+---
+
+### Customer onboarding flow — foundational specs from zero (2026-04-18)
+
+Archon currently assumes the customer repo already has `PRODUCT_VISION.md`, `BRAND.md`, and `system-architecture.md` populated. No agent creates them. A new customer starting from zero has no way to produce these through the platform.
+
+Required:
+1. **Brand Agent** (new) — customer describes vision → produces BRAND.md (palette, typography, spacing, effects)
+2. **PM Agent** (existing, extended) — already produces feature specs; extend to also produce PRODUCT_VISION.md when no vision exists
+3. **Architect Agent** (existing, extended) — already produces engineering specs; extend to also produce system-architecture.md when no architecture exists
+
+Feature work (PM → Designer → Architect → Engineer per feature) begins only after all three foundational specs exist. Today all three were created manually for Health360.
+
+---
+
 ### Auto-deploy design preview via CI/CD platform (2026-04-18)
 
 On every design spec save, auto-deploy the HTML preview to a persistent URL that PM, designer, and engineers can review on any device. The SDLC platform says "deploy this HTML"; the CI/CD platform (`agentic-cicd`) handles the how (Vercel, Netlify, S3, etc.). Add `previewDeployUrl` to `WorkspaceConfig` so the Slack response includes the live URL instead of a file attachment.

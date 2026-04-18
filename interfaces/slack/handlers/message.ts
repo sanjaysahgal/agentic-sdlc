@@ -278,7 +278,7 @@ export async function handleFeatureChannelMessage(params: {
   channelState: ChannelState
   userId?: string
 }): Promise<void> {
-  const { channelName, threadTs, userMessage, userImages, channelId, client, channelState, userId } = params
+  const { channelName, threadTs, userMessage: rawUserMessage, userImages, channelId, client, channelState, userId } = params
   const featureName = getFeatureName(channelName)
 
   // In-flight lock: reject concurrent messages for the same feature.
@@ -302,7 +302,7 @@ export async function handleFeatureChannelMessage(params: {
   // in .conversation-state.json. If the user is affirming and a pending escalation exists,
   // restore confirmedAgent from the escalation's origin so the escalation-confirmation branch
   // runs correctly without requiring a new message from the user.
-  if (!confirmedAgent && isAffirmative(userMessage) && getPendingEscalation(featureName)) {
+  if (!confirmedAgent && isAffirmative(rawUserMessage) && getPendingEscalation(featureName)) {
     const recovered = getPendingEscalation(featureName)!
     // Infer originating agent from the escalation target:
     // design→PM or design→architect: targetAgent is "pm" or "architect"
@@ -311,6 +311,25 @@ export async function handleFeatureChannelMessage(params: {
     confirmedAgent = recoveredAgent
     setConfirmedAgent(featureName, recoveredAgent)
     console.log(`[ROUTER] escalation-state-recovered: restored confirmedAgent=${recoveredAgent} from persisted pendingEscalation targetAgent=${recovered.targetAgent} for feature=${featureName}`)
+  }
+
+  // Agent addressing: @pm, @design, @architect prefix overrides phase-based routing.
+  // Allows the user to reach any agent at any time regardless of current phase.
+  // The prefix is stripped from the message before passing to the agent.
+  let userMessage = rawUserMessage
+  const agentAddressMatch = rawUserMessage.match(/^@(pm|design|architect)[:\s]\s*([\s\S]*)$/i)
+  if (agentAddressMatch) {
+    const addressedAgent = agentAddressMatch[1].toLowerCase()
+    const agentMap: Record<string, string> = { pm: "pm", design: "ux-design", architect: "architect" }
+    const targetAgent = agentMap[addressedAgent]
+    if (targetAgent) {
+      if (targetAgent !== confirmedAgent) {
+        console.log(`[ROUTER] agent-addressing: user addressed @${addressedAgent}, overriding confirmedAgent=${confirmedAgent} → ${targetAgent}`)
+      }
+      confirmedAgent = targetAgent
+      setConfirmedAgent(featureName, targetAgent)
+      userMessage = agentAddressMatch[2].trim() || rawUserMessage
+    }
   }
 
   console.log(`[ROUTER] handleFeatureChannelMessage: feature=${featureName} confirmedAgent=${confirmedAgent ?? "(none)"} msg="${userMessage.slice(0, 100)}"`)

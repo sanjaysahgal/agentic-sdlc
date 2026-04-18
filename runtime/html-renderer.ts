@@ -391,12 +391,16 @@ export function renderFromSpec(
   </div>
 
   <style>
-    @media (hover: none) and (pointer: coarse) {
-      body { padding: 0 !important; margin: 0 !important; }
+    @media screen and (max-width: 680px) {
+      body { padding: 0 !important; margin: 0 !important; overflow: hidden !important; }
       .inspector-panel { display: none !important; }
-      .phone-frame { width: 100% !important; height: 100dvh !important; border-radius: 0 !important; border: none !important; }
+      .phone-frame { width: 100vw !important; height: 100vh !important; height: 100dvh !important; border-radius: 0 !important; border: none !important; }
       .phone-frame .status-bar { display: none !important; }
-      .main-layout { gap: 0 !important; justify-content: stretch !important; }
+      .main-layout { gap: 0 !important; }
+    }
+    @media screen and (min-width: 681px) and (max-width: 900px) {
+      .inspector-panel { display: none !important; }
+      .main-layout { justify-content: center !important; }
     }
   </style>
   <!-- Main layout: phone frame + inspector panel -->

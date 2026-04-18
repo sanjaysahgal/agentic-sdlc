@@ -7610,6 +7610,60 @@ describe("Scenario N66 — Persistent render ambiguity audit cache hit skips Hai
   })
 })
 
+// ─── Scenario N67: Agent addressing — @design overrides phase-based routing ──────
+// When user sends "@design: show me the preview" while in architect phase,
+// the router overrides confirmedAgent to ux-design and strips the prefix.
+
+describe("Scenario N67 — Agent addressing overrides phase-based routing", () => {
+  const THREAD = "n67-agent-addressing"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+    mockAnthropicCreate.mockReset()
+    mockGetContent.mockReset()
+  })
+
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearSummaryCache("onboarding")
+    clearPhaseAuditCaches()
+  })
+
+  it("@design: prefix routes to design agent even when confirmedAgent is architect", async () => {
+    // Start in architect phase
+    setConfirmedAgent("onboarding", "architect")
+
+    // After @design override, the router will run the design agent path.
+    // isOffTopicForAgent → false, isSpecStateQuery → false, then design agent runs
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "No locked decisions found." }] }) // extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn" }) // auditPhaseCompletion
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is the design status." }], stop_reason: "end_turn" }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
+
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({
+      ...makeParams(THREAD, "feature-onboarding", "@design: show me the current state"),
+      client,
+    })
+
+    // confirmedAgent should now be ux-design (overridden from architect)
+    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+
+    // The message logged should have the prefix stripped
+    // (verified by the [ROUTER] log showing msg="show me the current state" not "@design: ...")
+  })
+})
+
 // Note: parseFixAllIntent hyphen range support ("fix 1-5", "fix 1-3, 5, 7-9")
 // is covered by unit tests in tests/unit/action-menu.test.ts.
 // No new E2E scenario needed — the fix-all flow (N54, N58, N62) already tests
