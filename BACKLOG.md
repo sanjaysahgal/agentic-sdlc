@@ -85,6 +85,24 @@ Current state: manual Vercel deploy at https://health360-preview.vercel.app. Tar
 
 ---
 
+### Platform-enforced finalization — "approved" triggers finalize directly (2026-04-18)
+
+When the user says "approved", the platform should call `finalize_design_spec` directly — not pass the message to the agent and hope it calls the tool. The agent ran `run_phase_completion_audit` instead and surfaced 11 more items, blocking approval indefinitely. The LLM rubric will never say "done."
+
+Fix: detect approval intent at the platform level (same pattern as fix intent detection), call `finalize_design_spec` handler directly, bypass the agent. The agent's opinion on readiness is informational, not a gate.
+
+Historical: design spec was finalized via GitHub API merge (back door) because the agent refused to call `finalize_design_spec`.
+
+---
+
+### In-memory cache must be read-through from GitHub persistent cache (2026-04-18)
+
+The in-memory `renderAmbiguitiesCache` and `designReadinessFindingsCache` are independent of the persistent GitHub `design-audit.json`. Deleting the GitHub cache doesn't invalidate in-memory state. Bot restart clears in-memory but not GitHub. This caused: (1) false PASS cached in GitHub poisoned the health invariant baseline, (2) deleting the GitHub cache didn't fix it because in-memory still had the wrong data.
+
+Fix: in-memory cache should be a read-through layer backed by GitHub. On cache miss, read from GitHub. On GitHub delete, in-memory invalidates. Single source of truth.
+
+---
+
 ### Health invariant must block save, not just response (2026-04-17)
 
 The health invariant (post-patch readiness count > pre-run count) blocks the Slack response but the spec changes are already committed to GitHub. The bad spec persists on the branch. Fix: save to a staging variable first, run the health invariant, only commit to GitHub if it passes. If it fails, revert to the pre-patch spec version on the branch.
