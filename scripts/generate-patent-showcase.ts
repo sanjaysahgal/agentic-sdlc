@@ -1,0 +1,666 @@
+#!/usr/bin/env npx tsx
+/**
+ * Generates the patent showcase HTML document.
+ * This is a standalone document (not a design preview), so it uses its own
+ * template rather than renderFromSpec().
+ *
+ * Usage: npx tsx scripts/generate-patent-showcase.ts
+ * Output: docs/patent/patent-showcase.html
+ */
+
+import { writeFileSync } from "fs"
+import { join } from "path"
+
+const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>U.S. Patent Application No. 19/646,571 — Summary</title>
+<style>
+  @page { size: letter; margin: 0; }
+
+  :root {
+    --red:    #b82025;
+    --text:   #1a1a1a;
+    --dim:    #555;
+    --rule:   #ccc;
+    --bg:     #ffffff;
+    --serif:  'Georgia', 'Times New Roman', 'Times', serif;
+    --sans:   -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --mono:   'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--serif);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 8.5in;
+    height: 11in;
+    margin: 0 auto;
+    padding: 0.75in 1in;
+    page-break-after: always;
+    position: relative;
+  }
+  .page:last-child { page-break-after: avoid; }
+
+  .page-footer {
+    position: absolute;
+    bottom: 0.6in;
+    left: 1in;
+    right: 1in;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--sans);
+    font-size: 8px;
+    color: #999;
+    letter-spacing: 0.05em;
+    border-top: 0.5px solid #ddd;
+    padding-top: 6px;
+  }
+
+  /* ── Title page ── */
+  .title-page {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+  .title-page .seal {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #999;
+    margin-bottom: 60px;
+  }
+  .title-page .seal-line {
+    width: 80px;
+    height: 1px;
+    background: #ccc;
+    margin: 12px auto;
+  }
+  .title-page h1 {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 400;
+    line-height: 1.55;
+    color: var(--text);
+    max-width: 5.5in;
+    margin-bottom: 50px;
+  }
+  .title-page .meta-table {
+    text-align: left;
+    border-collapse: collapse;
+    font-family: var(--sans);
+    font-size: 12px;
+  }
+  .title-page .meta-table td {
+    padding: 5px 0;
+    vertical-align: top;
+  }
+  .title-page .meta-table .label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #999;
+    padding-right: 32px;
+    white-space: nowrap;
+  }
+  .title-page .meta-table .value {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .title-page .meta-table .value.accent {
+    color: var(--red);
+    font-weight: 600;
+  }
+
+  /* ── Section styling ── */
+  .section-num {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--text);
+    margin-bottom: 16px;
+    line-height: 1.3;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+    margin-top: 18px;
+    line-height: 1.3;
+  }
+  p {
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #333;
+    margin-bottom: 10px;
+    text-align: justify;
+  }
+  .thin-rule {
+    border: none;
+    border-top: 0.5px solid var(--rule);
+    margin: 16px 0;
+  }
+
+  /* ── Limitation list ── */
+  .lim-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .lim-table td {
+    padding: 7px 0;
+    vertical-align: top;
+    border-bottom: 0.5px solid #eee;
+    line-height: 1.55;
+  }
+  .lim-table tr:last-child td { border-bottom: none; }
+  .lim-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--red);
+    width: 28px;
+    padding-right: 12px;
+  }
+  .lim-name {
+    font-weight: 700;
+    color: var(--text);
+    width: 190px;
+    padding-right: 16px;
+  }
+  .lim-desc {
+    color: #555;
+  }
+
+  /* ── Prior art table ── */
+  .pa-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    margin-top: 8px;
+  }
+  .pa-table th {
+    font-family: var(--sans);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #999;
+    text-align: left;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pa-table td {
+    padding: 7px 0;
+    vertical-align: top;
+    border-bottom: 0.5px solid #eee;
+    line-height: 1.5;
+  }
+  .pa-table tr:last-child td { border-bottom: none; }
+  .pa-table .pa-sys { font-weight: 600; color: var(--text); width: 22%; padding-right: 12px; }
+  .pa-table .pa-does { color: #555; width: 42%; padding-right: 12px; }
+  .pa-table .pa-lacks { color: var(--red); font-weight: 500; width: 36%; }
+
+  /* ── Embodiment list ── */
+  .emb-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .emb-table td {
+    padding: 6px 0;
+    vertical-align: top;
+    border-bottom: 0.5px solid #eee;
+    line-height: 1.5;
+  }
+  .emb-table tr:last-child td { border-bottom: none; }
+  .emb-table .e-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--red);
+    width: 28px;
+    padding-right: 12px;
+  }
+  .emb-table .e-name {
+    font-weight: 700;
+    color: var(--text);
+    width: 240px;
+    padding-right: 16px;
+  }
+  .emb-table .e-desc {
+    color: #555;
+  }
+
+  /* ── Claims ── */
+  .claim-section-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin-top: 16px;
+    margin-bottom: 8px;
+  }
+  .claim-row {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 12px;
+    line-height: 1.6;
+    align-items: baseline;
+  }
+  .claim-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--red);
+    min-width: 24px;
+    flex-shrink: 0;
+  }
+  .claim-text {
+    color: #333;
+  }
+  .claim-text strong { color: var(--text); }
+
+  /* ── Summary box ── */
+  .summary-box {
+    border: 1px solid var(--rule);
+    padding: 16px 20px;
+    margin-top: 16px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #333;
+  }
+  .summary-box .hl { color: var(--red); font-weight: 600; }
+
+  /* ── Filing details ── */
+  .filing-table {
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 12px;
+  }
+  .filing-table td {
+    padding: 4px 0;
+    vertical-align: top;
+  }
+  .filing-table .f-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #999;
+    padding-right: 24px;
+    white-space: nowrap;
+  }
+  .filing-table .f-val {
+    color: var(--text);
+  }
+
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: TITLE PAGE -->
+<div class="page title-page">
+  <div class="seal">
+    United States Patent and Trademark Office
+    <div class="seal-line"></div>
+    Patent Application
+  </div>
+
+  <h1>System and Method for Deterministic Platform-Enforced Orchestration of Stateless AI Agents Across Multi-Phase Expert Workflows with Outcome-Driven Adaptation</h1>
+
+  <table class="meta-table">
+    <tr><td class="label">Non-Provisional Application</td><td class="value">No. 19/646,571</td></tr>
+    <tr><td class="label">Provisional Application</td><td class="value">No. 64/015,378</td></tr>
+    <tr><td class="label">Priority Date</td><td class="value accent">March 24, 2026</td></tr>
+    <tr><td class="label">Filed</td><td class="value">April 14, 2026</td></tr>
+    <tr><td class="label">Inventor</td><td class="value">Sanjay Sahgal</td></tr>
+    <tr><td class="label">Entity Status</td><td class="value">Small Entity</td></tr>
+    <tr><td class="label">Total Claims</td><td class="value">20 (3 independent, 17 dependent)</td></tr>
+    <tr><td class="label">Technical Drawings</td><td class="value">17</td></tr>
+    <tr><td class="label">Status</td><td class="value accent">Patent Pending</td></tr>
+  </table>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>1 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 2: ABSTRACT & BACKGROUND -->
+<div class="page">
+  <div class="section-num">Section I</div>
+  <h2>Abstract</h2>
+  <p>A platform for orchestrating stateless artificial intelligence agents across multi-phase expert workflows, using version control as the sole authoritative state store. The platform deterministically enforces agent behavior compliance through structural gates that operate independently of prompt instructions, ensuring that required behaviors occur reliably regardless of whether the underlying language model follows its instructions. The system eliminates the need for persistent agent processes, external workflow databases, or manual context relay between domain experts.</p>
+
+  <hr class="thin-rule">
+
+  <div class="section-num">Section II</div>
+  <h2>Background</h2>
+  <p>Existing tools for software development, project management, and business operations fall into two categories: single-agent assistants that operate within one domain (coding, design, project tracking), and multi-agent frameworks that provide orchestration primitives without domain-specific agents or behavioral enforcement.</p>
+  <p>Neither category provides a unified platform in which domain-expert agents coordinate across the full product lifecycle, maintain consistency through deterministic verification, and adapt their behavior based on production outcomes. The human operator remains responsible for relaying context between tools, validating cross-phase consistency manually, and translating production metrics into updated instructions.</p>
+  <p>This patent application addresses <strong>eleven specific limitations</strong> present across all existing systems:</p>
+
+  <table class="lim-table">
+    <tr><td class="lim-num">1</td><td class="lim-name">Stateful architecture</td><td class="lim-desc">Agents require persistent processes or databases; crash recovery requires state reconstruction.</td></tr>
+    <tr><td class="lim-num">2</td><td class="lim-name">Hardcoded specificity</td><td class="lim-desc">New teams require duplication and modification of configuration; no abstraction layer exists.</td></tr>
+    <tr><td class="lim-num">3</td><td class="lim-name">Post-hoc consistency</td><td class="lim-desc">Inconsistencies are discovered after propagation downstream, not prevented at creation time.</td></tr>
+    <tr><td class="lim-num">4</td><td class="lim-name">Truncation-based context</td><td class="lim-desc">Documents exceeding context windows are truncated rather than filtered for relevance.</td></tr>
+    <tr><td class="lim-num">5</td><td class="lim-name">Separate agents per mode</td><td class="lim-desc">Different agent instances for different states; routing complexity grows multiplicatively.</td></tr>
+    <tr><td class="lim-num">6</td><td class="lim-name">Duplicated CI/CD logic</td><td class="lim-desc">Every repository maintains its own pipeline configuration; drift is inevitable.</td></tr>
+    <tr><td class="lim-num">7</td><td class="lim-name">Unstructured specifications</td><td class="lim-desc">Open questions exist as free-text comments with no automated routing or gating.</td></tr>
+    <tr><td class="lim-num">8</td><td class="lim-name">Opaque workflow state</td><td class="lim-desc">Stakeholders query multiple systems to understand project status.</td></tr>
+    <tr><td class="lim-num">9</td><td class="lim-name">Prompt-dependent governance</td><td class="lim-desc">Agent behavior governed by natural language instructions; compliance is probabilistic.</td></tr>
+    <tr><td class="lim-num">10</td><td class="lim-name">Open-loop execution</td><td class="lim-desc">No feedback from production outcomes to agent behavior; humans relay everything.</td></tr>
+    <tr><td class="lim-num">11</td><td class="lim-name">No unified platform</td><td class="lim-desc">No system orchestrates expert agents across all business functions holistically.</td></tr>
+  </table>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>2 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 3: PRIOR ART (1/2) -->
+<div class="page">
+  <div class="section-num">Section III</div>
+  <h2>Prior Art</h2>
+  <p>Nineteen existing systems were analyzed against the invention's eight required capabilities. No system provides all eight. The following table summarizes the most relevant prior art and the specific capabilities each lacks.</p>
+
+  <table class="pa-table">
+    <tr><th>System</th><th>What It Does</th><th>What It Lacks</th></tr>
+    <tr>
+      <td class="pa-sys">GitHub Copilot Workspace</td>
+      <td class="pa-does">Single generalist agent. Takes issues, produces pull requests. Relies on existing CI/CD and human review.</td>
+      <td class="pa-lacks">No lifecycle phases. No spec validation. No enforcement gates.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Devin (Cognition)</td>
+      <td class="pa-does">Autonomous software engineering agent. Most well-funded coding agent as of filing date.</td>
+      <td class="pa-lacks">Single agent. No PM, designer, or architect. No internal enforcement.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">MetaGPT</td>
+      <td class="pa-does">Simulates a software company with PM, Architect, Engineer, QA roles. Closest SDLC analog.</td>
+      <td class="pa-lacks">Prompt-based verification only. No multi-tenant. No production feedback loop.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">LangChain / AutoGen</td>
+      <td class="pa-does">Agent orchestration frameworks providing infrastructure primitives.</td>
+      <td class="pa-lacks">No domain agents. No structural verification. No multi-tenant architecture.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">CrewAI</td>
+      <td class="pa-does">Multi-agent framework with hierarchical coordination and role-based agents.</td>
+      <td class="pa-lacks">No structural output verification. No enforcement gates. No self-extension.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Factory AI</td>
+      <td class="pa-does">Task-specific coding agents. DroidShield performs structural enforcement for code security.</td>
+      <td class="pa-lacks">No product-domain compliance. No closed-loop outcome adaptation.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Metaswarm</td>
+      <td class="pa-does">Multi-agent framework with mandatory quality gates at every handoff. Closest enforcement analog.</td>
+      <td class="pa-lacks">Engineering-only enforcement. No PM or design agents. No multi-tenant.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Soleur</td>
+      <td class="pa-does">63 agents across 8 business departments. Closest full-company analog.</td>
+      <td class="pa-lacks">No deterministic enforcement. No version-control state. No escalation protocol.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">ChatDev</td>
+      <td class="pa-does">Virtual software company with chat-chain waterfall process.</td>
+      <td class="pa-lacks">Prompt-based only. One-shot generation. No persistence or feedback.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Replit Agent 3</td>
+      <td class="pa-does">Autonomous app builder. Self-tests code. Can generate sub-agents.</td>
+      <td class="pa-lacks">Single generalist. Proprietary environment. No domain expert personas.</td>
+    </tr>
+  </table>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>3 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 4: PRIOR ART (2/2) -->
+<div class="page">
+  <div class="section-num">Section III (continued)</div>
+  <h2>Prior Art</h2>
+
+  <table class="pa-table">
+    <tr><th>System</th><th>What It Does</th><th>What It Lacks</th></tr>
+    <tr>
+      <td class="pa-sys">Linear / Jira + Rovo</td>
+      <td class="pa-does">Workflow state in proprietary databases. Rovo Dev performs automated code review.</td>
+      <td class="pa-lacks">State outside version control. No PM or design agents natively.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Microsoft Agent Governance Toolkit</td>
+      <td class="pa-does">Deterministic policy enforcement: trust gates, reliability gates, sub-millisecond governance.</td>
+      <td class="pa-lacks">Enforces security and safety only &mdash; not product-domain compliance.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Cursor / Windsurf / v0</td>
+      <td class="pa-does">Single-agent coding assistants or application builders.</td>
+      <td class="pa-lacks">No multi-agent orchestration. No domain specialization. No enforcement.</td>
+    </tr>
+    <tr>
+      <td class="pa-sys">Amazon Q / OpenHands</td>
+      <td class="pa-does">Autonomous coding agents with IDE or terminal integration.</td>
+      <td class="pa-lacks">Engineering-only. No cross-phase orchestration.</td>
+    </tr>
+  </table>
+
+  <hr class="thin-rule" style="margin-top: 24px;">
+
+  <h3>Eight Required Capabilities</h3>
+  <p>The invention is distinguished by the simultaneous presence of all eight capabilities. No prior art system provides more than three.</p>
+
+  <table class="lim-table">
+    <tr><td class="lim-num">a</td><td class="lim-name">Version control as sole state</td><td class="lim-desc">All workflow state, specifications, and phase transitions stored in and derived from version control.</td></tr>
+    <tr><td class="lim-num">b</td><td class="lim-name">Stateless agents</td><td class="lim-desc">Pure-function invocations with relevance-filtered context from a secondary model.</td></tr>
+    <tr><td class="lim-num">c</td><td class="lim-name">Synchronous conflict detection</td><td class="lim-desc">Upstream validation with re-read verification before artifact save.</td></tr>
+    <tr><td class="lim-num">d</td><td class="lim-name">Phase-aware behavior switching</td><td class="lim-desc">Single agent instance adapts via system prompt injection; no separate processes.</td></tr>
+    <tr><td class="lim-num">e</td><td class="lim-name">Zero-code-change multi-tenancy</td><td class="lim-desc">New team onboards with environment variables only. No codebase modifications.</td></tr>
+    <tr><td class="lim-num">f</td><td class="lim-name">Version-control dashboard</td><td class="lim-desc">Real-time monitoring derived entirely from Git state with no separate data store.</td></tr>
+    <tr><td class="lim-num">g</td><td class="lim-name">Deterministic enforcement</td><td class="lim-desc">Structural gates verify agent compliance independently of prompt instructions.</td></tr>
+    <tr><td class="lim-num">h</td><td class="lim-name">Closed-loop outcome adaptation</td><td class="lim-desc">Production metrics feed back into agent behavior without human relay.</td></tr>
+  </table>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>4 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 5: DESCRIPTION OF THE INVENTION (1/2) -->
+<div class="page">
+  <div class="section-num">Section IV</div>
+  <h2>Description of the Invention</h2>
+
+  <h3>4.1 &ensp; System Architecture</h3>
+  <p>The system comprises three layers: a <strong>human interaction layer</strong> (decoupled via event protocol, supporting Slack, web, CLI, or any future interface), a <strong>platform orchestration layer</strong> (routing, phase detection, enforcement, context injection), and a <strong>version control layer</strong> (the sole authoritative state store for all workflow state, specifications, and decisions).</p>
+
+  <h3>4.2 &ensp; Stateless Agent Invocation</h3>
+  <p>Each agent is a stateless function. On every invocation, the platform: (1) reads Git branch and file state to determine lifecycle phase; (2) loads all upstream specifications from version control; (3) filters loaded documents for relevance using a secondary language model; (4) constructs an invocation payload comprising system prompt, filtered context, and conversation history; (5) invokes the domain-expert agent; and (6) validates the agent's output through five independent enforcement layers before committing any artifacts.</p>
+
+  <h3>4.3 &ensp; Deterministic Platform Enforcement</h3>
+  <p>The invention's central contribution is a five-layer enforcement architecture that operates independently of whether the language model follows its prompt instructions:</p>
+  <p><strong>Layer 1 &mdash; Pre-run structural gates.</strong> Before the agent is invoked, the platform checks preconditions (e.g., blocking questions must be resolved before finalization). If preconditions fail, the agent is never called.</p>
+  <p><strong>Layer 2 &mdash; Post-run output verification.</strong> After the agent responds, the platform parses the response to verify that required output elements are present. Missing elements are corrected by re-running the specific failing component.</p>
+  <p><strong>Layer 3 &mdash; State-based finalization gates.</strong> Before any specification is committed to version control, the platform runs a structural audit. The audit counts required format markers rather than pattern-matching against undesirable text &mdash; verifying presence of correct output rather than absence of incorrect output.</p>
+  <p><strong>Layer 4 &mdash; Always-on proactive audits.</strong> On every message, domain-specific audits run automatically: conflict detection against upstream specifications, brand token drift analysis, and phase completion readiness. Results are injected into agent context as platform notices.</p>
+  <p><strong>Layer 5 &mdash; Fallback classification.</strong> If none of the structural gates fire, a secondary language model classifies the agent's response to determine whether additional platform action is required.</p>
+
+  <h3>4.4 &ensp; Specification Chain</h3>
+  <p>Specifications form a directed chain: Product Specification &rarr; Design Specification &rarr; Engineering Specification &rarr; Build. Each downstream agent reads the full upstream chain from version control. The conflict detection system validates every specification against all upstream documents before save, blocking contradictions and surfacing gaps in real time.</p>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>5 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 6: DESCRIPTION OF THE INVENTION (2/2) -->
+<div class="page">
+  <div class="section-num">Section IV (continued)</div>
+  <h2>Description of the Invention</h2>
+
+  <h3>4.5 &ensp; Cross-Phase Escalation Protocol</h3>
+  <p>When a downstream agent (e.g., Design) detects a blocking question owned by an upstream phase (e.g., Product), it invokes the upstream agent directly within the current conversation thread. The human operator never relays context manually between agents. Multi-layer gates ensure escalation fires even if the agent fails to call the escalation tool &mdash; the platform detects the unresolved question and triggers escalation deterministically.</p>
+
+  <h3>4.6 &ensp; Multi-Tenant Architecture</h3>
+  <p>Every product-specific coordinate &mdash; repository path, channel names, specification file paths, product name &mdash; is externalized into a workspace configuration object loaded from environment variables. No product-specific string literal appears in the codebase. A new team onboards by providing a single environment configuration file. The platform codebase requires zero modifications. Continuous integration enforces this constraint on every commit.</p>
+
+  <h3>4.7 &ensp; Outcome-Driven Adaptation</h3>
+  <p>The system closes the loop between production outcomes and agent behavior. Production metrics (user engagement, error rates, performance data) are ingested and used to modify agent context for subsequent invocations. Agents whose previous specifications led to measurable production issues receive updated context reflecting those outcomes, enabling self-correcting behavior without human intervention.</p>
+
+  <h3>4.8 &ensp; Cross-Domain Specification Chain Composition</h3>
+  <p>The specification chain architecture generalizes beyond software development to any domain requiring coordinated multi-phase expert workflows. Multiple linear chains (e.g., SDLC chain, GTM chain, finance chain) compose via typed handoff interfaces, enabling the platform to orchestrate agents across software development, marketing, sales strategy, financial modeling, and go-to-market planning.</p>
+
+  <h3>4.9 &ensp; Autonomous Agent Generation</h3>
+  <p>The platform can generate new agent configurations &mdash; including persona definitions, rubric criteria, enforcement gate specifications, and specification chain position &mdash; without code changes. When a new domain expert is needed, the platform scaffolds the complete agent configuration. Generated configurations inherit the full enforcement architecture automatically.</p>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>6 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 7: EMBODIMENTS -->
+<div class="page">
+  <div class="section-num">Section V</div>
+  <h2>Embodiments</h2>
+  <p>The invention is described through seventeen preferred embodiments, each addressing a distinct inventive mechanism. Together they form the complete platform architecture.</p>
+
+  <table class="emb-table">
+    <tr><td class="e-num">1</td><td class="e-name">Version Control as Workflow State Machine</td><td class="e-desc">Lifecycle phase inferred from Git branch and file state. No separate workflow database.</td></tr>
+    <tr><td class="e-num">2</td><td class="e-name">Stateless Agent Architecture</td><td class="e-desc">Agents are pure functions with fresh context per invocation. Prompt caching and relevance filtering via secondary model.</td></tr>
+    <tr><td class="e-num">3</td><td class="e-name">Synchronous Conflict Detection</td><td class="e-desc">Specifications validated against upstream documents before save. Re-read verification prevents human circumvention.</td></tr>
+    <tr><td class="e-num">4</td><td class="e-name">Phase-Aware Behavior Switching</td><td class="e-desc">Single agent instance switches behavioral modes via system prompt injection based on detected phase.</td></tr>
+    <tr><td class="e-num">5</td><td class="e-name">Config-Driven Multi-Tenancy</td><td class="e-desc">All tenant-specific coordinates externalized to environment configuration. New team onboarding requires zero code changes.</td></tr>
+    <tr><td class="e-num">6</td><td class="e-name">Decoupled CI/CD Platform</td><td class="e-desc">Pipeline logic centralized. Applications onboard via single workflow file. Improvements auto-inherited.</td></tr>
+    <tr><td class="e-num">7</td><td class="e-name">Structured Open Question Tagging</td><td class="e-desc">Open questions tagged with type and blocking metadata for automated routing and phase gating.</td></tr>
+    <tr><td class="e-num">8</td><td class="e-name">Interface-Agnostic Interaction Layer</td><td class="e-desc">Human interaction decoupled via event protocol. Interface substitution requires zero orchestration changes.</td></tr>
+    <tr><td class="e-num">9</td><td class="e-name">Version-Control Dashboard</td><td class="e-desc">Real-time project monitoring derived entirely from Git state with no separate data store.</td></tr>
+    <tr><td class="e-num">10</td><td class="e-name">Specification Chain with Conflict Enforcement</td><td class="e-desc">Linear chain with full upstream injection and synchronous contradiction blocking.</td></tr>
+    <tr><td class="e-num">11</td><td class="e-name">Cross-Phase Agent Escalation</td><td class="e-desc">Downstream agents invoke upstream agents directly in the conversation thread.</td></tr>
+    <tr><td class="e-num">12</td><td class="e-name">Proactive Phase Orchestration</td><td class="e-desc">Monitors Git state across features. Gates phase transitions. Detects workflow stalls.</td></tr>
+    <tr><td class="e-num">13</td><td class="e-name">Deterministic Multi-Layer Enforcement Gates</td><td class="e-desc">Five-layer verification architecture operating independently of prompt compliance.</td></tr>
+    <tr><td class="e-num">14</td><td class="e-name">Outcome-Driven Behavioral Adaptation</td><td class="e-desc">Production metrics close the loop into agent behavior for subsequent invocations.</td></tr>
+    <tr><td class="e-num">15</td><td class="e-name">Cross-Domain Specification Chain Composition</td><td class="e-desc">Multiple linear chains compose via typed handoff interfaces across business domains.</td></tr>
+    <tr><td class="e-num">16</td><td class="e-name">Autonomous Agent Configuration Generation</td><td class="e-desc">Platform generates new agent personas, rubrics, and enforcement rules without code changes.</td></tr>
+    <tr><td class="e-num">17</td><td class="e-name">Multi-Layer Proactive Audit Architecture</td><td class="e-desc">Entry-time, save-time, and completion-gate audits execute automatically on every message.</td></tr>
+  </table>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>7 of 8</span>
+  </div>
+</div>
+
+<!-- PAGE 8: CLAIMS -->
+<div class="page">
+  <div class="section-num">Section VI</div>
+  <h2>Claims Summary</h2>
+  <p>The application contains 20 claims: 3 independent claims establishing the invention across system, method, and computer-readable medium categories, and 17 dependent claims specifying detailed mechanisms.</p>
+
+  <div class="claim-section-label">Independent Claims</div>
+
+  <div class="claim-row">
+    <span class="claim-num">1</span>
+    <span class="claim-text"><strong>System.</strong> A system for orchestrating stateless AI agents across multi-phase expert workflows comprising: a version control layer as sole authoritative state store; a phase detection module that infers lifecycle phase from version control state; a context injection module that constructs invocation payloads with relevance-filtered upstream specifications; a stateless agent invocation module; and a platform enforcement module that verifies agent output compliance through structural gates independent of prompt instructions.</span>
+  </div>
+  <div class="claim-row">
+    <span class="claim-num">12</span>
+    <span class="claim-text"><strong>Method.</strong> A method for orchestrating stateless AI agents comprising the steps of: inferring a current lifecycle phase from version control state; constructing a context payload from upstream specifications filtered by a secondary language model; invoking a domain-expert agent as a stateless function; and returning the agent response after platform enforcement verification.</span>
+  </div>
+  <div class="claim-row">
+    <span class="claim-num">18</span>
+    <span class="claim-text"><strong>Computer-readable medium.</strong> A non-transitory computer-readable medium storing instructions for orchestrating stateless AI agents, the instructions implementing the system of Claim 1 including deterministic enforcement gates, cross-phase escalation, and proactive audit architecture.</span>
+  </div>
+
+  <div class="claim-section-label">Dependent Claims (Summary)</div>
+
+  <div class="claim-row">
+    <span class="claim-num">2&ndash;3</span>
+    <span class="claim-text">Synchronous conflict detection with re-read verification; config-driven multi-tenant architecture with CI enforcement.</span>
+  </div>
+  <div class="claim-row">
+    <span class="claim-num">4&ndash;6</span>
+    <span class="claim-text">Five-layer deterministic enforcement gates; outcome-driven behavioral adaptation from production metrics; autonomous agent configuration generation.</span>
+  </div>
+  <div class="claim-row">
+    <span class="claim-num">7&ndash;11</span>
+    <span class="claim-text">Phase transitions via Git operations; invocation payload structure with prompt caching; phase-aware behavior switching; structured question tagging; specification chain with conflict enforcement.</span>
+  </div>
+  <div class="claim-row">
+    <span class="claim-num">13&ndash;17</span>
+    <span class="claim-text">Method claims: deterministic enforcement in method form; cross-phase escalation protocol; multi-tenant method; proactive orchestration method; outcome metrics ingestion method.</span>
+  </div>
+  <div class="claim-row">
+    <span class="claim-num">19&ndash;20</span>
+    <span class="claim-text">Medium claims: multi-tenant zero-code-change onboarding; proactive multi-layer audit orchestration.</span>
+  </div>
+
+  <hr class="thin-rule" style="margin-top: 20px;">
+
+  <div class="section-num">Filing Details</div>
+  <table class="filing-table">
+    <tr><td class="f-label">Application Type</td><td class="f-val">Utility &mdash; Nonprovisional under 35 U.S.C. 111(a)</td></tr>
+    <tr><td class="f-label">Classification</td><td class="f-val">Artificial Intelligence; Software Development Tools; Multi-Agent Systems</td></tr>
+    <tr><td class="f-label">Specification</td><td class="f-val">28 pages</td></tr>
+    <tr><td class="f-label">Technical Drawings</td><td class="f-val">17 figures</td></tr>
+    <tr><td class="f-label">Prior Art Analyzed</td><td class="f-val">19 systems</td></tr>
+    <tr><td class="f-label">Applicable Domains</td><td class="f-val">Software development, product management, design, engineering, finance, marketing, sales, go-to-market planning, and autonomous generation of new agent configurations</td></tr>
+  </table>
+
+  <div class="page-footer">
+    <span>U.S. Patent Application No. 19/646,571</span>
+    <span>8 of 8</span>
+  </div>
+</div>
+
+</body>
+</html>`
+
+const outPath = join(__dirname, "..", "docs", "patent", "patent-showcase.html")
+writeFileSync(outPath, html, "utf-8")
+console.log(`Patent showcase written to ${outPath}`)

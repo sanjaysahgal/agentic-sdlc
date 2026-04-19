@@ -85,13 +85,9 @@ Current state: manual Vercel deploy at https://health360-preview.vercel.app. Tar
 
 ---
 
-### Platform-enforced finalization — "approved" triggers finalize directly (2026-04-18)
+### ~~Platform-enforced finalization — "approved" triggers finalize directly (2026-04-18)~~ ✅ DONE
 
-When the user says "approved", the platform should call `finalize_design_spec` directly — not pass the message to the agent and hope it calls the tool. The agent ran `run_phase_completion_audit` instead and surfaced 11 more items, blocking approval indefinitely. The LLM rubric will never say "done."
-
-Fix: detect approval intent at the platform level (same pattern as fix intent detection), call `finalize_design_spec` handler directly, bypass the agent. The agent's opinion on readiness is informational, not a gate.
-
-Historical: design spec was finalized via GitHub API merge (back door) because the agent refused to call `finalize_design_spec`.
+Platform detects approval intent (`isApprovalIntent` regex), runs `auditSpecStructure` — if 0 structural findings, calls `finalize_design_spec` handler directly (no `runAgent` call). Eliminates the agent blocking approval by running `run_phase_completion_audit` and finding new LLM items. If structural findings > 0, falls through to normal agent path. E2E: N70 + updated S21 tests.
 
 ---
 
@@ -103,21 +99,15 @@ Fix: in-memory cache should be a read-through layer backed by GitHub. On cache m
 
 ---
 
-### Health invariant must block save, not just response (2026-04-17)
+### ~~Health invariant must block save, not just response (2026-04-17)~~ ✅ DONE
 
-The health invariant (post-patch readiness count > pre-run count) blocks the Slack response but the spec changes are already committed to GitHub. The bad spec persists on the branch. Fix: save to a staging variable first, run the health invariant, only commit to GitHub if it passes. If it fails, revert to the pre-patch spec version on the branch.
-
-Historical: fix-all grew spec from 44K → 50K, health invariant blocked, but 50K spec remained on GitHub as the "current" draft.
+Health gate added to `saveDesignDraft`: before saving, compares `auditSpecStructure` finding count on old vs new content. If structural findings increased, blocks the save and returns error — bad spec never reaches GitHub. E2E: N69 test.
 
 ---
 
-### Deterministic readiness checks — replace LLM rubric floor (2026-04-17)
+### ~~Deterministic readiness checks — replace LLM rubric floor (2026-04-17)~~ ✅ DONE
 
-`auditPhaseCompletion` uses Haiku to evaluate a rubric against the spec. It's non-deterministic — finds different issues every run (7 → 9 → 10 → 8). Fix-all never converges to 0 because Haiku keeps finding new precision items.
-
-Fix: add rule-based structural checks in `runtime/spec-auditor.ts` (same pattern as `auditBrandTokens`): duplicate section headings, conflicting pixel values for same gap, token mismatches (`--error` on `--warning` container), undefined screen references in flows, orphaned definitions. These run as the deterministic floor; the LLM rubric becomes supplementary.
-
-Applies to all agents — architect agent uses the same `auditPhaseCompletion` pattern and will hit the same non-convergence without this.
+`auditSpecStructure()` in `runtime/spec-auditor.ts` — deterministic structural checks (duplicate headings, conflicting values, token mismatches, cross-references, orphaned definitions, copy consistency). Runs on every turn for design + architect, every state query, every save, every finalization. Same input = same output always. No LLM. Findings tagged `[STRUCTURAL]` in action menu. The LLM rubric (`auditPhaseCompletion`) still runs as supplementary but is no longer the convergence floor. E2E: N68 test. Unit tests in `tests/unit/spec-auditor.test.ts`.
 
 ---
 

@@ -1932,49 +1932,37 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
       return Promise.reject(new Error("Not Found"))
     })
 
+    // Platform-enforced finalization (Phase 3): platform detects approval intent, 0 structural
+    // findings → calls finalize_design_spec directly (no agent runAgent call).
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
-    // [3] runAgent → tool_use: finalize_design_spec,
-    //     auditSpecDecisions skips LLM (history.length < 2 → returns "ok" immediately),
-    //     [4] auditDownstreamReadiness(architect) → PASS [parallel with auditSpecDecisions],
-    //     auditBrandTokens fires (pure) → drift found → tool returns error,
-    // [5] runAgent → end_turn (agent sees tool error, explains block)
+    //     platform calls finalize_design_spec directly,
+    //     [3] auditDownstreamReadiness(architect) → PASS [parallel with auditSpecDecisions],
+    //     auditBrandTokens fires (pure) → drift found → finalize blocked, response sent directly.
+    // No runAgent calls — platform handles the entire finalization.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditPhaseCompletion
-      .mockResolvedValueOnce({
-        stop_reason: "tool_use",
-        content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
-      })                                                                                    // runAgent: tool_use
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditDownstreamReadiness(architect)
-      .mockResolvedValueOnce({
-        stop_reason: "end_turn",
-        content: [{ type: "text", text: "Finalization blocked — brand token drift detected. Please patch --bg and --violet to match BRAND.md before approving." }],
-      })                                                                                    // runAgent: end_turn after tool error
 
-    const client = makeClient()
-    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "approve the design spec", client))
+    const params = makeParams(THREAD, "feature-onboarding", "approve the design spec")
+    await handleFeatureChannelMessage(params)
 
     // Hard gate fired — design spec was NOT written to GitHub
     // (audit cache writes are allowed — only the design spec itself must be blocked)
     const designSpecWrite = mockCreateOrUpdate.mock.calls.find((c: any[]) =>
-      c[0]?.path?.endsWith("onboarding.design.md")
+      c[0]?.path?.endsWith("onboarding.design.md") && !c[0]?.path?.includes("audit")
     )
     expect(designSpecWrite).toBeUndefined()
 
-    // Tool result delivered to the agent contained the brand drift error
-    const runAgentAfterToolCall = mockAnthropicCreate.mock.calls[5][0]
-    const toolResultMsg = (runAgentAfterToolCall.messages as Array<{ role: string; content: unknown }>)
-      .findLast((m: { role: string }) => m.role === "user")
-    const toolResultContent = toolResultMsg?.content
-    const toolResultText = Array.isArray(toolResultContent)
-      ? (toolResultContent as Array<{ type: string; content?: string }>).find(b => b.type === "tool_result")?.content ?? ""
-      : ""
-    expect(toolResultText).toContain("Finalization blocked")
-    expect(toolResultText).toContain("brand token drift")
+    // Platform sent finalization blocked message directly (no agent involved)
+    const updateCall = params.client.chat.update as ReturnType<typeof vi.fn>
+    const text = updateCall.mock.calls.at(-1)?.[0]?.text ?? ""
+    expect(text).toContain("Finalization blocked")
+    expect(text).toContain("brand token drift")
 
-    // 6 Anthropic calls total (added auditDownstreamReadiness)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // 4 Anthropic calls (no runAgent calls — platform finalized directly)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 
   it("allows finalization when no brand drift — spec saved to GitHub", async () => {
@@ -1991,34 +1979,31 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
       return Promise.reject(new Error("Not Found"))
     })
 
+    // Platform-enforced finalization (Phase 3): no brand drift → spec saved directly.
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
-    // [3] runAgent → tool_use: finalize_design_spec,
-    //     auditSpecDecisions skips LLM (history.length < 2 → returns "ok" immediately),
-    //     [4] auditDownstreamReadiness(architect) → PASS [parallel with auditSpecDecisions],
-    //     auditBrandTokens fires (pure) → no drift → saveApprovedDesignSpec called,
-    // [5] runAgent → end_turn (spec approved)
+    //     platform calls finalize_design_spec directly,
+    //     [3] auditDownstreamReadiness(architect) → PASS,
+    //     auditBrandTokens fires (pure) → no drift → saveApprovedDesignSpec called.
+    // No runAgent calls.
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })              // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditPhaseCompletion
-      .mockResolvedValueOnce({
-        stop_reason: "tool_use",
-        content: [{ type: "tool_use", id: "t1", name: "finalize_design_spec", input: {} }],
-      })                                                                                    // runAgent: tool_use
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })               // auditDownstreamReadiness(architect)
-      .mockResolvedValueOnce({
-        stop_reason: "end_turn",
-        content: [{ type: "text", text: "Design spec approved and saved to GitHub." }],
-      })                                                                                    // runAgent: end_turn after spec saved
 
-    const client = makeClient()
-    await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "approve the design spec", client))
+    const params = makeParams(THREAD, "feature-onboarding", "approve the design spec")
+    await handleFeatureChannelMessage(params)
 
     // No drift → spec WAS saved
     expect(mockCreateOrUpdate).toHaveBeenCalled()
 
-    // 6 Anthropic calls total (added auditDownstreamReadiness)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // Platform sent success message directly
+    const updateCall = params.client.chat.update as ReturnType<typeof vi.fn>
+    const text = updateCall.mock.calls.at(-1)?.[0]?.text ?? ""
+    expect(text).toContain("approved and merged")
+
+    // 4 Anthropic calls (no runAgent — platform finalized directly)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 })
 
@@ -7219,8 +7204,9 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
     expect(text).not.toContain("rewrite_design_spec")
     expect(text).not.toContain("apply_design_spec_patch")
 
-    // 6 Anthropic calls: 2 routing + 1 pre-audit + 2 agent turns + 1 post-patch audit (auditSpecRenderAmbiguity no longer in saveDesignDraft)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(6)
+    // 7 Anthropic calls: 2 routing + 1 pre-audit + 2 agent turns + 1 post-patch audit + 1 render ambiguity (post-patch fresh audit)
+    //                    (auditSpecStructure is deterministic — no Anthropic call)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
   })
 })
 
@@ -7668,3 +7654,133 @@ describe("Scenario N67 — Agent addressing overrides phase-based routing", () =
 // is covered by unit tests in tests/unit/action-menu.test.ts.
 // No new E2E scenario needed — the fix-all flow (N54, N58, N62) already tests
 // the platform path once parseFixAllIntent returns { isFixAll: true, selectedIndices }.
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Scenario N68 — auditSpecStructure deterministic floor in action menu
+// ────────────────────────────────────────────────────────────────────────────────
+describe("Scenario N68 — auditSpecStructure deterministic floor in action menu", () => {
+  const THREAD = "workflow-n68"
+  const SPEC_WITH_DUPLICATE = "# Design Spec\n\n## Screens\nScreen A.\n\n## Screens\nScreen B.\n"
+
+  it("[STRUCTURAL] findings appear in state query action menu", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(SPEC_WITH_DUPLICATE).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // State query path: [0] isOffTopicForAgent, [1] isSpecStateQuery → true
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "true" }] })
+      // auditPhaseCompletion for readiness
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
+      // auditSpecRenderAmbiguity
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "[]" }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "current state")
+    await handleFeatureChannelMessage(params)
+
+    const updateCall = params.client.chat.update as ReturnType<typeof vi.fn>
+    const text = updateCall.mock.calls.at(-1)?.[0]?.text ?? ""
+    expect(text).toContain("[STRUCTURAL]")
+    expect(text).toContain("Screens")
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Scenario N69 — Health gate blocks save when structural findings increase
+// ────────────────────────────────────────────────────────────────────────────────
+describe("Scenario N69 — Health gate blocks save when structural findings increase", () => {
+  const THREAD = "workflow-n69"
+  const CLEAN_SPEC = "# Design Spec\n\n## Screens\nScreen A.\n"
+  const WORSE_SPEC = "# Design Spec\n\n## Screens\nScreen A.\n\n## Screens\nScreen B.\n"
+
+  it("saveDesignDraft blocks when new content has more structural findings", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    // Existing spec is clean (0 structural findings)
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(CLEAN_SPEC).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Fix-all path: [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion,
+    // [3] runAgent → rewrite_design_spec with WORSE content → health gate blocks save
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "rewrite_design_spec", input: { content: WORSE_SPEC } }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Done." }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "fix all")
+    await handleFeatureChannelMessage(params)
+
+    // The save should have been blocked — check that the tool error mentions structural
+    // The agent received the error message in the tool result
+    const agentCall = mockAnthropicCreate.mock.calls[4]?.[0]
+    if (agentCall) {
+      const msgs = agentCall.messages as Array<{ role: string; content: unknown }>
+      const toolResult = msgs.findLast((m: { role: string }) => m.role === "user")
+      const toolResultText = Array.isArray(toolResult?.content)
+        ? (toolResult.content as Array<{ type: string; content?: string }>).find(b => b.type === "tool_result")?.content ?? ""
+        : ""
+      expect(toolResultText).toContain("structural issues increased")
+    }
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Scenario N70 — Platform-enforced finalization bypasses agent
+// ────────────────────────────────────────────────────────────────────────────────
+describe("Scenario N70 — Platform-enforced finalization bypasses agent", () => {
+  const THREAD = "workflow-n70"
+  const CLEAN_SPEC = "# Design Spec\n\n## Screens\nScreen A: layout.\n\n## User Flows\nUS-1: user opens app → Screen A.\n"
+
+  it("approval intent + 0 structural findings → platform calls finalize directly (no runAgent)", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
+        return Promise.resolve({ data: { content: Buffer.from(CLEAN_SPEC).toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] auditPhaseCompletion → PASS,
+    // [3] auditDownstreamReadiness → PASS
+    // Platform calls finalize directly — no runAgent calls
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "approved")
+    await handleFeatureChannelMessage(params)
+
+    // Spec was saved to main (merged)
+    const mainWrite = mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+      c[0]?.path?.endsWith("onboarding.design.md")
+    )
+    expect(mainWrite).toBeDefined()
+
+    // Platform sent success message
+    const updateCall = params.client.chat.update as ReturnType<typeof vi.fn>
+    const text = updateCall.mock.calls.at(-1)?.[0]?.text ?? ""
+    expect(text).toContain("approved and merged")
+
+    // 5 Anthropic calls: 2 routing + 1 auditPhaseCompletion + 1 auditDownstreamReadiness (inside finalize) + 1 render ambiguity cache
+    // No runAgent calls — platform finalized directly
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+  })
+})

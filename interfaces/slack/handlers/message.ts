@@ -8,7 +8,7 @@ import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, sav
 import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
-import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness } from "../../../runtime/spec-auditor"
+import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness, auditSpecStructure } from "../../../runtime/spec-auditor"
 import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
@@ -1165,6 +1165,9 @@ async function runDesignAgent(params: {
       // Runs on every state query regardless of how it's phrased — same audit that runs
       // on the design agent LLM path, now consistent across both paths (Principle 7).
       // Results cached by spec fingerprint — regular-path messages reuse them without extra LLM calls.
+      // Deterministic structural checks — convergence floor for state query
+      const stateStructuralFindings = draftContent ? auditSpecStructure(draftContent, "design") : []
+
       let stateQualityIssues: string[] = []
       if (draftContent) {
         const stateQCacheKey = `render-ambiguity:${featureName}:${specFingerprint(draftContent)}`
@@ -1240,13 +1243,14 @@ async function runDesignAgent(params: {
           emoji: ":pencil:",
           label: "Design Issues",
           issues: [
+            ...stateStructuralFindings.map(f => ({ issue: `[STRUCTURAL] ${f.issue}`, fix: f.recommendation })),
             ...readinessFindingsState.map(f => ({ issue: f.issue, fix: f.recommendation })),
             ...stateQualityIssues.map(splitQualityIssue),
           ],
         },
       ])
 
-      const stateOpenItemCount = brandDrifts.length + animationDrifts.length + missingTokensState.length +
+      const stateOpenItemCount = stateStructuralFindings.length + brandDrifts.length + animationDrifts.length + missingTokensState.length +
         stateQualityIssues.length + readinessFindingsState.length
       const msg = buildDesignStateResponse({ featureName, draftContent, specUrl, previewNote, specGap, uncommittedDecisions, openItemCount: stateOpenItemCount })
       appendMessage(featureName, { role: "user", content: userMessage })
@@ -1337,6 +1341,12 @@ async function runDesignAgent(params: {
   let designReadinessFindings: Array<{ issue: string; recommendation: string }> = []
   const designSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const designDraftContent = await readFile(designSpecDraftPath, `spec/${featureName}-design`).catch(() => null)
+
+  // Deterministic structural checks — convergence floor (no LLM, same input = same output always).
+  // These findings are always present regardless of LLM rubric non-determinism.
+  const structuralFindings = designDraftContent
+    ? auditSpecStructure(designDraftContent, "design")
+    : []
 
   // Deterministic design quality checks — zero LLM cost, run on every response when draft exists.
   // Uses designDraftContent (fetched above from the spec branch) — NOT context.currentDraft which
@@ -1450,13 +1460,15 @@ async function runDesignAgent(params: {
   }
   console.log(`[FIX-INTENT] isFixAll=${fixIntent.isFixAll} selectedIndices=${JSON.stringify(fixIntent.selectedIndices)}`)
   const allActionItems = [
+    // Deterministic structural findings FIRST — convergence floor, always stable
+    ...structuralFindings.map(f => ({ issue: `[STRUCTURAL] ${f.issue}`, fix: f.recommendation })),
     ...brandDriftsDesign.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
     ...animDriftsDesign.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
     ...missingTokensDesign.map(m => ({ issue: `${m.token} not referenced in spec`, fix: `add with value \`${m.brandValue}\`` })),
     ...preRunLlmQuality.map(splitQualityIssue),
     ...designReadinessFindings.map(f => ({ issue: f.issue, fix: f.recommendation })),
   ]
-  console.log(`[FIX-INTENT] allActionItems=${allActionItems.length} (brand=${brandDriftsDesign.length} anim=${animDriftsDesign.length} missing=${missingTokensDesign.length} quality=${preRunLlmQuality.length} readiness=${designReadinessFindings.length})`)
+  console.log(`[FIX-INTENT] allActionItems=${allActionItems.length} (structural=${structuralFindings.length} brand=${brandDriftsDesign.length} anim=${animDriftsDesign.length} missing=${missingTokensDesign.length} quality=${preRunLlmQuality.length} readiness=${designReadinessFindings.length})`)
   const itemsToFix = !fixIntent.isFixAll ? [] :
     fixIntent.selectedIndices
       ? allActionItems.filter((_, i) => fixIntent.selectedIndices!.includes(i + 1))
@@ -1543,6 +1555,18 @@ async function runDesignAgent(params: {
     if (audit.status === "conflict") {
       return { error: `Conflict detected — draft not saved: ${audit.message}` }
     }
+
+    // Phase 2: Health gate — block save if structural findings increased (Principle 8).
+    // This prevents bad specs from persisting to GitHub when the health invariant would block the response.
+    // The check is deterministic (auditSpecStructure), so same input = same result always.
+    const preSaveSpec = await readFile(designFilePath, designBranchName).catch(() => null)
+    const preSaveStructural = preSaveSpec ? auditSpecStructure(preSaveSpec, "design").length : 0
+    const postSaveStructural = auditSpecStructure(content, "design").length
+    if (postSaveStructural > preSaveStructural) {
+      console.log(`[HEALTH-GATE] save blocked: structural findings increased ${preSaveStructural} → ${postSaveStructural}`)
+      return { error: `Save blocked — structural issues increased from ${preSaveStructural} to ${postSaveStructural}. The patch introduced new conflicts rather than resolving them.` }
+    }
+
     await update("_Saving draft to GitHub..._")
     await saveDraftDesignSpec({ featureName, filePath: designFilePath, content })
 
@@ -1825,6 +1849,13 @@ async function runDesignAgent(params: {
         if (allOpenQuestions.length > 0) {
           return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
         }
+        // Structural findings gate — deterministic, blocks finalization if structural conflicts exist
+        const finalStructural = auditSpecStructure(existingDraft, "design")
+        if (finalStructural.length > 0) {
+          const structLines = finalStructural.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+          return { error: `Finalization blocked — ${finalStructural.length} structural conflict${finalStructural.length === 1 ? "" : "s"} must be resolved first:\n${structLines}` }
+        }
+
         let finalContent = existingDraft
         const [decisionAudit, architectReadiness] = await Promise.all([
           auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) }),
@@ -1889,6 +1920,7 @@ async function runDesignAgent(params: {
   let effectiveDeterministicQuality = qualityIssues  // strings, not ActionItems — used in continuation loop
   let effectiveLlmQuality = preRunLlmQuality  // strings — used in action menu (LLM + deterministic when cache warm)
   let effectiveReadinessFindings = designReadinessFindings
+  let effectiveStructuralFindings = structuralFindings
 
   let response: string
   try {
@@ -2031,6 +2063,36 @@ async function runDesignAgent(params: {
       return
     }
 
+    // Phase 3: Platform-enforced finalization (Principle 8 — structural, not prompt-dependent).
+    // When the user says "approved" and the spec has no structural conflicts, the platform calls
+    // finalize_design_spec directly instead of letting the agent decide. This prevents the agent
+    // from running auditPhaseCompletion and finding new LLM-generated items to block on.
+    if (isApprovalIntent && designDraftContent && !readOnly) {
+      const approvalStructural = auditSpecStructure(designDraftContent, "design")
+      if (approvalStructural.length === 0) {
+        console.log(`[PLATFORM-FINALIZE] approval intent detected, 0 structural findings — calling finalize_design_spec directly`)
+        const finalizeResult = await designToolHandlerRaw!("finalize_design_spec", {})
+        if (finalizeResult.error) {
+          // Finalize gate blocked (open questions, downstream readiness, brand drift) — let user know
+          console.log(`[PLATFORM-FINALIZE] blocked: ${finalizeResult.error}`)
+          response = `Finalization blocked:\n${finalizeResult.error}`
+          appendMessage(featureName, { role: "user", content: userMessage })
+          appendMessage(featureName, { role: "assistant", content: response })
+          await update(response)
+          return
+        }
+        // Success — spec merged to main
+        const url = (finalizeResult.result as { url?: string })?.url ?? ""
+        response = `Design spec approved and merged to main. ${url}\n\nThe architect agent is now available — say *current state* to begin the engineering spec.`
+        appendMessage(featureName, { role: "user", content: userMessage })
+        appendMessage(featureName, { role: "assistant", content: response })
+        await update(response)
+        return
+      } else {
+        console.log(`[PLATFORM-FINALIZE] approval intent detected but ${approvalStructural.length} structural finding(s) — delegating to agent`)
+      }
+    }
+
     // Normal path (non-fix-all)
     response = await runAgent({
       systemPrompt,
@@ -2079,12 +2141,15 @@ async function runDesignAgent(params: {
 
         // Design-only residual: everything that isn't a PM-GAP (which needs escalation, not more patches)
         const computeDesignResidual = (
+          draft: string,
           b: ReturnType<typeof auditBrandTokens>,
           a: ReturnType<typeof auditAnimationTokens>,
           m: ReturnType<typeof auditMissingBrandTokens>,
           q: string[],
           r: Awaited<ReturnType<typeof auditPhaseCompletion>> | null,
         ): ActionItem[] => [
+          // Deterministic structural findings — convergence floor
+          ...auditSpecStructure(draft, "design").map(f => ({ issue: `[STRUCTURAL] ${f.issue}`, fix: f.recommendation })),
           ...b.map(d => ({ issue: `${d.token}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
           ...a.map(d => ({ issue: `${d.param}: spec \`${d.specValue}\``, fix: `change to \`${d.brandValue}\`` })),
           ...m.map(m2 => ({ issue: `${m2.token} not referenced in spec`, fix: `add with value \`${m2.brandValue}\`` })),
@@ -2092,7 +2157,7 @@ async function runDesignAgent(params: {
           ...(r && !r.ready ? r.findings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })) : []),
         ]
 
-        let designResidual = computeDesignResidual(freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
+        let designResidual = computeDesignResidual(freshDraft!, freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
         let contPrevCount = designResidual.length
 
         // Capture pre-run state BEFORE continuation passes update findings.
@@ -2133,7 +2198,7 @@ async function runDesignAgent(params: {
           if (!freshDraft) break
 
           ;({ freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness } = await runFreshDesignAudit(freshDraft))
-          designResidual = computeDesignResidual(freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
+          designResidual = computeDesignResidual(freshDraft!, freshBrand, freshAnim, freshMissing, freshDeterministicQuality, freshReadiness)
           if (designResidual.length >= contPrevCount) break  // no progress — stop
           contPrevCount = designResidual.length
         }
@@ -2149,6 +2214,8 @@ async function runDesignAgent(params: {
         effectiveLlmQuality = freshDeterministicQuality  // post-patch: use deterministic (LLM call deferred to next state query)
         effectiveReadinessFindings = freshReadiness && !freshReadiness.ready ? freshReadiness.findings : []
         designReadinessFindings = effectiveReadinessFindings
+        // Recompute deterministic structural findings on post-patch spec
+        effectiveStructuralFindings = freshDraft ? auditSpecStructure(freshDraft, "design") : []
 
         // Post-patch spec health invariant (Principle 8 — arithmetic gate, no LLM).
         // Fires after every turn that modifies the spec — not phrasing-dependent.
@@ -2363,6 +2430,8 @@ async function runDesignAgent(params: {
       emoji: ":pencil:",
       label: "Design Issues",
       issues: [
+        // Deterministic structural findings FIRST — convergence floor
+        ...effectiveStructuralFindings.map(f => ({ issue: `[STRUCTURAL] ${f.issue}`, fix: f.recommendation })),
         ...effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).map(f => ({ issue: f.issue, fix: f.recommendation })),
         ...effectiveLlmQuality.map(splitQualityIssue),
       ],
@@ -2378,7 +2447,7 @@ async function runDesignAgent(params: {
   // the count stays visible: the arch question does not resolve all design gaps, and the agent
   // must not be able to claim "engineering-ready" when the rubric shows items remaining.
   const escalationJustOfferedPm = escalationJustOffered && getPendingEscalation(featureName)?.targetAgent === "pm"
-  const totalEffectiveItems = effectiveBrandDrifts.length + effectiveAnimDrifts.length +
+  const totalEffectiveItems = effectiveStructuralFindings.length + effectiveBrandDrifts.length + effectiveAnimDrifts.length +
     effectiveMissingTokens.length + effectiveLlmQuality.length +
     effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).length
   const platformStatusPrefix = (!escalationJustOfferedPm && totalEffectiveItems > 0)
@@ -2545,6 +2614,12 @@ async function runArchitectAgent(params: {
   let archReadinessNotice = ""
   const engSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
   const engDraftContent = await readFile(engSpecDraftPath, `spec/${featureName}-engineering`).catch(() => null)
+
+  // Deterministic structural checks — convergence floor for architect (same as design path)
+  const archStructuralFindings = engDraftContent ? auditSpecStructure(engDraftContent, "engineering") : []
+  if (archStructuralFindings.length > 0) {
+    console.log(`[AUDITOR] archStructuralFindings: ${archStructuralFindings.length} deterministic finding(s)`)
+  }
   if (engDraftContent) {
     const efp = specFingerprint(engDraftContent)
     const archPhaseCacheKey = `arch-phase:${featureName}:${efp}`

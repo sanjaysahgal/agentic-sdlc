@@ -441,6 +441,182 @@ Return plain text, no JSON wrapping.`,
   return response.content[0].type === "text" ? response.content[0].text.trim() : input
 }
 
+// ─── Deterministic structural checks ─────────────────────────────────────────
+// Pure function: same input = same output, always. No LLM.
+// This is the convergence floor — when these return 0, the spec is convergence-ready
+// regardless of what the LLM rubric says.
+
+export type StructuralFinding = {
+  category: "duplicate-heading" | "conflicting-value" | "token-mismatch" |
+            "undefined-reference" | "orphaned-definition" | "incomplete-copy"
+  issue: string
+  recommendation: string
+}
+
+export function auditSpecStructure(
+  spec: string,
+  specType: "product" | "design" | "engineering"
+): StructuralFinding[] {
+  const findings: StructuralFinding[] = []
+
+  // 1. Duplicate headings — any ### heading that appears more than once
+  const headingCounts = new Map<string, number>()
+  for (const match of spec.matchAll(/^(#{2,3}\s+.+)$/gm)) {
+    const heading = match[1].trim()
+    headingCounts.set(heading, (headingCounts.get(heading) ?? 0) + 1)
+  }
+  for (const [heading, count] of headingCounts) {
+    if (count > 1) {
+      findings.push({
+        category: "duplicate-heading",
+        issue: `"${heading}" appears ${count} times in the spec — creates conflicting definitions`,
+        recommendation: `Remove duplicate "${heading}" and consolidate content into a single section`,
+      })
+    }
+  }
+
+  // 2. Conflicting values — same named property with different values across sections
+  // Parse patterns like "gap: 24px", "max-width: 680px", "height: 56px", "border-radius: 12px"
+  const valuesByProperty = new Map<string, Map<string, string[]>>()
+  // Match: property-name: value (with optional unit)
+  for (const match of spec.matchAll(/\b(gap|max-width|min-width|height|width|padding|margin|border-radius|font-size|font-weight|opacity|z-index|top|bottom|left|right)\s*[:=]\s*(\d+(?:\.\d+)?(?:px|pt|rem|em|vh|vw|%|ms|s)?)\b/gi)) {
+    const prop = match[1].toLowerCase()
+    const value = match[2]
+    // Get the section this appears in (nearest preceding ### heading)
+    const beforeMatch = spec.slice(0, match.index)
+    const sectionMatch = beforeMatch.match(/^(#{2,3}\s+.+)$/gm)
+    const section = sectionMatch ? sectionMatch[sectionMatch.length - 1].trim() : "(top-level)"
+
+    if (!valuesByProperty.has(prop)) valuesByProperty.set(prop, new Map())
+    const propMap = valuesByProperty.get(prop)!
+    if (!propMap.has(section)) propMap.set(section, [])
+    propMap.get(section)!.push(value)
+  }
+
+  // Find properties that have different values in different sections for the SAME element context
+  // We look for cases where a property is mentioned with two different values in proximity to the same element name
+  const elementValuePairs = new Map<string, Set<string>>() // "element:property" → set of values
+  for (const match of spec.matchAll(/((?:Screen|Button|Modal|Sheet|Banner|Chip|Nav|Bar|Menu|Nudge|Indicator)\s*[\w\s-]{0,20}?)(?:[^:]*?)(?:\b(gap|max-width|height|width|padding|margin|border-radius|font-size|font-weight|opacity)\s*[:=]\s*(\d+(?:\.\d+)?(?:px|pt|rem|em|vh|vw|%|ms|s)?))/gi)) {
+    const element = match[1].trim().toLowerCase().slice(0, 30)
+    const prop = match[2].toLowerCase()
+    const value = match[3]
+    const key = `${element}:${prop}`
+    if (!elementValuePairs.has(key)) elementValuePairs.set(key, new Set())
+    elementValuePairs.get(key)!.add(value)
+  }
+
+  for (const [key, values] of elementValuePairs) {
+    if (values.size > 1) {
+      const [element, prop] = key.split(":")
+      const valueList = [...values].join(" vs ")
+      findings.push({
+        category: "conflicting-value",
+        issue: `"${element}" has conflicting ${prop} values: ${valueList}`,
+        recommendation: `Resolve to a single ${prop} value for "${element}" and remove the conflicting reference`,
+      })
+    }
+  }
+
+  // 3. Token mismatches — --error text on --warning container or vice versa
+  // Parse sections that define components and check for mixed semantic tokens
+  const sections = spec.split(/^(?=#{2,3}\s)/m)
+  for (const section of sections) {
+    const headingMatch = section.match(/^(#{2,3}\s+.+)$/m)
+    if (!headingMatch) continue
+    const heading = headingMatch[1].trim()
+
+    const hasErrorToken = /`--error`|--error\b/i.test(section)
+    const hasWarningToken = /`--warning`|--warning\b/i.test(section)
+
+    if (hasErrorToken && hasWarningToken) {
+      // Check if they're used for different properties of the same component
+      const errorInText = /text.*`?--error`?|`?--error`?.*text|color.*`?--error`?/i.test(section)
+      const warningInBg = /background.*`?--warning`?|border.*`?--warning`?|`?--warning`?.*background|`?--warning`?.*border/i.test(section)
+      const errorInBg = /background.*`?--error`?|border.*`?--error`?|`?--error`?.*background|`?--error`?.*border/i.test(section)
+      const warningInText = /text.*`?--warning`?|`?--warning`?.*text|color.*`?--warning`?/i.test(section)
+
+      if ((errorInText && warningInBg) || (warningInText && errorInBg)) {
+        findings.push({
+          category: "token-mismatch",
+          issue: `${heading} mixes --error and --warning tokens on the same component — text uses one semantic, background/border uses another`,
+          recommendation: `Standardize to a single semantic token (all --error or all --warning) for the component in ${heading}`,
+        })
+      }
+    }
+  }
+
+  // 4. Undefined references — spec-type-specific
+  if (specType === "design") {
+    const undefinedScreens = findUndefinedScreenReferences(spec)
+    for (const issue of undefinedScreens) {
+      findings.push({
+        category: "undefined-reference",
+        issue,
+        recommendation: `Add a definition for the referenced element in ## Screens, or correct the reference`,
+      })
+    }
+  }
+
+  if (specType === "product") {
+    // User stories referencing acceptance criteria that don't exist
+    const acSection = spec.match(/## Acceptance Criteria([\s\S]*?)(?:\n## |\n# |$)/)?.[1] ?? ""
+    const storySection = spec.match(/## User Stories([\s\S]*?)(?:\n## |\n# |$)/)?.[1] ?? ""
+    if (storySection && acSection) {
+      // Find AC references like "AC#N" or "Acceptance Criterion N"
+      for (const match of storySection.matchAll(/AC#(\d+)/gi)) {
+        const acNum = match[1]
+        if (!acSection.includes(`${acNum}.`) && !acSection.includes(`${acNum})`)) {
+          findings.push({
+            category: "undefined-reference",
+            issue: `User story references AC#${acNum} but no acceptance criterion ${acNum} exists`,
+            recommendation: `Add acceptance criterion ${acNum} or correct the reference`,
+          })
+        }
+      }
+    }
+  }
+
+  // 5. Orphaned definitions — sections defined but never cross-referenced
+  if (specType === "design") {
+    const screensSection = spec.match(/## Screens([\s\S]*?)(?:\n## |\n# |$)/)?.[1] ?? ""
+    const flowsSection = spec.match(/## User Flows([\s\S]*?)(?:\n## |\n# |$)/)?.[1] ?? ""
+    if (screensSection && flowsSection) {
+      // Find all screen definitions
+      for (const match of screensSection.matchAll(/^###\s+(Screen\s+\w+[a-z]?)\s*[:—–-]/gm)) {
+        const screenName = match[1].trim()
+        // Check if referenced anywhere outside the Screens section
+        const specWithoutScreens = spec.replace(/## Screens[\s\S]*?(?=\n## |\n# |$)/, "")
+        if (!specWithoutScreens.toLowerCase().includes(screenName.toLowerCase())) {
+          findings.push({
+            category: "orphaned-definition",
+            issue: `${screenName} is defined in ## Screens but never referenced in User Flows or other sections`,
+            recommendation: `Either reference ${screenName} in the appropriate User Flow or remove the unused definition`,
+          })
+        }
+      }
+    }
+  }
+
+  // 6. Incomplete copy — consume existing auditCopyCompleteness
+  const copyIssues = auditCopyCompleteness(spec)
+  for (const issue of copyIssues) {
+    findings.push({
+      category: "incomplete-copy",
+      issue,
+      recommendation: issue.includes("placeholder")
+        ? "Replace placeholder with final copy"
+        : "Add terminal punctuation (. ! or ?)",
+    })
+  }
+
+  console.log(`[AUDITOR] auditSpecStructure: specType=${specType} → ${findings.length} finding(s) (duplicates=${findings.filter(f => f.category === "duplicate-heading").length} conflicts=${findings.filter(f => f.category === "conflicting-value").length} tokens=${findings.filter(f => f.category === "token-mismatch").length} refs=${findings.filter(f => f.category === "undefined-reference").length} orphans=${findings.filter(f => f.category === "orphaned-definition").length} copy=${findings.filter(f => f.category === "incomplete-copy").length})`)
+  if (findings.length > 0) {
+    findings.forEach((f, i) => console.log(`[AUDITOR] auditSpecStructure[${i + 1}]: [${f.category}] ${f.issue}`))
+  }
+
+  return findings
+}
+
 // Applies decision corrections to a spec string via direct text replacement.
 // Returns the corrected spec and a list of corrections that were actually applied.
 export function applyDecisionCorrections(specContent: string, corrections: DecisionCorrection[]): {

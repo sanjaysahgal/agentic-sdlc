@@ -1417,3 +1417,175 @@ describe("spec-auditor — [AUDITOR] logging on every call", () => {
     logSpy.mockRestore()
   })
 })
+
+// ─── auditSpecStructure — deterministic structural checks ─────────────────────
+
+describe("auditSpecStructure — deterministic structural checks", () => {
+  // Import synchronously — auditSpecStructure is a pure function, no LLM
+  let auditSpecStructure: typeof import("../../runtime/spec-auditor").auditSpecStructure
+
+  beforeEach(async () => {
+    vi.resetModules()
+    mockCreate.mockReset()
+    const mod = await import("../../runtime/spec-auditor")
+    auditSpecStructure = mod.auditSpecStructure
+  })
+
+  it("returns empty array for a clean spec with no issues", () => {
+    const spec = `# Feature Spec
+
+## Screens
+
+### Screen 1a: Chat Home
+Layout container with prompt bar.
+
+## User Flows
+
+### Flow: US-1 — New user
+Step 1: Screen 1a visible. Step 2: user taps button.`
+
+    const findings = auditSpecStructure(spec, "design")
+    expect(findings).toEqual([])
+  })
+
+  it("detects duplicate headings", () => {
+    const spec = `## Screens
+
+### Screen 1b: Chat Home Active
+First definition.
+
+### Screen 1b: Chat Home Active
+Second conflicting definition.
+
+## User Flows
+
+### Flow: US-1
+User goes to Screen 1b.`
+
+    const findings = auditSpecStructure(spec, "design")
+    const dupes = findings.filter(f => f.category === "duplicate-heading")
+    expect(dupes.length).toBe(1)
+    expect(dupes[0].issue).toContain("Screen 1b")
+    expect(dupes[0].issue).toContain("2 times")
+  })
+
+  it("detects conflicting pixel values for same element", () => {
+    const spec = `## Screens
+
+### Screen 3: Navigate-Away Modal
+- Button stack: gap: 16px between buttons.
+- Modal height: 400px
+
+### Screen 3b: Modal Variant
+- Button stack: gap: 24px between buttons.
+- Modal height: 500px`
+
+    const findings = auditSpecStructure(spec, "design")
+    const conflicts = findings.filter(f => f.category === "conflicting-value")
+    // Should find gap conflict (16px vs 24px) and/or height conflict (400px vs 500px)
+    expect(conflicts.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("detects token mismatches (--error text on --warning background)", () => {
+    const spec = `## Screens
+
+### Screen 1h: Carry-Over Failed
+- Background: rgba(229, 192, 123, 0.10) (warning surface)
+- Border: 1px solid \`--warning\`
+- Text: "Your conversation could not be recovered." (\`--error\`, system-ui 12px)`
+
+    const findings = auditSpecStructure(spec, "design")
+    const tokenIssues = findings.filter(f => f.category === "token-mismatch")
+    expect(tokenIssues.length).toBe(1)
+    expect(tokenIssues[0].issue).toContain("--error")
+    expect(tokenIssues[0].issue).toContain("--warning")
+  })
+
+  it("detects undefined screen references in design specs", () => {
+    const spec = `## Screens
+
+### Screen 1a: Chat Home
+Layout container.
+
+## User Flows
+
+### Flow: US-1
+At Screen 1a user taps sign in → Auth Sheet opens → user completes SSO.`
+
+    // "Auth Sheet" is referenced but not defined in Screens
+    const findings = auditSpecStructure(spec, "design")
+    const refs = findings.filter(f => f.category === "undefined-reference")
+    expect(refs.length).toBeGreaterThanOrEqual(1)
+    expect(refs.some(r => r.issue.includes("Auth"))).toBe(true)
+  })
+
+  it("detects orphaned screen definitions", () => {
+    const spec = `## Screens
+
+### Screen 1a: Chat Home
+Layout container.
+
+### Screen 99z: Unused Screen
+Never referenced anywhere.
+
+## User Flows
+
+### Flow: US-1
+User lands on Screen 1a.`
+
+    const findings = auditSpecStructure(spec, "design")
+    const orphans = findings.filter(f => f.category === "orphaned-definition")
+    expect(orphans.length).toBe(1)
+    expect(orphans[0].issue).toContain("Screen 99z")
+  })
+
+  it("detects incomplete copy (TBD placeholders)", () => {
+    const spec = `## Screens
+
+### Screen 1a: Chat Home
+- Tagline: "[TBD — waiting for brand review]"
+- Heading: "Welcome back"`
+
+    const findings = auditSpecStructure(spec, "design")
+    const copyIssues = findings.filter(f => f.category === "incomplete-copy")
+    expect(copyIssues.length).toBeGreaterThanOrEqual(1)
+    expect(copyIssues[0].issue).toContain("placeholder")
+  })
+
+  it("works on product spec type — AC cross-reference", () => {
+    const spec = `## User Stories
+1. As a user, I want to sign in per AC#99.
+
+## Acceptance Criteria
+1. Users can access the chat.
+2. Users see a persistent indicator.`
+
+    const findings = auditSpecStructure(spec, "product")
+    const refs = findings.filter(f => f.category === "undefined-reference")
+    expect(refs.length).toBe(1)
+    expect(refs[0].issue).toContain("AC#99")
+  })
+
+  it("returns deterministic results — same spec always produces same findings", () => {
+    const spec = `## Screens
+
+### Screen 1b: Chat Home
+gap: 16px
+
+### Screen 1b: Chat Home
+gap: 24px
+
+## User Flows
+### Flow: US-1
+User goes to Screen 1b.`
+
+    const run1 = auditSpecStructure(spec, "design")
+    const run2 = auditSpecStructure(spec, "design")
+    const run3 = auditSpecStructure(spec, "design")
+
+    expect(run1.length).toBe(run2.length)
+    expect(run2.length).toBe(run3.length)
+    expect(run1.map(f => f.issue)).toEqual(run2.map(f => f.issue))
+    expect(run2.map(f => f.issue)).toEqual(run3.map(f => f.issue))
+  })
+})
