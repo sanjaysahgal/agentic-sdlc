@@ -14,6 +14,8 @@ Every agent in this system has a clearly defined role, a phase it owns, a human 
 
 The front desk. Anyone — PM, designer, engineer, executive — comes here first. Reads the current state of all features from GitHub and explains what's happening and what each person can act on right now. Loads product vision and system architecture from GitHub on every message, filtered to what's relevant to the question (via Haiku relevance filter — no truncation, no summary files). Responds in plain English, never technical jargon.
 
+**Platform identity:** The concierge knows it IS the SDLC platform. If a user refers to the platform by any name (e.g. "Archon", "the platform", "this tool"), the concierge recognizes they're asking about this system and answers from what it knows. Never says "I don't know what that is" about the system it runs on. Never deflects to "ask leadership."
+
 ---
 
 ## pm agent

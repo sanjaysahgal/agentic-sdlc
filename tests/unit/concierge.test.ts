@@ -140,4 +140,11 @@ describe("buildConciergeSystemPrompt", () => {
     expect(prompt).toContain("onboarding")
     expect(prompt).toContain("payments")
   })
+
+  it("includes platform identity instruction — concierge knows it IS the platform", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    expect(prompt).toContain("You ARE the SDLC platform")
+    expect(prompt).toContain("Never say \"I don't know what that is\"")
+    expect(prompt).toContain("Never tell the user to \"ask someone else\"")
+  })
 })
