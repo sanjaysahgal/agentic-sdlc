@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>16/16</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">81.81% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/11</span>
+                <span class='fraction'>9/11</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/15</span>
+                <span class='fraction'>15/15</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -207,36 +207,34 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">13x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">13x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -257,7 +255,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">52x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -339,35 +339,35 @@ import { ACTIVE_AGENTS } from "./registry"
 // Its job: understand who the person is, explain the system in their terms,
 // show them what's currently happening, and guide them to the right next action.
 &nbsp;
-function <span class="fstat-no" title="function not covered" >describeFeatureStatus(f</span>eatures: FeatureStatus[]): string {
-<span class="cstat-no" title="statement not covered" >  if (features.length === 0) <span class="cstat-no" title="statement not covered" >return "No features are in progress right now."</span></span>
+function describeFeatureStatus(features: FeatureStatus[]): string {
+  if (features.length === 0) return "No features are in progress right now."
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return features</span>
-    .<span class="fstat-no" title="function not covered" >map((f</span>) =&gt; {
-      const name = <span class="cstat-no" title="statement not covered" >f.featureName</span>
-<span class="cstat-no" title="statement not covered" >      switch (f.phase) {</span>
+  return features
+    .map((f) =&gt; {
+      const name = f.featureName
+      switch (f.phase) {
         case "product-spec-in-progress":
-<span class="cstat-no" title="statement not covered" >          return `• *${name}* — A product manager is currently shaping the feature brief into a spec. Design and engineering haven't started yet. Channel: #feature-${name}`</span>
+          return `• *${name}* — A product manager is currently shaping the feature brief into a spec. Design and engineering haven't started yet. Channel: #feature-${name}`
         case "product-spec-approved-awaiting-design":
-<span class="cstat-no" title="statement not covered" >          return `• *${name}* — The product spec is approved and ready. Waiting for a UX designer to pick it up and produce the screens and user flows. Channel: #feature-${name}`</span>
+          return `• *${name}* — The product spec is approved and ready. Waiting for a UX designer to pick it up and produce the screens and user flows. Channel: #feature-${name}`
         case "design-in-progress":
-<span class="cstat-no" title="statement not covered" >          return `• *${name}* — A UX designer is working on the screens and flows. Engineering hasn't started yet. Channel: #feature-${name}`</span>
+          return `• *${name}* — A UX designer is working on the screens and flows. Engineering hasn't started yet. Channel: #feature-${name}`
         case "design-approved-awaiting-engineering":
-<span class="cstat-no" title="statement not covered" >          return `• *${name}* — Product spec and design are both approved. Waiting for the architect to produce the engineering plan. Channel: #feature-${name}`</span>
+          return `• *${name}* — Product spec and design are both approved. Waiting for the architect to produce the engineering plan. Channel: #feature-${name}`
         case "engineering-in-progress":
-<span class="cstat-no" title="statement not covered" >          return `• *${name}* — An architect is working on the engineering plan. Channel: #feature-${name}`</span>
+          return `• *${name}* — An architect is working on the engineering plan. Channel: #feature-${name}`
       }
     })
     .join("\n")
 }
 &nbsp;
-export function <span class="fstat-no" title="function not covered" >buildConciergeSystemPrompt(f</span>eatures: FeatureStatus[], context: AgentContext): string {
-  const featureSummary = <span class="cstat-no" title="statement not covered" >describeFeatureStatus(features)</span>
-  const { productName, githubOwner, githubRepo, <span class="cstat-no" title="statement not covered" >paths } = loadWorkspaceConfig()</span>
-  const productVisionUrl = <span class="cstat-no" title="statement not covered" >`https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.productVision}`</span>
-  const systemArchUrl = <span class="cstat-no" title="statement not covered" >`https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.systemArchitecture}`</span>
+export function buildConciergeSystemPrompt(features: FeatureStatus[], context: AgentContext): string {
+  const featureSummary = describeFeatureStatus(features)
+  const { productName, githubOwner, githubRepo, paths } = loadWorkspaceConfig()
+  const productVisionUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.productVision}`
+  const systemArchUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.systemArchitecture}`
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return `You are the front desk for an AI-powered product development system called ${productName} SDLC.</span>
+  return `You are the front desk for an AI-powered product development system called ${productName} SDLC.
 Your job is to greet anyone who arrives, understand their role, and explain exactly where they fit in and what they can do right now.
 &nbsp;
 ## Who you are
@@ -390,7 +390,7 @@ ${featureSummary}
 These are the AI specialists in the system. Be transparent about which are active and which are coming:
 &nbsp;
 **Active now:**
-${ACTIVE_AGENTS.<span class="fstat-no" title="function not covered" >map((a</span>) =&gt; <span class="cstat-no" title="statement not covered" >`- *${a.name}* — ${a.description} (${a.phase})`).</span>join("\n")}
+${ACTIVE_AGENTS.map((a) =&gt; `- *${a.name}* — ${a.description} (${a.phase})`).join("\n")}
 &nbsp;
 **Coming soon (not yet active):**
 - *Backend engineer* — will build server-side features against the engineering spec
@@ -444,11 +444,11 @@ Your job is SDLC navigation. This applies to every response, not just actionabil
 ## Product context (read before every response)
 ### Product Vision
 &lt;${productVisionUrl}&gt;
-${context.productVision || "Not yet defined in the repo."}
+${context.productVision || <span class="branch-1 cbranch-no" title="branch not covered" >"Not yet defined in the repo."}</span>
 &nbsp;
 ### System Architecture
 &lt;${systemArchUrl}&gt;
-${context.systemArchitecture || "Not yet defined in the repo."}
+${context.systemArchitecture || <span class="branch-1 cbranch-no" title="branch not covered" >"Not yet defined in the repo."}</span>
 &nbsp;
 ## Tone
 Warm and approachable, but grounded and precise — think a 5 out of 10 on the casual scale. A touch of personality is fine. Emojis are okay in moderation when they add clarity or warmth, not as decoration on every line. Never use technical jargon. Never be evasive — if you know something, say it directly. If you don't know something, say that too.
@@ -469,7 +469,7 @@ When listing agents or roles, use a bulleted list with emojis for each item — 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-20T15:27:14.306Z
+                at 2026-04-20T15:46:12.294Z
             </div>
         <script src="../prettify.js"></script>
         <script>

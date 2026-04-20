@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>5/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/8</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>2/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>5/5</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -448,7 +448,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -527,10 +527,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">51x</span>
+<span class="cline-any cline-yes">51x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">51x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -817,7 +817,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">26x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -828,7 +828,7 @@ import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
 import { splitSystemPrompt } from "../runtime/claude-client"
 &nbsp;
-export const ARCHITECT_TOOLS: Anthropic.Tool[] = <span class="cstat-no" title="statement not covered" >[</span>
+export const ARCHITECT_TOOLS: Anthropic.Tool[] = [
   {
     name: "save_engineering_spec_draft",
     description: "Save the complete engineering spec markdown to GitHub as a draft. Use this for the FIRST save only — creates the file. Returns the spec URL and any audit findings (conflicts or gaps against vision/architecture and other approved engineering specs).",
@@ -906,11 +906,11 @@ export const ARCHITECT_TOOLS: Anthropic.Tool[] = <span class="cstat-no" title="s
 // The architect's job: translate an approved design spec into a precise,
 // implementation-ready engineering spec through conversation with the architect.
 &nbsp;
-export function <span class="fstat-no" title="function not covered" >buildArchitectSystemPrompt(c</span>ontext: AgentContext, featureName: string, readOnly = <span class="branch-0 cbranch-no" title="branch not covered" >false): string {</span>
-  const { productName, mainChannel, githubOwner, githubRepo, <span class="cstat-no" title="statement not covered" >paths } = loadWorkspaceConfig()</span>
-  const engineeringSpecUrl = <span class="cstat-no" title="statement not covered" >`https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-engineering/${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`</span>
+export function buildArchitectSystemPrompt(context: AgentContext, featureName: string, readOnly = false): string {
+  const { productName, mainChannel, githubOwner, githubRepo, paths } = loadWorkspaceConfig()
+  const engineeringSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-engineering/${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return `You are the Architect agent for ${productName} — an AI principal engineer whose job is to translate an approved design spec into a precise, implementation-ready engineering spec through conversation.</span>
+  return `You are the Architect agent for ${productName} — an AI principal engineer whose job is to translate an approved design spec into a precise, implementation-ready engineering spec through conversation.
 &nbsp;
 ## Who you are
 You are a Sr. Principal Engineer with 20+ years of experience across three distinct career tracks that most engineers only see one of: hyperscale infrastructure (Google, Meta, Amazon — systems handling hundreds of millions of requests per day, petabytes of data, global distribution), platform and SDK engineering (you have shipped developer platforms and SDKs used by thousands of third-party teams across consumer and B2B apps — you know what it means to design a public API surface that has to be stable for years, versioned gracefully, and adopted by teams with wildly different skill levels), and production AI systems (you have shipped LLM-powered features at scale — not demos, not prototypes, but production systems with eval pipelines, fallback strategies, and cost controls). You have made and lived with architectural decisions at 10-year time horizons.
@@ -1192,12 +1192,12 @@ You are responding in Slack. Use Slack markdown throughout — bold (*text*), it
 // Two-block system prompt for prompt caching.
 // Block 1 (cached): stable persona, workflow, tools, engineering spec format.
 // Block 2 (uncached): currentDraft (approved product + design spec chain + engineering draft) + approvedEngineeringSpecs.
-export function <span class="fstat-no" title="function not covered" >buildArchitectSystemBlocks(</span>
+export function buildArchitectSystemBlocks(
   context: AgentContext,
   featureName: string,
-  readOnly = <span class="branch-0 cbranch-no" title="branch not covered" >false,</span>
+  readOnly = false,
 ): Anthropic.TextBlockParam[] {
-<span class="cstat-no" title="statement not covered" >  return splitSystemPrompt(</span>
+  return splitSystemPrompt(
     buildArchitectSystemPrompt(context, featureName, readOnly),
     "\n## Current approved spec chain",
   )
@@ -1210,7 +1210,7 @@ export function <span class="fstat-no" title="function not covered" >buildArchit
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-20T15:27:14.306Z
+                at 2026-04-20T15:46:12.294Z
             </div>
         <script src="../prettify.js"></script>
         <script>
