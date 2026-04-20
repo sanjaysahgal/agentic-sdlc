@@ -246,6 +246,13 @@ describe("buildArchitectSystemPrompt — domain boundary", () => {
   it("includes newcomer orientation instruction — orient before gap dump", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("Read the room first")
-    expect(prompt).toContain("Do NOT open with a gap dump")
+    expect(prompt).toContain("STOP THERE")
+  })
+
+  it("includes assertive escalation instruction — no defer option", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("PM gaps first")
+    expect(prompt).toContain("Design gaps second")
+    expect(prompt).toContain("Never ask \"do you want me to escalate?\"")
   })
 })
