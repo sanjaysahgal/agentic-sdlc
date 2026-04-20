@@ -35,6 +35,13 @@ const summarizationWarnedFeatures = new Set<string>()
 // the second invocation is rejected immediately rather than running a second agent in parallel.
 const featureInFlight = new Map<string, boolean>()
 
+// Per-feature+user orientation tracking — first message from a userId in a feature
+// suppresses audit notice injection so the agent can orient the newcomer without
+// being compelled by "MUST surface" notices. Structural enforcement of Principle 8:
+// the agent cannot dump gaps on orientation turns because it doesn't have them in context.
+// Key: `${featureName}:${userId}` — set after first turn completes.
+const orientedUsers = new Set<string>()
+
 // Content-addressed cache for phase entry upstream spec audits.
 // Key: `${agentType}:${featureName}:${specFingerprint}` — invalidates automatically when upstream spec content changes.
 // Value: formatted PLATFORM NOTICE string (empty string = no issues found).
@@ -723,7 +730,7 @@ ${archPendingEscalation.question}`
     }
     console.log(`[ROUTER] branch=confirmed-architect feature=${featureName}`)
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
-      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId })
     }})
     return
   }
@@ -773,7 +780,7 @@ ${archPendingEscalation.question}`
     if (currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress") {
       console.log(`[ROUTER] branch=new-thread-architect feature=${featureName}`)
       setConfirmedAgent(featureName, "architect")
-      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId })
       return
     }
 
@@ -2125,8 +2132,9 @@ async function runArchitectAgent(params: {
   update: (text: string) => Promise<void>
   routingNote?: string
   readOnly?: boolean
+  userId?: string
 }): Promise<void> {
-  const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly } = params
+  const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly, userId } = params
 
   // Pending spec approval — check before fast paths
   const pendingEngineeringApproval = getPendingApproval(featureName)
@@ -2258,7 +2266,7 @@ async function runArchitectAgent(params: {
       archFindings.push(`APPROVED DESIGN SPEC — ${designAuditArch.findings.length} GAP${designAuditArch.findings.length === 1 ? "" : "S"}:\n${lines}`)
     }
     if (archFindings.length > 0) {
-      upstreamNoticeArch = `\n\n[PLATFORM UPSTREAM SPEC AUDIT — UPSTREAM SPECS HAVE GAPS THAT MUST BE SURFACED TO THE USER BEFORE PROCEEDING:\n${archFindings.join("\n\n")}\nYou MUST surface these gaps prominently in your response and recommend returning to the relevant agent to address them before the engineering phase continues.]`
+      upstreamNoticeArch = `\n\n[PLATFORM UPSTREAM SPEC AUDIT — The following upstream spec gaps block engineering handoff. These are facts for your awareness. Follow your "How you open every conversation" rules to determine WHEN to surface them (orientation turns: do not surface; substantive turns: assert escalation plan per PM-first ordering).\n${archFindings.join("\n\n")}]`
     } else {
       upstreamNoticeArch = ""
     }
@@ -2290,7 +2298,7 @@ async function runArchitectAgent(params: {
       }).catch(() => null)
       if (archAuditResult && !archAuditResult.ready) {
         const findingLines = archAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — ${archAuditResult.findings.length} gap${archAuditResult.findings.length === 1 ? "" : "s"} blocking implementation handoff. You MUST surface each finding with your concrete recommendation before proceeding.\n${findingLines}]`
+        archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — ${archAuditResult.findings.length} gap${archAuditResult.findings.length === 1 ? "" : "s"} blocking implementation handoff. These are facts for your awareness. Follow your "How you open every conversation" rules to determine WHEN to surface them.\n${findingLines}]`
       } else if (archAuditResult?.ready) {
         archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — Spec passed all engineering rubric criteria. You may confirm the spec is implementation-ready when asked.]`
       }
@@ -2309,7 +2317,18 @@ async function runArchitectAgent(params: {
     }
   }
 
-  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice
+  // STRUCTURAL ENFORCEMENT (Principle 8): First message from a userId in a feature
+  // suppresses all audit notices from the agent's context. The agent physically cannot
+  // dump gaps because the gap data isn't in its input. On the next message from this
+  // user, notices inject normally. This enforces "Read the room first" structurally.
+  // Gate only fires when userId is available (real Slack events provide it; tests may not).
+  const orientationKey = userId ? `${featureName}:${userId}` : null
+  const isOrientationTurn = orientationKey ? !orientedUsers.has(orientationKey) : false
+  if (isOrientationTurn) {
+    console.log(`[ROUTER] orientation-gate: first message from userId=${userId} in feature=${featureName} — suppressing audit notices`)
+  }
+  const archNotices = isOrientationTurn ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
+  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
   const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
@@ -2352,6 +2371,12 @@ async function runArchitectAgent(params: {
     }),
     toolCallsOut: toolCallsOutArch,
   })
+
+  // Mark user as oriented AFTER the agent responds — next message gets full notices.
+  if (isOrientationTurn && orientationKey) {
+    orientedUsers.add(orientationKey)
+    console.log(`[ROUTER] orientation-gate: userId=${userId} now oriented in feature=${featureName} — next message will include audit notices`)
+  }
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })

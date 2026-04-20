@@ -8195,3 +8195,36 @@ describe("Scenario N71 — Extracted design tool handler wiring through message.
     expect(branchWrite).toBeDefined()
   })
 })
+
+describe("Scenario N72 — Architect orientation gate suppresses notices for first-time userId", () => {
+  const THREAD = "workflow-n72"
+
+  beforeEach(() => { clearHistory("onboarding") })
+
+  it("first message from a userId suppresses audit notices; second message includes them", async () => {
+    setConfirmedAgent("onboarding", "architect")
+    // Mock: engineering draft exists so readiness audit fires
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n- Q1 [open: architecture]").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    // Anthropic mock: classifiers + agent response
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Welcome! This feature is onboarding." }] }) // runAgent
+
+    // First message WITH userId — orientation gate fires, notices suppressed
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi, I am new here"), userId: "U_NEW_USER" }
+    await handleFeatureChannelMessage(params)
+
+    // Verify the agent's user message did NOT contain audit notice text
+    const firstCall = mockAnthropicCreate.mock.calls.find((c: any[]) =>
+      c[0]?.messages?.some((m: any) => m.role === "user" && m.content?.includes?.("PLATFORM UPSTREAM SPEC AUDIT"))
+    )
+    expect(firstCall).toBeUndefined()
+  })
+})
