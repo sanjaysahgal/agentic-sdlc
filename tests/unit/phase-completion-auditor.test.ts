@@ -214,6 +214,70 @@ describe("PM_RUBRIC and DESIGN_RUBRIC exports", () => {
   })
 })
 
+// ─── PM_RUBRIC criterion 1 — per-story error path enumeration ──────────────────
+//
+// False-negative root cause (2026-04-16): US-2 "returning user signs in" had no
+// failure path, but the old criterion 1 ("every user story needs an error path")
+// let Sonnet pass because nearby edge cases implied coverage. The fix: criterion 1
+// now instructs Sonnet to enumerate each story by number and verify each individually.
+//
+// Fixture: tests/fixtures/agent-output/pm-rubric-onboarding.json — captured from
+// real Sonnet run against the approved onboarding PM spec with the sharpened rubric.
+
+import { readFileSync } from "fs"
+import { join } from "path"
+
+describe("PM_RUBRIC criterion 1 — per-story error path enumeration (producer test)", () => {
+  it("criterion 1 instructs per-story enumeration, not generic coverage", () => {
+    expect(PM_RUBRIC).toContain("Enumerate each user story")
+    expect(PM_RUBRIC).toContain("For EACH story individually")
+    expect(PM_RUBRIC).toContain("one FINDING per uncovered story")
+  })
+
+  it("real Sonnet output catches US-2 returning-user sign-in missing failure path", () => {
+    const fixturePath = join(__dirname, "..", "fixtures", "agent-output", "pm-rubric-onboarding.json")
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf-8"))
+
+    // PM_RUBRIC must produce findings (not PASS)
+    expect(fixture.pmRubric.ready).toBe(false)
+    expect(fixture.pmRubric.findingCount).toBeGreaterThanOrEqual(1)
+
+    // At least one finding must reference US-2 / returning user / sign-in failure
+    const us2Finding = fixture.pmRubric.findings.find((f: { issue: string }) =>
+      /user story 2|returning user|sign-in fail/i.test(f.issue)
+    )
+    expect(us2Finding).toBeDefined()
+  })
+
+  it("real Sonnet output catches data requirements gap (US-8 carry-over)", () => {
+    const fixturePath = join(__dirname, "..", "fixtures", "agent-output", "pm-rubric-onboarding.json")
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf-8"))
+
+    // Data requirements finding must be present
+    const dataFinding = fixture.pmRubric.findings.find((f: { issue: string }) =>
+      /data requirement|carry.over|stored/i.test(f.issue)
+    )
+    expect(dataFinding).toBeDefined()
+  })
+})
+
+describe("PM_DESIGN_READINESS_RUBRIC — real Sonnet fixture verification", () => {
+  it("real Sonnet output catches design-readiness gaps (loading states, copy, modality)", () => {
+    const fixturePath = join(__dirname, "..", "fixtures", "agent-output", "pm-rubric-onboarding.json")
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf-8"))
+
+    expect(fixture.designReadinessRubric.ready).toBe(false)
+    expect(fixture.designReadinessRubric.findingCount).toBeGreaterThanOrEqual(5)
+  })
+
+  it("adversarial designer catches cross-criterion interaction gaps", () => {
+    const fixturePath = join(__dirname, "..", "fixtures", "agent-output", "pm-rubric-onboarding.json")
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf-8"))
+
+    expect(fixture.adversarialDesigner.findingCount).toBeGreaterThanOrEqual(3)
+  })
+})
+
 describe("buildDesignRubric — form factor injection", () => {
   it("injects custom form factors into criterion 9", () => {
     const rubric = buildDesignRubric(["mobile", "tablet", "desktop"])

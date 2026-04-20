@@ -200,7 +200,7 @@ Output only FINDING lines and/or PASS. No preamble, no explanation, no numbering
 
 // ─── PM Rubric ─────────────────────────────────────────────────────────────────
 
-export const PM_RUBRIC = `1. USER FLOWS — Every user story in ## User Stories has an explicit success path AND at least one error/edge path documented in ## Edge Cases or the story itself. A user story with no error path is incomplete.
+export const PM_RUBRIC = `1. USER FLOWS — Enumerate each user story in ## User Stories by number. For EACH story individually, verify that ## Edge Cases or ## Acceptance Criteria contains at least one explicit failure/error scenario for that story's primary action. A user story whose primary action can fail (sign-in, sign-up, data load, network request) but has no named failure path anywhere in the spec is incomplete — even if other stories' error paths exist nearby. Output one FINDING per uncovered story.
 
 2. MEASURABLE ACCEPTANCE CRITERIA — Every criterion in ## Acceptance Criteria is specific and testable by an engineer. Criteria containing words like "fast", "smooth", "easy", "good", "improve", "soft", "non-intrusive", "proactively", "proactive", "ambient", "seamlessly", "seamless", "minimal", "appropriate", "subtle", or any comparative without a baseline are not measurable and must be flagged. Each criterion must name a concrete, observable outcome.
 

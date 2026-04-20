@@ -1,0 +1,122 @@
+{
+  "featureName": "onboarding",
+  "specLength": 11208,
+  "timestamp": "2026-04-20T15:38:26.437Z",
+  "pmRubric": {
+    "ready": false,
+    "findingCount": 4,
+    "findings": [
+      {
+        "issue": "User Story 1 (new user sign-up) has no named failure scenario for the sign-up action itself failing (e.g., SSO provider error, network failure during account creation) — AC 29 covers Auth Sheet SSO failure generically but does not explicitly address sign-up failure as distinct from sign-in failure for a new user.",
+        "recommendation": "Add an explicit acceptance criterion or edge case stating that if SSO account creation fails for a new user, a dismissible inline error appears in the Auth Sheet with a \"Retry\" button, and the user can retry unlimited times or dismiss and return to the logged-out chat."
+      },
+      {
+        "issue": "User Story 2 (returning user sign-in) has no named failure scenario for sign-in failing mid-flow (e.g., SSO provider returns an error, account not found) as a story-specific path — AC 29 exists but applies to any Auth Sheet SSO failure without explicitly covering the returning-user sign-in case and its outcome (e.g., where the user lands, whether prior history is preserved).",
+        "recommendation": "Add an explicit edge case stating that if SSO sign-in fails for a returning user, a dismissible inline error appears in the Auth Sheet with a \"Retry\" button, the user can retry unlimited times or return to the logged-out chat, and no conversation history or session state is modified."
+      },
+      {
+        "issue": "AC 2 uses the non-measurable term \"non-intrusive\" is not present, but AC 3 describes the indicator as \"read-only\" without specifying its visual properties (e.g., height in pixels, font size, background color contrast ratio) making it not fully testable; however the more critical issue is AC 8's phrase \"non-dismissible warning banner\" which is adequately described — but AC 10's phrase \"rendered as a conversational system message\" lacks a measurable definition of what distinguishes a system message visually from a user or AI message.",
+        "recommendation": "Add a criterion specifying the exact visual differentiator for the in-conversation system message (e.g., centered alignment, a distinct background color token, and no avatar), so an engineer can write a deterministic UI test for it."
+      },
+      {
+        "issue": "User Story 8 (conversation carry-over for new users completing sign-up from a logged-out session) does not have its data requirements explicitly described — specifically, what data is captured in the logged-out session (message content, timestamps, session token, ordering), how it is stored client-side before authentication, and what payload is sent to associate it with the new user account upon sign-up.",
+        "recommendation": "Add a data requirements section specifying that the logged-out conversation is stored in browser session storage as an ordered array of message objects (role, content, timestamp), and upon successful sign-up the client sends this array to the backend Profile Agent which appends it to the new user's conversation history under their newly created user ID."
+      }
+    ]
+  },
+  "designReadinessRubric": {
+    "ready": false,
+    "findingCount": 10,
+    "findings": [
+      {
+        "issue": "AC8 states the warning banner appears when \"10 minutes of inactivity time remaining\" but never defines the total session duration that makes \"10 minutes remaining\" calculable — AC23 defines 60-minute total inactivity timeout, so the banner trigger should be explicitly stated as \"when 50 minutes of continuous inactivity have elapsed (i.e., 10 minutes remain of the 60-minute session)\" rather than leaving the trigger threshold implicit.",
+        "recommendation": "Add explicit language to AC8 stating the banner triggers at 50 minutes of continuous inactivity (10 minutes before the 60-minute session expiry defined in AC23)."
+      },
+      {
+        "issue": "AC8 describes a \"Sign in now\" CTA button inside the warning banner but does not specify what action tapping it triggers — it is unclear whether it opens the Auth Sheet, navigates to a separate auth page, or something else.",
+        "recommendation": "Specify that tapping \"Sign in now\" in the warning banner opens the Auth Sheet overlay as defined in AC25."
+      },
+      {
+        "issue": "AC10 describes the in-conversation nudge as \"a conversational system message with a clear sign-up or sign-in call-to-action\" but does not specify whether the CTA is a tappable button, a hyperlink, or plain text, nor what action it triggers when tapped.",
+        "recommendation": "Specify that the CTA in the in-conversation nudge is a tappable button that opens the Auth Sheet overlay as defined in AC25."
+      },
+      {
+        "issue": "AC15 states that after session expiry \"an inline error message appears at the top of the chat with a 'Sign in' call-to-action\" but does not specify whether this inline error is dismissible or persistent, nor how long it remains visible.",
+        "recommendation": "Specify that the inline error is non-dismissible and persists until the user taps \"Sign in\" (opening the Auth Sheet) or the page is refreshed."
+      },
+      {
+        "issue": "AC16 describes an inline error message when the AI is unavailable but does not specify whether this error is dismissible, how long it persists before auto-dismissing, or its exact placement relative to the message thread and input bar.",
+        "recommendation": "Specify that the AI-unavailable inline error is non-dismissible, persists until the user sends a new message (which constitutes the retry), and renders as a full-width banner pinned between the conversation thread and the message input bar."
+      },
+      {
+        "issue": "AC22 describes a \"dismissible retry affordance\" for auth state resolution failure but does not specify the modality, placement, or exact copy/format of this affordance.",
+        "recommendation": "Specify that the retry affordance renders as a full-width inline banner at the top of the chat interface displaying \"Could not verify your sign-in status. [Retry]\" where \"Retry\" is a tappable text button, and the banner is dismissed by tapping an explicit ✕ icon on its right edge."
+      },
+      {
+        "issue": "AC27 states that when an auth token expires mid-session \"attempting to send a message triggers an inline error\" but does not specify the modality, dismissibility, persistence, or copy format of this inline error.",
+        "recommendation": "Specify that the inline error renders as a full-width banner at the top of the chat interface displaying \"Your session has expired. Sign in to continue.\" with a \"Sign in\" tappable button that opens the Auth Sheet, and the banner is non-dismissible and persists until the user signs in."
+      },
+      {
+        "issue": "AC29 states a \"dismissible inline error message appears at the top of the Auth Sheet\" on SSO failure but does not specify how long it persists before auto-dismissing or whether it requires explicit dismissal.",
+        "recommendation": "Specify that the SSO failure inline error persists until the user taps the \"Retry\" button or taps the dismiss (✕) icon, and does not auto-dismiss on a timer."
+      },
+      {
+        "issue": "AC21 states \"conversation history becomes visible after valid token receipt\" during auth resolution but does not specify the loading treatment the user sees during the interval between token receipt and conversation history render.",
+        "recommendation": "Specify that during this interval the message thread displays a skeleton screen (placeholder message bubbles) that is replaced with the actual conversation history via an instant swap with no animation."
+      },
+      {
+        "issue": "AC13 states the user is \"taken directly to the main chat home screen\" upon sign-in from a warning CTA but does not specify what the user sees during the transition while conversation carry-over is in progress.",
+        "recommendation": "Specify that during conversation carry-over the message thread displays a skeleton screen of placeholder message bubbles, replaced instantly with the carried-over thread once the operation resolves."
+      }
+    ]
+  },
+  "adversarialDesigner": {
+    "findingCount": 11,
+    "findings": [
+      {
+        "issue": "When the inactivity warning banner appears (AC8) and the user taps \"Sign in now,\" does the Auth Sheet open immediately, or does the banner remain visible behind/beneath the Auth Sheet while it is open?",
+        "recommendation": "PM must decide whether the warning banner persists visually while the Auth Sheet is open or is suppressed/hidden until the Auth Sheet is dismissed"
+      },
+      {
+        "issue": "When the navigation-away modal (AC9) is triggered and the user taps \"Sign in,\" does the Auth Sheet open on top of the modal, does the modal close first and then the Auth Sheet opens, or does signing in inline within the modal complete the flow?",
+        "recommendation": "PM must decide the sequencing and layering of the navigation modal and Auth Sheet"
+      },
+      {
+        "issue": "AC10 states the in-conversation nudge fires after the final streaming token of the first complete AI response — if the first AI response fails (error state), does the nudge still fire on the next successful response, or does it fire exactly once on the first successful response regardless of prior failures?",
+        "recommendation": "PM must decide whether a failed first response counts as the trigger condition or whether only a successful streamed response counts"
+      },
+      {
+        "issue": "AC13 states system warning messages and the in-conversation nudge are excluded from the carried-over conversation thread — does this mean those messages are never visible after sign-in, or are they visible during the logged-out session but stripped before carry-over?",
+        "recommendation": "PM must decide whether system/nudge messages disappear immediately upon sign-in or remain visible until navigation away"
+      },
+      {
+        "issue": "AC15 states the session-expired inline error appears at the top of the chat with a \"Sign in\" CTA, and says the user can dismiss the error — is this inline error dismissible by the user, and if so, what is the dismiss affordance (X button, swipe, tap away)?",
+        "recommendation": "PM must decide whether the session-expired inline error is dismissible and what action dismisses it"
+      },
+      {
+        "issue": "AC22 specifies a dismissible retry affordance for auth state resolution failure — after the user dismisses it, if they later want to retry, how do they surface the affordance again given it has been dismissed?",
+        "recommendation": "PM must decide whether dismissed retry affordance reappears on user action, remains accessible via a persistent but minimal control, or requires a page reload"
+      },
+      {
+        "issue": "AC27 specifies that when an auth token expires mid-session the chat becomes read-only and message sends trigger an inline error — is this inline error the same component/pattern as the session-expired error in AC15, or a distinct message, and is it also dismissible?",
+        "recommendation": "PM must decide whether mid-session token expiry and logged-out session expiry share the same error UI pattern and dismissibility behavior"
+      },
+      {
+        "issue": "AC25 specifies the Auth Sheet is dismissible — is there a defined maximum time or condition under which the Auth Sheet auto-closes, or does it remain open indefinitely until the user explicitly dismisses it or completes SSO?",
+        "recommendation": "PM must decide whether the Auth Sheet has any auto-dismiss or timeout behavior"
+      },
+      {
+        "issue": "AC8 states the inactivity warning banner clears when the user performs an action that resets the inactivity timer — if the user is actively typing in the prompt bar (which resets the timer per AC23) while the 10-minute threshold is crossed, does the banner appear at all, or does the act of typing prevent it from appearing in the first place?",
+        "recommendation": "PM must decide whether keystroke-based timer resets suppress the banner appearance or only clear it after it has appeared"
+      },
+      {
+        "issue": "AC21 states that user drafts in the prompt bar are preserved across the auth state transition — does this also apply to drafts entered during the logged-out session when sign-in is completed via a warning CTA or the in-conversation nudge CTA, or only during the background auth resolution window on initial load?",
+        "recommendation": "PM must decide the scope of draft preservation: initial-load auth resolution only, or all sign-in paths"
+      },
+      {
+        "issue": "The spec defines session expiry as 60 minutes of inactivity (AC23) and the warning banner triggers at 10 minutes remaining — this implies the banner appears at 50 minutes of inactivity; PM must confirm this arithmetic is correct and intentional, or provide the explicit inactivity elapsed value at which the banner should appear",
+        "recommendation": "PM must confirm the banner triggers at 50 minutes of inactivity (10 minutes before the 60-minute expiry) or specify the correct threshold"
+      }
+    ]
+  }
+}

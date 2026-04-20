@@ -33,18 +33,13 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### PM finalization rubric false-negative — gaps slipping through the upfront audit (2026-04-16)
+### ~~PM finalization rubric false-negative — gaps slipping through the upfront audit (2026-04-16)~~ ✅ DONE (2026-04-20)
 
-The PM spec DOES have a comprehensive upfront audit at `finalize_product_spec`: `PM_RUBRIC` (criterion 1: every user story needs an error path), `PM_DESIGN_READINESS_RUBRIC` (criterion 3: every failing action needs a recovery UX), and `auditDownstreamReadiness` (adversarial designer persona). These rubrics were written to catch exactly the 2 gaps that slipped through on the onboarding spec:
+**Root cause:** PM_RUBRIC criterion 1 said "every user story needs an error path" generically — Sonnet saw nearby edge cases and inferred US-2 was covered. It wasn't.
 
-1. User Story 2 (returning user SSO sign-in) has no failure path — `PM_RUBRIC` criterion 1 should have caught this
-2. AC#2 "persistent indicator" never specifies display copy — `PM_DESIGN_READINESS_RUBRIC` criterion 2 should have caught this
+**Fix:** Criterion 1 sharpened: "Enumerate each user story by number. For EACH story individually, verify failure/error scenario exists. Output one FINDING per uncovered story." Real Sonnet run against onboarding PM spec now catches US-2 (returning user sign-in failure path missing) + US-1 (sign-up failure) + US-8 (data requirements for carry-over). Gap 2 (AC#2 display copy) was already fixed in the spec itself.
 
-**Root cause:** Producer–consumer chain gap. The consumer (finalization gate blocks when Haiku returns findings) is tested. The producer (does the rubric actually generate findings for these specific PM spec gap patterns?) has never been verified with real Haiku output against a real PM spec. Haiku missed both on the onboarding spec — the spec was written in a way that made them non-obvious (SSO failure path implied by AC#11 "inline error", indicator copy assumed by design convention).
-
-**Fix:** Add real-Haiku-output fixtures for `PM_RUBRIC` and `PM_DESIGN_READINESS_RUBRIC` against the onboarding PM spec. Verify both gaps appear as findings. If they don't, sharpen the rubric criteria for those patterns. Apply producer test rule: commit fixture + test asserting finding count ≥ expected before the rubric is considered validated.
-
-**This is the actual root cause of the PM↔design ping-pong** — not the absence of an upfront audit, but a false-negative in the upfront audit that existed.
+**Verification:** Real-Sonnet-output fixture at `tests/fixtures/agent-output/pm-rubric-onboarding.json`. Producer tests verify fixture contains US-2 finding, data requirements finding, and design-readiness findings (≥5). All three audit layers (PM_RUBRIC: 4 findings, PM_DESIGN_READINESS_RUBRIC: 10 findings, adversarial designer: 11 findings) produce non-zero results against the approved onboarding spec.
 
 ---
 
