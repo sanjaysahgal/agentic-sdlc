@@ -21,6 +21,8 @@ import { classifyFixIntent } from "../../../runtime/fix-intent-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
 import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
 import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
+import { handlePmTool, handleArchitectTool } from "../../../runtime/tool-handlers"
+import type { ToolHandlerContext, PmToolDeps, ArchitectToolDeps } from "../../../runtime/tool-handlers"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -884,114 +886,30 @@ async function runPmAgent(params: {
     userMessage: enrichedUserMessagePm,
     userImages,
     tools: readOnly ? undefined : PM_TOOLS,
-    toolHandler: readOnly ? undefined : async (name, input) => {
-      if (name === "save_product_spec_draft") {
-        const rawContent = input.content as string
-        // Structural gate: strip design-scope sections and cross-domain open questions
-        // before any audit or save. PM spec must contain only PM-scope content.
-        const sanitized = sanitizePmSpecDraft(rawContent)
-        const content = sanitized.content
-        await update("_Auditing spec against product vision and architecture..._")
-        const audit = await auditSpecDraft({
-          draft: content,
-          productVision: context.productVision,
-          systemArchitecture: context.systemArchitecture,
-          featureName,
-        })
-        if (audit.status === "conflict") {
-          return { error: `Conflict detected — spec not saved: ${audit.message}` }
-        }
-        await update("_Saving draft to GitHub..._")
-        await saveDraftSpec({ featureName, filePath: pmFilePath, content })
-        const { githubOwner, githubRepo } = loadWorkspaceConfig()
-        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${pmFilePath}`
-        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
-        const sanitizeNote = sanitized.wasModified
-          ? { strippedSections: sanitized.strippedSections, strippedOpenQuestions: sanitized.strippedOpenQuestions }
-          : undefined
-        return { result: { url, audit: auditOut, ...(sanitizeNote ? { sanitized: sanitizeNote } : {}) } }
-      }
-      if (name === "apply_product_spec_patch") {
-        const patch = input.patch as string
-        const branchName = `spec/${featureName}-product`
-        const existingDraft = await readFile(pmFilePath, branchName)
-        const rawMerged = applySpecPatch(existingDraft ?? "", patch)
-        // Structural gate: strip design-scope sections and cross-domain open questions
-        const sanitized = sanitizePmSpecDraft(rawMerged)
-        const mergedDraft = sanitized.content
-        await update("_Auditing patch against product vision and architecture..._")
-        const audit = await auditSpecDraft({
-          draft: mergedDraft,
-          productVision: context.productVision,
-          systemArchitecture: context.systemArchitecture,
-          featureName,
-        })
-        if (audit.status === "conflict") {
-          return { error: `Conflict detected — patch not saved: ${audit.message}` }
-        }
-        await update("_Saving updated draft to GitHub..._")
-        await saveDraftSpec({ featureName, filePath: pmFilePath, content: mergedDraft })
-        const { githubOwner, githubRepo } = loadWorkspaceConfig()
-        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${pmFilePath}`
-        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
-        return { result: { url, audit: auditOut } }
-      }
-      if (name === "run_phase_completion_audit") {
-        await update("_Running phase completion audit..._")
-        const draft = await readFile(pmFilePath, `spec/${featureName}-product`)
-        if (!draft) {
-          return { result: { ready: false, findings: [{ issue: "No spec draft found", recommendation: "Save a draft first using save_product_spec_draft before running the audit." }] } }
-        }
-        const result = await auditPhaseCompletion({
-          specContent: draft,
-          rubric: PM_RUBRIC,
-          featureName,
-          productVision: context.productVision,
-          systemArchitecture: context.systemArchitecture,
-        })
-        return { result }
-      }
-      if (name === "finalize_product_spec") {
-        const existingDraft = await readFile(pmFilePath, `spec/${featureName}-product`)
-        if (!existingDraft) {
-          return { error: "No draft saved yet — save a draft first before finalizing." }
-        }
-        const allOpenQuestions = extractAllOpenQuestions(existingDraft)
-        if (allOpenQuestions.length > 0) {
-          return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
-        }
-        const designNotes = extractHandoffSection(existingDraft, "## Design Notes")
-        if (designNotes.trim()) {
-          return { error: `Approval blocked — ## Design Notes must be empty before finalization. Address or move each design note before submitting the final spec.` }
-        }
-        const [designReadiness, adversarialReadiness] = await Promise.all([
-          auditPhaseCompletion({ specContent: existingDraft, rubric: PM_DESIGN_READINESS_RUBRIC, featureName }),
-          auditDownstreamReadiness({ specContent: existingDraft, downstreamRole: "designer", featureName }),
-        ])
-        const allReadinessFindings = [...designReadiness.findings, ...adversarialReadiness.findings]
-        if (allReadinessFindings.length > 0) {
-          const findingLines = allReadinessFindings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-          return { error: `Approval blocked — spec is not design-ready. A designer receiving this spec would need to invent the following answers:\n${findingLines}\n\nResolve each before finalizing.` }
-        }
-        let finalContent = existingDraft
-        const decisionAudit = await auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) })
-        if (decisionAudit.status === "corrections") {
-          const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
-          finalContent = corrected
-        }
-        await update("_Saving final product spec..._")
-        await saveApprovedSpec({ featureName, filePath: pmFilePath, content: finalContent })
-        const { githubOwner, githubRepo } = loadWorkspaceConfig()
-        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${pmFilePath}`
-        return { result: { url, nextPhase: "design" } }
-      }
-      if (name === "offer_architect_escalation") {
-        // Tool call captured in toolCallsOut — the caller (auto-close path) processes it after the PM run.
-        // Design can still continue; the architecture gap is surfaced before engineering begins.
-        return { result: "Architecture gap registered. If the user confirms, the architect will be brought in to resolve it before engineering begins." }
-      }
-      return { error: `Unknown tool: ${name}` }
-    },
+    toolHandler: readOnly ? undefined : (name, input) => handlePmTool(name, input, {
+      featureName,
+      specFilePath: pmFilePath,
+      specBranchName: `spec/${featureName}-product`,
+      context,
+      update,
+      readFile: (path, branch) => readFile(path, branch),
+      getHistory: () => getHistory(featureName),
+      loadWorkspaceConfig,
+    }, {
+      sanitizePmSpecDraft,
+      auditSpecDraft,
+      saveDraftSpec,
+      saveApprovedSpec,
+      applySpecPatch,
+      extractAllOpenQuestions,
+      extractHandoffSection,
+      auditPhaseCompletion,
+      auditDownstreamReadiness,
+      auditSpecDecisions,
+      applyDecisionCorrections,
+      PM_RUBRIC,
+      PM_DESIGN_READINESS_RUBRIC,
+    }),
     toolCallsOut: toolCallsOutPm,
   })
 
@@ -2669,117 +2587,30 @@ async function runArchitectAgent(params: {
     userImages,
     historyLimit: ARCH_HISTORY_LIMIT,
     tools: readOnly ? undefined : ARCHITECT_TOOLS,
-    toolHandler: readOnly ? undefined : async (name, input) => {
-      if (name === "save_engineering_spec_draft") {
-        const content = input.content as string
-        await update("_Auditing spec against product vision and architecture..._")
-        const audit = await auditSpecDraft({
-          draft: content,
-          productVision: context.productVision,
-          systemArchitecture: context.systemArchitecture,
-          featureName,
-        })
-        if (audit.status === "conflict") {
-          return { error: `Conflict detected — spec not saved: ${audit.message}` }
-        }
-        await update("_Saving draft to GitHub..._")
-        await saveDraftEngineeringSpec({ featureName, filePath: archFilePath, content })
-        const { githubOwner, githubRepo } = loadWorkspaceConfig()
-        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/${archBranchName}/${archFilePath}`
-        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
-        return { result: { url, audit: auditOut } }
-      }
-      if (name === "apply_engineering_spec_patch") {
-        const patch = input.patch as string
-        const existingDraft = await readFile(archFilePath, archBranchName)
-        const mergedDraft = applySpecPatch(existingDraft ?? "", patch)
-        await update("_Auditing patch against product vision and architecture..._")
-        const audit = await auditSpecDraft({
-          draft: mergedDraft,
-          productVision: context.productVision,
-          systemArchitecture: context.systemArchitecture,
-          featureName,
-        })
-        if (audit.status === "conflict") {
-          return { error: `Conflict detected — patch not saved: ${audit.message}` }
-        }
-        await update("_Saving updated draft to GitHub..._")
-        await saveDraftEngineeringSpec({ featureName, filePath: archFilePath, content: mergedDraft })
-        const { githubOwner, githubRepo } = loadWorkspaceConfig()
-        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/${archBranchName}/${archFilePath}`
-        const auditOut = audit.status === "gap" ? { status: audit.status, message: audit.message } : { status: "ok" }
-        return { result: { url, audit: auditOut } }
-      }
-      if (name === "read_approved_specs") {
-        const featureNames = input.featureNames as string[] | undefined
-        if (!featureNames || featureNames.length === 0) {
-          return { result: { specs: {}, note: "Approved specs are already loaded in your system prompt context." } }
-        }
-        const { paths } = loadWorkspaceConfig()
-        const specs: Record<string, string> = {}
-        await Promise.all(featureNames.map(async (fn) => {
-          const path = `${paths.featuresRoot}/${fn}/${fn}.engineering.md`
-          const content = await readFile(path, "main").catch(() => null)
-          if (content) specs[fn] = content
-        }))
-        return { result: { specs } }
-      }
-      if (name === "finalize_engineering_spec") {
-        const existingDraft = await readFile(archFilePath, archBranchName)
-        if (!existingDraft) {
-          return { error: "No draft saved yet — save a draft first before finalizing." }
-        }
-        const allOpenQuestions = extractAllOpenQuestions(existingDraft)
-        if (allOpenQuestions.length > 0) {
-          return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
-        }
-        // Structural gate: all Design Assumptions To Validate must be confirmed or overridden before engineering is approved
-        const unconfirmedAssumptions = extractHandoffSection(existingDraft, "## Design Assumptions To Validate")
-        if (unconfirmedAssumptions.trim()) {
-          return { error: `Approval blocked — ## Design Assumptions To Validate contains unconfirmed items. Confirm each assumption or call offer_upstream_revision(design) to reject it before finalizing:\n${unconfirmedAssumptions}` }
-        }
-        let finalContent = existingDraft
-        const [decisionAudit, engineerReadiness] = await Promise.all([
-          auditSpecDecisions({ specContent: existingDraft, history: getHistory(featureName) }),
-          auditDownstreamReadiness({ specContent: existingDraft, downstreamRole: "engineer", featureName }),
-        ])
-        if (decisionAudit.status === "corrections") {
-          const { corrected } = applyDecisionCorrections(existingDraft, decisionAudit.corrections)
-          finalContent = corrected
-        }
-        if (engineerReadiness.findings.length > 0) {
-          const findingLines = engineerReadiness.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-          return { error: `Approval blocked — spec is not engineer-ready. An engineer receiving this spec would need to invent the following answers:\n${findingLines}\n\nResolve each before finalizing.` }
-        }
-        await update("_Saving final engineering spec..._")
-        await saveApprovedEngineeringSpec({ featureName, filePath: archFilePath, content: finalContent })
-        // Clear ## Design Assumptions from design spec on main (non-blocking)
-        const designSpecFilePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
-        clearHandoffSection({
-          featureName,
-          filePath: designSpecFilePath,
-          sectionHeading: "## Design Assumptions",
-        }).catch(err => console.log(`[ENG-FINALIZE] clearHandoffSection failed (non-blocking): ${err}`))
-        const { githubOwner, githubRepo } = loadWorkspaceConfig()
-        const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${archFilePath}`
-        return { result: { url, nextPhase: "build" } }
-      }
-      if (name === "offer_upstream_revision") {
-        const target = input.targetAgent as "pm" | "design"
-        const question = input.question as string
-        console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
-        setPendingEscalation(featureName, {
-          targetAgent: target,
-          question,
-          designContext: "",
-          engineeringContext: context.currentDraft ?? undefined,
-        })
-        return {
-          result: `Upstream revision request stored (target: ${target}). The user will be prompted to confirm. If they say yes, the ${target === "design" ? "Designer" : "PM"} will be notified with your constraint.`,
-        }
-      }
-      return { error: `Unknown tool: ${name}` }
-    },
+    toolHandler: readOnly ? undefined : (name, input) => handleArchitectTool(name, input, {
+      featureName,
+      specFilePath: archFilePath,
+      specBranchName: archBranchName,
+      context,
+      update,
+      readFile: (path, branch) => readFile(path, branch),
+      getHistory: () => getHistory(featureName),
+      loadWorkspaceConfig,
+    }, {
+      auditSpecDraft,
+      saveDraftEngineeringSpec,
+      saveApprovedEngineeringSpec,
+      applySpecPatch,
+      extractAllOpenQuestions,
+      extractHandoffSection,
+      auditSpecDecisions,
+      applyDecisionCorrections,
+      auditDownstreamReadiness,
+      auditSpecStructure,
+      clearHandoffSection,
+      setPendingEscalation,
+      readFile: (path, branch) => readFile(path, branch),
+    }),
     toolCallsOut: toolCallsOutArch,
   })
 

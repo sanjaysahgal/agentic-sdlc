@@ -7655,6 +7655,11 @@ describe("Scenario N67 — Agent addressing overrides phase-based routing", () =
 // No new E2E scenario needed — the fix-all flow (N54, N58, N62) already tests
 // the platform path once parseFixAllIntent returns { isFixAll: true, selectedIndices }.
 
+// Note: PM and architect tool handlers were extracted to runtime/tool-handlers.ts
+// (handlePmTool, handleArchitectTool). E2E scenarios N71-N78 exercise these through
+// the message.ts wiring. Unit tests in tests/unit/tool-handlers.test.ts cover all
+// individual handler branches without E2E routing ceremony.
+
 // ────────────────────────────────────────────────────────────────────────────────
 // Scenario N71 — PM run_phase_completion_audit tool handler
 // ────────────────────────────────────────────────────────────────────────────────

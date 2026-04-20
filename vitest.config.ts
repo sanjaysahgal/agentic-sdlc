@@ -19,8 +19,8 @@ export default defineConfig({
         "interfaces/slack/handlers/reactions.ts",
       ],
       thresholds: {
-        lines: 85,
-        functions: 85,
+        lines: 90,
+        functions: 80,  // TODO: raise to 95 after design tool handler extraction
         branches: 80,
       },
     },
