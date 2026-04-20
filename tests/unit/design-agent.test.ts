@@ -720,4 +720,10 @@ describe("buildDesignSystemPrompt — domain boundary", () => {
     expect(prompt).toContain("offer_architect_escalation")
     expect(prompt).toContain("Design Assumptions")
   })
+
+  it("includes newcomer orientation instruction — orient before gap dump", () => {
+    const prompt = buildDesignSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Read the room first")
+    expect(prompt).toContain("Do NOT open with a gap dump")
+  })
 })

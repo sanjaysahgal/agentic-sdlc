@@ -242,4 +242,10 @@ describe("buildArchitectSystemPrompt — domain boundary", () => {
     const prompt = buildArchitectSystemPrompt(draftContext, "onboarding")
     expect(prompt.toLowerCase()).toMatch(/data model|api contracts|you own.*technical|technical.*yours/)
   })
+
+  it("includes newcomer orientation instruction — orient before gap dump", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Read the room first")
+    expect(prompt).toContain("Do NOT open with a gap dump")
+  })
 })

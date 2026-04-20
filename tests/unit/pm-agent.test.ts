@@ -202,4 +202,10 @@ describe("buildPmSystemPrompt — domain boundary", () => {
     expect(prompt).toContain("inline error")
     expect(prompt).toContain("designer writes the words")
   })
+
+  it("includes newcomer orientation instruction — orient before probing", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding")
+    expect(prompt).toContain("Read the room first")
+    expect(prompt).toContain("Do NOT open with probing questions")
+  })
 })
