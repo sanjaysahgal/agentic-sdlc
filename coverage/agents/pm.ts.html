@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>0/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">83.33% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>10/12</span>
+                <span class='fraction'>0/12</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/2</span>
+                <span class='fraction'>0/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>0/5</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -435,7 +435,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -503,9 +503,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">61x</span>
-<span class="cline-any cline-yes">61x</span>
-<span class="cline-any cline-yes">61x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -791,7 +791,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">42x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -802,7 +802,7 @@ import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
 import { splitSystemPrompt } from "../runtime/claude-client"
 &nbsp;
-export const PM_TOOLS: Anthropic.Tool[] = [
+export const PM_TOOLS: Anthropic.Tool[] = <span class="cstat-no" title="statement not covered" >[</span>
   {
     name: "save_product_spec_draft",
     description: "Save the complete product spec markdown to GitHub as a draft. Use this for the FIRST save only — creates the file. Returns the spec URL and any audit findings (conflicts or gaps against product vision/architecture).",
@@ -869,10 +869,10 @@ export const PM_TOOLS: Anthropic.Tool[] = [
 // The pm agent's job in Moment 1: shape the feature brief into a
 // structured product spec through conversation, then create it when approved.
 &nbsp;
-export function buildPmSystemPrompt(context: AgentContext, featureName: string, readOnly = false, approvedSpecContext = false): string {
-  const { productName, mainChannel, githubOwner, githubRepo, paths } = loadWorkspaceConfig()
-  const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${paths.featuresRoot}/${featureName}/${featureName}.product.md`
-  return `You are the pm agent for ${productName} — an AI product manager whose job is to shape feature ideas into structured product specs, while simultaneously maintaining coherence across the entire product.
+export function <span class="fstat-no" title="function not covered" >buildPmSystemPrompt(c</span>ontext: AgentContext, featureName: string, readOnly = <span class="branch-0 cbranch-no" title="branch not covered" >false, a</span>pprovedSpecContext = <span class="branch-0 cbranch-no" title="branch not covered" >false): string {</span>
+  const { productName, mainChannel, githubOwner, githubRepo, <span class="cstat-no" title="statement not covered" >paths } = loadWorkspaceConfig()</span>
+  const specUrl = <span class="cstat-no" title="statement not covered" >`https://github.com/${githubOwner}/${githubRepo}/blob/spec/${featureName}-product/${paths.featuresRoot}/${featureName}/${featureName}.product.md`</span>
+<span class="cstat-no" title="statement not covered" >  return `You are the pm agent for ${productName} — an AI product manager whose job is to shape feature ideas into structured product specs, while simultaneously maintaining coherence across the entire product.</span>
 &nbsp;
 ## Who you are
 You are a product leader who has operated at the highest level of the discipline — leading product organizations of 50+ PMs, setting company-wide product vision, making portfolio-level tradeoffs that determined which bets the company took and which it walked away from. You have launched multiple products from 0 to 1 and scaled them to 100M+ users. You have made decisions in the boardroom and in the weeds. You have worked at and advised companies like Stripe, Airbnb, Google, and Figma — you know what "world-class" looks like and you are not afraid to say when something falls short.
@@ -1037,7 +1037,7 @@ At the end of every response where the current draft has one or more [blocking: 
 &nbsp;
 Do this every time, even if you just answered a different question. If there are no blocking questions, do not append anything.
 &nbsp;
-${approvedSpecContext ? <span class="branch-0 cbranch-no" title="branch not covered" >`## APPROVED SPEC CONTEXT</span>
+${approvedSpecContext ? `## APPROVED SPEC CONTEXT
 The product spec for this feature is currently approved. Rules:
 &nbsp;
 **Spec conflicts:** If the PM proposes a change that conflicts with the approved spec, flag it and ask if they want to revise. If yes, reshape the spec and save a new draft — approval process starts again.
@@ -1060,7 +1060,7 @@ If the PM asks about the next phase: design is next. The design specialist is no
 &nbsp;
 **Channel scope:** This channel (#feature-${featureName}) is for the ${featureName} feature only. If someone mentions starting a new feature or asks about a different feature, redirect them: new features each get their own #feature-&lt;name&gt; channel. Do not start shaping a new feature here.` : ""}
 &nbsp;
-${readOnly ? <span class="branch-0 cbranch-no" title="branch not covered" >`## READ-ONLY MODE — CRITICAL</span>
+${readOnly ? `## READ-ONLY MODE — CRITICAL
 The spec is approved and frozen. You are answering questions about it, not editing it.
 - Report open questions EXACTLY as they appear in the spec — do not change blocking flags, do not re-tag, do not re-interpret
 - Do not output DRAFT_SPEC_START blocks or INTENT: CREATE_SPEC under any circumstances
@@ -1152,13 +1152,13 @@ Never present options without numbering them. The human's answer ("2" or "Option
 // Block 1 (cached): stable persona, workflow, tools, spec format — never changes between turns.
 // Block 2 (uncached): currentDraft + approvedFeatureSpecs — changes on every spec save.
 // Reduces cache-write tokens by ~80% vs caching the entire prompt as one block.
-export function buildPmSystemBlocks(
+export function <span class="fstat-no" title="function not covered" >buildPmSystemBlocks(</span>
   context: AgentContext,
   featureName: string,
-  readOnly = false,
-  approvedSpecContext = false,
+  readOnly = <span class="branch-0 cbranch-no" title="branch not covered" >false,</span>
+  approvedSpecContext = <span class="branch-0 cbranch-no" title="branch not covered" >false,</span>
 ): Anthropic.TextBlockParam[] {
-  return splitSystemPrompt(
+<span class="cstat-no" title="statement not covered" >  return splitSystemPrompt(</span>
     buildPmSystemPrompt(context, featureName, readOnly, approvedSpecContext),
     "\n## Current draft spec",
   )
@@ -1171,7 +1171,7 @@ export function buildPmSystemBlocks(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-20T05:19:07.861Z
+                at 2026-04-20T15:27:14.306Z
             </div>
         <script src="../prettify.js"></script>
         <script>

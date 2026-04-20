@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>7/7</span>
+                <span class='fraction'>0/7</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>3/4</span>
+                <span class='fraction'>0/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>1/1</span>
+                <span class='fraction'>0/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>7/7</span>
+                <span class='fraction'>0/7</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -110,11 +110,9 @@
 <a name='L45'></a><a href='#L45'>45</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -139,24 +137,26 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import Anthropic from "@anthropic-ai/sdk"
 &nbsp;
 // 30s timeout — Haiku classifier; no retries: a stall is a failure.
-const client = new Anthropic({ maxRetries: 0, timeout: 30_000 })
+const client = <span class="cstat-no" title="statement not covered" >new Anthropic({ maxRetries: 0, timeout: 30_000 })</span>
 &nbsp;
-const SYSTEM_PROMPT = `You are a design escalation scope classifier. A UI designer is asking an architect a question before escalating it.
+const SYSTEM_PROMPT = <span class="cstat-no" title="statement not covered" >`You are a design escalation scope classifier. A UI designer is asking an architect a question before escalating it.</span>
 &nbsp;
 Your job: determine whether this question is a true design-blocking architectural unknown, or just an implementation detail the designer should state as a design assumption and continue.
 &nbsp;
@@ -182,18 +182,18 @@ The clearest signal: if the question asks about storage mechanism, encryption, d
 &nbsp;
 Respond with exactly one word: ARCH-GAP or DESIGN-ASSUMPTION`
 &nbsp;
-export async function classifyForArchGap(question: string): Promise&lt;"ARCH-GAP" | "DESIGN-ASSUMPTION"&gt; {
-  const response = await client.messages.create({
+export async function <span class="fstat-no" title="function not covered" >classifyForArchGap(q</span>uestion: string): Promise&lt;"ARCH-GAP" | "DESIGN-ASSUMPTION"&gt; {
+  const response = <span class="cstat-no" title="statement not covered" >await client.messages.create({</span>
     model: "claude-haiku-4-5-20251001",
     max_tokens: 32,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: question }],
   })
 &nbsp;
-  const text = response.content[0].type === "text" ? response.content[0].text.trim() : <span class="branch-1 cbranch-no" title="branch not covered" >"ARCH-GAP"</span>
-  const result: "ARCH-GAP" | "DESIGN-ASSUMPTION" = text.startsWith("DESIGN-ASSUMPTION") ? "DESIGN-ASSUMPTION" : "ARCH-GAP"
-  console.log(`[CLASSIFIER] classifyForArchGap: "${question.slice(0, 80)}…" → ${result}`)
-  return result
+  const text = <span class="cstat-no" title="statement not covered" >response.content[0].type === "text" ? response.content[0].text.trim() : "ARCH-GAP"</span>
+  const result: "ARCH-GAP" | "DESIGN-ASSUMPTION" = <span class="cstat-no" title="statement not covered" >text.startsWith("DESIGN-ASSUMPTION") ? "DESIGN-ASSUMPTION" : "ARCH-GAP"</span>
+<span class="cstat-no" title="statement not covered" >  console.log(`[CLASSIFIER] classifyForArchGap: "${question.slice(0, 80)}…" → ${result}`)</span>
+<span class="cstat-no" title="statement not covered" >  return result</span>
 }
 &nbsp;</pre></td></tr></table></pre>
 
@@ -202,7 +202,7 @@ export async function classifyForArchGap(question: string): Promise&lt;"ARCH-GAP
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-20T05:19:07.861Z
+                at 2026-04-20T15:27:14.306Z
             </div>
         <script src="../prettify.js"></script>
         <script>

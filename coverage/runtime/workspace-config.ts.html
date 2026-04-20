@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>7/7</span>
+                <span class='fraction'>0/7</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>29/29</span>
+                <span class='fraction'>0/29</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/2</span>
+                <span class='fraction'>0/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>7/7</span>
+                <span class='fraction'>0/7</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -157,25 +157,25 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">686x</span>
-<span class="cline-any cline-yes">686x</span>
-<span class="cline-any cline-yes">686x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">686x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">683x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1362x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -221,26 +221,26 @@ export type WorkspaceConfig = {
   }
 }
 &nbsp;
-export function loadWorkspaceConfig(): WorkspaceConfig {
-  const productName = process.env.PRODUCT_NAME
-  const githubOwner = process.env.GITHUB_OWNER
-  const githubRepo = process.env.GITHUB_REPO
+export function <span class="fstat-no" title="function not covered" >loadWorkspaceConfig(): WorkspaceConfig {</span>
+  const productName = <span class="cstat-no" title="statement not covered" >process.env.PRODUCT_NAME</span>
+  const githubOwner = <span class="cstat-no" title="statement not covered" >process.env.GITHUB_OWNER</span>
+  const githubRepo = <span class="cstat-no" title="statement not covered" >process.env.GITHUB_REPO</span>
 &nbsp;
-  if (!productName || !githubOwner || !githubRepo) {
-    throw new Error(
+<span class="cstat-no" title="statement not covered" >  if (!productName || !githubOwner || !githubRepo) {</span>
+<span class="cstat-no" title="statement not covered" >    throw new Error(</span>
       "Missing required env vars: PRODUCT_NAME, GITHUB_OWNER, GITHUB_REPO. " +
       "Copy .env.example to .env and fill in the values."
     )
   }
 &nbsp;
-  return {
+<span class="cstat-no" title="statement not covered" >  return {</span>
     productName,
     githubOwner,
     githubRepo,
     mainChannel: process.env.SLACK_MAIN_CHANNEL ?? "general",
     targetFormFactors: (process.env.TARGET_FORM_FACTORS ?? "mobile,desktop")
       .split(",")
-      .map(f =&gt; f.trim())
+      .<span class="fstat-no" title="function not covered" >map(f</span> =&gt; <span class="cstat-no" title="statement not covered" >f.trim())</span>
       .filter(Boolean),
     maxAllowedSpecGrowthRatio: parseFloat(process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO ?? "1.2"),
     roles: {
@@ -265,7 +265,7 @@ export function loadWorkspaceConfig(): WorkspaceConfig {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-20T05:19:07.861Z
+                at 2026-04-20T15:27:14.306Z
             </div>
         <script src="../prettify.js"></script>
         <script>
