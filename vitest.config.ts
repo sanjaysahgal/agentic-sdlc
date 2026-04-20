@@ -20,7 +20,7 @@ export default defineConfig({
       ],
       thresholds: {
         lines: 90,
-        functions: 80,  // TODO: raise to 95 after design tool handler extraction
+        functions: 83,  // raised from 80 after PM/design/architect tool handler extraction; 95 requires further message.ts extraction
         branches: 80,
       },
     },

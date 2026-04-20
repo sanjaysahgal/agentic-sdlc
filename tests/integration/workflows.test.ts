@@ -8158,3 +8158,40 @@ describe("Scenario N70 — Platform-enforced finalization bypasses agent", () =>
     expect(text).toContain("approved and merged")
   })
 })
+
+describe("Scenario N71 — Extracted design tool handler wiring through message.ts", () => {
+  const THREAD = "workflow-n71"
+
+  beforeEach(() => { clearHistory("onboarding") })
+
+  it("save_design_spec_draft via extracted handler saves to GitHub and generates preview", async () => {
+    setConfirmedAgent("onboarding", "ux-design")
+
+    // Call sequence (0 history → no extractLockedDecisions):
+    //   [0] isOffTopicForAgent  → false
+    //   [1] isSpecStateQuery    → false
+    //   [2] runAgent (tool_use) → save_design_spec_draft
+    //       handler: auditSpecDraft skips LLM (empty productVision/architecture)
+    //       generateDesignPreview → Anthropic call for renderer (gets NONE default)
+    //   [3] runAgent (end_turn) → text response
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "t1", name: "save_design_spec_draft", input: { content: "# Design Spec\n\n## Screens\nWelcome\n\n## User Flows\nUS-1: user opens app" } }],
+      })
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Design spec saved." }] })
+
+    const client = makeClient()
+    ;(client.files.uploadV2 as ReturnType<typeof vi.fn>).mockResolvedValue({})
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "create the design spec"), client })
+
+    // Verify design spec was saved to GitHub via the extracted handler
+    const branchWrite = mockCreateOrUpdate.mock.calls.find((c: any[]) =>
+      c[0]?.path?.endsWith("onboarding.design.md")
+    )
+    expect(branchWrite).toBeDefined()
+  })
+})

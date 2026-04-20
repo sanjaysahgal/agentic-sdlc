@@ -11,6 +11,11 @@
 
 import { AgentContext } from "./context-loader"
 import { Message } from "./conversation-store"
+import type { DecisionCorrection, DecisionAuditResult } from "./spec-auditor"
+import type { DownstreamRole } from "./phase-completion-auditor"
+
+/** Slack file upload adapter — abstracts the Slack client dependency. */
+export type SlackFileUploader = (params: { channelId: string; threadTs: string; content: string; filename: string; title: string }) => Promise<void>
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Types
@@ -25,7 +30,7 @@ export type FileReader = (path: string, branch: string) => Promise<string | null
 export type DraftSaver = (params: { featureName: string; filePath: string; content: string }) => Promise<void>
 
 /** Adapter for saving approved specs to main. */
-export type ApprovedSaver = (params: { featureName: string; filePath: string; content: string }) => Promise<void>
+export type ApprovedSaver = (params: { featureName: string; filePath: string; content: string }) => Promise<unknown>
 
 /** Core context shared by all agent tool handlers. */
 export type ToolHandlerContext = {
@@ -52,9 +57,9 @@ export type PmToolDeps = {
   extractAllOpenQuestions: (content: string) => string[]
   extractHandoffSection: (content: string, heading: string) => string
   auditPhaseCompletion: (params: { specContent: string; rubric: string; featureName: string; productVision?: string; systemArchitecture?: string }) => Promise<{ ready: boolean; findings: Array<{ issue: string; recommendation: string }> }>
-  auditDownstreamReadiness: (params: { specContent: string; downstreamRole: string; featureName: string }) => Promise<{ findings: Array<{ issue: string; recommendation: string }> }>
-  auditSpecDecisions: (params: { specContent: string; history: Message[] }) => Promise<{ status: string; corrections?: Array<{ original: string; corrected: string }> }>
-  applyDecisionCorrections: (content: string, corrections: Array<{ original: string; corrected: string }>) => { corrected: string }
+  auditDownstreamReadiness: (params: { specContent: string; downstreamRole: DownstreamRole; featureName: string }) => Promise<{ findings: Array<{ issue: string; recommendation: string }> }>
+  auditSpecDecisions: (params: { specContent: string; history: Array<{ role: string; content: string }> }) => Promise<DecisionAuditResult>
+  applyDecisionCorrections: (content: string, corrections: DecisionCorrection[]) => { corrected: string }
   PM_RUBRIC: string
   PM_DESIGN_READINESS_RUBRIC: string
 }
@@ -211,9 +216,9 @@ export type ArchitectToolDeps = {
   auditSpecDecisions: PmToolDeps["auditSpecDecisions"]
   applyDecisionCorrections: PmToolDeps["applyDecisionCorrections"]
   auditDownstreamReadiness: PmToolDeps["auditDownstreamReadiness"]
-  auditSpecStructure: (content: string, specType: string) => Array<{ issue: string; recommendation: string }>
+  auditSpecStructure: (content: string, specType: "design" | "product" | "engineering") => Array<{ issue: string; recommendation: string }>
   clearHandoffSection: (params: { featureName: string; filePath: string; sectionHeading: string }) => Promise<void>
-  setPendingEscalation: (featureName: string, escalation: { targetAgent: string; question: string; designContext: string; engineeringContext?: string }) => void
+  setPendingEscalation: (featureName: string, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; engineeringContext?: string }) => void
   readFile: FileReader
 }
 
@@ -371,4 +376,419 @@ export async function handleOfferUpstreamRevision(
   return {
     result: `Upstream revision request stored (target: ${target}). The user will be prompted to confirm. If they say yes, the ${target === "design" ? "Designer" : "PM"} will be notified with your constraint.`,
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Design Tool Handler
+// ────────────────────────────────────────────────────────────────────────────────
+
+export type DesignToolDeps = {
+  auditSpecDraft: PmToolDeps["auditSpecDraft"]
+  saveDraftDesignSpec: DraftSaver
+  saveApprovedDesignSpec: ApprovedSaver
+  applySpecPatch: (existing: string, patch: string) => string
+  extractAllOpenQuestions: (content: string) => string[]
+  auditPhaseCompletion: (params: { specContent: string; rubric: string; featureName: string; productVision?: string; systemArchitecture?: string; approvedProductSpec?: string }) => Promise<{ ready: boolean; findings: Array<{ issue: string; recommendation: string }> }>
+  auditDownstreamReadiness: (params: { specContent: string; downstreamRole: DownstreamRole; featureName: string }) => Promise<{ findings: Array<{ issue: string; recommendation: string }> }>
+  auditSpecDecisions: (params: { specContent: string; history: Array<{ role: string; content: string }> }) => Promise<DecisionAuditResult>
+  applyDecisionCorrections: (content: string, corrections: DecisionCorrection[]) => { corrected: string }
+  auditSpecStructure: ArchitectToolDeps["auditSpecStructure"]
+  auditBrandTokens: (specContent: string, brandContent: string) => Array<{ token: string; specValue: string; brandValue: string }>
+  auditAnimationTokens: (specContent: string, brandContent: string) => Array<{ param: string; specValue: string; brandValue: string }>
+  extractDesignAssumptions: (content: string) => string
+  seedHandoffSection: (params: { featureName: string; targetFilePath: string; targetBranchName: string; targetSectionHeading: string; content: string }) => Promise<void>
+  classifyForPmGaps: (params: { agentResponse: string; approvedProductSpec?: string }) => Promise<{ gaps: string[]; architectItems: string[]; designItems: string[] }>
+  classifyForArchGap: (question: string) => Promise<string>
+  preseedEngineeringSpec: (params: { featureName: string; filePath: string; architectItems: string[] }) => Promise<void>
+  setPendingEscalation: (featureName: string, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; productSpec?: string }) => void
+  generateDesignPreview: (params: { specContent: string; featureName: string; brandContent?: string }) => Promise<{ html: string; warnings: string[] }>
+  saveDraftHtmlPreview: (params: { featureName: string; filePath: string; content: string }) => Promise<void>
+  filterDesignContent: (html: string) => Promise<string>
+  buildDesignRubric: (targetFormFactors: string[]) => string
+  uploadFileToSlack: SlackFileUploader
+  readFile: FileReader
+}
+
+/** Mutable state passed by reference so the caller can read mutations. */
+export type DesignToolState = {
+  patchAppliedThisTurn: boolean
+  lastGeneratedPreviewHtml: string | null
+}
+
+/** Additional design-specific context beyond ToolHandlerContext. */
+export type DesignToolCtx = ToolHandlerContext & {
+  /** Product spec content for audit cross-reference. */
+  auditProductSpec?: string
+  /** Brand content from BRAND.md. */
+  brand?: string
+  /** Target form factors from WorkspaceConfig. */
+  targetFormFactors?: string[]
+  /** Slack channel for file uploads. */
+  channelId: string
+  /** Thread timestamp for file uploads. */
+  threadTs: string
+  /** Whether fix-all mode is active. */
+  isFixAll: boolean
+}
+
+export async function handleDesignTool(
+  name: string,
+  input: Record<string, unknown>,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+  state: DesignToolState,
+): Promise<ToolResult> {
+  // During fix-all passes, block escalation tool calls
+  if (ctx.isFixAll && (name === "offer_pm_escalation" || name === "offer_architect_escalation")) {
+    console.log(`[FIX-ALL] Blocked ${name} during fix-all — deferring to post-loop action menu`)
+    return { result: `[Fix-all mode] Escalation is suspended during fix-all passes. Apply all spec patches first. Any PM or architect gaps will be surfaced in the structured action menu after fix-all completes — do not escalate during this pass.` }
+  }
+  if (name === "save_design_spec_draft") {
+    return handleSaveDesignDraft(input, ctx, deps, state)
+  }
+  if (name === "apply_design_spec_patch") {
+    return handleApplyDesignSpecPatch(input, ctx, deps, state)
+  }
+  if (name === "rewrite_design_spec") {
+    return handleRewriteDesignSpec(input, ctx, deps, state)
+  }
+  if (name === "generate_design_preview") {
+    return handleGenerateDesignPreview(ctx, deps)
+  }
+  if (name === "offer_pm_escalation") {
+    return handleOfferPmEscalation(input, ctx, deps)
+  }
+  if (name === "offer_architect_escalation") {
+    return handleOfferArchitectEscalation(input, ctx, deps)
+  }
+  if (name === "fetch_url") {
+    return handleFetchUrl(input, deps)
+  }
+  if (name === "run_phase_completion_audit") {
+    return handleDesignPhaseCompletionAudit(ctx, deps)
+  }
+  if (name === "finalize_design_spec") {
+    return handleFinalizeDesignSpec(ctx, deps)
+  }
+  return { error: `Unknown tool: ${name}` }
+}
+
+// ── Shared save logic ──────────────────────────────────────────────────────────
+
+async function saveDesignDraftInternal(
+  content: string,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+  state: DesignToolState,
+  { skipSlackUpload = false }: { skipSlackUpload?: boolean } = {},
+): Promise<ToolResult> {
+  await ctx.update("_Auditing draft against product vision and architecture..._")
+  const audit = await deps.auditSpecDraft({
+    draft: content,
+    productVision: ctx.context.productVision,
+    systemArchitecture: ctx.context.systemArchitecture,
+    productSpec: ctx.auditProductSpec,
+    featureName: ctx.featureName,
+  })
+  if (audit.status === "conflict") {
+    return { error: `Conflict detected — draft not saved: ${audit.message}` }
+  }
+
+  // Health gate — block save if structural findings increased
+  const preSaveSpec = await ctx.readFile(ctx.specFilePath, ctx.specBranchName).catch(() => null)
+  const preSaveStructural = preSaveSpec ? deps.auditSpecStructure(preSaveSpec, "design").length : 0
+  const postSaveStructural = deps.auditSpecStructure(content, "design").length
+  if (postSaveStructural > preSaveStructural) {
+    console.log(`[HEALTH-GATE] save blocked: structural findings increased ${preSaveStructural} → ${postSaveStructural}`)
+    return { error: `Save blocked — structural issues increased from ${preSaveStructural} to ${postSaveStructural}. The patch introduced new conflicts rather than resolving them.` }
+  }
+
+  await ctx.update("_Saving draft to GitHub..._")
+  await deps.saveDraftDesignSpec({ featureName: ctx.featureName, filePath: ctx.specFilePath, content })
+
+  // Generate HTML preview
+  await ctx.update("_Generating HTML preview..._")
+  const { paths: dp, githubOwner: dOwner, githubRepo: dRepo } = ctx.loadWorkspaceConfig()
+  const designSpecUrl = `https://github.com/${dOwner}/${dRepo}/blob/${ctx.specBranchName}/${ctx.specFilePath}`
+  const htmlFilePath = `${dp.featuresRoot}/${ctx.featureName}/${ctx.featureName}.preview.html`
+  let previewUrl = "none"
+  let renderWarnings: string[] = []
+  const previewResult = await deps.generateDesignPreview({
+    specContent: content,
+    featureName: ctx.featureName,
+    brandContent: ctx.brand,
+  }).catch((e: Error) => e)
+  if (!(previewResult instanceof Error)) {
+    renderWarnings = previewResult.warnings
+    state.lastGeneratedPreviewHtml = previewResult.html
+    await deps.saveDraftHtmlPreview({ featureName: ctx.featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
+    if (!skipSlackUpload) {
+      try {
+        await deps.uploadFileToSlack({
+          channelId: ctx.channelId,
+          threadTs: ctx.threadTs,
+          content: previewResult.html,
+          filename: `${ctx.featureName}.preview.html`,
+          title: `${ctx.featureName} — Design Preview`,
+        })
+        previewUrl = "uploaded_to_slack"
+      } catch (uploadErr: any) {
+        console.error(`[preview] Slack upload failed: ${uploadErr?.message}`)
+        previewUrl = "saved_to_github"
+      }
+    } else {
+      previewUrl = "saved_to_github"
+    }
+  } else {
+    console.error(`[preview] HTML generation failed: ${previewResult.message}`)
+  }
+
+  const brandDrifts = ctx.brand ? deps.auditBrandTokens(content, ctx.brand) : []
+  const specGap = audit.status === "gap" ? audit.message : null
+  return { result: { specUrl: designSpecUrl, previewUrl, brandDrifts, specGap, renderWarnings: renderWarnings.length > 0 ? renderWarnings : undefined } }
+}
+
+// ── Individual tool handlers ────────────────────────────────────────────────────
+
+export async function handleSaveDesignDraft(
+  input: Record<string, unknown>,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+  state: DesignToolState,
+): Promise<ToolResult> {
+  return saveDesignDraftInternal(input.content as string, ctx, deps, state)
+}
+
+export async function handleApplyDesignSpecPatch(
+  input: Record<string, unknown>,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+  state: DesignToolState,
+): Promise<ToolResult> {
+  const patch = input.patch as string
+  const existingDraft = await ctx.readFile(ctx.specFilePath, ctx.specBranchName)
+  const mergedDraft = deps.applySpecPatch(existingDraft ?? "", patch)
+  state.patchAppliedThisTurn = true
+  return saveDesignDraftInternal(mergedDraft, ctx, deps, state, { skipSlackUpload: true })
+}
+
+export async function handleRewriteDesignSpec(
+  input: Record<string, unknown>,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+  state: DesignToolState,
+): Promise<ToolResult> {
+  state.patchAppliedThisTurn = true
+  return saveDesignDraftInternal(input.content as string, ctx, deps, state, { skipSlackUpload: true })
+}
+
+export async function handleGenerateDesignPreview(
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+): Promise<ToolResult> {
+  const { paths: gp } = ctx.loadWorkspaceConfig()
+  const htmlFilePath = `${gp.featuresRoot}/${ctx.featureName}/${ctx.featureName}.preview.html`
+  try {
+    await ctx.update("_Fetching preview..._")
+    const cachedHtml = await ctx.readFile(htmlFilePath, ctx.specBranchName)
+    if (cachedHtml) {
+      await deps.uploadFileToSlack({
+        channelId: ctx.channelId,
+        threadTs: ctx.threadTs,
+        content: cachedHtml,
+        filename: `${ctx.featureName}.preview.html`,
+        title: `${ctx.featureName} — Design Preview`,
+      })
+      return { result: { previewUrl: "uploaded_to_slack" } }
+    }
+    await ctx.update("_Generating preview..._")
+    const previewResult = await deps.generateDesignPreview({ specContent: ctx.context.currentDraft ?? "", featureName: ctx.featureName, brandContent: ctx.brand })
+    await deps.saveDraftHtmlPreview({ featureName: ctx.featureName, filePath: htmlFilePath, content: previewResult.html }).catch(() => {})
+    await deps.uploadFileToSlack({
+      channelId: ctx.channelId,
+      threadTs: ctx.threadTs,
+      content: previewResult.html,
+      filename: `${ctx.featureName}.preview.html`,
+      title: `${ctx.featureName} — Design Preview`,
+    })
+    return { result: { previewUrl: "uploaded_to_slack", renderWarnings: previewResult.warnings.length > 0 ? previewResult.warnings : undefined } }
+  } catch (err: any) {
+    return { error: `Preview failed: ${err?.message}` }
+  }
+}
+
+export async function handleOfferPmEscalation(
+  input: Record<string, unknown>,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+): Promise<ToolResult> {
+  console.log(`[ESCALATION] offer_pm_escalation tool called for ${ctx.featureName}`)
+  console.log(`[ESCALATION] tool question param:\n${input.question}`)
+  const rawQuestion = input.question as string
+  const classification = await deps.classifyForPmGaps({
+    agentResponse: rawQuestion,
+    approvedProductSpec: ctx.context.approvedProductSpec ?? undefined,
+  })
+  if (classification.gaps.length === 0) {
+    console.log(`[ESCALATION] Gate 2 classifier: 0 PM gaps — rejecting offer_pm_escalation, redirecting agent`)
+    if (classification.architectItems.length > 0) {
+      const { paths } = ctx.loadWorkspaceConfig()
+      const archFilePath = `${paths.featuresRoot}/${ctx.featureName}/${ctx.featureName}.engineering.md`
+      await deps.preseedEngineeringSpec({ featureName: ctx.featureName, filePath: archFilePath, architectItems: classification.architectItems })
+        .catch(err => console.log(`[GATE2] preseedEngineeringSpec failed (non-blocking): ${err}`))
+    }
+    if (classification.designItems.length > 0) {
+      const designItemList = classification.designItems.map((d, i) => `${i + 1}. ${d}`).join("\n")
+      console.log(`[ESCALATION] Gate 2: ${classification.designItems.length} design-scope item(s) returned to agent for self-resolution`)
+      return {
+        result: `REJECTED: No PM-scope gaps found. The following items are visual/UX design decisions you own independently — resolve them yourself without escalating:\n\n${designItemList}\n\nFor architecture questions (schema, data model, technical mechanism), call offer_architect_escalation instead.`,
+      }
+    }
+    return {
+      result: "REJECTED: No PM-scope gaps found in your question. These appear to be design, brand, or architecture concerns. Resolve brand token conflicts directly from BRAND.md (it is the authoritative source). For architecture questions, call offer_architect_escalation instead. Do not escalate to PM for hex values, animation durations, or implementation decisions.",
+    }
+  }
+  const filteredQuestion = classification.gaps.length === 1
+    ? classification.gaps[0]
+    : classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
+  if (classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
+    console.log(`[ESCALATION] Gate 2 classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
+  }
+  deps.setPendingEscalation(ctx.featureName, {
+    targetAgent: "pm",
+    question: filteredQuestion,
+    designContext: ctx.context.currentDraft ?? "",
+    productSpec: ctx.context.approvedProductSpec ?? undefined,
+  })
+  if (classification.architectItems.length > 0) {
+    const { paths } = ctx.loadWorkspaceConfig()
+    const archFilePath = `${paths.featuresRoot}/${ctx.featureName}/${ctx.featureName}.engineering.md`
+    deps.preseedEngineeringSpec({ featureName: ctx.featureName, filePath: archFilePath, architectItems: classification.architectItems })
+      .catch(err => console.log(`[GATE2] preseedEngineeringSpec failed (non-blocking): ${err}`))
+  }
+  return {
+    result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the PM will be notified with your question.",
+  }
+}
+
+export async function handleOfferArchitectEscalation(
+  input: Record<string, unknown>,
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+): Promise<ToolResult> {
+  const archQuestion = input.question as string
+  const archGapClass = await deps.classifyForArchGap(archQuestion)
+  if (archGapClass === "DESIGN-ASSUMPTION") {
+    return {
+      result: `[PLATFORM REJECTION] This question is an implementation detail — the UI design does not depend on the answer. Do NOT escalate this to the architect.\n\nInstead:\n1. Decide the user-visible behavior (e.g. "conversation is preserved when the user signs in").\n2. Add an entry to the ## Design Assumptions section documenting what the architect will need to confirm.\n3. Continue designing — the architect resolves this during engineering, not before.\n\nExample Design Assumption entry: "- Conversation data is preserved on sign-in via server-side or client-side storage (implementation TBD by architect)."`,
+    }
+  }
+  deps.setPendingEscalation(ctx.featureName, {
+    targetAgent: "architect",
+    question: archQuestion,
+    designContext: ctx.context.currentDraft ?? "",
+  })
+  return {
+    result: "Escalation offer stored. The user will be prompted to confirm. If they say yes, the Architect will be notified with your question.",
+  }
+}
+
+export async function handleFetchUrl(
+  input: Record<string, unknown>,
+  deps: DesignToolDeps,
+): Promise<ToolResult> {
+  const url = input.url as string
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` }
+    const text = await res.text()
+    const content = await deps.filterDesignContent(text)
+    return { result: { content } }
+  } catch (err: any) {
+    return { error: `Fetch failed: ${err?.message}` }
+  }
+}
+
+export async function handleDesignPhaseCompletionAudit(
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+): Promise<ToolResult> {
+  await ctx.update("_Running phase completion audit..._")
+  const draft = await ctx.readFile(ctx.specFilePath, ctx.specBranchName)
+  if (!draft) {
+    return { result: { ready: false, findings: [{ issue: "No design spec draft found", recommendation: "Save a draft first using save_design_spec_draft before running the audit." }] } }
+  }
+  const result = await deps.auditPhaseCompletion({
+    specContent: draft,
+    rubric: deps.buildDesignRubric(ctx.targetFormFactors ?? []),
+    featureName: ctx.featureName,
+    productVision: ctx.context.productVision,
+    systemArchitecture: ctx.context.systemArchitecture,
+    approvedProductSpec: ctx.context.approvedProductSpec,
+  })
+  return { result }
+}
+
+export async function handleFinalizeDesignSpec(
+  ctx: DesignToolCtx,
+  deps: DesignToolDeps,
+): Promise<ToolResult> {
+  const existingDraft = await ctx.readFile(ctx.specFilePath, ctx.specBranchName)
+  if (!existingDraft) {
+    return { error: "No draft saved yet — save a draft first before finalizing." }
+  }
+  const allOpenQuestions = deps.extractAllOpenQuestions(existingDraft)
+  if (allOpenQuestions.length > 0) {
+    return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
+  }
+  const finalStructural = deps.auditSpecStructure(existingDraft, "design")
+  if (finalStructural.length > 0) {
+    const structLines = finalStructural.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+    return { error: `Finalization blocked — ${finalStructural.length} structural conflict${finalStructural.length === 1 ? "" : "s"} must be resolved first:\n${structLines}` }
+  }
+
+  let finalContent = existingDraft
+  const [decisionAudit, architectReadiness] = await Promise.all([
+    deps.auditSpecDecisions({ specContent: existingDraft, history: ctx.getHistory() }),
+    deps.auditDownstreamReadiness({ specContent: existingDraft, downstreamRole: "architect", featureName: ctx.featureName }),
+  ])
+  if (decisionAudit.status === "corrections") {
+    const { corrected } = deps.applyDecisionCorrections(existingDraft, decisionAudit.corrections!)
+    finalContent = corrected
+  }
+  if (architectReadiness.findings.length > 0) {
+    const findingLines = architectReadiness.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+    return { error: `Approval blocked — spec is not architect-ready. An architect receiving this spec would need to invent the following answers:\n${findingLines}\n\nResolve each before finalizing.` }
+  }
+  // Brand token drift hard gate
+  if (ctx.brand) {
+    const finalBrandDrifts = deps.auditBrandTokens(finalContent, ctx.brand)
+    const finalAnimDrifts = deps.auditAnimationTokens(finalContent, ctx.brand)
+    const totalDrifts = finalBrandDrifts.length + finalAnimDrifts.length
+    if (totalDrifts > 0) {
+      const driftLines = [
+        ...finalBrandDrifts.map(d => `• ${d.token}: spec has ${d.specValue} but BRAND.md requires ${d.brandValue}`),
+        ...finalAnimDrifts.map(d => `• ${d.param}: spec has ${d.specValue} but BRAND.md requires ${d.brandValue}`),
+      ].join("\n")
+      return { error: `Finalization blocked — ${totalDrifts} brand token drift${totalDrifts === 1 ? "" : "s"} detected. Patch the spec to align with BRAND.md before finalizing:\n${driftLines}` }
+    }
+  }
+  await ctx.update("_Saving final design spec..._")
+  await deps.saveApprovedDesignSpec({ featureName: ctx.featureName, filePath: ctx.specFilePath, content: finalContent })
+  // Seed ## Design Assumptions to engineering spec branch (non-blocking)
+  const assumptionsContent = deps.extractDesignAssumptions(finalContent)
+  if (assumptionsContent.trim()) {
+    const { paths } = ctx.loadWorkspaceConfig()
+    const engSpecFilePath = `${paths.featuresRoot}/${ctx.featureName}/${ctx.featureName}.engineering.md`
+    deps.seedHandoffSection({
+      featureName: ctx.featureName,
+      targetFilePath: engSpecFilePath,
+      targetBranchName: `spec/${ctx.featureName}-engineering`,
+      targetSectionHeading: "## Design Assumptions To Validate",
+      content: assumptionsContent,
+    }).catch(err => console.log(`[DESIGN-FINALIZE] seedHandoffSection failed (non-blocking): ${err}`))
+  }
+  const { githubOwner, githubRepo } = ctx.loadWorkspaceConfig()
+  const url = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${ctx.specFilePath}`
+  return { result: { url, nextPhase: "engineering" } }
 }

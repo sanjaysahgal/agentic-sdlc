@@ -112,7 +112,7 @@ ${specContent}`,
 // Call this at every finalization gate alongside the rubric check.
 // Both must return ready: true before the spec is approved.
 
-type DownstreamRole = "designer" | "architect" | "engineer"
+export type DownstreamRole = "designer" | "architect" | "engineer"
 
 const DOWNSTREAM_ROLE_CONTEXT: Record<DownstreamRole, { persona: string; task: string; upstreamRole: string }> = {
   designer: {
