@@ -174,12 +174,18 @@ loadConversationHistory()
 loadConversationState()
 migrateThreadTsKeys()
 
-// Clean stale escalation state on restart — pending escalations from a prior session
-// will never resolve (the user confirmation was lost when the bot crashed). Clear them
-// so the next message routes normally instead of getting stuck in a hold loop.
-if (pendingEscalations.size > 0) {
-  console.log(`[STORE] startup: clearing ${pendingEscalations.size} stale pending escalation(s): [${[...pendingEscalations.keys()].join(", ")}]`)
-  pendingEscalations.clear()
+// Clean stale escalation state on restart — pending escalations and notifications from
+// a prior session will never resolve (the user confirmation was lost when the bot crashed).
+// Clear them so the next message routes normally instead of getting stuck in a hold loop.
+if (pendingEscalations.size > 0 || escalationNotifications.size > 0) {
+  if (pendingEscalations.size > 0) {
+    console.log(`[STORE] startup: clearing ${pendingEscalations.size} stale pending escalation(s): [${[...pendingEscalations.keys()].join(", ")}]`)
+    pendingEscalations.clear()
+  }
+  if (escalationNotifications.size > 0) {
+    console.log(`[STORE] startup: clearing ${escalationNotifications.size} stale escalation notification(s): [${[...escalationNotifications.keys()].join(", ")}]`)
+    escalationNotifications.clear()
+  }
   persistConversationState()
 }
 

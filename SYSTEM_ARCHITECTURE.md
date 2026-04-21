@@ -145,7 +145,7 @@ The summary is cached in-memory, keyed by `(featureName, olderMessageCount)`. Be
 
 Conversation history is keyed by featureName (not threadTs), so all threads within a feature channel share one accumulated history. On startup, `conversation-store.ts` runs a one-time migration (`migrateThreadTsKeys`) that consolidates any pre-migration threadTs-keyed entries into `"_legacy_"`. `identifyUncommittedDecisions` receives `[...getLegacyMessages(), ...getHistory(featureName)]` so decisions from all prior sessions surface in the PENDING section.
 
-On startup, `pendingEscalations` are cleared — if the bot crashed mid-escalation, the user's confirmation was lost and holding routing in a dead "say yes" loop is worse than a clean slate. `escalationNotifications` and `pendingApprovals` survive restart (they represent state the user may still act on).
+On startup, `pendingEscalations` and `escalationNotifications` are cleared — if the bot crashed mid-escalation, the user's confirmation was lost and holding routing in a dead loop (either "say yes" or routing every message to the wrong agent) is worse than a clean slate. `pendingApprovals` survive restart (they represent spec content the user can still confirm).
 
 Implemented in `runtime/conversation-summarizer.ts`.
 

@@ -290,11 +290,11 @@ describe("conversation-store", () => {
     const { disableFilePersistence, getPendingEscalation, getPendingApproval, getEscalationNotification, getHistory } = await import("../../runtime/conversation-store")
 
     // Before disableFilePersistence: disk state is in memory.
-    // Pending escalations are cleared on startup (stale state from prior session),
-    // but approvals and notifications survive.
+    // Pending escalations and escalation notifications are cleared on startup
+    // (stale state from prior session). Only approvals survive.
     expect(getPendingEscalation("onboarding")).toBeNull()  // cleared on startup
     expect(getPendingApproval("onboarding")?.specType).toBe("product")
-    expect(getEscalationNotification("onboarding")?.question).toBe("Q")
+    expect(getEscalationNotification("onboarding")).toBeNull()  // cleared on startup
 
     // After disableFilePersistence: all state is wiped — tests start clean
     disableFilePersistence()
