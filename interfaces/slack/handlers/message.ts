@@ -2333,12 +2333,19 @@ async function runArchitectAgent(params: {
   // handles escalation directly — the architect does NOT run. No prompt instructions,
   // no notice injection, no agent decision-making. The platform posts a structured
   // message and sets pendingEscalation. User says "yes" → PM agent runs.
+  //
+  // ORIENTATION BYPASS: If this user hasn't been oriented yet in this feature,
+  // skip the gate. The agent runs with upstream notices injected (so it knows about
+  // the gaps) but can orient the newcomer first. The gate fires on their NEXT message.
+  const orientationKey = `${featureName}:${userId ?? "anon"}`
+  const isOrientationTurn = !orientedUsers.has(orientationKey)
+
   const pmGapMatch = upstreamNoticeArch.match(/APPROVED PM SPEC — (\d+) GAP/)
   const designGapMatch = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — (\d+) GAP/)
   const upstreamPmGapCount = pmGapMatch ? parseInt(pmGapMatch[1]) : 0
   const upstreamDesignGapCount = designGapMatch ? parseInt(designGapMatch[1]) : 0
 
-  if (upstreamPmGapCount > 0 || upstreamDesignGapCount > 0) {
+  if (!isOrientationTurn && (upstreamPmGapCount > 0 || upstreamDesignGapCount > 0)) {
     const escalationTarget = upstreamPmGapCount > 0 ? "pm" : "design"
     const gapCount = upstreamPmGapCount > 0 ? upstreamPmGapCount : upstreamDesignGapCount
     const targetLabel = upstreamPmGapCount > 0 ? "PM" : "Design"
@@ -2410,6 +2417,9 @@ async function runArchitectAgent(params: {
     }),
     toolCallsOut: toolCallsOutArch,
   })
+
+  // Mark user as oriented after first architect response — pre-run gate fires on subsequent messages.
+  if (userId) orientedUsers.add(`${featureName}:${userId}`)
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
