@@ -2317,23 +2317,38 @@ async function runArchitectAgent(params: {
     }
   }
 
-  // STRUCTURAL ENFORCEMENT (Principle 8): First message from a userId in a feature
-  // suppresses all audit notices from the agent's context. The agent physically cannot
-  // dump gaps because the gap data isn't in its input. On the next message from this
-  // user, notices inject normally. This enforces "Read the room first" structurally.
-  // Gate only fires when userId is available (real Slack events provide it; tests may not).
-  const orientationKey = userId ? `${featureName}:${userId}` : null
-  const isOrientationTurn = orientationKey ? !orientedUsers.has(orientationKey) : false
-  if (isOrientationTurn) {
-    console.log(`[ROUTER] orientation-gate: first message from userId=${userId} in feature=${featureName} — suppressing audit notices`)
+  // ─── STRUCTURAL PRE-RUN GATE (Principle 8) ───────────────────────────────────
+  // Same pattern as design agent's N18 gate. If upstream gaps exist, the platform
+  // handles escalation directly — the architect does NOT run. No prompt instructions,
+  // no notice injection, no agent decision-making. The platform posts a structured
+  // message and sets pendingEscalation. User says "yes" → PM agent runs.
+  const pmGapMatch = upstreamNoticeArch.match(/APPROVED PM SPEC — (\d+) GAP/)
+  const designGapMatch = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — (\d+) GAP/)
+  const upstreamPmGapCount = pmGapMatch ? parseInt(pmGapMatch[1]) : 0
+  const upstreamDesignGapCount = designGapMatch ? parseInt(designGapMatch[1]) : 0
+
+  if (upstreamPmGapCount > 0 || upstreamDesignGapCount > 0) {
+    const escalationTarget = upstreamPmGapCount > 0 ? "pm" : "design"
+    const gapCount = upstreamPmGapCount > 0 ? upstreamPmGapCount : upstreamDesignGapCount
+    const targetLabel = upstreamPmGapCount > 0 ? "PM" : "Design"
+    const findingsRegex = upstreamPmGapCount > 0
+      ? /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
+      : /APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/
+    const findingsText = upstreamNoticeArch.match(findingsRegex)?.[1]?.trim() ?? `${gapCount} gaps blocking engineering`
+
+    console.log(`[ESCALATION-GATE] architect pre-run: ${upstreamPmGapCount} PM + ${upstreamDesignGapCount} design gaps — blocking agent, escalating to ${escalationTarget}`)
+    setPendingEscalation(featureName, { targetAgent: escalationTarget, question: findingsText, designContext: "" })
+
+    const prefix = routingNote ? `${routingNote}\n\n` : ""
+    const platformMessage = `Engineering is blocked — the approved ${targetLabel} spec has ${gapCount} gap${gapCount === 1 ? "" : "s"} that must be resolved before the engineering spec can proceed.\n\nSay *yes* and I'll bring in the ${targetLabel} agent to close them.`
+    appendMessage(featureName, { role: "user", content: userMessage })
+    appendMessage(featureName, { role: "assistant", content: platformMessage })
+    await update(`${prefix}${platformMessage}`)
+    return
   }
-  // On orientation turns: inject notices WITH a brevity instruction — agent knows
-  // the state but only states the blocker in one sentence + asserts escalation.
-  // On substantive turns: full notices, agent can enumerate.
-  const orientationPrefix = isOrientationTurn
-    ? "\n\n[PLATFORM INSTRUCTION: This is the user's first message. Orient them in 3-4 sentences (feature, phase, your role), then state the upstream block in ONE sentence (e.g. 'Engineering is blocked on N PM gaps and M design gaps'), then assert escalation ('Say yes and I'll bring in the PM agent now'). Do NOT enumerate individual gaps. Maximum 6 sentences total.]\n"
-    : ""
-  const archNotices = orientationPrefix + upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice
+  // ─── END PRE-RUN GATE ───────────────────────────────────────────────────────
+
+  const archNotices = upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice
   const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
   const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
@@ -2344,14 +2359,9 @@ async function runArchitectAgent(params: {
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutArch: ToolCallRecord[] = []
 
-  // STRUCTURAL ENFORCEMENT: On orientation turns, pass EMPTY history. The architect has
-  // approved specs in its system prompt — prior-phase conversation history is the source
-  // of hallucination ("discussed but never committed to GitHub"). Clean slate on first turn.
-  const effectiveHistory = isOrientationTurn ? [] : historyArch
-
   const response = await runAgent({
     systemPrompt,
-    history: effectiveHistory,
+    history: historyArch,
     userMessage: enrichedUserMessageArch,
     userImages,
     historyLimit: ARCH_HISTORY_LIMIT,
@@ -2382,56 +2392,6 @@ async function runArchitectAgent(params: {
     }),
     toolCallsOut: toolCallsOutArch,
   })
-
-  // Mark user as oriented AFTER the agent responds — next message gets full notices.
-  if (isOrientationTurn && orientationKey) {
-    orientedUsers.add(orientationKey)
-    console.log(`[ROUTER] orientation-gate: userId=${userId} now oriented in feature=${featureName} — next message will include audit notices`)
-  }
-
-  // STRUCTURAL ENFORCEMENT (Principle 8): Post-run escalation gate.
-  // If upstream gaps were injected (non-orientation turn) AND the agent did NOT call
-  // offer_upstream_revision, the platform auto-triggers escalation. The agent cannot
-  // "talk about" gaps without acting — if it should have escalated, the platform does it.
-  // Same architecture as the design agent's N18 PM escalation gate.
-  const agentDidEscalate = toolCallsOutArch.some(tc => tc.name === "offer_upstream_revision")
-  if (!isOrientationTurn && upstreamNoticeArch && !agentDidEscalate) {
-    // Extract PM gap count from the cached upstream notice
-    const pmGapMatch = upstreamNoticeArch.match(/APPROVED PM SPEC — (\d+) GAP/)
-    const pmGapCount = pmGapMatch ? parseInt(pmGapMatch[1]) : 0
-    const designGapMatch = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — (\d+) GAP/)
-    const designGapCount = designGapMatch ? parseInt(designGapMatch[1]) : 0
-
-    if (pmGapCount > 0 || designGapCount > 0) {
-      console.log(`[ESCALATION-GATE] architect failed to call offer_upstream_revision despite ${pmGapCount} PM + ${designGapCount} design gaps — platform auto-triggering`)
-      // Set pending escalation for PM first (PM gates design)
-      if (pmGapCount > 0) {
-        const pmFindings = upstreamNoticeArch.match(/APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/)?.[1]?.trim() ?? "PM spec has gaps blocking engineering"
-        setPendingEscalation(featureName, {
-          targetAgent: "pm",
-          question: pmFindings,
-          designContext: "",
-        })
-      } else if (designGapCount > 0) {
-        const designFindings = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/)?.[1]?.trim() ?? "Design spec has gaps blocking engineering"
-        setPendingEscalation(featureName, {
-          targetAgent: "design",
-          question: designFindings,
-          designContext: "",
-        })
-      }
-      // Append platform escalation message to the agent's response
-      const escalationTarget = pmGapCount > 0 ? "PM" : "Design"
-      const gapSummary = pmGapCount > 0
-        ? `${pmGapCount} product spec gap${pmGapCount === 1 ? "" : "s"} must be resolved before engineering can proceed`
-        : `${designGapCount} design spec gap${designGapCount === 1 ? "" : "s"} must be resolved before engineering can proceed`
-      const platformEscalation = `\n\n---\n_Platform: ${gapSummary}. Say *yes* to bring in the ${escalationTarget} agent._`
-      appendMessage(featureName, { role: "user", content: userMessage })
-      appendMessage(featureName, { role: "assistant", content: response + platformEscalation })
-      await update(`${prefix}${response}${platformEscalation}`)
-      return
-    }
-  }
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
