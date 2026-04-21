@@ -2338,9 +2338,14 @@ async function runArchitectAgent(params: {
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutArch: ToolCallRecord[] = []
 
+  // STRUCTURAL ENFORCEMENT: On orientation turns, pass EMPTY history. The architect has
+  // approved specs in its system prompt — prior-phase conversation history is the source
+  // of hallucination ("discussed but never committed to GitHub"). Clean slate on first turn.
+  const effectiveHistory = isOrientationTurn ? [] : historyArch
+
   const response = await runAgent({
     systemPrompt,
-    history: historyArch,
+    history: effectiveHistory,
     userMessage: enrichedUserMessageArch,
     userImages,
     historyLimit: ARCH_HISTORY_LIMIT,
