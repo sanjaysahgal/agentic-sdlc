@@ -2378,6 +2378,50 @@ async function runArchitectAgent(params: {
     console.log(`[ROUTER] orientation-gate: userId=${userId} now oriented in feature=${featureName} — next message will include audit notices`)
   }
 
+  // STRUCTURAL ENFORCEMENT (Principle 8): Post-run escalation gate.
+  // If upstream gaps were injected (non-orientation turn) AND the agent did NOT call
+  // offer_upstream_revision, the platform auto-triggers escalation. The agent cannot
+  // "talk about" gaps without acting — if it should have escalated, the platform does it.
+  // Same architecture as the design agent's N18 PM escalation gate.
+  const agentDidEscalate = toolCallsOutArch.some(tc => tc.name === "offer_upstream_revision")
+  if (!isOrientationTurn && upstreamNoticeArch && !agentDidEscalate) {
+    // Extract PM gap count from the cached upstream notice
+    const pmGapMatch = upstreamNoticeArch.match(/APPROVED PM SPEC — (\d+) GAP/)
+    const pmGapCount = pmGapMatch ? parseInt(pmGapMatch[1]) : 0
+    const designGapMatch = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — (\d+) GAP/)
+    const designGapCount = designGapMatch ? parseInt(designGapMatch[1]) : 0
+
+    if (pmGapCount > 0 || designGapCount > 0) {
+      console.log(`[ESCALATION-GATE] architect failed to call offer_upstream_revision despite ${pmGapCount} PM + ${designGapCount} design gaps — platform auto-triggering`)
+      // Set pending escalation for PM first (PM gates design)
+      if (pmGapCount > 0) {
+        const pmFindings = upstreamNoticeArch.match(/APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/)?.[1]?.trim() ?? "PM spec has gaps blocking engineering"
+        setPendingEscalation(featureName, {
+          targetAgent: "pm",
+          question: pmFindings,
+          designContext: "",
+        })
+      } else if (designGapCount > 0) {
+        const designFindings = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/)?.[1]?.trim() ?? "Design spec has gaps blocking engineering"
+        setPendingEscalation(featureName, {
+          targetAgent: "design",
+          question: designFindings,
+          designContext: "",
+        })
+      }
+      // Append platform escalation message to the agent's response
+      const escalationTarget = pmGapCount > 0 ? "PM" : "Design"
+      const gapSummary = pmGapCount > 0
+        ? `${pmGapCount} product spec gap${pmGapCount === 1 ? "" : "s"} must be resolved before engineering can proceed`
+        : `${designGapCount} design spec gap${designGapCount === 1 ? "" : "s"} must be resolved before engineering can proceed`
+      const platformEscalation = `\n\n---\n_Platform: ${gapSummary}. Say *yes* to bring in the ${escalationTarget} agent._`
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: response + platformEscalation })
+      await update(`${prefix}${response}${platformEscalation}`)
+      return
+    }
+  }
+
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
   await update(`${prefix}${response}`)

@@ -73,6 +73,7 @@ import {
   getPendingEscalation,
   clearPendingEscalation,
   clearEscalationNotification,
+  clearConfirmedAgent,
   disableFilePersistence,
 } from "../../../runtime/conversation-store"
 
@@ -178,6 +179,10 @@ beforeEach(() => {
   clearEscalationNotification("dashboard")
   clearPendingEscalation("onboarding")
   clearPendingEscalation("dashboard")
+  // Clear confirmedAgent so phase-transition detection in setConfirmedAgent doesn't
+  // accidentally clear history when a test sets a different agent than a prior test left.
+  clearConfirmedAgent("onboarding")
+  clearConfirmedAgent("dashboard")
   process.env = {
     ...originalEnv,
     PRODUCT_NAME: "TestApp",
@@ -7966,8 +7971,8 @@ describe("Scenario N78 — Design run_phase_completion_audit tool handler", () =
     })
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
       // auditPhaseCompletion for readiness notice
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
       // runAgent → tool_use: run_phase_completion_audit
@@ -8193,6 +8198,29 @@ describe("Scenario N71 — Extracted design tool handler wiring through message.
       c[0]?.path?.endsWith("onboarding.design.md")
     )
     expect(branchWrite).toBeDefined()
+  })
+})
+
+describe("Scenario N73 — Phase transition clears conversation history", () => {
+  beforeEach(() => { clearHistory("onboarding") })
+
+  it("setConfirmedAgent clears history when agent changes (phase transition)", () => {
+    // Seed history and agent for "onboarding"
+    appendMessage("onboarding", { role: "user", content: "design discussion" })
+    appendMessage("onboarding", { role: "assistant", content: "design response" })
+    setConfirmedAgent("onboarding", "ux-design")
+    expect(getHistory("onboarding")).toHaveLength(2)
+
+    // Phase transition: design → architect
+    setConfirmedAgent("onboarding", "architect")
+    expect(getHistory("onboarding")).toHaveLength(0)
+  })
+
+  it("setConfirmedAgent does NOT clear history when agent is the same (no transition)", () => {
+    appendMessage("onboarding", { role: "user", content: "arch discussion" })
+    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent("onboarding", "architect") // same agent — no transition
+    expect(getHistory("onboarding")).toHaveLength(1)
   })
 })
 

@@ -215,8 +215,25 @@ export function getConfirmedAgent(threadTs: string): string | null {
 }
 
 export function setConfirmedAgent(threadTs: string, agent: string): void {
+  const previous = confirmedAgents.get(threadTs)
+  // Phase transition: when the confirmed agent CHANGES (not first set), clear conversation
+  // history for this feature. The incoming agent has all approved specs from GitHub in its
+  // system prompt — raw prior-phase conversation is noise that causes hallucination.
+  // Platform-level mechanism: applies to all current and future agents automatically.
+  if (previous && previous !== agent) {
+    const existingHistory = store.get(threadTs)
+    if (existingHistory && existingHistory.length > 0) {
+      console.log(`[STORE] phase-transition: ${previous} → ${agent} for feature=${threadTs} — clearing ${existingHistory.length} messages`)
+      store.set(threadTs, [])
+      persistConversationHistory()
+    }
+  }
   confirmedAgents.set(threadTs, agent)
   persistConfirmedAgents()
+}
+
+export function clearConfirmedAgent(featureName: string): void {
+  confirmedAgents.delete(featureName)
 }
 
 // Pending escalation — set when an agent offers to pull another agent into the thread.
