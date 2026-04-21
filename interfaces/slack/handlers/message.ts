@@ -2327,7 +2327,13 @@ async function runArchitectAgent(params: {
   if (isOrientationTurn) {
     console.log(`[ROUTER] orientation-gate: first message from userId=${userId} in feature=${featureName} — suppressing audit notices`)
   }
-  const archNotices = isOrientationTurn ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
+  // On orientation turns: inject notices WITH a brevity instruction — agent knows
+  // the state but only states the blocker in one sentence + asserts escalation.
+  // On substantive turns: full notices, agent can enumerate.
+  const orientationPrefix = isOrientationTurn
+    ? "\n\n[PLATFORM INSTRUCTION: This is the user's first message. Orient them in 3-4 sentences (feature, phase, your role), then state the upstream block in ONE sentence (e.g. 'Engineering is blocked on N PM gaps and M design gaps'), then assert escalation ('Say yes and I'll bring in the PM agent now'). Do NOT enumerate individual gaps. Maximum 6 sentences total.]\n"
+    : ""
+  const archNotices = orientationPrefix + upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice
   const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
   const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
