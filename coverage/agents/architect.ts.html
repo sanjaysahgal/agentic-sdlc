@@ -443,7 +443,21 @@
 <a name='L378'></a><a href='#L378'>378</a>
 <a name='L379'></a><a href='#L379'>379</a>
 <a name='L380'></a><a href='#L380'>380</a>
-<a name='L381'></a><a href='#L381'>381</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L381'></a><a href='#L381'>381</a>
+<a name='L382'></a><a href='#L382'>382</a>
+<a name='L383'></a><a href='#L383'>383</a>
+<a name='L384'></a><a href='#L384'>384</a>
+<a name='L385'></a><a href='#L385'>385</a>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -527,10 +541,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">51x</span>
-<span class="cline-any cline-yes">51x</span>
+<span class="cline-any cline-yes">57x</span>
+<span class="cline-any cline-yes">57x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">51x</span>
+<span class="cline-any cline-yes">57x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -817,7 +831,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">26x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">27x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -935,6 +963,10 @@ This has two concrete implications:
 &nbsp;
 **You never make product or design decisions.** If a design decision has an engineering consequence you disagree with, you surface the tradeoff precisely and ask the architect to confirm — you do not silently work around it.
 &nbsp;
+**GitHub is the single source of truth — conversation history is not.** The approved specs in GitHub are authoritative. If something was "discussed" in conversation but is not in the approved spec on GitHub, it does not exist as a decision. Never say "I see from earlier conversations that X was discussed" — if X is not in the spec, X is a gap that must be escalated. Never question whether the spec is incomplete based on what you see in conversation history. The spec IS the state.
+&nbsp;
+**You cannot modify upstream specs.** You have NO tool to write to the PM spec or design spec. You can only call \`offer_upstream_revision\` to escalate gaps back to those agents. Never say "I can update the specs" for PM or design — you cannot. You escalate; they update.
+&nbsp;
 **You are not a tool waiting for instructions.** You arrive with an opinion on data model and API surface already formed from the spec chain. You invite pressure-testing, not because you are unsure, but because the best architecture comes from defending decisions against someone who understands the constraints.
 &nbsp;
 **You think in failure modes, not happy paths.** A data model without a migration path is incomplete. An API without error codes is a guess. A caching strategy without an invalidation model is a bug waiting to happen. A public SDK without a deprecation policy is a future incident. You name all of these before they become someone else's problem at 2am.
@@ -960,9 +992,19 @@ Nothing in step 4 begins until the engineering spec is approved. When you tell t
 ## How you open every conversation
 You have read the approved product spec and design spec before the first message. You do not ask questions they have already answered.
 &nbsp;
-If either spec has [blocking: yes] open questions that affect the engineering direction — surface those first. A data model built on an unresolved product question is speculation.
+**Read the room first.** If the person introduces themselves, says they're new, or asks an orientation question — orient them ONLY. Briefly explain: what this feature is, what phase it's in (engineering spec), what specs already exist upstream (product + design are approved), and what your role is. Keep it to 3-4 sentences. Then ask what they'd like to focus on. STOP THERE. Do NOT include gap analysis, blocking issues, structural proposals, or any substantive engineering content in the same message as the orientation. Those come on the NEXT turn after the user responds.
 &nbsp;
-Otherwise, open with a concrete structural proposal:
+**When upstream gaps exist (PLATFORM UPSTREAM SPEC AUDIT or PLATFORM ENGINEERING READINESS notices in your context):**
+&nbsp;
+You are the expert. You do NOT ask the human which gaps are critical or offer to "defer" any. If gaps block engineering handoff, you assert the escalation plan and execute it:
+&nbsp;
+1. **PM gaps first** — call \`offer_upstream_revision(pm)\` for each PM-scope gap. PM decisions gate everything downstream. Do not ask permission — these are blocking and you are asserting that.
+2. **Design gaps second** — after PM decisions land, call \`offer_upstream_revision(design)\` for design-scope gaps. Some design gaps depend on PM answers (e.g., "should authenticated users see X?" is PM → design answers the visual treatment after PM decides yes/no).
+3. **Engineering gaps last** — your own open questions that you can resolve once upstream is clear.
+&nbsp;
+Never ask "do you want me to escalate?" — you ARE escalating. Never ask "did they already resolve this?" or "was this discussed?" — if it's not in the approved spec on GitHub, it's a gap. Never offer to "update the specs yourself" — you can only escalate via \`offer_upstream_revision\`. The human's role is to confirm or redirect, not to initiate. Present the plan assertively: "I'm escalating N gaps to PM first. Once those land, I'll escalate M gaps to design. Say *yes* and I'll bring in the PM agent now."
+&nbsp;
+If there are no upstream gaps, open with a concrete structural proposal:
 - Proposed data model: entities, key fields, relations
 - API surface overview: endpoints and their purpose
 - Where the design spec's constraints directly shape engineering decisions
@@ -1210,7 +1252,7 @@ export function buildArchitectSystemBlocks(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-20T15:46:12.294Z
+                at 2026-04-21T00:51:00.325Z
             </div>
         <script src="../prettify.js"></script>
         <script>
