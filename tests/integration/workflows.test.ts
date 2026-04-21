@@ -472,30 +472,26 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
       designContext: "Onboarding design in progress.",
     })
 
-    // Mock sequence (4 calls — PM only, design phase does NOT run):
-    //   [0] classifyMessageScope → "feature-specific" (PM run 1)
-    //   [1] PM agent → no "My recommendation:" → enforcement fires
-    //   [2] classifyMessageScope → "feature-specific" (PM run 2 / enforcement)
-    //   [3] PM agent enforcement → proper format with "My recommendation:"
+    // Mock sequence (2 calls — PM only, readOnly=true skips classifyMessageScope):
+    //   [0] PM agent → no "My recommendation:" → enforcement fires
+    //   [1] PM agent enforcement → proper format with "My recommendation:"
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Recommendation: Yes, support Google OAuth." }],
         usage: { input_tokens: 10, output_tokens: 30 },
-      })                                                                                   // [1] PM run 1 (enforcement fires)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [2] classifyMessageScope (enforcement)
+      })                                                                                   // [0] PM run 1 (enforcement fires)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.\n→ Note: Pending your approval — say yes to apply to the product spec" }],
         usage: { input_tokens: 10, output_tokens: 30 },
-      })                                                                                   // [3] PM run 2 (enforcement)
+      })                                                                                   // [1] PM run 2 (enforcement)
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // PM ran — exactly 4 calls (no design phase)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // PM ran — exactly 2 calls (readOnly=true skips classifyMessageScope)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
 
     // Pending escalation cleared (PM ran successfully)
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
@@ -585,9 +581,9 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     await handleFeatureChannelMessage(params)
 
     // The PM brief must contain the product spec content.
-    // Call order (no pre-escalation audit): [0] classifyMessageScope, [1] PM agent, [2] Haiku patch.
-    // PM agent has history prepended, so the brief is in the LAST message (not messages[0]).
-    const pmCall = mockAnthropicCreate.mock.calls[1][0]
+    // Call order (readOnly=true skips classifyMessageScope): [0] PM agent.
+    // PM agent has no history (readOnly), so the brief is in the LAST message.
+    const pmCall = mockAnthropicCreate.mock.calls[0][0]
     const pmBrief = pmCall.messages.at(-1).content as string
     expect(pmBrief).toContain("APPROVED PRODUCT SPEC")
     expect(pmBrief).toContain("Users can sign in via SSO")
@@ -4754,16 +4750,14 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     const CLARIFICATION_STALL = "Before I give recommendations, I need to clarify one thing: when you say 'dismissable' — are you asking whether the nudge has an X button, or whether clicking anywhere outside it dismisses it? Once I understand that, I can give you concrete recommendations."
     const PROPER_RECOMMENDATIONS = "1. My recommendation: The nudge should be dismissable via an explicit X button.\n→ Rationale: Explicit dismissal is more intentional — users know they've seen it.\n→ Note: Pending human PM confirmation before engineering handoff"
 
-    // Mock sequence: first PM run returns clarification-stall (0 "My recommendation:" occurrences)
-    // Structural gate fires (0 < 1 required) → enforcement re-run → proper recommendation
-    // Design does NOT run yet — two-step flow: escalationNotification set, awaiting human approval.
+    // Mock sequence (readOnly=true skips classifyMessageScope):
+    //   [0] PM agent run 1 → clarification-stall (0 "My recommendation:" → enforcement fires)
+    //   [1] PM agent run 2 → proper recommendations
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: CLARIFICATION_STALL }],
       })                                                                                  // PM agent run 1 → clarification-stall
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 2)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PROPER_RECOMMENDATIONS }],
@@ -4787,8 +4781,8 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     expect(notification?.targetAgent).toBe("pm")
     expect(notification?.recommendations).toContain("My recommendation:")
 
-    // PM ran — exactly 4 calls total (no design phase yet)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // PM ran — exactly 2 calls total (readOnly=true skips classifyMessageScope)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -4952,13 +4946,12 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     const FULL_RECOMMENDATIONS = "1. My recommendation: The user should remain logged out with a clear, persistent error message on the sign-in screen.\n→ Rationale: Retaining context in a retry state adds complexity without meaningful benefit for auth failures.\n→ Note: Pending human PM confirmation before engineering handoff\n\n2. My recommendation: The logged-out indicator should display 'Session expired — tap to sign in again' whenever the user attempts an authenticated action while logged out.\n→ Rationale: Clear, actionable copy reduces confusion.\n→ Note: Pending human PM confirmation before engineering handoff"
 
     // Two-step: design does NOT run yet — escalationNotification set, awaiting human approval.
+    // readOnly=true skips classifyMessageScope — only PM agent calls.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 1)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PARTIAL_ANSWER }],
       })                                                                                  // PM run 1 → 1 recommendation (partial)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope (run 2)
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: FULL_RECOMMENDATIONS }],
@@ -4981,8 +4974,8 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     expect(notification?.recommendations).toContain("1. My recommendation:")
     expect(notification?.recommendations).toContain("2. My recommendation:")
 
-    // PM ran — exactly 4 calls total (no design phase yet)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // PM ran — exactly 2 calls total (readOnly=true skips classifyMessageScope)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 })
 

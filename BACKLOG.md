@@ -51,11 +51,23 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
-### Log agent response content — first 500 chars of every agent response (2026-04-20)
+### ~~Log agent response content — first 500 chars of every agent response (2026-04-20)~~ ✅ DONE (2026-04-20)
 
-Currently the platform logs routing decisions, audit results, and token counts — but NOT the actual response content. This means response quality failures (hallucination, wrong tone, asking instead of asserting) are invisible from logs. The only way to see them is to paste Slack messages manually.
+Implemented in `runtime/claude-client.ts` — `runAgent` logs `[AGENT-RESPONSE] ${text.slice(0, 500)}` on every return. Covers all agent paths (PM, design, architect) and all call contexts (normal, escalation, enforcement) automatically since it's in the shared runner.
 
-**Fix:** After every `runAgent` call, log the first 500 chars of the response: `console.log([AGENT-RESPONSE] ${agentType}: ${response.slice(0, 500)})`. Applies to all agent paths (PM, design, architect) and all call contexts (normal, escalation, continuation). This makes content quality evaluable from logs alone.
+---
+
+### ~~Enforce empty history on all escalation routes (2026-04-20)~~ ✅ DONE (2026-04-20)
+
+**Root cause:** PM agent had `readOnly ? [] : historyPm` gate, but architect agent passed full history unconditionally. Escalation call sites (lines 427, 429, 447, 662) never passed `readOnly: true`.
+
+**Fix:** (1) Added `effectiveHistoryArch = readOnly ? [] : historyArch` gate in `runArchitectAgent`. (2) All escalation brief call sites now pass `readOnly: true`. (3) Architect skips history-dependent enrichment and upstream audits when `readOnly=true`.
+
+---
+
+### ~~Clean stale escalation state on restart (2026-04-20)~~ ✅ DONE (2026-04-20)
+
+`conversation-store.ts` now clears all `pendingEscalations` on module load. If the bot crashed mid-escalation, the user's confirmation was lost — holding messages in a "say yes to continue" loop forever is worse than a clean slate. Logs what was cleared: `[STORE] startup: clearing N stale pending escalation(s)`.
 
 ---
 

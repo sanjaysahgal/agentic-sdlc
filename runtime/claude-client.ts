@@ -119,7 +119,9 @@ export async function runAgent(params: {
     // If the model finished with no tool calls, extract and return the final text.
     if (response.stop_reason === "end_turn" || !tools || tools.length === 0) {
       const block = response.content.find(b => b.type === "text")
-      return block?.type === "text" ? block.text : ""
+      const text = block?.type === "text" ? block.text : ""
+      console.log(`[AGENT-RESPONSE] ${text.slice(0, 500)}`)
+      return text
     }
 
     // stop_reason === "tool_use" — execute all tool calls and feed results back.

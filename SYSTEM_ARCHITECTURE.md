@@ -145,6 +145,8 @@ The summary is cached in-memory, keyed by `(featureName, olderMessageCount)`. Be
 
 Conversation history is keyed by featureName (not threadTs), so all threads within a feature channel share one accumulated history. On startup, `conversation-store.ts` runs a one-time migration (`migrateThreadTsKeys`) that consolidates any pre-migration threadTs-keyed entries into `"_legacy_"`. `identifyUncommittedDecisions` receives `[...getLegacyMessages(), ...getHistory(featureName)]` so decisions from all prior sessions surface in the PENDING section.
 
+On startup, `pendingEscalations` are cleared — if the bot crashed mid-escalation, the user's confirmation was lost and holding routing in a dead "say yes" loop is worse than a clean slate. `escalationNotifications` and `pendingApprovals` survive restart (they represent state the user may still act on).
+
 Implemented in `runtime/conversation-summarizer.ts`.
 
 ### Graceful shutdown
@@ -165,7 +167,8 @@ Every decision point emits a single line using a consistent `[COMPONENT] message
 | `[CONTEXT]` | `runtime/context-loader.ts`, `runtime/conversation-summarizer.ts` | Feature name, hit/miss per GitHub path, summarizer input/output sizes, uncommitted decision scan result |
 | `[AUDITOR]` | `runtime/phase-completion-auditor.ts`, `runtime/brand-auditor.ts`, `runtime/spec-auditor.ts` | Phase completion ready/not-ready + finding count + each finding individually (`[AUDITOR] auditPhaseCompletion[N]: issue → recommendation`); brand/animation drift count + each drift token; render ambiguity count + each finding (`[AUDITOR] auditSpecRenderAmbiguity[N]: issue — recommendation`). Every finding visible in logs without Slack inspection. |
 | `[GITHUB]` | `runtime/github-client.ts` | Every file read (hit/404), every draft/approved save (success/error), PR URL on creation |
-| `[STORE]` | `runtime/conversation-store.ts` | Pending escalation set/clear (with targetAgent), pending approval set/clear, disk persistence errors |
+| `[STORE]` | `runtime/conversation-store.ts` | Pending escalation set/clear (with targetAgent), pending approval set/clear, disk persistence errors, stale escalation cleanup on startup |
+| `[AGENT-RESPONSE]` | `runtime/claude-client.ts` | First 500 chars of every agent response — makes content quality evaluable from logs alone (hallucination, wrong tone, asking instead of asserting) |
 | `[CLASSIFIER]` | `runtime/pm-gap-classifier.ts` | PM gap count, architect item count, design item count + first 100 chars of each |
 | `[PATCHER]` | `runtime/spec-patcher.ts` | Existing spec size or "initial save", output size and section count |
 

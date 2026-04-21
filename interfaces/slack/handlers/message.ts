@@ -424,9 +424,9 @@ ${pendingEscalation.question}`
       await withThinking({ client, channelId, threadTs, agent: agentLabel, run: async (update) => {
         const capturingUpdate = async (text: string) => { capturedAgentResponse = text; await update(text) }
         if (isArchitectEscalation) {
-          await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update: capturingUpdate })
+          await runArchitectAgent({ channelName, channelId, threadTs, featureName, userMessage: brief, client, update: capturingUpdate, readOnly: true })
         } else {
-          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
+          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate, readOnly: true })
           // Structural enforcement: verify the response contains a recommendation for every brief item.
           // One enforcement cycle — if the second run also fails, we use whatever was returned.
           const requiredCount = countBriefItems(comprehensiveQuestion)
@@ -444,7 +444,7 @@ Do not ask for context. Do not clarify before recommending. Make the best call a
 
 ORIGINAL BRIEF:
 ${brief}`
-            await runPmAgent({ channelName, channelId, threadTs, userMessage: enforcementMessage, client, update: capturingUpdate })
+            await runPmAgent({ channelName, channelId, threadTs, userMessage: enforcementMessage, client, update: capturingUpdate, readOnly: true })
           }
         }
       }})
@@ -659,7 +659,7 @@ ${archPendingEscalation.question}`
         if (isDesignTarget) {
           await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: brief, userImages: [], client, update: capturingUpdate })
         } else {
-          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate })
+          await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate, readOnly: true })
         }
       }})
       await client.chat.postMessage({
@@ -2238,10 +2238,12 @@ async function runArchitectAgent(params: {
   await update("_Architect is reading the spec chain..._")
   const historyArch = getHistory(featureName)
   const ARCH_HISTORY_LIMIT = 40
+  // When called via escalation (readOnly=true), skip history-dependent enrichment.
+  // The brief is self-contained; prior-phase history adds hallucination risk.
   const [context, lockedDecisionsArch, priorContextArch] = await Promise.all([
     loadArchitectAgentContext(featureName),
-    extractLockedDecisions(historyArch).catch(() => ""),
-    getPriorContext(featureName, historyArch, ARCH_HISTORY_LIMIT),
+    readOnly ? "" : extractLockedDecisions(historyArch).catch(() => ""),
+    readOnly ? "" : getPriorContext(featureName, historyArch, ARCH_HISTORY_LIMIT),
   ])
   // Phase entry upstream spec audit — PM + Design spec health check on every architect agent message.
   // Audits both upstream specs in parallel using content-addressed cache.
@@ -2357,8 +2359,10 @@ async function runArchitectAgent(params: {
   }
   // ─── END PRE-RUN GATE ───────────────────────────────────────────────────────
 
-  const archNotices = upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice
-  const enrichedUserMessageArch = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
+  const archNotices = readOnly ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
+  const enrichedUserMessageArch = readOnly
+    ? userMessage  // escalation brief is already complete
+    : buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
   const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")
@@ -2368,9 +2372,14 @@ async function runArchitectAgent(params: {
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutArch: ToolCallRecord[] = []
 
+  // When called via escalation (readOnly=true), pass EMPTY history. The escalation brief
+  // contains everything the architect needs. Prior-phase conversation history causes hallucination.
+  // Same pattern as PM agent's readOnly gate (line 897).
+  const effectiveHistoryArch = readOnly ? [] : historyArch
+
   const response = await runAgent({
     systemPrompt,
-    history: historyArch,
+    history: effectiveHistoryArch,
     userMessage: enrichedUserMessageArch,
     userImages,
     historyLimit: ARCH_HISTORY_LIMIT,

@@ -181,9 +181,10 @@ describe("conversation-store", () => {
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
-  it("pendingEscalation survives process restart — loaded from .conversation-state.json on startup", async () => {
+  it("pendingEscalation is cleared on startup — stale escalation state from prior session does not block routing", async () => {
     // Simulate: a previously-set escalation was persisted to .conversation-state.json
-    // and the process restarted (module re-imported).
+    // and the process restarted (module re-imported). On restart, pending escalations
+    // are cleared because the user confirmation was lost when the bot crashed.
     const savedState = {
       pendingEscalations: {
         "onboarding": { targetAgent: "pm", question: "What is the session expiry?", designContext: "" }
@@ -199,9 +200,7 @@ describe("conversation-store", () => {
 
     const { getPendingEscalation } = await import("../../runtime/conversation-store")
     const loaded = getPendingEscalation("onboarding")
-    expect(loaded).not.toBeNull()
-    expect(loaded?.question).toBe("What is the session expiry?")
-    expect(loaded?.targetAgent).toBe("pm")
+    expect(loaded).toBeNull()  // cleared on startup — stale state
   })
 
   // ─── pending approval ─────────────────────────────────────────────────────
@@ -290,8 +289,10 @@ describe("conversation-store", () => {
 
     const { disableFilePersistence, getPendingEscalation, getPendingApproval, getEscalationNotification, getHistory } = await import("../../runtime/conversation-store")
 
-    // Before disableFilePersistence: disk state is in memory
-    expect(getPendingEscalation("onboarding")?.question).toBe("Q")
+    // Before disableFilePersistence: disk state is in memory.
+    // Pending escalations are cleared on startup (stale state from prior session),
+    // but approvals and notifications survive.
+    expect(getPendingEscalation("onboarding")).toBeNull()  // cleared on startup
     expect(getPendingApproval("onboarding")?.specType).toBe("product")
     expect(getEscalationNotification("onboarding")?.question).toBe("Q")
 
