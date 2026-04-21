@@ -255,4 +255,24 @@ describe("buildArchitectSystemPrompt — domain boundary", () => {
     expect(prompt).toContain("Design gaps second")
     expect(prompt).toContain("Never ask \"do you want me to escalate?\"")
   })
+
+  it("GitHub is single source of truth — never trust conversation history over spec", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("GitHub is the single source of truth")
+    expect(prompt).toContain("conversation history is not")
+    expect(prompt).toContain("if X is not in the spec, X is a gap")
+  })
+
+  it("cannot modify upstream specs — only escalate", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("You cannot modify upstream specs")
+    expect(prompt).toContain("NO tool to write to the PM spec or design spec")
+    expect(prompt).toContain("offer_upstream_revision")
+  })
+
+  it("never asks 'did they already resolve this' or offers to update specs", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Never ask \"did they already resolve this?\"")
+    expect(prompt).toContain("Never offer to \"update the specs yourself\"")
+  })
 })
