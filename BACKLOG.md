@@ -51,6 +51,14 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### Log agent response content — first 500 chars of every agent response (2026-04-20)
+
+Currently the platform logs routing decisions, audit results, and token counts — but NOT the actual response content. This means response quality failures (hallucination, wrong tone, asking instead of asserting) are invisible from logs. The only way to see them is to paste Slack messages manually.
+
+**Fix:** After every `runAgent` call, log the first 500 chars of the response: `console.log([AGENT-RESPONSE] ${agentType}: ${response.slice(0, 500)})`. Applies to all agent paths (PM, design, architect) and all call contexts (normal, escalation, continuation). This makes content quality evaluable from logs alone.
+
+---
+
 ### Pre-commit hook: enforce pre-run upstream gate on all agent paths (2026-04-20)
 
 When `message.ts` has a pre-run upstream gate for one agent path (design N18, architect pre-run), the hook must verify the same pattern exists for ALL agent paths that have upstream dependencies. Prevents the failure mode where a structural gate exists for one agent but is never wired for another — exactly what happened with the architect (design had N18 for months, architect had nothing until manually caught in testing).
