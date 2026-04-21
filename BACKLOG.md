@@ -51,6 +51,16 @@ Once the rubric is verified to catch all gap patterns, the remaining ping-pong (
 
 ---
 
+### Pre-commit hook: enforce pre-run upstream gate on all agent paths (2026-04-20)
+
+When `message.ts` has a pre-run upstream gate for one agent path (design N18, architect pre-run), the hook must verify the same pattern exists for ALL agent paths that have upstream dependencies. Prevents the failure mode where a structural gate exists for one agent but is never wired for another — exactly what happened with the architect (design had N18 for months, architect had nothing until manually caught in testing).
+
+**Hook logic:** Scan `message.ts` for `// PRE-RUN GATE` or equivalent marker comments. Count how many agent paths have them vs how many agent paths exist (pm, design, architect). If any non-PM agent path is missing a pre-run gate, block the commit. PM is exempt (no upstream).
+
+**Trigger:** Any commit touching `message.ts` that adds or modifies a pre-run gate pattern.
+
+---
+
 ### Mobile-responsive design preview renderer (2026-04-18)
 
 The HTML preview renderer (`runtime/html-renderer.ts`) produces a fixed 390×844px phone frame with absolute positioning. On real mobile devices, content is cut off, not fully visible, and not something a designer would sign off on. The renderer needs to produce responsive HTML that works on any viewport — same way a real app would. The desktop phone-frame + inspector mode stays for desktop review; mobile viewports get native responsive layout.
