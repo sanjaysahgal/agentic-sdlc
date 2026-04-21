@@ -1,5 +1,11 @@
 {
-  "pendingEscalations": {},
+  "pendingEscalations": {
+    "onboarding": {
+      "targetAgent": "pm",
+      "question": "1. [PM] User Story 2 (returning user signs in) has no named failure path for a sign-in failure anywhere in Edge Cases or Acceptance Criteria specifically attributed to that story; AC 29 covers SSO failure generically but is framed around the Auth Sheet and does not explicitly address the returning-user sign-in failure scenario as distinct from new-user sign-up failure. — Add an edge case explicitly stating that when a returning user's SSO authentication fails, the Auth Sheet displays the same dismissible inline error with a \"Retry\" button described in AC 29, and the user is returned to the logged-out chat on dismiss.\n2. [PM] Acceptance Criteria 2 and 3 use \"non-intrusive\" implicitly through design description but AC 3 describes the indicator as \"read-only\" without specifying what data it displays beyond the string \"Not signed in\", leaving the data requirement for the logged-out indicator unspecified. — Add a data requirement stating that the \"Not signed in\" indicator displays only the static string \"Not signed in\" with no user-specific data fields, and that no user state other than authentication status (boolean: authenticated or not) is read to render it.\n3. [PM] User Story 8 (conversation carry-over after sign-up from logged-out session) reads, writes, and stores data — the logged-out conversation transcript that must be merged into the authenticated session — but no data requirement specifies how the logged-out conversation is identified, stored client-side or server-side, or associated with the new authenticated user record during carry-over. — Add a data requirement specifying that the logged-out conversation is stored in browser session storage keyed by an ephemeral session ID, and that on successful SSO authentication the client submits that session ID to the backend, which associates the stored transcript with the new authenticated user's Conversation entity before redirecting to the home screen.",
+      "designContext": ""
+    }
+  },
   "pendingApprovals": {},
   "escalationNotifications": {}
 }
