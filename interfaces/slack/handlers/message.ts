@@ -851,12 +851,16 @@ async function runPmAgent(params: {
   await update("_Product Manager is reading the spec..._")
   const historyPm = getHistory(featureName)
   const PM_HISTORY_LIMIT = 40
+  // When called via escalation (readOnly=true), skip history-dependent enrichment.
+  // The brief is self-contained; prior-phase history adds hallucination risk.
   const [context, lockedDecisionsPm, priorContextPm] = await Promise.all([
     loadAgentContext(featureName),
-    extractLockedDecisions(historyPm).catch(() => ""),
-    getPriorContext(featureName, historyPm, PM_HISTORY_LIMIT),
+    readOnly ? "" : extractLockedDecisions(historyPm).catch(() => ""),
+    readOnly ? "" : getPriorContext(featureName, historyPm, PM_HISTORY_LIMIT),
   ])
-  const enrichedUserMessagePm = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsPm, priorContext: priorContextPm })
+  const enrichedUserMessagePm = readOnly
+    ? userMessage  // escalation brief is already complete
+    : buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsPm, priorContext: priorContextPm })
 
   // If the message is asking about the product as a whole (vision, architecture, principles),
   // answer from context directly — the pm agent is not the right framing for product-level questions.
@@ -887,9 +891,14 @@ async function runPmAgent(params: {
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutPm: ToolCallRecord[] = []
 
+  // When called via escalation (readOnly=true), pass EMPTY history. The escalation brief
+  // contains everything the PM needs. Prior-phase conversation history causes hallucination
+  // ("discussions not committed to GitHub"). Same fix as architect pre-run gate.
+  const effectiveHistoryPm = readOnly ? [] : historyPm
+
   const response = await runAgent({
     systemPrompt,
-    history: historyPm,
+    history: effectiveHistoryPm,
     userMessage: enrichedUserMessagePm,
     userImages,
     tools: readOnly ? undefined : PM_TOOLS,
