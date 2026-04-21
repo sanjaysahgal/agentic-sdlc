@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }))
 
-import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, DESIGN_RUBRIC, buildDesignRubric } from "../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, DESIGN_RUBRIC, buildDesignRubric, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../runtime/phase-completion-auditor"
 
 beforeEach(() => {
   mockCreate.mockReset()
@@ -698,5 +698,36 @@ describe("auditPhaseCompletion — per-finding logging", () => {
     const perFindingLogs = logSpy.mock.calls.filter(c => String(c[0]).match(/\[AUDITOR\] auditPhaseCompletion\[\d+\]/))
     expect(perFindingLogs).toHaveLength(0)
     logSpy.mockRestore()
+  })
+})
+
+// ─── ARCHITECT_UPSTREAM_PM_RUBRIC ──────────────────────────────────────────────
+
+describe("ARCHITECT_UPSTREAM_PM_RUBRIC", () => {
+  it("exists and is distinct from PM_RUBRIC", () => {
+    expect(ARCHITECT_UPSTREAM_PM_RUBRIC).toBeDefined()
+    expect(ARCHITECT_UPSTREAM_PM_RUBRIC).not.toBe(PM_RUBRIC)
+  })
+
+  it("contains exactly 2 criteria (error paths + open questions)", () => {
+    // Count numbered criteria: lines starting with a digit followed by a period
+    const criteria = ARCHITECT_UPSTREAM_PM_RUBRIC.match(/^\d+\./gm)
+    expect(criteria).toHaveLength(2)
+  })
+
+  it("does NOT contain data requirements, measurability, architecture consistency, or non-goals criteria", () => {
+    const lowerRubric = ARCHITECT_UPSTREAM_PM_RUBRIC.toLowerCase()
+    expect(lowerRubric).not.toContain("data requirements")
+    expect(lowerRubric).not.toContain("measurable acceptance criteria")
+    expect(lowerRubric).not.toContain("architecture consistency")
+    expect(lowerRubric).not.toContain("non-goals completeness")
+  })
+
+  it("contains error path criterion", () => {
+    expect(ARCHITECT_UPSTREAM_PM_RUBRIC).toContain("failure/error scenario")
+  })
+
+  it("contains open questions criterion", () => {
+    expect(ARCHITECT_UPSTREAM_PM_RUBRIC).toContain("Open Questions")
   })
 })

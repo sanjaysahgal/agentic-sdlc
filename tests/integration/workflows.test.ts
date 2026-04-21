@@ -1773,7 +1773,7 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
     // The runAgent call (index 3) received the enriched message with the audit injected
     const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
-    expect(userMsg?.content).toContain("[PLATFORM ENGINEERING READINESS")
+    expect(userMsg?.content).toContain("[INTERNAL — Engineering readiness")
     expect(userMsg?.content).toContain("OnboardingSession data model missing explicit field names")
 
     // 4 total Anthropic calls
@@ -1801,7 +1801,7 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
     // runAgent call (index 2) does NOT contain audit notice
     const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
     const userMsg = (runAgentCall.messages as { role: string; content: string }[]).at(-1)
-    expect(userMsg?.content).not.toContain("[PLATFORM ENGINEERING READINESS")
+    expect(userMsg?.content).not.toContain("[INTERNAL — Engineering readiness")
   })
 })
 
@@ -8244,8 +8244,176 @@ describe("Scenario N72 — Architect orientation gate suppresses notices for fir
 
     // Verify the agent's user message did NOT contain audit notice text
     const firstCall = mockAnthropicCreate.mock.calls.find((c: any[]) =>
-      c[0]?.messages?.some((m: any) => m.role === "user" && m.content?.includes?.("PLATFORM UPSTREAM SPEC AUDIT"))
+      c[0]?.messages?.some((m: any) => m.role === "user" && m.content?.includes?.("INTERNAL — Upstream spec gaps"))
     )
     expect(firstCall).toBeUndefined()
+  })
+})
+
+// ─── Scenario N80: Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUBRIC ──────
+
+describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUBRIC, not PM_RUBRIC", () => {
+  const THREAD = "workflow-n80"
+
+  beforeEach(() => { clearHistory("onboarding") })
+
+  it("PM spec with sparse data requirements but complete error paths and no open questions → gate does NOT fire", async () => {
+    setConfirmedAgent("onboarding", "architect")
+    // Mark user as oriented so pre-run gate is not bypassed
+    const { handleFeatureChannelMessage } = await import("../../../interfaces/slack/handlers/message")
+
+    // PM spec: has error paths for all stories, no open questions, but NO data requirements
+    // Under PM_RUBRIC this would produce criterion 4 findings. Under ARCHITECT_UPSTREAM_PM_RUBRIC it should NOT.
+    const PM_SPEC = `# Onboarding
+## User Stories
+1. User signs up via SSO
+2. Returning user signs in
+
+## Edge Cases
+- Sign-up SSO fails → user sees inline error with retry
+- Sign-in SSO fails → user sees inline error with retry
+
+## Acceptance Criteria
+1. User can sign up
+2. User can sign in
+
+## Open Questions
+(none)`
+
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC).toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n(none)").toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.design.md")) {
+        return Promise.resolve({ data: { content: Buffer.from("# Design Spec\nComplete").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    // First message (orientation) to set orientedUsers
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // PM audit (ARCHITECT_UPSTREAM_PM_RUBRIC)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Design audit
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Engineering readiness audit
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Welcome!" }] }) // Agent response
+
+    const params1 = { ...makeParams(THREAD, "feature-onboarding", "Hi I am new"), userId: "U_N80" }
+    await handleFeatureChannelMessage(params1)
+
+    // Second message — should NOT trigger pre-run gate because PM spec has no ARCHITECT_UPSTREAM_PM_RUBRIC gaps
+    // All audits are CACHED from first message (same spec fingerprint), so only
+    // isOffTopicForAgent, isSpecStateQuery, and agent response need mocks.
+    mockAnthropicCreate.mockReset()
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Here is my proposal..." }] })
+
+    const params2 = { ...makeParams(THREAD, "feature-onboarding", "what does the data model look like?"), userId: "U_N80" }
+    await handleFeatureChannelMessage(params2)
+
+    // Architect ran — gate did NOT fire (no pendingEscalation set)
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // Verify the agent actually ran (last mock was the agent response)
+    const updateCalls = (params2.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const agentResponse = updateCalls.find((c: any) => c[0]?.text?.includes("Here is my proposal"))
+    expect(agentResponse).toBeDefined()
+  })
+
+  it("PM spec with missing error path → gate fires, escalates to PM", async () => {
+    setConfirmedAgent("onboarding", "architect")
+
+    // PM spec: MISSING error path for sign-in story
+    const PM_SPEC_WITH_GAP = `# Onboarding
+## User Stories
+1. User signs up via SSO
+2. Returning user signs in
+
+## Edge Cases
+- Sign-up SSO fails → user sees inline error with retry
+
+## Acceptance Criteria
+1. User can sign up
+2. User can sign in
+
+## Open Questions
+(none)`
+
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_WITH_GAP).toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n(none)").toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.design.md")) {
+        return Promise.resolve({ data: { content: Buffer.from("# Design Spec\nComplete").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    // First message to set orientedUsers (must not match CHECK_IN_RE to avoid state-query fast path)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // PM audit
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Design audit
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Engineering readiness
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Welcome!" }] })
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "I am new to the team"), userId: "U_N80b" })
+
+    // Second message — PM audit is CACHED from first message (same spec fingerprint).
+    // The first message's PM audit returned PASS, so the cache says PASS → gate does NOT fire.
+    // To test gate firing, we need a DIFFERENT PM spec fingerprint. The simplest approach:
+    // change mockGetContent to return a different PM spec, which changes the fingerprint.
+    const PM_SPEC_WITH_GAP_V2 = `# Onboarding v2
+## User Stories
+1. User signs up via SSO
+2. Returning user signs in
+
+## Edge Cases
+- Sign-up SSO fails → user sees inline error with retry
+
+## Acceptance Criteria
+1. User can sign up
+2. User can sign in
+
+## Open Questions
+(none)`
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md")) {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_WITH_GAP_V2).toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n(none)").toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.design.md")) {
+        return Promise.resolve({ data: { content: Buffer.from("# Design Spec\nComplete").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(new Error("Not Found"))
+    })
+
+    mockAnthropicCreate.mockReset()
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: User Story 2 (returning user signs in) has no failure path | Add sign-in failure edge case" }] }) // PM audit → FINDING (new fingerprint, not cached)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // Design audit
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // Engineering readiness
+
+    await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "lets go"), userId: "U_N80b" })
+
+    // Gate fired — pendingEscalation set to PM
+    const esc = getPendingEscalation("onboarding")
+    expect(esc).not.toBeNull()
+    expect(esc?.targetAgent).toBe("pm")
   })
 })

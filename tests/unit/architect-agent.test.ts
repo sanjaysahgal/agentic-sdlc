@@ -275,4 +275,10 @@ describe("buildArchitectSystemPrompt — domain boundary", () => {
     expect(prompt).toContain("Never ask \"did they already resolve this?\"")
     expect(prompt).toContain("Never offer to \"update the specs yourself\"")
   })
+
+  it("includes 'never say platform' instruction — findings are the architect's own", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
+    expect(prompt).toContain("Never say \"the platform\" to the user")
+    expect(prompt).toContain("Findings are yours")
+  })
 })

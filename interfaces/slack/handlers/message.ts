@@ -9,7 +9,7 @@ import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, 
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness, auditSpecStructure } from "../../../runtime/spec-auditor"
-import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC } from "../../../runtime/phase-completion-auditor"
+import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -1260,7 +1260,7 @@ async function runDesignAgent(params: {
       }).catch(() => null)
       if (pmAuditResult && !pmAuditResult.ready) {
         const findingLines = pmAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        upstreamNoticeDesign = `\n\n[PLATFORM UPSTREAM SPEC AUDIT — APPROVED PM SPEC HAS ${pmAuditResult.findings.length} GAP${pmAuditResult.findings.length === 1 ? "" : "S"} THAT MUST BE SURFACED TO THE USER BEFORE PROCEEDING:\n${findingLines}\nYou MUST surface these gaps prominently in your response and recommend returning to the PM agent to address them before the design phase continues.]`
+        upstreamNoticeDesign = `\n\n[INTERNAL — You found ${pmAuditResult.findings.length} gap${pmAuditResult.findings.length === 1 ? "" : "s"} in the approved PM spec that must be surfaced to the user before proceeding. Present these as YOUR findings, never as "the platform's":\n${findingLines}\nYou MUST surface these gaps prominently in your response and recommend returning to the PM agent to address them before the design phase continues.]`
       } else {
         upstreamNoticeDesign = ""
       }
@@ -2261,7 +2261,7 @@ async function runArchitectAgent(params: {
   } else {
     const [pmAuditArch, designAuditArch] = await Promise.all([
       pmSpecContentArch
-        ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
+        ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: ARCHITECT_UPSTREAM_PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
         : null,
       designSpecContentArch
         ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture, approvedProductSpec: pmSpecContentArch ?? undefined }).catch(() => null)
@@ -2277,7 +2277,7 @@ async function runArchitectAgent(params: {
       archFindings.push(`APPROVED DESIGN SPEC — ${designAuditArch.findings.length} GAP${designAuditArch.findings.length === 1 ? "" : "S"}:\n${lines}`)
     }
     if (archFindings.length > 0) {
-      upstreamNoticeArch = `\n\n[PLATFORM UPSTREAM SPEC AUDIT — The following upstream spec gaps block engineering handoff. These are facts for your awareness. Follow your "How you open every conversation" rules to determine WHEN to surface them (orientation turns: do not surface; substantive turns: assert escalation plan per PM-first ordering).\n${archFindings.join("\n\n")}]`
+      upstreamNoticeArch = `\n\n[INTERNAL — Upstream spec gaps you found during your review. Present these as YOUR findings to the user, never as "the platform's". Follow your "How you open every conversation" rules to determine WHEN to surface them (orientation turns: do not surface; substantive turns: assert escalation plan per PM-first ordering).\n${archFindings.join("\n\n")}]`
     } else {
       upstreamNoticeArch = ""
     }
@@ -2309,9 +2309,9 @@ async function runArchitectAgent(params: {
       }).catch(() => null)
       if (archAuditResult && !archAuditResult.ready) {
         const findingLines = archAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — ${archAuditResult.findings.length} gap${archAuditResult.findings.length === 1 ? "" : "s"} blocking implementation handoff. These are facts for your awareness. Follow your "How you open every conversation" rules to determine WHEN to surface them.\n${findingLines}]`
+        archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: ${archAuditResult.findings.length} gap${archAuditResult.findings.length === 1 ? "" : "s"} blocking implementation handoff. These are YOUR findings from reviewing the spec. Follow your "How you open every conversation" rules to determine WHEN to surface them.\n${findingLines}]`
       } else if (archAuditResult?.ready) {
-        archReadinessNotice = `\n\n[PLATFORM ENGINEERING READINESS — Spec passed all engineering rubric criteria. You may confirm the spec is implementation-ready when asked.]`
+        archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: Spec passed all rubric criteria. You may confirm the spec is implementation-ready when asked.]`
       }
       phaseEntryAuditCache.set(archPhaseCacheKey, archReadinessNotice)
     }
@@ -2324,7 +2324,7 @@ async function runArchitectAgent(params: {
   if (engDraftForAssumptions) {
     const assumptionsToValidate = extractHandoffSection(engDraftForAssumptions, "## Design Assumptions To Validate")
     if (assumptionsToValidate.trim()) {
-      designAssumptionsNotice = `\n\n[PLATFORM DESIGN ASSUMPTIONS — The design team made the following assumptions that must be confirmed or overridden before the engineering spec is approved. For each: either confirm it inline in the spec (remove from this list) or call offer_upstream_revision(design) if the assumption is incorrect:\n${assumptionsToValidate}]`
+      designAssumptionsNotice = `\n\n[INTERNAL — Design assumptions to validate before engineering approval. For each: either confirm it inline in the spec (remove from this list) or call offer_upstream_revision(design) if the assumption is incorrect:\n${assumptionsToValidate}]`
     }
   }
 
@@ -2354,7 +2354,7 @@ async function runArchitectAgent(params: {
       : /APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/
     const findingsText = upstreamNoticeArch.match(findingsRegex)?.[1]?.trim() ?? `${gapCount} gaps blocking engineering`
 
-    console.log(`[ESCALATION-GATE] architect pre-run: ${upstreamPmGapCount} PM + ${upstreamDesignGapCount} design gaps — blocking agent, escalating to ${escalationTarget}`)
+    console.log(`[ESCALATION-GATE] architect pre-run (ARCHITECT_UPSTREAM_PM_RUBRIC): ${upstreamPmGapCount} PM + ${upstreamDesignGapCount} design gaps — blocking agent, escalating to ${escalationTarget}`)
     setPendingEscalation(featureName, { targetAgent: escalationTarget, question: findingsText, designContext: "" })
 
     const prefix = routingNote ? `${routingNote}\n\n` : ""

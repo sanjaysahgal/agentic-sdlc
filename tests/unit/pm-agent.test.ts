@@ -208,4 +208,18 @@ describe("buildPmSystemPrompt — domain boundary", () => {
     expect(prompt).toContain("Read the room first")
     expect(prompt).toContain("Do NOT open with probing questions")
   })
+
+  it("readOnly=true includes ESCALATION MODE with tool suppression", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding", true)
+    expect(prompt).toContain("ESCALATION MODE")
+    expect(prompt).toContain("NO tools")
+    expect(prompt).toContain("Do NOT output tool names")
+  })
+
+  it("readOnly=true does NOT include tool-use instructions (apply_product_spec_patch etc.)", () => {
+    const prompt = buildPmSystemPrompt(ctx, "onboarding", true)
+    // The escalation mode section must suppress tool references that would
+    // cause Haiku to output tool-call syntax as prose text
+    expect(prompt).not.toContain("READ-ONLY MODE")  // old framing replaced
+  })
 })

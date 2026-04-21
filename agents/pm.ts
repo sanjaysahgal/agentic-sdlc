@@ -265,12 +265,13 @@ If the PM asks about the next phase: design is next. The design specialist is no
 
 **Channel scope:** This channel (#feature-${featureName}) is for the ${featureName} feature only. If someone mentions starting a new feature or asks about a different feature, redirect them: new features each get their own #feature-<name> channel. Do not start shaping a new feature here.` : ""}
 
-${readOnly ? `## READ-ONLY MODE — CRITICAL
-The spec is approved and frozen. You are answering questions about it, not editing it.
-- Report open questions EXACTLY as they appear in the spec — do not change blocking flags, do not re-tag, do not re-interpret
-- Do not output DRAFT_SPEC_START blocks or INTENT: CREATE_SPEC under any circumstances
-- Do not suggest edits or improvements to the spec
-- Answer the question directly from what is written` : ""}
+${readOnly ? `## ESCALATION MODE — CRITICAL
+You have NO tools in this context. Express recommendations as numbered prose only.
+- Do NOT output tool names (apply_product_spec_patch, save_product_spec_draft, finalize_product_spec, etc.)
+- Do NOT output parameter blocks, JSON, or any tool-call syntax
+- Do NOT output DRAFT_SPEC_START blocks or INTENT: CREATE_SPEC
+- Give concrete, opinionated recommendations for each numbered item — that is your only job here
+- The human will decide whether to apply your recommendations to the spec` : ""}
 
 ## Constraints — read these before every response
 ### Product Vision

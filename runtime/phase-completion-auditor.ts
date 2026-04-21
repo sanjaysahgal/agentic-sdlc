@@ -212,6 +212,19 @@ export const PM_RUBRIC = `1. USER FLOWS — Enumerate each user story in ## User
 
 6. NON-GOALS COMPLETENESS — The ## Non-Goals section explicitly excludes at least one scope boundary that a reasonable engineer might otherwise include. An empty Non-Goals section or a vague "nothing out of scope" statement is a red flag.`
 
+// ─── Architect Upstream PM Rubric ──────────────────────────────────────────────
+//
+// Deliberately designed for the architect's perspective: "does this PM spec give me enough
+// to write an engineering spec?" This is NOT a copy of PM_RUBRIC. PM_RUBRIC is the PM's
+// self-evaluation rubric for finalization — it checks completeness at PM level (data
+// requirements, measurability, non-goals). Those are the architect's job to resolve,
+// not PM blockers. This rubric checks only what genuinely blocks engineering:
+//   1. Missing failure/error paths — architect can't design error handling without them
+//   2. Unresolved open questions — architect can't build on undecided foundations
+export const ARCHITECT_UPSTREAM_PM_RUBRIC = `1. USER STORY ERROR PATHS — Enumerate each user story in ## User Stories by number. For EACH story whose primary action can fail (sign-in, sign-up, data load, network request), verify that ## Edge Cases or ## Acceptance Criteria contains at least one explicit failure/error scenario for that story's primary action. A user story with a fallible primary action but no named failure path anywhere in the spec is a product gap — the architect cannot design error handling without knowing what the user experiences on failure. Output one FINDING per uncovered story.
+
+2. NO OPEN QUESTIONS — The ## Open Questions section contains zero questions (blocking or non-blocking). All questions must be resolved before engineering can begin — the architect cannot build on undecided product foundations. Any line with [blocking: yes] or [blocking: no] in ## Open Questions is a finding.`
+
 // ─── PM Design-Readiness Rubric ────────────────────────────────────────────────
 //
 // Runs at PM finalization (inside finalize_product_spec handler) — not the PM_RUBRIC completeness
