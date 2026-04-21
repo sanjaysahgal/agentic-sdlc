@@ -1,5 +1,11 @@
 {
-  "pendingEscalations": {},
+  "pendingEscalations": {
+    "onboarding": {
+      "targetAgent": "pm",
+      "question": "1. [PM] User Story 2 (returning user sign-in) has no named failure path for when sign-in fails — SSO failure is only described in the context of the Auth Sheet generically (AC 29) but no acceptance criterion or edge case explicitly ties sign-in failure back to the returning user story and its outcome (e.g., returning user landing on home screen). — Add an edge case explicitly stating: \"If SSO authentication fails for a returning user, the Auth Sheet displays the dismissible inline error with a Retry button (per AC 29) and the user remains on the logged-out chat interface with no session state modified.\"\n2. [PM] Acceptance Criterion 2 uses \"non-intrusive\" implicitly through layout description but AC 3 uses no unmeasurable words; however AC 8 describes the warning banner as appearing with no measurable latency threshold for how quickly it renders after the 10-minute threshold is crossed, making it untestable. — Add a specific render latency requirement to AC 8, e.g., \"the warning banner must appear within 1 second of the inactivity timer crossing the 10-minute-remaining threshold.\"\n3. [PM] User Story 8 (conversation carry-over after sign-up) has no explicit data requirements describing what fields constitute a \"conversation\" for carry-over purposes — what data is transferred, in what format, and which fields are included or excluded. — Add a data requirements section specifying that a carried-over conversation consists of: the ordered list of user message text strings and AI response text strings (excluding system warning messages and in-conversation nudge messages), the session timestamp, and the anonymous session identifier used to associate the logged-out conversation with the newly authenticated user record.",
+      "designContext": ""
+    }
+  },
   "pendingApprovals": {},
   "escalationNotifications": {}
 }
