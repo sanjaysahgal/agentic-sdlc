@@ -120,6 +120,12 @@ describe("buildArchitectSystemPrompt", () => {
     expect(prompt).toContain("Do NOT present options")
   })
 
+  it("readOnly orientation closes with architect's next step, not a question to the user", () => {
+    const prompt = buildArchitectSystemPrompt(baseContext, "onboarding", true)
+    expect(prompt).toContain("do not ask the user what to focus on")
+    expect(prompt).not.toContain("Ask what they'd like to focus on")
+  })
+
   it("includes a direct link to the engineering spec on GitHub", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding")
     expect(prompt).toContain("https://github.com/o/r/blob/spec/onboarding-engineering/")
