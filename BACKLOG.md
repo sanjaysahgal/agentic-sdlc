@@ -43,6 +43,21 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Port remaining design agent enforcement mechanisms to architect (2026-04-21)
+
+Build when the architect starts producing spec content (saving drafts, patching, approaching finalization). Not needed until the architect has clean first conversations working.
+
+| Mechanism | Design agent impl | Architect status |
+|---|---|---|
+| Uncommitted decisions audit | Post-response Haiku classifier (`identifyUncommittedDecisions`) | **Missing** — architect discusses decisions without saving |
+| Post-patch spec health invariant | Arithmetic gate: blocks if spec size grows >20% or findings increase | **Missing** — no bloat/degradation detection for engineering spec |
+| Platform status line | Item count prepended to response when >0 items remain | **Missing** — no visibility into remaining gaps |
+| Escalation assertive language override | Passive escalation prose → assertive CTA with gap list | **Missing** — architect may use passive framing |
+| Post-patch continuation loop | Re-audit + auto-continue up to 2 passes after patches | **Missing** — no auto-fix loop for engineering spec |
+| Platform-direct finalization | If 0 structural findings on approval intent, call finalize directly | **Missing** — architect relies on agent to call finalize |
+
+---
+
 ### Pre-design PM completeness gate — surface all PM gaps upfront before design starts (2026-04-16)
 
 **Deferred:** The upfront gate already exists (`finalize_product_spec` audit). The real fix is the rubric false-negative item above — sharpen the rubric so it catches what it's supposed to catch. A second pre-design gate would still only be as good as its rubric. Fix the rubric first.
