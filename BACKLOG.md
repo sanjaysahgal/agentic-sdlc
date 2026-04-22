@@ -27,6 +27,33 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Migrate all LLM-based audits to deterministic implementations (Principle 11) (2026-04-22)
+
+**Priority: CRITICAL — this is an architectural mandate, not a single fix.**
+
+Every `auditPhaseCompletion` call uses Sonnet to evaluate a spec against a rubric. Same spec, same rubric, different run → different findings. This violates Archon's core value proposition: deterministic specialist agents that produce identical results on identical input.
+
+**Current LLM-based audits that must be migrated:**
+
+| Audit | Agent | Current impl | Deterministic replacement |
+|---|---|---|---|
+| Upstream PM spec audit | Design | `auditPhaseCompletion(PM_RUBRIC)` | Parse user stories → verify each has error path section; `extractAllOpenQuestions` for unresolved items; word-list vagueness check on ACs |
+| Upstream PM spec audit | Architect | `auditPhaseCompletion(ARCHITECT_UPSTREAM_PM_RUBRIC)` | Same as design — error path per story + open questions |
+| Design readiness audit | Design | `auditPhaseCompletion(buildDesignRubric)` | Parse screens → verify states defined, animations specified, form factors covered; `auditBrandTokens` already deterministic; extend `auditSpecStructure` |
+| Engineering readiness audit | Architect | `auditPhaseCompletion(ENGINEER_RUBRIC)` | Parse sections → verify API contracts have auth, data model has migrations, open questions resolved |
+| Upstream design spec audit | Architect | `auditPhaseCompletion(buildDesignRubric)` | Same as design readiness |
+| Downstream readiness | All finalize handlers | `auditDownstreamReadiness` (Sonnet, open-ended) | This is the ONE audit where LLM enrichment may remain — adversarial "what would you need?" has no structural ceiling. But it must be `@enrichment`, not a primary gate. |
+
+**Migration pattern:**
+1. For each rubric criterion, ask: "What structural property of the spec makes this criterion PASS or FAIL?"
+2. Implement that check as a pure function (parser + counter + matcher)
+3. The LLM rubric stays as `@enrichment` — runs in parallel, surfaces additional findings, but never gates decisions
+4. Add `@deterministic` JSDoc to every new audit function
+
+**Acceptance criteria:** Run every audit twice on the same spec. Results must be identical. Any non-deterministic primary gate is a bug.
+
+---
+
 > **Priority reset — trust and determinism before anything else.**
 >
 > The platform's core promise is that agents behave predictably and users can always know where they stand. This requires two layers: user-facing trust (context limits, committed state visibility, persistence) and infrastructure robustness (reliable writes, retries, idempotency). Both must be in place before any new agent work. A platform users don't trust is not a platform.

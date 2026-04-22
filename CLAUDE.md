@@ -48,6 +48,24 @@ The human overrides when they disagree. That's the relationship: expert proposes
 
 **Applies to all agents:** UX Designer, PM, Architect, and all future agents. The system prompt framing ("you are a senior [domain] expert") is required in every agent prompt. The structural gate is required for every structured finding output.
 
+### 11. All audits must be deterministic — same input, same output, always
+
+**This is the founding contract of Archon's value proposition. Every audit that gates a decision or surfaces findings must produce identical results on identical input. No exceptions.**
+
+A user can ask an agent 10 times back to back and must get the exact same findings. A feature can be paused for months and the agent must report the exact same gaps it reported before. If an audit returns different results on different runs with the same input, it is not an audit — it is a suggestion engine. Archon does not ship suggestion engines.
+
+**What this means in practice:**
+- Readiness checks, phase completion audits, upstream spec audits, and structural validation must be implemented as deterministic functions: parsing, counting, string matching, diff comparison
+- `extractAllOpenQuestions`, `auditBrandTokens`, `auditSpecStructure`, `detectResolvedQuestions` are the correct pattern — pure functions, no LLM, same input = same output
+- LLM-based evaluation (Sonnet/Haiku rubric scoring) may exist as a **secondary enrichment layer** that surfaces additional findings beyond what the deterministic layer catches — but it must never be the primary gate for any decision
+- When writing a new audit, the first question is: "Can this check be implemented without an LLM?" If yes, it must be. If no, document exactly which aspect requires semantic understanding and why it cannot be reduced to structure
+
+**The test for compliance:** Run the audit twice on the same input. If the results differ, the audit is broken — regardless of whether both results are "reasonable."
+
+**Historical violation (April 2026):** `auditPhaseCompletion` with `ARCHITECT_UPSTREAM_PM_RUBRIC` evaluated the same approved PM spec on two consecutive runs. Run 1: found a gap in AC#13. Run 2: `ready=true`, no gaps. The PM spec had not changed. The architect's assessment of upstream readiness was non-deterministic — the user could not trust it.
+
+**Enforcement:** Every new audit function must include a determinism declaration in its JSDoc: either `@deterministic` (pure function, no LLM) or `@enrichment` (LLM-assisted, not a primary gate). An `@enrichment` audit that is wired as a primary gate is a delivery gap.
+
 ### 9. No symptom fixes — ever. Always find the root cause.
 
 **When a bug appears, find the architectural assumption that makes it possible — then fix that. Never patch the symptom.**
