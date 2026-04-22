@@ -8327,7 +8327,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
     expect(agentResponse).toBeDefined()
   })
 
-  it("PM spec with missing error path → gate fires, escalates to PM", async () => {
+  it("PM spec with missing error path → architect runs with finding in context (no gate, no block)", async () => {
     setConfirmedAgent("onboarding", "architect")
 
     // PM spec: MISSING error path for sign-in story
@@ -8360,20 +8360,17 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
     })
     mockPaginate.mockResolvedValue([])
 
-    // First message to set orientedUsers (must not match CHECK_IN_RE to avoid state-query fast path)
+    // First message to set orientedUsers
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // PM audit
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Design audit
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Engineering readiness
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Welcome!" }] })
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "I am new to the team"), userId: "U_N80b" })
 
-    // Second message — PM audit is CACHED from first message (same spec fingerprint).
-    // The first message's PM audit returned PASS, so the cache says PASS → gate does NOT fire.
-    // To test gate firing, we need a DIFFERENT PM spec fingerprint. The simplest approach:
-    // change mockGetContent to return a different PM spec, which changes the fingerprint.
+    // Second message — PM audit finds a gap via different fingerprint
     const PM_SPEC_WITH_GAP_V2 = `# Onboarding v2
 ## User Stories
 1. User signs up via SSO
@@ -8403,17 +8400,22 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 
     mockAnthropicCreate.mockReset()
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: User Story 2 (returning user signs in) has no failure path | Add sign-in failure edge case" }] }) // PM audit → FINDING (new fingerprint, not cached)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // Design audit
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] }) // Engineering readiness
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "FINDING: User Story 2 has no failure path | Add sign-in failure edge case" }] }) // PM audit
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Design audit
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })    // Engineering readiness
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "I found a PM spec gap..." }] }) // Agent runs (NOT blocked)
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "lets go"), userId: "U_N80b" })
 
-    // Gate fired — pendingEscalation set to PM
-    const esc = getPendingEscalation("onboarding")
-    expect(esc).not.toBeNull()
-    expect(esc?.targetAgent).toBe("pm")
+    // No gate fired — architect ran normally (no pendingEscalation)
+    expect(getPendingEscalation("onboarding")).toBeNull()
+
+    // PM finding appears in the architect's context (injected as notice, not a blocker)
+    const agentCall = mockAnthropicCreate.mock.calls.find((c: any[]) =>
+      c[0]?.messages?.some((m: any) => m.role === "user" && typeof m.content === "string" && m.content.includes("APPROVED PM SPEC"))
+    )
+    expect(agentCall).toBeDefined()
   })
 })

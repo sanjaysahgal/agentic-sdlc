@@ -2328,45 +2328,23 @@ async function runArchitectAgent(params: {
     }
   }
 
-  // ─── STRUCTURAL PRE-RUN GATE (Principle 8) ───────────────────────────────────
-  // Same pattern as design agent's N18 gate. If upstream gaps exist, the platform
-  // handles escalation directly — the architect does NOT run. No prompt instructions,
-  // no notice injection, no agent decision-making. The platform posts a structured
-  // message and sets pendingEscalation. User says "yes" → PM agent runs.
+  // ─── UPSTREAM GAPS: INFORMATIONAL CONTEXT, NOT A GATE ───────────────────────
+  // Upstream audit findings are injected into the architect's context so it can
+  // decide which gaps to escalate via offer_upstream_revision(pm|design) and which
+  // to handle as engineering assumptions in ## Design Assumptions To Validate.
+  // The architect is NOT blocked — it decides what's blocking, not the platform.
+  // Non-blocking gaps are enforced at the EXIT gate (finalize_engineering_spec
+  // blocks if unvalidated assumptions remain), not the entry gate.
   //
-  // ORIENTATION BYPASS: If this user hasn't been oriented yet in this feature,
-  // skip the gate. The agent runs with upstream notices injected (so it knows about
-  // the gaps) but can orient the newcomer first. The gate fires on their NEXT message.
-  const orientationKey = `${featureName}:${userId ?? "anon"}`
-  const isOrientationTurn = !orientedUsers.has(orientationKey)
+  // Orientation tracking: suppress upstream notices on the first message from a
+  // userId in this feature so the architect can orient the newcomer first.
+  // Orientation tracking requires a real userId — if userId is not available
+  // (e.g. Slack API didn't provide it), skip orientation suppression and show notices.
+  const orientationKey = userId ? `${featureName}:${userId}` : null
+  const isOrientationTurn = orientationKey ? !orientedUsers.has(orientationKey) : false
 
-  const pmGapMatch = upstreamNoticeArch.match(/APPROVED PM SPEC — (\d+) GAP/)
-  const designGapMatch = upstreamNoticeArch.match(/APPROVED DESIGN SPEC — (\d+) GAP/)
-  const upstreamPmGapCount = pmGapMatch ? parseInt(pmGapMatch[1]) : 0
-  const upstreamDesignGapCount = designGapMatch ? parseInt(designGapMatch[1]) : 0
-
-  if (!isOrientationTurn && (upstreamPmGapCount > 0 || upstreamDesignGapCount > 0)) {
-    const escalationTarget = upstreamPmGapCount > 0 ? "pm" : "design"
-    const gapCount = upstreamPmGapCount > 0 ? upstreamPmGapCount : upstreamDesignGapCount
-    const targetLabel = upstreamPmGapCount > 0 ? "PM" : "Design"
-    const findingsRegex = upstreamPmGapCount > 0
-      ? /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
-      : /APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/
-    const findingsText = upstreamNoticeArch.match(findingsRegex)?.[1]?.trim() ?? `${gapCount} gaps blocking engineering`
-
-    console.log(`[ESCALATION-GATE] architect pre-run (ARCHITECT_UPSTREAM_PM_RUBRIC): ${upstreamPmGapCount} PM + ${upstreamDesignGapCount} design gaps — blocking agent, escalating to ${escalationTarget}`)
-    setPendingEscalation(featureName, { targetAgent: escalationTarget, question: findingsText, designContext: "" })
-
-    const prefix = routingNote ? `${routingNote}\n\n` : ""
-    const platformMessage = `Engineering is blocked — the approved ${targetLabel} spec has ${gapCount} gap${gapCount === 1 ? "" : "s"} that must be resolved before the engineering spec can proceed.\n\nSay *yes* and I'll bring in the ${targetLabel} agent to close them.`
-    appendMessage(featureName, { role: "user", content: userMessage })
-    appendMessage(featureName, { role: "assistant", content: platformMessage })
-    await update(`${prefix}${platformMessage}`)
-    return
-  }
-  // ─── END PRE-RUN GATE ───────────────────────────────────────────────────────
-
-  const archNotices = readOnly ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
+  // Suppress upstream notices on orientation turns — architect orients first, gaps come next turn.
+  const archNotices = readOnly ? "" : isOrientationTurn ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
   const enrichedUserMessageArch = readOnly
     ? userMessage  // escalation brief is already complete
     : buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
