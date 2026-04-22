@@ -1400,6 +1400,8 @@ Most valuable once several features have shipped and patterns in the vision show
 
 ## Completed
 
+- **Remove architect pre-run upstream gate — let the architect work (2026-04-21)** — The architect pre-run gate blocked the architect from starting when upstream PM/design specs had audit findings. This is wrong for SDLC — the architect is the expert who decides which gaps block engineering. Fix: upstream audit findings are now injected as informational context only; the architect runs unconditionally and escalates specific blocking gaps via `offer_upstream_revision(pm|design)` during conversation. Non-blocking gaps are captured in `## Design Assumptions To Validate` and enforced at finalization (exit gate: `finalize_engineering_spec` blocks if unvalidated assumptions remain). Entry/exit asymmetry: no entry gate, but the exit gate ensures nothing ships unvalidated.
+
 - **Architect upstream rubric — dedicated ARCHITECT_UPSTREAM_PM_RUBRIC (2026-04-21)** — PM_RUBRIC (6 criteria) was being reused as the architect's upstream gate, causing engineering-scope gaps (data requirements, measurability, architecture consistency, non-goals) to be escalated to the PM. Fixed by creating a dedicated 2-criteria rubric in `runtime/phase-completion-auditor.ts` that checks only error paths and open questions — the only PM-scope gaps the architect cannot resolve itself.
 
 - **Remove "platform" language from agent context notices (2026-04-21)** — All `[PLATFORM ...]` notice prefixes in architect and design agent paths changed to `[INTERNAL ...]`. Architect prompt now says "Never say 'the platform' to the user — findings are yours." Ensures agents present findings as their own expert recommendations, not as output from an external system.
