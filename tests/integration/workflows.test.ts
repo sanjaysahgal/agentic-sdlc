@@ -8467,3 +8467,24 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
     expect(agentCall).toBeDefined()
   })
 })
+
+// ─── Scenario N81: Architect auto-continue message content ─────────────────────
+//
+// The auto-continue synthetic user message must instruct the architect to skip
+// orientation. Source-level assertion — verifies the instruction is in the code.
+
+describe("Scenario N81 — Architect auto-continue message does not allow re-orientation", () => {
+  it("auto-continue message in source code contains no-re-orient instruction", async () => {
+    const fs = await import("fs")
+    const source = fs.readFileSync("interfaces/slack/handlers/message.ts", "utf-8")
+    // Find the auto-continue block (after the log line)
+    const autoContinueIdx = source.indexOf("branch=confirmed-architect-auto-continue")
+    expect(autoContinueIdx).toBeGreaterThan(-1)
+    // Extract the next 1000 chars — contains the userMessage
+    const block = source.slice(autoContinueIdx, autoContinueIdx + 1000)
+    // Must tell architect not to re-orient
+    expect(block).toContain("Do NOT welcome them again")
+    // Must direct to structural proposal
+    expect(block).toContain("structural proposal")
+  })
+})

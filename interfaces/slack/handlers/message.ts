@@ -743,7 +743,7 @@ ${archPendingEscalation.question}`
     if (archIsOrientation) {
       console.log(`[ROUTER] branch=confirmed-architect-auto-continue feature=${featureName} — orientation done, running full-context turn`)
       await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
-        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage: "Review the full spec chain and open with your structural proposal.", client, update, userId })
+        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage: "You already oriented the user in your previous message. Do NOT welcome them again or repeat orientation. Go straight to: review the full spec chain, surface any upstream gaps with escalation tool calls, and present your structural proposal for the engineering spec.", client, update, userId })
       }})
     }
     return
