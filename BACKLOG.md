@@ -43,6 +43,18 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Architect must surface decisions for human review before saving — no unilateral spec writes (2026-04-21)
+
+**Priority: HIGH — next session.** The architect resolved 11 open questions and saved them directly to the engineering spec without surfacing a single decision for human review. PM and design agents present decisions → human confirms → spec saved. The architect skipped the "present for review" step entirely.
+
+**Root cause:** `apply_engineering_spec_patch` saves directly — no gate between "architect makes decisions" and "architect writes to spec." PM has `pendingApproval` → human confirms → `finalize_product_spec`. Design has the same. Architect has nothing.
+
+**Fix:** Structural gate on `apply_engineering_spec_patch` (or `save_engineering_spec_draft` for first save): when the patch resolves open questions or makes architectural decisions, the platform extracts the decisions and sets a `pendingApproval`-like state. The architect's response must enumerate each decision with rationale ("My recommendation: server-side anonymous sessions → Rationale: no client-side data loss risk"). Human confirms → spec saved. Same pattern as PM/design.
+
+**Why this matters:** The architect chose server-side anonymous session storage, UUID cookie keying, atomic claim on sign-up, and 10 other decisions. These are consequential. The human saw ONE of them in the summary. The other 10 are invisible and already committed to GitHub.
+
+---
+
 ### Universal post-response hedge detection gate — all agents (2026-04-21)
 
 `isHedgeRecommendation()` and `enforceOpinionatedRecommendations()` exist for spec auditor structured findings but do NOT cover agent prose responses. The same deferral pattern ("What would you like to focus on?", "Which option do you prefer?", "Should I proceed?") recurs in every new agent because it's only caught by prompt rules.
