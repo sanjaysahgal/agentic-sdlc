@@ -142,7 +142,10 @@ The old text-block protocol (`DRAFT_DESIGN_SPEC_START/END`, `DESIGN_PATCH_START/
 
 Every spec-producing agent must implement a phase completion gate before it is considered complete. The gate is structural — enforced by tool architecture, not prompt instructions.
 
-**The infrastructure:** `runtime/phase-completion-auditor.ts` exports `auditPhaseCompletion(params)` and rubric constants. Uses `claude-sonnet-4-6` (consequential, one-shot). Parses `FINDING: <issue> | <recommendation>` lines from Sonnet output, or `PASS` for a clean spec. Falls back to `{ ready: true }` on unexpected format (never blocks on ambiguity).
+**The infrastructure (Principle 11 — two-layer pattern):**
+- **Primary gate (deterministic):** `runtime/deterministic-auditor.ts` exports `auditPmSpec`, `auditPmDesignReadiness`, `auditDesignSpec`, `auditEngineeringSpec`, `detectHedgeLanguage`. Pure functions — same input → same output, always. No LLM calls. These are the floor: findings they produce are guaranteed to appear on every run.
+- **Enrichment layer (LLM):** `runtime/phase-completion-auditor.ts` exports `auditPhaseCompletion(params)` — `@enrichment`, NOT a primary gate. Uses Sonnet to find semantic gaps the parser misses. Runs in parallel with the deterministic layer. LLM findings are deduplicated against deterministic findings (40-char prefix match) before merging. May produce different findings across runs — this is acceptable because the deterministic floor ensures a minimum.
+- **Merge pattern at every call site in `message.ts`:** deterministic findings first → LLM findings appended (deduplicated) → merged array is the final result.
 
 **To add a phase completion gate to a new agent:**
 
