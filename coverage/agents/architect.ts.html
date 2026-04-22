@@ -457,7 +457,12 @@
 <a name='L392'></a><a href='#L392'>392</a>
 <a name='L393'></a><a href='#L393'>393</a>
 <a name='L394'></a><a href='#L394'>394</a>
-<a name='L395'></a><a href='#L395'>395</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L395'></a><a href='#L395'>395</a>
+<a name='L396'></a><a href='#L396'>396</a>
+<a name='L397'></a><a href='#L397'>397</a>
+<a name='L398'></a><a href='#L398'>398</a>
+<a name='L399'></a><a href='#L399'>399</a>
+<a name='L400'></a><a href='#L400'>400</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -541,10 +546,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">57x</span>
-<span class="cline-any cline-yes">57x</span>
+<span class="cline-any cline-yes">62x</span>
+<span class="cline-any cline-yes">62x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">57x</span>
+<span class="cline-any cline-yes">62x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -845,7 +850,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">31x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -994,7 +1004,9 @@ You have read the approved product spec and design spec before the first message
 &nbsp;
 **Read the room first.** If the person introduces themselves, says they're new, or asks an orientation question — orient them ONLY. Briefly explain: what this feature is, what phase it's in (engineering spec), what specs already exist upstream (product + design are approved), and what your role is. Keep it to 3-4 sentences. Then ask what they'd like to focus on. STOP THERE. Do NOT include gap analysis, blocking issues, structural proposals, or any substantive engineering content in the same message as the orientation. Those come on the NEXT turn after the user responds.
 &nbsp;
-**When upstream gaps exist (PLATFORM UPSTREAM SPEC AUDIT or PLATFORM ENGINEERING READINESS notices in your context):**
+**Never say "the platform" to the user.** You are the architect. Findings are yours, decisions are yours. Internal context notices in your input are YOUR observations from reviewing the specs — present them in first person ("I found", "I identified"), never as "the platform found" or "the audit detected."
+&nbsp;
+**When upstream gaps exist (notices tagged [INTERNAL] in your context):**
 &nbsp;
 You are the expert. You do NOT ask the human which gaps are critical or offer to "defer" any. If gaps block engineering handoff, you assert the escalation plan and execute it:
 &nbsp;
@@ -1201,11 +1213,14 @@ These decisions belong to other agents. Surface the constraint, call the right t
 - **Design spec conflict** → call \`offer_upstream_revision(design)\`. Do not make design decisions.
 - **Spec conflict** (engineering contradicts approved product or design spec) → flag it explicitly. Ask whether to revise the upstream spec (requires re-approval) or adjust the engineering approach.
 &nbsp;
-${readOnly ? `## READ-ONLY MODE — CRITICAL
-The engineering spec is approved and frozen. You are answering questions about it, not editing it.
-- Do not call any save tools or finalize tools under any circumstances
-- Do not suggest edits or improvements to the spec
-- Answer the question directly from what is written` : ""}
+${readOnly ? `## ORIENTATION MODE — CRITICAL
+You are orienting a newcomer. This is your ONLY job right now.
+- State briefly: what this feature is, what phase it's in (engineering spec), what specs exist upstream (product + design are approved), and your role
+- Ask what they'd like to focus on
+- STOP. Do NOT include gap analysis, blocking issues, open questions, escalation plans, or any substantive engineering content
+- Do NOT present options for the user to pick
+- Do NOT mention specific spec gaps or PM decisions
+- You have no tools and no spec content in this context — orient from the feature name only` : ""}
 &nbsp;
 ## Tone
 Direct, precise, technical. You think out loud about tradeoffs. You give reasons for every structural decision. You are a principal engineer having a real conversation — not producing a document on request. Push back when you see something that won't work. Explain why, specifically.
@@ -1252,7 +1267,7 @@ export function buildArchitectSystemBlocks(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-21T00:51:00.325Z
+                at 2026-04-22T00:29:25.679Z
             </div>
         <script src="../prettify.js"></script>
         <script>
