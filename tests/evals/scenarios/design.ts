@@ -1,16 +1,13 @@
 import { EvalScenario } from "../runner"
 import { setEvalEnv, stubContext, stubContextWithDraft, approvedProductSpec } from "../stub-context"
-import { buildDesignSystemPrompt, buildDesignStateResponse } from "../../../agents/design"
+import { buildDesignSystemPrompt } from "../../../agents/design"
 
 setEvalEnv()
 
 const FEATURE = "onboarding"
 
 // Context for design phase: the currentDraft holds the approved product spec
-// (this is what loadDesignAgentContext produces — approved product spec + any design draft)
 const designContext = stubContextWithDraft(`## Approved Product Spec\n${approvedProductSpec}`)
-
-const SPEC_URL = "https://github.com/acme-co/acme-app/blob/spec/onboarding-design/specs/features/onboarding/onboarding.design.md"
 
 const midDraftHistory = [
   {
@@ -30,10 +27,7 @@ const midDraftHistory = [
 - US-1: Landing → fill creds → GitHub step → task board
 - US-2: Landing → fill creds → skip GitHub → task board
 
-I'll draft the full design spec now.
-
-DRAFT_DESIGN_SPEC_START
-# Onboarding — Design Spec
+## Screens
 
 ### Screen 1: Landing / Sign-up
 Centered card. Email + password fields. "Create account" CTA. No nav shell.
@@ -44,6 +38,8 @@ Full-screen OAuth prompt. "Skip for now" link at bottom.
 ### Screen 3: Redirect
 Toast: "Your sample project is ready." Auto-redirect to task board in 2s.
 
+## User Flows
+
 ### Flow: US-1 — New user sign-up
 Landing → fill email/password → submit → GitHub step → task board
 
@@ -51,12 +47,13 @@ Landing → fill email/password → submit → GitHub step → task board
 Landing → submit → GitHub step → click Skip → task board
 
 ## Open Questions
-- [type: design] [blocking: no] Confirm exact wordmark size in Figma before implementation.
-DRAFT_DESIGN_SPEC_END`,
+- [type: design] [blocking: no] Confirm exact wordmark size in Figma before implementation.`,
   },
 ]
 
 export const designScenarios: EvalScenario[] = [
+  // ─── Opening / Proposal ─────────────────────────────────────────────────────
+
   {
     name: "Design agent opens with a concrete proposal on first message",
     agentLabel: "Design",
@@ -64,10 +61,22 @@ export const designScenarios: EvalScenario[] = [
     userMessage: "I'm the designer — let's start the onboarding design.",
     criteria: [
       "The response leads with a concrete structural proposal — specific screens or flows, not just discovery questions",
-      "The response does not end with 'Shall I?', 'Would you like me to?', or any permission-asking phrase",
       "The response references the approved product spec (user stories or acceptance criteria from it)",
     ],
+    deterministicCriteria: [
+      {
+        label: "No permission-asking phrases",
+        mustNotContain: ["shall I", "would you like me to", "should I proceed"],
+      },
+      {
+        label: "No hedge language",
+        mustNotContain: ["what would you like to focus on", "which option do you prefer"],
+      },
+    ],
   },
+
+  // ─── Design Decisions ───────────────────────────────────────────────────────
+
   {
     name: "Design agent gives a concrete answer to a specific design question",
     agentLabel: "Design",
@@ -76,63 +85,116 @@ export const designScenarios: EvalScenario[] = [
     history: midDraftHistory,
     criteria: [
       "The response gives a specific visual recommendation — layout, typography, component choices, or color",
-      "The response does not just ask what the user wants — it makes a recommendation with reasoning",
       "The response is concise and actionable, not a wall of generic design principles",
     ],
+    deterministicCriteria: [
+      {
+        label: "Makes a recommendation, does not just ask",
+        check: (response) => {
+          const lower = response.toLowerCase()
+          return !lower.includes("what would you like") && !lower.includes("what do you prefer")
+        },
+      },
+    ],
   },
+
   {
-    name: "buildDesignStateResponse includes Figma AI and Builder.io",
-    agentLabel: "Design (state query)",
-    // This scenario tests the fast-path function directly, not the full agent.
-    // We still run it through the eval framework to catch regressions in the voice.
-    systemPrompt: "N/A — this scenario calls buildDesignStateResponse directly",
-    userMessage: "__SKIP_AGENT_CALL__",  // sentinel — handled by scenario setup
-    criteria: [],  // not used — tested via unit tests; scenario exists as a reminder
-  },
-  {
-    name: "Design agent detects approval and moves to engineering",
+    name: "Design agent addresses animation with specific timing",
     agentLabel: "Design",
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
-    userMessage: "Looks great, approved.",
+    userMessage: "How should the sign-up form animate in?",
+    history: midDraftHistory,
+    criteria: [
+      "The response specifies an animation direction (e.g., fade in, slide up)",
+      "The response includes a duration in milliseconds or seconds",
+      "The response includes an easing function (e.g., ease-out, cubic-bezier)",
+    ],
+    deterministicCriteria: [
+      {
+        label: "Contains numeric timing",
+        check: (response) => /\d+\s*ms|\d+(\.\d+)?\s*s\b/.test(response),
+      },
+    ],
+  },
+
+  // ─── Domain Boundary ────────────────────────────────────────────────────────
+
+  {
+    name: "Design agent does not make product decisions",
+    agentLabel: "Design",
+    systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
+    userMessage: "Should we allow social login instead of email/password?",
+    criteria: [
+      "The response recognizes this is a product decision — not a design decision",
+      "The response recommends escalating to the PM or notes this changes the product spec",
+    ],
+    deterministicCriteria: [
+      {
+        label: "Does not unilaterally change product scope",
+        check: (response) => {
+          const lower = response.toLowerCase()
+          return !(lower.includes("let's add social login") || lower.includes("i'll add social login"))
+        },
+      },
+    ],
+  },
+
+  {
+    name: "Design agent does not make architecture decisions",
+    agentLabel: "Design",
+    systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
+    userMessage: "Should we store onboarding state in localStorage or the database?",
+    criteria: [
+      "The response recognizes this is an architecture decision — not a design decision",
+      "The response defers to the architect or notes this is outside the designer's domain",
+    ],
+    deterministicCriteria: [
+      {
+        label: "No platform language leaked",
+        mustNotContain: ["the platform", "[PLATFORM", "[INTERNAL"],
+      },
+    ],
+  },
+
+  // ─── Approval ───────────────────────────────────────────────────────────────
+
+  {
+    name: "Design agent detects approval and wraps up",
+    agentLabel: "Design",
+    systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
+    userMessage: "This looks great, approved.",
     history: midDraftHistory,
     criteria: [
       "The response confirms the design spec is approved",
-      "The response mentions the engineering phase or architect as the next step",
-      "The response does not ask 'Are you sure?' or seek further confirmation",
+      "The response mentions the next step — engineering spec or architect",
     ],
-  },
-  {
-    name: "Design agent does not prematurely approve spec when user locks a single decision",
-    agentLabel: "Design",
-    systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
-    userMessage: "lets lock option A",
-    history: [
-      ...midDraftHistory,
+    deterministicCriteria: [
       {
-        role: "user" as const,
-        content: "What should the prompt bar placeholder copy say?",
-      },
-      {
-        role: "assistant" as const,
-        content: `For the prompt bar placeholder, I'd go with:\n\n*Option A:* "Ask about your health"\n*Option B:* "Ask me anything about your health"\n\nMy call: Option A — short, specific, conversational. Shall I lock this in?`,
+        label: "No re-confirmation seeking",
+        mustNotContain: ["are you sure", "do you want to confirm"],
       },
     ],
-    criteria: [
-      "The response confirms the specific copy decision (Option A) without approving the whole spec",
-      "The response does NOT output INTENT: CREATE_DESIGN_SPEC",
-      "The response does NOT say the spec is saved, approved, or moving to engineering",
-      "The response continues the design conversation — asking about the next open decision or noting what remains",
-    ],
   },
+
+  // ─── Response Quality ───────────────────────────────────────────────────────
+
   {
-    name: "Design agent does not ask permission-asking questions",
+    name: "Design agent response is concise",
     agentLabel: "Design",
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
-    userMessage: "Should we add a progress indicator to the onboarding flow?",
+    userMessage: "What's the empty state for the task board?",
     criteria: [
-      "The response gives a direct recommendation (yes or no with reasoning), not 'it depends'",
-      "The response does not end with 'Want me to add it?' or 'Shall I update the spec?'",
-      "The response references the product spec constraints or established design patterns",
+      "The response describes a specific empty state design — illustration, copy, and CTA",
+    ],
+    deterministicCriteria: [
+      {
+        label: "Under 500 words",
+        check: (response) => response.split(/\s+/).length < 500,
+      },
+      {
+        label: "No platform language leaked",
+        mustNotContain: ["the platform", "[PLATFORM", "[INTERNAL"],
+      },
     ],
   },
 ]
