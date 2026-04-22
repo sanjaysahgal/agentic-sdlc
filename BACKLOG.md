@@ -43,15 +43,22 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### Architect must surface decisions for human review before saving — no unilateral spec writes (2026-04-21)
+### Architect must stop at upstream escalation — no spec writing until upstream gaps close (2026-04-21)
 
-**Priority: HIGH — next session.** The architect resolved 11 open questions and saved them directly to the engineering spec without surfacing a single decision for human review. PM and design agents present decisions → human confirms → spec saved. The architect skipped the "present for review" step entirely.
+**Priority: HIGH — next session.** The architect found 6 design gaps AND resolved 11 open questions AND saved the spec — all in the same turn. This is wrong. If upstream gaps exist, the architect should escalate and STOP. The spec it wrote depends on design decisions that haven't been made yet — the 11 decisions may be wrong.
 
-**Root cause:** `apply_engineering_spec_patch` saves directly — no gate between "architect makes decisions" and "architect writes to spec." PM has `pendingApproval` → human confirms → `finalize_product_spec`. Design has the same. Architect has nothing.
+**Correct flow:**
+1. Architect reviews spec chain → finds 6 design gaps that block engineering
+2. Architect escalates to design: "6 gaps must close before I write the spec." STOP.
+3. Design agent resolves gaps → architect resumes
+4. Architect writes spec with resolved context → surfaces decisions for review
+5. Human confirms → spec saved
 
-**Fix:** Structural gate on `apply_engineering_spec_patch` (or `save_engineering_spec_draft` for first save): when the patch resolves open questions or makes architectural decisions, the platform extracts the decisions and sets a `pendingApproval`-like state. The architect's response must enumerate each decision with rationale ("My recommendation: server-side anonymous sessions → Rationale: no client-side data loss risk"). Human confirms → spec saved. Same pattern as PM/design.
+**Two structural fixes needed:**
 
-**Why this matters:** The architect chose server-side anonymous session storage, UUID cookie keying, atomic claim on sign-up, and 10 other decisions. These are consequential. The human saw ONE of them in the summary. The other 10 are invisible and already committed to GitHub.
+**Fix A — Escalation stops the turn:** If the architect calls `offer_upstream_revision` during a turn, the platform should NOT continue to process further tool calls (spec saves, patches). The escalation is the output of the turn. Same as design agent: when `offer_pm_escalation` fires, the turn ends.
+
+**Fix B — Decisions surfaced before save:** When the architect resolves open questions, the platform extracts decisions and sets a `pendingApproval`-like state. Each decision listed with rationale → human confirms → spec saved. Same pattern as PM/design finalization. `apply_engineering_spec_patch` and `save_engineering_spec_draft` should not silently commit architectural decisions.
 
 ---
 
