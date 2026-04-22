@@ -732,7 +732,7 @@ ${archPendingEscalation.question}`
     // Orientation enforcement (Principle 8): first message from a userId in this feature
     // runs readOnly — architect orients without spec content, can't dump gaps.
     // The orientation key is also computed inside runArchitectAgent for notice suppression.
-    const archOrientKey = userId ? `${featureName}:${userId}` : null
+    const archOrientKey = (userId && userId.length > 0) ? `${featureName}:${userId}` : null
     const archIsOrientation = archOrientKey ? !orientedUsers.has(archOrientKey) : false
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation })
@@ -2345,7 +2345,7 @@ async function runArchitectAgent(params: {
   // userId in this feature so the architect can orient the newcomer first.
   // Orientation tracking requires a real userId — if userId is not available
   // (e.g. Slack API didn't provide it), skip orientation suppression and show notices.
-  const orientationKey = userId ? `${featureName}:${userId}` : null
+  const orientationKey = (userId && userId.length > 0) ? `${featureName}:${userId}` : null
   const isOrientationTurn = orientationKey ? !orientedUsers.has(orientationKey) : false
 
   // Suppress upstream notices on orientation turns — architect orients first, gaps come next turn.
