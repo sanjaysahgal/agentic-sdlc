@@ -31,8 +31,8 @@
 |---|---|---|
 | IP (patent + trademark) | $1,210 | ~$1,310–$1,330 |
 | Infrastructure | TBD | ~$15–$240 |
-| AI / API (Claude API + Pro) | $72.00 | Variable |
-| **Total** | **$1,311.36** | **~$1,400–$1,650** |
+| AI / API (Claude API + Pro) | $137.00 | Variable |
+| **Total** | **$1,376.36** | **~$1,400–$1,650** |
 
 ---
 
