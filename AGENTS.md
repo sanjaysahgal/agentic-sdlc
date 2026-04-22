@@ -183,6 +183,8 @@ Operates simultaneously at feature level (engineering spec) and product level (o
 **Platform enforcement (ported from design agent):**
 - **Orientation enforcement:** First message from a userId runs `readOnly: true` — ORIENTATION MODE prompt with no spec content, no tools. Architect orients the newcomer without dumping gaps. Subsequent messages get full context.
 - **Post-run PM gap auto-escalation:** After every response, if upstream PM notice had gaps and the architect did NOT call `offer_upstream_revision(pm)`, the platform auto-triggers `setPendingEscalation(pm)` and appends an assertive CTA. Prevents the architect from asking the user to make PM decisions directly.
+- **Escalation stops the turn:** When `offer_upstream_revision` fires, `ArchitectToolState.escalationFired` blocks all subsequent spec saves/patches/finalization in the same turn. `runAgent` `forceStopToolNames` strips tools on next API iteration, forcing the model to wrap up. Two-layer: tool handler (same-batch) + loop stop (cross-batch).
+- **Decision review gate:** `detectResolvedQuestions()` diffs open questions between existing and new draft. When questions are resolved, spec content is held in `PendingDecisionReview` — human must confirm before save. First saves pass through (no prior draft to diff against).
 - **Entry/exit asymmetry:** No blocking entry gate — architect runs unconditionally with upstream findings as informational context. Exit gate (`finalize_engineering_spec`) blocks on unvalidated assumptions in `## Design Assumptions To Validate`.
 
 **Triggered by:** `design-approved-awaiting-engineering` or `engineering-in-progress` phase in `getInProgressFeatures()`

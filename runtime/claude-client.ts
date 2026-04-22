@@ -50,8 +50,11 @@ export async function runAgent(params: {
   tools?: Anthropic.Tool[]
   toolHandler?: ToolHandler
   toolCallsOut?: ToolCallRecord[]  // Optional output — caller passes [] to collect records
+  /** When any tool in this list is called, strip tools from the next API call so the model
+   *  wraps up its response and the loop exits. Used for escalation-stops-the-turn enforcement. */
+  forceStopToolNames?: string[]
 }): Promise<string> {
-  const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT, tools, toolHandler, toolCallsOut } = params
+  const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT, tools, toolHandler, toolCallsOut, forceStopToolNames } = params
 
   const systemBlocks: Anthropic.TextBlockParam[] = Array.isArray(systemPrompt)
     ? systemPrompt
@@ -100,13 +103,16 @@ export async function runAgent(params: {
   // Tool-use loop. When no tools are provided, this executes exactly once (single API call,
   // same behaviour as before). When tools are provided, the loop continues until the model
   // stops with "end_turn" (no more tool calls to make).
+  let forceStopFired = false  // Set when a force-stop tool is called — next iteration strips tools
   while (true) {
+    // When forceStopFired, strip tools so the model must produce end_turn (wraps up its response).
+    const effectiveTools = forceStopFired ? undefined : tools
     const requestParams: Anthropic.MessageCreateParamsNonStreaming = {
       model: AGENT_MODEL,
       max_tokens: 64000,
       system: systemBlocks,
       messages,
-      ...(tools && tools.length > 0 ? { tools } : {}),
+      ...(effectiveTools && effectiveTools.length > 0 ? { tools: effectiveTools } : {}),
     }
 
     const response: Anthropic.Message = await client.messages.create(requestParams)
@@ -174,6 +180,16 @@ export async function runAgent(params: {
         }
       })
     )
+
+    // Check if a force-stop tool was called in this batch. If so, set the flag —
+    // the next iteration will strip tools, forcing the model to wrap up.
+    if (forceStopToolNames && forceStopToolNames.length > 0) {
+      const batchNames = toolUseBlocks.map(b => b.name)
+      if (forceStopToolNames.some(n => batchNames.includes(n))) {
+        console.log(`[FORCE-STOP] Tool ${batchNames.filter(n => forceStopToolNames.includes(n)).join(",")} triggered turn stop — next iteration will strip tools`)
+        forceStopFired = true
+      }
+    }
 
     // Append the assistant turn (with its tool_use blocks) + the tool results turn,
     // then loop for the next API call.

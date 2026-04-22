@@ -21,9 +21,11 @@ import {
   handleFetchUrl,
   handleDesignPhaseCompletionAudit,
   handleFinalizeDesignSpec,
+  detectResolvedQuestions,
   ToolHandlerContext,
   PmToolDeps,
   ArchitectToolDeps,
+  ArchitectToolState,
   DesignToolDeps,
   DesignToolCtx,
   DesignToolState,
@@ -285,18 +287,19 @@ describe("handleArchitectTool", () => {
     specFilePath: "specs/features/onboarding/onboarding.engineering.md",
     specBranchName: "spec/onboarding-engineering",
   })
+  const freshState = (): ArchitectToolState => ({ escalationFired: false, pendingDecisionReview: null })
 
   describe("dispatch", () => {
     it("returns error for unknown tool", async () => {
-      const result = await handleArchitectTool("unknown_tool", {}, archCtx(), buildArchDeps())
+      const result = await handleArchitectTool("unknown_tool", {}, archCtx(), buildArchDeps(), freshState())
       expect(result.error).toContain("Unknown tool")
     })
   })
 
   describe("save_engineering_spec_draft", () => {
-    it("audits and saves draft", async () => {
+    it("audits and saves draft when no decisions resolved", async () => {
       const deps = buildArchDeps()
-      const result = await handleSaveEngineeringSpecDraft({ content: "# Eng Spec" }, archCtx(), deps)
+      const result = await handleSaveEngineeringSpecDraft({ content: "# Eng Spec" }, archCtx(), deps, freshState())
       expect(deps.auditSpecDraft).toHaveBeenCalled()
       expect(deps.saveDraftEngineeringSpec).toHaveBeenCalled()
       expect((result.result as any).url).toContain("github.com")
@@ -306,21 +309,63 @@ describe("handleArchitectTool", () => {
       const deps = buildArchDeps({
         auditSpecDraft: vi.fn().mockResolvedValue({ status: "conflict", message: "Bad spec" }),
       })
-      const result = await handleSaveEngineeringSpecDraft({ content: "bad" }, archCtx(), deps)
+      const result = await handleSaveEngineeringSpecDraft({ content: "bad" }, archCtx(), deps, freshState())
       expect(result.error).toContain("Conflict detected")
       expect(deps.saveDraftEngineeringSpec).not.toHaveBeenCalled()
+    })
+
+    it("holds content for review when open questions are resolved (Fix B)", async () => {
+      const ctx = archCtx()
+      ctx.readFile = vi.fn().mockResolvedValue("# Spec\n## Open Questions\n- What DB? [blocking: yes]")
+      const deps = buildArchDeps({
+        extractAllOpenQuestions: vi.fn()
+          .mockReturnValueOnce(["What DB? [blocking: yes]"])  // old draft
+          .mockReturnValueOnce([]),                            // new content — question resolved
+      })
+      const state = freshState()
+      const result = await handleSaveEngineeringSpecDraft({ content: "# Spec\n## Open Questions\n(none)" }, ctx, deps, state)
+      // Should NOT save
+      expect(deps.saveDraftEngineeringSpec).not.toHaveBeenCalled()
+      // Should set pending decision review
+      expect(state.pendingDecisionReview).not.toBeNull()
+      expect(state.pendingDecisionReview!.resolvedQuestions).toContain("What DB? [blocking: yes]")
+      expect((result.result as any).status).toBe("pending_review")
+    })
+
+    it("saves normally on first save (no existing draft)", async () => {
+      const deps = buildArchDeps()
+      const state = freshState()
+      const result = await handleSaveEngineeringSpecDraft({ content: "# New Spec" }, archCtx(), deps, state)
+      expect(deps.saveDraftEngineeringSpec).toHaveBeenCalled()
+      expect(state.pendingDecisionReview).toBeNull()
     })
   })
 
   describe("apply_engineering_spec_patch", () => {
-    it("reads, patches, audits, saves", async () => {
+    it("reads, patches, audits, saves when no decisions resolved", async () => {
       const deps = buildArchDeps()
       const ctx = archCtx()
       ctx.readFile = vi.fn().mockResolvedValue("# Existing Eng Spec")
-      const result = await handleApplyEngineeringSpecPatch({ patch: "## New Section" }, ctx, deps)
+      const result = await handleApplyEngineeringSpecPatch({ patch: "## New Section" }, ctx, deps, freshState())
       expect(deps.applySpecPatch).toHaveBeenCalledWith("# Existing Eng Spec", "## New Section")
       expect(deps.saveDraftEngineeringSpec).toHaveBeenCalled()
       expect(result.error).toBeUndefined()
+    })
+
+    it("holds content for review when patch resolves open questions (Fix B)", async () => {
+      const ctx = archCtx()
+      ctx.readFile = vi.fn().mockResolvedValue("# Spec\n## Open Questions\n- Which cache? [blocking: yes]")
+      const deps = buildArchDeps({
+        applySpecPatch: vi.fn().mockReturnValue("# Spec\n## Open Questions\n(empty)"),
+        extractAllOpenQuestions: vi.fn()
+          .mockReturnValueOnce(["Which cache? [blocking: yes]"])  // existing
+          .mockReturnValueOnce([]),                                // merged — resolved
+      })
+      const state = freshState()
+      const result = await handleApplyEngineeringSpecPatch({ patch: "resolve cache question" }, ctx, deps, state)
+      expect(deps.saveDraftEngineeringSpec).not.toHaveBeenCalled()
+      expect(state.pendingDecisionReview).not.toBeNull()
+      expect((result.result as any).status).toBe("pending_review")
     })
   })
 
@@ -447,6 +492,78 @@ describe("handleArchitectTool", () => {
         targetAgent: "design",
       }))
       expect((result.result as string)).toContain("Designer")
+    })
+  })
+
+  // ─── Fix A: Escalation stops the turn ──────────────────────────────────────
+  describe("escalation stops the turn (Fix A)", () => {
+    it("blocks save_engineering_spec_draft after escalation fires", async () => {
+      const state = freshState()
+      const deps = buildArchDeps()
+      // Simulate escalation already fired
+      state.escalationFired = true
+      const result = await handleArchitectTool("save_engineering_spec_draft", { content: "# Spec" }, archCtx(), deps, state)
+      expect(result.error).toContain("Blocked")
+      expect(result.error).toContain("offer_upstream_revision")
+      expect(deps.saveDraftEngineeringSpec).not.toHaveBeenCalled()
+    })
+
+    it("blocks apply_engineering_spec_patch after escalation fires", async () => {
+      const state = freshState()
+      state.escalationFired = true
+      const deps = buildArchDeps()
+      const result = await handleArchitectTool("apply_engineering_spec_patch", { patch: "## Patch" }, archCtx(), deps, state)
+      expect(result.error).toContain("Blocked")
+      expect(deps.saveDraftEngineeringSpec).not.toHaveBeenCalled()
+    })
+
+    it("blocks finalize_engineering_spec after escalation fires", async () => {
+      const state = freshState()
+      state.escalationFired = true
+      const result = await handleArchitectTool("finalize_engineering_spec", {}, archCtx(), buildArchDeps(), state)
+      expect(result.error).toContain("Blocked")
+    })
+
+    it("sets escalationFired when offer_upstream_revision is dispatched", async () => {
+      const state = freshState()
+      expect(state.escalationFired).toBe(false)
+      await handleArchitectTool("offer_upstream_revision", { targetAgent: "pm", question: "Q" }, archCtx(), buildArchDeps(), state)
+      expect(state.escalationFired).toBe(true)
+    })
+
+    it("does not block read_approved_specs after escalation", async () => {
+      const state = freshState()
+      state.escalationFired = true
+      const result = await handleArchitectTool("read_approved_specs", { featureNames: [] }, archCtx(), buildArchDeps(), state)
+      expect(result.error).toBeUndefined()
+    })
+  })
+
+  // ─── detectResolvedQuestions unit tests ─────────────────────────────────────
+  describe("detectResolvedQuestions", () => {
+    const extractor = (content: string) =>
+      content.split("\n").filter(l => l.includes("[blocking:")).map(l => l.replace(/^[-*]\s*/, "").trim())
+
+    it("returns empty when no existing draft", () => {
+      expect(detectResolvedQuestions(null, "# Spec", extractor)).toEqual([])
+    })
+
+    it("returns empty when same questions in both", () => {
+      const old = "- Q1 [blocking: yes]\n- Q2 [blocking: no]"
+      const newC = "- Q1 [blocking: yes]\n- Q2 [blocking: no]"
+      expect(detectResolvedQuestions(old, newC, extractor)).toEqual([])
+    })
+
+    it("detects resolved questions", () => {
+      const old = "- Q1 [blocking: yes]\n- Q2 [blocking: no]"
+      const newC = "- Q2 [blocking: no]"
+      expect(detectResolvedQuestions(old, newC, extractor)).toEqual(["Q1 [blocking: yes]"])
+    })
+
+    it("detects all questions resolved", () => {
+      const old = "- Q1 [blocking: yes]\n- Q2 [blocking: no]"
+      const newC = "No questions"
+      expect(detectResolvedQuestions(old, newC, extractor)).toEqual(["Q1 [blocking: yes]", "Q2 [blocking: no]"])
     })
   })
 })

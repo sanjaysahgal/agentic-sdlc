@@ -362,6 +362,75 @@ describe("runAgent — tool-use loop", () => {
     expect(result).toBe("Weird response")
   })
 
+  it("forceStopToolNames strips tools on next iteration when matching tool is called", async () => {
+    // First call: agent calls escalation tool
+    const escalationResponse = {
+      stop_reason: "tool_use",
+      content: [
+        { type: "text", text: "I need to escalate." },
+        { type: "tool_use", id: "call_1", name: "offer_upstream_revision", input: { targetAgent: "pm", question: "Q" } },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    // Second call: tools should be stripped, so model wraps up
+    const wrapUpResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Escalation sent, wrapping up." }],
+      usage: { input_tokens: 20, output_tokens: 10 },
+    }
+    mockCreate
+      .mockResolvedValueOnce(escalationResponse)
+      .mockResolvedValueOnce(wrapUpResponse)
+
+    const toolHandler = vi.fn().mockResolvedValue({ result: "Stored" })
+    const dummyTool = { name: "offer_upstream_revision", description: "Escalate", input_schema: { type: "object" as const, properties: {} } }
+    const saveTool = { name: "save_engineering_spec_draft", description: "Save", input_schema: { type: "object" as const, properties: {} } }
+
+    const result = await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Analyze",
+      tools: [dummyTool, saveTool],
+      toolHandler,
+      forceStopToolNames: ["offer_upstream_revision"],
+    })
+
+    expect(result).toBe("Escalation sent, wrapping up.")
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+    // Second call should NOT include tools (stripped by forceStopToolNames)
+    const secondCall = mockCreate.mock.calls[1][0]
+    expect(secondCall.tools).toBeUndefined()
+  })
+
+  it("forceStopToolNames does not strip tools when no matching tool is called", async () => {
+    const saveResponse = {
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "call_1", name: "save_spec", input: {} }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }
+    const finalResponse = {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Saved" }],
+      usage: { input_tokens: 20, output_tokens: 10 },
+    }
+    mockCreate.mockResolvedValueOnce(saveResponse).mockResolvedValueOnce(finalResponse)
+
+    const toolHandler = vi.fn().mockResolvedValue({ result: {} })
+
+    await runAgent({
+      systemPrompt: "System",
+      history: [],
+      userMessage: "Save",
+      tools: [{ name: "save_spec", description: "Save", input_schema: { type: "object" as const, properties: {} } }],
+      toolHandler,
+      forceStopToolNames: ["offer_upstream_revision"],
+    })
+
+    // Second call should still include tools (no force-stop triggered)
+    const secondCall = mockCreate.mock.calls[1][0]
+    expect(secondCall.tools).toBeDefined()
+  })
+
   it("tool handler returning error object surfaces error message in tool result content", async () => {
     const toolUseResponse = {
       stop_reason: "tool_use",

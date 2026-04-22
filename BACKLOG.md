@@ -43,22 +43,13 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### Architect must stop at upstream escalation — no spec writing until upstream gaps close (2026-04-21)
+~~### Architect must stop at upstream escalation — no spec writing until upstream gaps close (2026-04-21)~~ ✅ DONE (2026-04-22)
 
-**Priority: HIGH — next session.** The architect found 6 design gaps AND resolved 11 open questions AND saved the spec — all in the same turn. This is wrong. If upstream gaps exist, the architect should escalate and STOP. The spec it wrote depends on design decisions that haven't been made yet — the 11 decisions may be wrong.
+**Fix A — Escalation stops the turn:** `ArchitectToolState.escalationFired` flag blocks `save_engineering_spec_draft`, `apply_engineering_spec_patch`, and `finalize_engineering_spec` after `offer_upstream_revision` fires. `runAgent` `forceStopToolNames` parameter strips tools on the next API call iteration, forcing the model to wrap up. Two-layer enforcement: tool handler blocks (synchronous, same-batch) + loop stop (structural, cross-batch).
 
-**Correct flow:**
-1. Architect reviews spec chain → finds 6 design gaps that block engineering
-2. Architect escalates to design: "6 gaps must close before I write the spec." STOP.
-3. Design agent resolves gaps → architect resumes
-4. Architect writes spec with resolved context → surfaces decisions for review
-5. Human confirms → spec saved
+**Fix B — Decisions surfaced before save:** `detectResolvedQuestions()` compares open questions between existing and new draft. When questions are resolved, content is held in `ArchitectToolState.pendingDecisionReview` instead of saving. Post-run gate in `message.ts` stores `PendingDecisionReview` in conversation state and surfaces decisions with a confirmation CTA. Entry gate at architect handler top confirms or discards pending review before any other processing. First saves (no existing draft) pass through without review.
 
-**Two structural fixes needed:**
-
-**Fix A — Escalation stops the turn:** If the architect calls `offer_upstream_revision` during a turn, the platform should NOT continue to process further tool calls (spec saves, patches). The escalation is the output of the turn. Same as design agent: when `offer_pm_escalation` fires, the turn ends.
-
-**Fix B — Decisions surfaced before save:** When the architect resolves open questions, the platform extracts decisions and sets a `pendingApproval`-like state. Each decision listed with rationale → human confirms → spec saved. Same pattern as PM/design finalization. `apply_engineering_spec_patch` and `save_engineering_spec_draft` should not silently commit architectural decisions.
+Tests: 18 new tests across `tool-handlers.test.ts`, `claude-client.test.ts`, and `conversation-store.test.ts`. All 1164 tests pass.
 
 ---
 

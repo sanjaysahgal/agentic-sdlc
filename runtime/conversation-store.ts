@@ -46,10 +46,21 @@ export type PendingApproval = {
   featureName: string
 }
 
+// Pending decision review — set when the architect resolves open questions in a spec save.
+// The spec content is held until the human confirms the decisions. If confirmed, the draft is saved.
+// If rejected, the content is discarded and the architect continues.
+export type PendingDecisionReview = {
+  specContent: string
+  filePath: string
+  featureName: string
+  resolvedQuestions: string[]
+}
+
 const store = new Map<string, Message[]>()
 const confirmedAgents = new Map<string, string>()                       // threadTs → confirmed agent type
 const pendingEscalations = new Map<string, PendingEscalation>()         // threadTs → pending escalation
 const pendingApprovals = new Map<string, PendingApproval>()             // threadTs → pending spec approval
+const pendingDecisionReviews = new Map<string, PendingDecisionReview>() // threadTs → pending decision review
 const escalationNotifications = new Map<string, EscalationNotification>() // featureName → active notification
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
@@ -128,10 +139,12 @@ function loadConversationState(): void {
     const parsed = JSON.parse(raw) as {
       pendingEscalations?: Record<string, PendingEscalation>
       pendingApprovals?: Record<string, PendingApproval>
+      pendingDecisionReviews?: Record<string, PendingDecisionReview>
       escalationNotifications?: Record<string, EscalationNotification>
     }
     for (const [k, v] of Object.entries(parsed.pendingEscalations ?? {})) pendingEscalations.set(k, v)
     for (const [k, v] of Object.entries(parsed.pendingApprovals ?? {})) pendingApprovals.set(k, v)
+    for (const [k, v] of Object.entries(parsed.pendingDecisionReviews ?? {})) pendingDecisionReviews.set(k, v)
     for (const [k, v] of Object.entries(parsed.escalationNotifications ?? {})) escalationNotifications.set(k, v)
   } catch {
     // File doesn't exist yet — start fresh
@@ -150,6 +163,7 @@ export function disableFilePersistence(): void {
   confirmedAgents.clear()
   pendingEscalations.clear()
   pendingApprovals.clear()
+  pendingDecisionReviews.clear()
   escalationNotifications.clear()
 }
 
@@ -159,6 +173,7 @@ function persistConversationState(): void {
     const obj = {
       pendingEscalations: Object.fromEntries(pendingEscalations),
       pendingApprovals: Object.fromEntries(pendingApprovals),
+      pendingDecisionReviews: Object.fromEntries(pendingDecisionReviews),
       escalationNotifications: Object.fromEntries(escalationNotifications),
     }
     console.log(`[STORE] persistConversationState: writing escalations=[${[...pendingEscalations.keys()].join(",")}]`)
@@ -219,6 +234,7 @@ export function clearHistory(threadTs: string): void {
   confirmedAgents.delete(threadTs)
   pendingEscalations.delete(threadTs)
   pendingApprovals.delete(threadTs)
+  pendingDecisionReviews.delete(threadTs)
   persistConfirmedAgents()
   persistConversationHistory()
   persistConversationState()
@@ -285,6 +301,22 @@ export function setPendingApproval(threadTs: string, approval: PendingApproval):
 export function clearPendingApproval(threadTs: string): void {
   console.log(`[STORE] clearPendingApproval: feature=${threadTs}`)
   pendingApprovals.delete(threadTs)
+  persistConversationState()
+}
+
+export function getPendingDecisionReview(threadTs: string): PendingDecisionReview | null {
+  return pendingDecisionReviews.get(threadTs) ?? null
+}
+
+export function setPendingDecisionReview(threadTs: string, review: PendingDecisionReview): void {
+  console.log(`[STORE] setPendingDecisionReview: feature=${threadTs} resolvedQuestions=${review.resolvedQuestions.length}`)
+  pendingDecisionReviews.set(threadTs, review)
+  persistConversationState()
+}
+
+export function clearPendingDecisionReview(threadTs: string): void {
+  console.log(`[STORE] clearPendingDecisionReview: feature=${threadTs}`)
+  pendingDecisionReviews.delete(threadTs)
   persistConversationState()
 }
 

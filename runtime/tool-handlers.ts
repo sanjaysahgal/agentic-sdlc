@@ -14,6 +14,23 @@ import { Message } from "./conversation-store"
 import type { DecisionCorrection, DecisionAuditResult } from "./spec-auditor"
 import type { DownstreamRole } from "./phase-completion-auditor"
 
+/**
+ * Compares open questions between old and new spec drafts. Returns the list of
+ * questions that were open in the old draft but are no longer open in the new draft.
+ * These represent architectural decisions the architect has made.
+ */
+export function detectResolvedQuestions(
+  existingDraft: string | null,
+  newContent: string,
+  extractAllOpenQuestions: (content: string) => string[],
+): string[] {
+  if (!existingDraft) return []  // First save — no prior questions to compare against
+  const oldQuestions = extractAllOpenQuestions(existingDraft)
+  const newQuestions = new Set(extractAllOpenQuestions(newContent))
+  // Questions present in old but absent in new = resolved
+  return oldQuestions.filter(q => !newQuestions.has(q))
+}
+
 /** Slack file upload adapter — abstracts the Slack client dependency. */
 export type SlackFileUploader = (params: { channelId: string; threadTs: string; content: string; filename: string; title: string }) => Promise<void>
 
@@ -222,17 +239,38 @@ export type ArchitectToolDeps = {
   readFile: FileReader
 }
 
+/** Mutable state passed by reference so the caller can read mutations after runAgent completes. */
+export type ArchitectToolState = {
+  /** Set when offer_upstream_revision fires — blocks further spec saves in the same turn. */
+  escalationFired: boolean
+  /** Pending decision review — when spec save contains resolved open questions, the content
+   *  is held here instead of saving. The caller surfaces decisions for human confirmation. */
+  pendingDecisionReview: {
+    content: string
+    filePath: string
+    resolvedQuestions: string[]
+  } | null
+}
+
 export async function handleArchitectTool(
   name: string,
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
   deps: ArchitectToolDeps,
+  state: ArchitectToolState,
 ): Promise<ToolResult> {
+  // Fix A: When escalation fires, block all spec saves in the same turn.
+  // The escalation is the output of the turn — the architect should not write spec
+  // content based on assumptions about how the upstream agent will resolve the gap.
+  if (state.escalationFired && (name === "save_engineering_spec_draft" || name === "apply_engineering_spec_patch" || name === "finalize_engineering_spec")) {
+    console.log(`[ESCALATION-STOP] Blocked ${name} — escalation was already fired this turn`)
+    return { error: `Blocked: you called offer_upstream_revision earlier in this turn. The escalation is the output of this turn — do not save or patch the spec until the upstream agent resolves the gap. Wrap up your response now.` }
+  }
   if (name === "save_engineering_spec_draft") {
-    return handleSaveEngineeringSpecDraft(input, ctx, deps)
+    return handleSaveEngineeringSpecDraft(input, ctx, deps, state)
   }
   if (name === "apply_engineering_spec_patch") {
-    return handleApplyEngineeringSpecPatch(input, ctx, deps)
+    return handleApplyEngineeringSpecPatch(input, ctx, deps, state)
   }
   if (name === "read_approved_specs") {
     return handleReadApprovedSpecs(input, ctx, deps)
@@ -241,6 +279,7 @@ export async function handleArchitectTool(
     return handleFinalizeEngineeringSpec(ctx, deps)
   }
   if (name === "offer_upstream_revision") {
+    state.escalationFired = true
     return handleOfferUpstreamRevision(input, ctx, deps)
   }
   return { error: `Unknown tool: ${name}` }
@@ -250,6 +289,7 @@ export async function handleSaveEngineeringSpecDraft(
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
   deps: ArchitectToolDeps,
+  state: ArchitectToolState,
 ): Promise<ToolResult> {
   const content = input.content as string
   await ctx.update("_Auditing spec against product vision and architecture..._")
@@ -262,6 +302,16 @@ export async function handleSaveEngineeringSpecDraft(
   if (audit.status === "conflict") {
     return { error: `Conflict detected — spec not saved: ${audit.message}` }
   }
+
+  // Fix B: Detect resolved open questions — hold content for human review if decisions were made.
+  const existingDraft = await ctx.readFile(ctx.specFilePath, ctx.specBranchName)
+  const resolvedQuestions = detectResolvedQuestions(existingDraft, content, deps.extractAllOpenQuestions)
+  if (resolvedQuestions.length > 0) {
+    console.log(`[DECISION-REVIEW] save_engineering_spec_draft: ${resolvedQuestions.length} resolved question(s) — holding for human confirmation`)
+    state.pendingDecisionReview = { content, filePath: ctx.specFilePath, resolvedQuestions }
+    return { result: { status: "pending_review", resolvedQuestions, message: `${resolvedQuestions.length} architectural decision(s) detected. Content held for human review — the user will be asked to confirm before saving.` } }
+  }
+
   await ctx.update("_Saving draft to GitHub..._")
   await deps.saveDraftEngineeringSpec({ featureName: ctx.featureName, filePath: ctx.specFilePath, content })
   const { githubOwner, githubRepo } = ctx.loadWorkspaceConfig()
@@ -274,6 +324,7 @@ export async function handleApplyEngineeringSpecPatch(
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
   deps: ArchitectToolDeps,
+  state: ArchitectToolState,
 ): Promise<ToolResult> {
   const patch = input.patch as string
   const existingDraft = await ctx.readFile(ctx.specFilePath, ctx.specBranchName)
@@ -288,6 +339,15 @@ export async function handleApplyEngineeringSpecPatch(
   if (audit.status === "conflict") {
     return { error: `Conflict detected — patch not saved: ${audit.message}` }
   }
+
+  // Fix B: Detect resolved open questions — hold content for human review if decisions were made.
+  const resolvedQuestions = detectResolvedQuestions(existingDraft, mergedDraft, deps.extractAllOpenQuestions)
+  if (resolvedQuestions.length > 0) {
+    console.log(`[DECISION-REVIEW] apply_engineering_spec_patch: ${resolvedQuestions.length} resolved question(s) — holding for human confirmation`)
+    state.pendingDecisionReview = { content: mergedDraft, filePath: ctx.specFilePath, resolvedQuestions }
+    return { result: { status: "pending_review", resolvedQuestions, message: `${resolvedQuestions.length} architectural decision(s) detected. Content held for human review — the user will be asked to confirm before saving.` } }
+  }
+
   await ctx.update("_Saving updated draft to GitHub..._")
   await deps.saveDraftEngineeringSpec({ featureName: ctx.featureName, filePath: ctx.specFilePath, content: mergedDraft })
   const { githubOwner, githubRepo } = ctx.loadWorkspaceConfig()

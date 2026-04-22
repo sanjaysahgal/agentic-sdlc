@@ -1,6 +1,6 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
-import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getEscalationNotification, setEscalationNotification, clearEscalationNotification, Message } from "../../../runtime/conversation-store"
+import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getPendingDecisionReview, setPendingDecisionReview, clearPendingDecisionReview, getEscalationNotification, setEscalationNotification, clearEscalationNotification, Message } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
@@ -22,7 +22,7 @@ import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalat
 import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
 import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
 import { handlePmTool, handleArchitectTool, handleDesignTool } from "../../../runtime/tool-handlers"
-import type { ToolHandlerContext, PmToolDeps, ArchitectToolDeps, DesignToolDeps, DesignToolCtx, DesignToolState } from "../../../runtime/tool-handlers"
+import type { ToolHandlerContext, PmToolDeps, ArchitectToolDeps, ArchitectToolState, DesignToolDeps, DesignToolCtx, DesignToolState } from "../../../runtime/tool-handlers"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -2158,6 +2158,30 @@ async function runArchitectAgent(params: {
 }): Promise<void> {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly, userId } = params
 
+  // Pending decision review — check before spec approval and fast paths.
+  // Fix B: When the architect resolves open questions, decisions are held for human confirmation.
+  const pendingReview = getPendingDecisionReview(featureName)
+  if (pendingReview) {
+    if (isAffirmative(userMessage)) {
+      clearPendingDecisionReview(featureName)
+      await update("_Saving engineering spec draft with confirmed decisions..._")
+      await saveDraftEngineeringSpec({ featureName, filePath: pendingReview.filePath, content: pendingReview.specContent })
+      const { githubOwner, githubRepo } = loadWorkspaceConfig()
+      const branchName = `spec/${featureName}-engineering`
+      const url = `https://github.com/${githubOwner}/${githubRepo}/blob/${branchName}/${pendingReview.filePath}`
+      const confirmMessage = `Decisions confirmed — engineering spec draft saved.\n\n${url}`
+      appendMessage(featureName, { role: "user", content: userMessage })
+      appendMessage(featureName, { role: "assistant", content: confirmMessage })
+      await update(confirmMessage)
+      return
+    } else {
+      clearPendingDecisionReview(featureName)
+      // Not confirming — discard held content, fall through to normal agent flow.
+      // The user's message will be processed by the architect with context that
+      // the decisions were not approved.
+    }
+  }
+
   // Pending spec approval — check before fast paths
   const pendingEngineeringApproval = getPendingApproval(featureName)
   if (pendingEngineeringApproval && pendingEngineeringApproval.specType === "engineering") {
@@ -2369,6 +2393,7 @@ async function runArchitectAgent(params: {
   const archBranchName = `spec/${featureName}-engineering`
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutArch: ToolCallRecord[] = []
+  const archToolState: ArchitectToolState = { escalationFired: false, pendingDecisionReview: null }
 
   // When called via escalation (readOnly=true), pass EMPTY history. The escalation brief
   // contains everything the architect needs. Prior-phase conversation history causes hallucination.
@@ -2405,8 +2430,10 @@ async function runArchitectAgent(params: {
       clearHandoffSection,
       setPendingEscalation,
       readFile: (path, branch) => readFile(path, branch),
-    }),
+    }, archToolState),
     toolCallsOut: toolCallsOutArch,
+    // Fix A: When the architect escalates upstream, stop the tool loop after wrapping up.
+    forceStopToolNames: ["offer_upstream_revision"],
   })
 
   // Mark user as oriented after first architect response.
@@ -2477,6 +2504,8 @@ If an issue requires an upstream decision, call offer_upstream_revision(pm) or o
 
 ORIGINAL RESPONSE TO FIX:
 ${response}`
+      // Reset state for enforcement re-run (escalation flag carries over — if escalation
+      // fired in the first run, it stays active for the enforcement run too).
       response = await runAgent({
         systemPrompt,
         history: effectiveHistoryArch,
@@ -2506,8 +2535,9 @@ ${response}`
           clearHandoffSection,
           setPendingEscalation,
           readFile: (path, branch) => readFile(path, branch),
-        }),
+        }, archToolState),
         toolCallsOut: toolCallsOutArch,
+        forceStopToolNames: ["offer_upstream_revision"],
       })
     }
   }
@@ -2522,6 +2552,18 @@ ${response}`
     const escLabel = postRunEscalation.targetAgent === "pm" ? "PM" : "Design"
     const escCta = `\n\n---\n\nI found upstream ${escLabel} spec gaps that I need resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
     await update(`${prefix}${response}${escCta}`)
+  } else if (archToolState.pendingDecisionReview && !readOnly) {
+    // Fix B: Decisions detected — store in conversation state and surface for human review.
+    const review = archToolState.pendingDecisionReview
+    setPendingDecisionReview(featureName, {
+      specContent: review.content,
+      filePath: review.filePath,
+      featureName,
+      resolvedQuestions: review.resolvedQuestions,
+    })
+    const decisionList = review.resolvedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+    const reviewCta = `\n\n---\n\n*Architectural decisions for your review:*\n\n${decisionList}\n\nThese open questions have been resolved in this update. Say *yes* to confirm and save, or tell me what you'd like changed.`
+    await update(`${prefix}${response}${reviewCta}`)
   } else {
     await update(`${prefix}${response}`)
   }

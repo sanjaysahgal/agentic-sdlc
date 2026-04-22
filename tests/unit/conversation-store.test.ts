@@ -239,6 +239,27 @@ describe("conversation-store", () => {
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
+  // ─── pending decision review ─────────────────────────────────────────────
+
+  it("getPendingDecisionReview returns null when no review is set", async () => {
+    const { getPendingDecisionReview } = await import("../../runtime/conversation-store")
+    expect(getPendingDecisionReview("thread-1")).toBeNull()
+  })
+
+  it("setPendingDecisionReview stores review and getPendingDecisionReview retrieves it", async () => {
+    const { getPendingDecisionReview, setPendingDecisionReview } = await import("../../runtime/conversation-store")
+    const review = { specContent: "# Spec", filePath: "path.md", featureName: "onboarding", resolvedQuestions: ["What DB?"] }
+    setPendingDecisionReview("thread-1", review)
+    expect(getPendingDecisionReview("thread-1")).toEqual(review)
+  })
+
+  it("clearPendingDecisionReview removes the review", async () => {
+    const { getPendingDecisionReview, setPendingDecisionReview, clearPendingDecisionReview } = await import("../../runtime/conversation-store")
+    setPendingDecisionReview("thread-1", { specContent: "# S", filePath: "p.md", featureName: "f", resolvedQuestions: ["Q1"] })
+    clearPendingDecisionReview("thread-1")
+    expect(getPendingDecisionReview("thread-1")).toBeNull()
+  })
+
   // ─── escalation notification ──────────────────────────────────────────────
 
   it("getEscalationNotification returns null when none is set", async () => {
