@@ -11,6 +11,7 @@ import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness, auditSpecStructure } from "../../../runtime/spec-auditor"
 import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
+import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, detectHedgeLanguage } from "../../../runtime/deterministic-auditor"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractAllOpenQuestions, extractDesignAssumptions, extractHandoffSection, extractSpecTextLiterals } from "../../../runtime/spec-utils"
@@ -1154,7 +1155,10 @@ async function runDesignAgent(params: {
           if (persistedCache?.readiness) {
             readinessFindingsState = persistedCache.readiness
           } else {
-            const result = await auditPhaseCompletion({
+            // Principle 11: deterministic audit is the PRIMARY gate.
+            const deterministicDesign = auditDesignSpec(draftContent, { targetFormFactors })
+            // LLM rubric as @enrichment (parallel, additive findings)
+            const llmResult = await auditPhaseCompletion({
               specContent: draftContent,
               rubric: buildDesignRubric(targetFormFactors),
               featureName,
@@ -1162,7 +1166,17 @@ async function runDesignAgent(params: {
               systemArchitecture: saContent,
               approvedProductSpec: approvedPmSpecContent,
             }).catch(() => null)
-            readinessFindingsState = result && !result.ready ? result.findings : []
+            // Merge: deterministic floor + LLM enrichment
+            const mergedFindings: Array<{ issue: string; recommendation: string }> = [
+              ...deterministicDesign.findings.map(f => ({ issue: f.issue, recommendation: f.recommendation })),
+            ]
+            if (llmResult && !llmResult.ready) {
+              for (const lf of llmResult.findings) {
+                const isDuplicate = mergedFindings.some(df => df.issue.toLowerCase().includes(lf.issue.slice(0, 40).toLowerCase()))
+                if (!isDuplicate) mergedFindings.push(lf)
+              }
+            }
+            readinessFindingsState = mergedFindings
             // Persist readiness findings — non-blocking
             saveDraftAuditCache({ featureName, filePath: auditCacheFilePath, content: { specFingerprint: dfp, readiness: readinessFindingsState } }).catch(() => {})
           }
@@ -1253,8 +1267,9 @@ async function runDesignAgent(params: {
     : ""
 
   // Phase entry upstream spec audit — PM spec health check on every design agent message.
-  // Uses content-addressed cache: any edit to the approved PM spec (including manual edits mid-phase)
-  // invalidates the cache automatically. Cache starts empty on restart so first message always audits.
+  // Principle 11: deterministic audit is the PRIMARY gate (same input = same output).
+  // LLM rubric runs in parallel as @enrichment — additional findings only, never the sole gate.
+  // Content-addressed cache on the combined result (deterministic + enrichment).
   let upstreamNoticeDesign = ""
   const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const pmSpecContent = await readFile(pmSpecPath, "main").catch(() => null)
@@ -1264,16 +1279,28 @@ async function runDesignAgent(params: {
     if (phaseEntryAuditCache.has(cacheKey)) {
       upstreamNoticeDesign = phaseEntryAuditCache.get(cacheKey)!
     } else {
-      const pmAuditResult = await auditPhaseCompletion({
+      // Primary: deterministic audit (instant, no API call)
+      const deterministicResult = auditPmSpec(pmSpecContent)
+      // Enrichment: LLM rubric (parallel, may find semantic gaps the parser misses)
+      const llmResult = await auditPhaseCompletion({
         specContent: pmSpecContent,
         rubric: PM_RUBRIC,
         featureName,
         productVision: context.productVision,
         systemArchitecture: context.systemArchitecture,
       }).catch(() => null)
-      if (pmAuditResult && !pmAuditResult.ready) {
-        const findingLines = pmAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        upstreamNoticeDesign = `\n\n[INTERNAL — You found ${pmAuditResult.findings.length} gap${pmAuditResult.findings.length === 1 ? "" : "s"} in the approved PM spec that must be surfaced to the user before proceeding. Present these as YOUR findings, never as "the platform's":\n${findingLines}\nYou MUST surface these gaps prominently in your response and recommend returning to the PM agent to address them before the design phase continues.]`
+      // Merge: deterministic findings are the floor, LLM findings are additive (deduplicated)
+      const allFindings = [...deterministicResult.findings.map(f => ({ issue: f.issue, recommendation: f.recommendation }))]
+      if (llmResult && !llmResult.ready) {
+        for (const lf of llmResult.findings) {
+          // Only add LLM findings that don't duplicate a deterministic finding
+          const isDuplicate = allFindings.some(df => df.issue.toLowerCase().includes(lf.issue.slice(0, 40).toLowerCase()))
+          if (!isDuplicate) allFindings.push(lf)
+        }
+      }
+      if (allFindings.length > 0) {
+        const findingLines = allFindings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+        upstreamNoticeDesign = `\n\n[INTERNAL — You found ${allFindings.length} gap${allFindings.length === 1 ? "" : "s"} in the approved PM spec that must be surfaced to the user before proceeding. Present these as YOUR findings, never as "the platform's":\n${findingLines}\nYou MUST surface these gaps prominently in your response and recommend returning to the PM agent to address them before the design phase continues.]`
       } else {
         upstreamNoticeDesign = ""
       }
@@ -1663,7 +1690,9 @@ async function runDesignAgent(params: {
         const freshAuditCachePath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design-audit.json`
         renderAmbiguitiesCache.set(`render-ambiguity:${featureName}:${freshFp}`, lastFreshQualityRaw)
         saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, renderAmbiguity: lastFreshQualityRaw } }).catch(() => {})
-        lastFreshReadiness = await auditPhaseCompletion({
+        // Principle 11: deterministic floor + LLM enrichment for fix-all re-audit
+        const freshDeterministic = auditDesignSpec(freshDraft, { targetFormFactors })
+        const freshLlm = await auditPhaseCompletion({
           specContent: freshDraft,
           rubric: buildDesignRubric(targetFormFactors),
           featureName,
@@ -1671,11 +1700,21 @@ async function runDesignAgent(params: {
           systemArchitecture: context.systemArchitecture,
           approvedProductSpec: context.approvedProductSpec,
         }).catch(() => null)
-        // Persist readiness findings for this new spec version — non-blocking
-        if (lastFreshReadiness) {
-          const readinessToCache = lastFreshReadiness.ready ? [] : lastFreshReadiness.findings
-          saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, readiness: readinessToCache } }).catch(() => {})
+        const freshMerged: Array<{ issue: string; recommendation: string }> = [
+          ...freshDeterministic.findings.map(f => ({ issue: f.issue, recommendation: f.recommendation })),
+        ]
+        if (freshLlm && !freshLlm.ready) {
+          for (const lf of freshLlm.findings) {
+            const isDuplicate = freshMerged.some(df => df.issue.toLowerCase().includes(lf.issue.slice(0, 40).toLowerCase()))
+            if (!isDuplicate) freshMerged.push(lf)
+          }
         }
+        lastFreshReadiness = freshMerged.length > 0
+          ? { ready: false, findings: freshMerged }
+          : { ready: true, findings: [] }
+        // Persist readiness findings for this new spec version — non-blocking
+        const readinessToCache = lastFreshReadiness.ready ? [] : lastFreshReadiness.findings
+        saveDraftAuditCache({ featureName, filePath: freshAuditCachePath, content: { specFingerprint: freshFp, readiness: readinessToCache } }).catch(() => {})
 
         // freshFixableItems: brand drift only (token + animation + missing tokens).
         // Quality and readiness are both excluded from auto-patching — the agent "fixes" them
@@ -2296,7 +2335,12 @@ async function runArchitectAgent(params: {
   if (phaseEntryAuditCache.has(archCacheKey)) {
     upstreamNoticeArch = phaseEntryAuditCache.get(archCacheKey)!
   } else {
-    const [pmAuditArch, designAuditArch] = await Promise.all([
+    // Principle 11: deterministic audits are the PRIMARY gate. LLM rubric is @enrichment.
+    // Primary: instant deterministic checks (same input = same output)
+    const pmDeterministic = pmSpecContentArch ? auditPmSpec(pmSpecContentArch) : null
+    const designDeterministic = designSpecContentArch ? auditDesignSpec(designSpecContentArch, { targetFormFactors }) : null
+    // Enrichment: LLM rubric in parallel (may find semantic gaps the parser misses)
+    const [pmLlmArch, designLlmArch] = await Promise.all([
       pmSpecContentArch
         ? auditPhaseCompletion({ specContent: pmSpecContentArch, rubric: ARCHITECT_UPSTREAM_PM_RUBRIC, featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture }).catch(() => null)
         : null,
@@ -2304,14 +2348,36 @@ async function runArchitectAgent(params: {
         ? auditPhaseCompletion({ specContent: designSpecContentArch, rubric: buildDesignRubric(targetFormFactors), featureName, productVision: context.productVision, systemArchitecture: context.systemArchitecture, approvedProductSpec: pmSpecContentArch ?? undefined }).catch(() => null)
         : null,
     ])
-    const archFindings: string[] = []
-    if (pmAuditArch && !pmAuditArch.ready) {
-      const lines = pmAuditArch.findings.map((f, i) => `${i + 1}. [PM] ${f.issue} — ${f.recommendation}`).join("\n")
-      archFindings.push(`APPROVED PM SPEC — ${pmAuditArch.findings.length} GAP${pmAuditArch.findings.length === 1 ? "" : "S"}:\n${lines}`)
+    // Merge PM findings: deterministic floor + LLM enrichment
+    const pmAllFindings: Array<{ issue: string; recommendation: string }> = []
+    if (pmDeterministic && !pmDeterministic.ready) {
+      pmAllFindings.push(...pmDeterministic.findings.map(f => ({ issue: f.issue, recommendation: f.recommendation })))
     }
-    if (designAuditArch && !designAuditArch.ready) {
-      const lines = designAuditArch.findings.map((f, i) => `${i + 1}. [Design] ${f.issue} — ${f.recommendation}`).join("\n")
-      archFindings.push(`APPROVED DESIGN SPEC — ${designAuditArch.findings.length} GAP${designAuditArch.findings.length === 1 ? "" : "S"}:\n${lines}`)
+    if (pmLlmArch && !pmLlmArch.ready) {
+      for (const lf of pmLlmArch.findings) {
+        const isDuplicate = pmAllFindings.some(df => df.issue.toLowerCase().includes(lf.issue.slice(0, 40).toLowerCase()))
+        if (!isDuplicate) pmAllFindings.push(lf)
+      }
+    }
+    // Merge Design findings: deterministic floor + LLM enrichment
+    const designAllFindings: Array<{ issue: string; recommendation: string }> = []
+    if (designDeterministic && !designDeterministic.ready) {
+      designAllFindings.push(...designDeterministic.findings.map(f => ({ issue: f.issue, recommendation: f.recommendation })))
+    }
+    if (designLlmArch && !designLlmArch.ready) {
+      for (const lf of designLlmArch.findings) {
+        const isDuplicate = designAllFindings.some(df => df.issue.toLowerCase().includes(lf.issue.slice(0, 40).toLowerCase()))
+        if (!isDuplicate) designAllFindings.push(lf)
+      }
+    }
+    const archFindings: string[] = []
+    if (pmAllFindings.length > 0) {
+      const lines = pmAllFindings.map((f, i) => `${i + 1}. [PM] ${f.issue} — ${f.recommendation}`).join("\n")
+      archFindings.push(`APPROVED PM SPEC — ${pmAllFindings.length} GAP${pmAllFindings.length === 1 ? "" : "S"}:\n${lines}`)
+    }
+    if (designAllFindings.length > 0) {
+      const lines = designAllFindings.map((f, i) => `${i + 1}. [Design] ${f.issue} — ${f.recommendation}`).join("\n")
+      archFindings.push(`APPROVED DESIGN SPEC — ${designAllFindings.length} GAP${designAllFindings.length === 1 ? "" : "S"}:\n${lines}`)
     }
     if (archFindings.length > 0) {
       upstreamNoticeArch = `\n\n[INTERNAL — Upstream spec gaps you found during your review. Present these as YOUR findings to the user, never as "the platform's". Follow your "How you open every conversation" rules to determine WHEN to surface them (orientation turns: do not surface; substantive turns: assert escalation plan per PM-first ordering).\n${archFindings.join("\n\n")}]`
@@ -2339,15 +2405,28 @@ async function runArchitectAgent(params: {
     if (phaseEntryAuditCache.has(archPhaseCacheKey)) {
       archReadinessNotice = phaseEntryAuditCache.get(archPhaseCacheKey)!
     } else {
+      // Principle 11: deterministic audit is the PRIMARY gate for engineering readiness.
+      const engDeterministic = auditEngineeringSpec(engDraftContent)
+      // LLM rubric as @enrichment
       const archAuditResult = await auditPhaseCompletion({
         specContent: engDraftContent,
         rubric: ENGINEER_RUBRIC,
         featureName,
       }).catch(() => null)
+      // Merge: deterministic floor + LLM enrichment
+      const engMerged: Array<{ issue: string; recommendation: string }> = [
+        ...engDeterministic.findings.map(f => ({ issue: f.issue, recommendation: f.recommendation })),
+      ]
       if (archAuditResult && !archAuditResult.ready) {
-        const findingLines = archAuditResult.findings.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
-        archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: ${archAuditResult.findings.length} gap${archAuditResult.findings.length === 1 ? "" : "s"} blocking implementation handoff. These are YOUR findings from reviewing the spec. Follow your "How you open every conversation" rules to determine WHEN to surface them.\n${findingLines}]`
-      } else if (archAuditResult?.ready) {
+        for (const lf of archAuditResult.findings) {
+          const isDuplicate = engMerged.some(df => df.issue.toLowerCase().includes(lf.issue.slice(0, 40).toLowerCase()))
+          if (!isDuplicate) engMerged.push(lf)
+        }
+      }
+      if (engMerged.length > 0) {
+        const findingLines = engMerged.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
+        archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: ${engMerged.length} gap${engMerged.length === 1 ? "" : "s"} blocking implementation handoff. These are YOUR findings from reviewing the spec. Follow your "How you open every conversation" rules to determine WHEN to surface them.\n${findingLines}]`
+      } else if (engDeterministic.ready && (archAuditResult?.ready ?? true)) {
         archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: Spec passed all rubric criteria. You may confirm the spec is implementation-ready when asked.]`
       }
       phaseEntryAuditCache.set(archPhaseCacheKey, archReadinessNotice)
@@ -2542,6 +2621,23 @@ ${response}`
     }
   }
   // ─── END RECOMMENDATION GATE ───────────────────────────────────────────────
+
+  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
+  // Detect deferral language in agent response. If found, strip trailing questions
+  // and replace with an assertive statement. Same check applies to all agents.
+  if (!readOnly) {
+    const hedges = detectHedgeLanguage(response)
+    if (hedges.length > 0) {
+      console.log(`[HEDGE-GATE] architect: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
+      // Strip trailing questions (lines ending with ?)
+      const lines = response.trim().split("\n")
+      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
+        lines.pop()
+      }
+      response = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    }
+  }
+  // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })

@@ -6174,8 +6174,8 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
   // mockGetContent returns DRAFT_BRAND_CLEAN for reads 4+ (after the patcher save) —
   // patched draft has correct --violet → auditBrandTokens = [] → fixAllComplete = true.
   const BRAND_MD_FIXALL = "## Color Palette\n\n```\n--violet: #7C6FCD\n```"
-  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nContent.\n"
-  const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n"
+  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n"
+  const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n"
 
   beforeEach(() => {
     clearHistory("onboarding")
@@ -6228,7 +6228,7 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-54-1", name: "apply_design_spec_patch", input: {
-          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n",
         }}],
       })
       .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
@@ -6684,8 +6684,8 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
 
   // Same draft setup as N54: pre-patch has brand drift, post-patch returns clean draft.
   const BRAND_MD_FIXALL = "## Color Palette\n\n```\n--violet: #7C6FCD\n```"
-  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nContent.\n"
-  const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n"
+  const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n"
+  const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n"
 
   beforeEach(() => {
     clearHistory("onboarding")
@@ -6740,7 +6740,7 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
       .mockResolvedValueOnce({                                                   // [4] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-58-1", name: "apply_design_spec_patch", input: {
-          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n",
         }}],
       })
       .mockResolvedValueOnce({                                                   // [5] runAgent: end_turn
@@ -6856,7 +6856,7 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
       .mockResolvedValueOnce({                                                   // [3] runAgent: tool_use
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t-59-1", name: "apply_design_spec_patch", input: {
-          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nContent.\n",
+          patch: "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n",
         }}],
       })
       .mockResolvedValueOnce({                                                   // [4] runAgent: end_turn
@@ -8298,6 +8298,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 
     // PM spec: has error paths for all stories, no open questions, but NO data requirements
     // Under PM_RUBRIC this would produce criterion 4 findings. Under ARCHITECT_UPSTREAM_PM_RUBRIC it should NOT.
+    // Non-Goals included so deterministic auditPmSpec doesn't flag the section as missing.
     const PM_SPEC = `# Onboarding
 ## User Stories
 1. User signs up via SSO
@@ -8310,6 +8311,9 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 ## Acceptance Criteria
 1. User can sign up
 2. User can sign in
+
+## Non-Goals
+- Admin dashboard is out of scope for v1
 
 ## Open Questions
 (none)`
@@ -8365,6 +8369,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
     setConfirmedAgent("onboarding", "architect")
 
     // PM spec: MISSING error path for sign-in story
+    // Non-Goals included so deterministic audit doesn't flag the section as missing.
     const PM_SPEC_WITH_GAP = `# Onboarding
 ## User Stories
 1. User signs up via SSO
@@ -8376,6 +8381,9 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 ## Acceptance Criteria
 1. User can sign up
 2. User can sign in
+
+## Non-Goals
+- Admin dashboard is out of scope
 
 ## Open Questions
 (none)`
@@ -8416,6 +8424,9 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 ## Acceptance Criteria
 1. User can sign up
 2. User can sign in
+
+## Non-Goals
+- Admin dashboard is out of scope
 
 ## Open Questions
 (none)`
