@@ -8263,10 +8263,15 @@ describe("Scenario N81 — Orientation response trailing question stripped by pl
     mockPaginate.mockResolvedValue([])
 
     // Agent returns orientation ending with a question
-    mockAnthropicCreate.mockResolvedValueOnce({
-      stop_reason: "end_turn",
-      content: [{ type: "text", text: "Welcome! This is the onboarding feature. Product and design specs are approved.\n\nWhat would you like to focus on?" }],
-    })
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Welcome! This is the onboarding feature. Product and design specs are approved.\n\nWhat would you like to focus on?" }],
+      })
+      // Auto-continue second turn (orientation → full context):
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
+      .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Here is my structural proposal..." }] })
 
     const params = { ...makeParams(THREAD, "feature-onboarding", "Hi I am new to the team"), userId: "U_N81" }
     await handleFeatureChannelMessage(params)
