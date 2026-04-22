@@ -43,6 +43,16 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Universal post-response hedge detection gate — all agents (2026-04-21)
+
+`isHedgeRecommendation()` and `enforceOpinionatedRecommendations()` exist for spec auditor structured findings but do NOT cover agent prose responses. The same deferral pattern ("What would you like to focus on?", "Which option do you prefer?", "Should I proceed?") recurs in every new agent because it's only caught by prompt rules.
+
+**Fix:** Universal post-response gate: after every agent response, check if it contains deferral patterns (agent asks user to make a decision the agent should own). If detected, re-run with enforcement override or strip and replace with the agent's expert assertion. Must handle false positives (legitimate clarifying questions are OK — "Should I escalate to PM?" is fine; "What would you like to focus on?" is not).
+
+**Scope:** All agents. The orientation gate just added for the architect is a narrow instance; this is the general case.
+
+---
+
 ### Port remaining design agent enforcement mechanisms to architect (2026-04-21)
 
 Build when the architect starts producing spec content (saving drafts, patching, approaching finalization). Not needed until the architect has clean first conversations working.

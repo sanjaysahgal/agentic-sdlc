@@ -8250,6 +8250,35 @@ describe("Scenario N72 — Architect orientation gate suppresses notices for fir
   })
 })
 
+// ─── Scenario N81: Orientation response trailing question stripped ──────
+
+describe("Scenario N81 — Orientation response trailing question stripped by platform gate", () => {
+  const THREAD = "workflow-n81"
+
+  beforeEach(() => { clearHistory("onboarding") })
+
+  it("trailing question in orientation response is replaced with architect's next step", async () => {
+    setConfirmedAgent("onboarding", "architect")
+    mockGetContent.mockRejectedValue(new Error("Not Found"))
+    mockPaginate.mockResolvedValue([])
+
+    // Agent returns orientation ending with a question
+    mockAnthropicCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Welcome! This is the onboarding feature. Product and design specs are approved.\n\nWhat would you like to focus on?" }],
+    })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi I am new to the team"), userId: "U_N81" }
+    await handleFeatureChannelMessage(params)
+
+    // The trailing question should be stripped and replaced with next step
+    const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const finalUpdate = updateCalls[updateCalls.length - 1]?.[0]?.text ?? ""
+    expect(finalUpdate).not.toContain("What would you like to focus on?")
+    expect(finalUpdate).toContain("structural proposal")
+  })
+})
+
 // ─── Scenario N80: Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUBRIC ──────
 
 describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUBRIC, not PM_RUBRIC", () => {

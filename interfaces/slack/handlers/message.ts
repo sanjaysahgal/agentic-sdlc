@@ -2367,7 +2367,7 @@ async function runArchitectAgent(params: {
   // Same pattern as PM agent's readOnly gate (line 897).
   const effectiveHistoryArch = readOnly ? [] : historyArch
 
-  const response = await runAgent({
+  let response = await runAgent({
     systemPrompt,
     history: effectiveHistoryArch,
     userMessage: enrichedUserMessageArch,
@@ -2403,6 +2403,22 @@ async function runArchitectAgent(params: {
 
   // Mark user as oriented after first architect response.
   if (userId) orientedUsers.add(`${featureName}:${userId}`)
+
+  // ─── POST-RUN: Orientation response enforcement (Principle 8 + 10) ──────────
+  // Orientation responses must NEVER end with a question that defers to the user.
+  // The architect is the expert — it states what it will do next, not what the user
+  // should decide. Structural check: if readOnly (orientation) and response ends
+  // with a question, strip the trailing question and append the standard next step.
+  if (readOnly && response.trim().endsWith("?")) {
+    const lines = response.trim().split("\n")
+    // Remove trailing lines that end with "?" (could be multi-line question)
+    while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
+      lines.pop()
+    }
+    const nextStep = "\n\nI'll review the full spec chain and come back with a structural proposal for the engineering spec."
+    response = lines.join("\n") + nextStep
+    console.log(`[ORIENTATION-GATE] stripped trailing question from orientation response — replaced with architect's next step`)
+  }
 
   // ─── POST-RUN: PM gap auto-escalation (Principle 8) ─────────────────────────
   // Same pattern as design agent's Gate 2. If upstream PM spec audit found gaps
