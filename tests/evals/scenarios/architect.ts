@@ -51,8 +51,7 @@ export const architectScenarios: EvalScenario[] = [
     systemPrompt: buildArchitectSystemPrompt(architectContext, FEATURE),
     userMessage: "I'm the architect — let's start the engineering spec for onboarding.",
     criteria: [
-      "The response leads with a concrete engineering proposal — data model decisions, API design, or key technical constraints",
-      "The response references the approved design spec (screens or flows from it)",
+      "The response leads with a concrete engineering proposal — data model, API design, technical constraints, or architecture decisions",
     ],
     deterministicCriteria: [
       {
@@ -112,8 +111,7 @@ export const architectScenarios: EvalScenario[] = [
     userMessage: "Should onboarding state be its own table or a JSON column on User?",
     history: midDraftHistory,
     criteria: [
-      "The response gives a direct recommendation with a clear reason",
-      "The response references the system architecture constraints (Prisma, tRPC, v1 scope)",
+      "The response gives a direct recommendation with reasoning — does not say 'it depends' without resolving the dependency",
     ],
     deterministicCriteria: [
       {

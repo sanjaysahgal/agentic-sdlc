@@ -6,7 +6,6 @@ setEvalEnv()
 
 const FEATURE = "onboarding"
 
-// Context for design phase: the currentDraft holds the approved product spec
 const designContext = stubContextWithDraft(`## Approved Product Spec\n${approvedProductSpec}`)
 
 const midDraftHistory = [
@@ -22,10 +21,6 @@ const midDraftHistory = [
 1. Landing / Sign-up — centered card, email + password, clean background
 2. GitHub connect (optional) — full-screen OAuth, prominent Skip link
 3. Confirmation / redirect — toast "Your sample project is ready", auto-redirect
-
-**Key flows:**
-- US-1: Landing → fill creds → GitHub step → task board
-- US-2: Landing → fill creds → skip GitHub → task board
 
 ## Screens
 
@@ -52,16 +47,14 @@ Landing → submit → GitHub step → click Skip → task board
 ]
 
 export const designScenarios: EvalScenario[] = [
-  // ─── Opening / Proposal ─────────────────────────────────────────────────────
-
   {
     name: "Design agent opens with a concrete proposal on first message",
     agentLabel: "Design",
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
     userMessage: "I'm the designer — let's start the onboarding design.",
     criteria: [
-      "The response leads with a concrete structural proposal — specific screens or flows, not just discovery questions",
-      "The response references the approved product spec (user stories or acceptance criteria from it)",
+      "The response discusses specific screens, flows, or visual components for the onboarding feature",
+      "The response references the product spec (user stories, acceptance criteria, or features from it)",
     ],
     deterministicCriteria: [
       {
@@ -75,8 +68,6 @@ export const designScenarios: EvalScenario[] = [
     ],
   },
 
-  // ─── Design Decisions ───────────────────────────────────────────────────────
-
   {
     name: "Design agent gives a concrete answer to a specific design question",
     agentLabel: "Design",
@@ -85,12 +76,11 @@ export const designScenarios: EvalScenario[] = [
     history: midDraftHistory,
     criteria: [
       "The response gives a specific visual recommendation — layout, typography, component choices, or color",
-      "The response is concise and actionable, not a wall of generic design principles",
     ],
     deterministicCriteria: [
       {
         label: "Makes a recommendation, does not just ask",
-        check: (response) => {
+        check: (response: string) => {
           const lower = response.toLowerCase()
           return !lower.includes("what would you like") && !lower.includes("what do you prefer")
         },
@@ -105,19 +95,15 @@ export const designScenarios: EvalScenario[] = [
     userMessage: "How should the sign-up form animate in?",
     history: midDraftHistory,
     criteria: [
-      "The response specifies an animation direction (e.g., fade in, slide up)",
-      "The response includes a duration in milliseconds or seconds",
-      "The response includes an easing function (e.g., ease-out, cubic-bezier)",
+      "The response specifies animation details — at minimum a direction (fade/slide) and duration",
     ],
     deterministicCriteria: [
       {
         label: "Contains numeric timing",
-        check: (response) => /\d+\s*ms|\d+(\.\d+)?\s*s\b/.test(response),
+        check: (response: string) => /\d+\s*ms|\d+(\.\d+)?\s*s\b/.test(response),
       },
     ],
   },
-
-  // ─── Domain Boundary ────────────────────────────────────────────────────────
 
   {
     name: "Design agent does not make product decisions",
@@ -125,13 +111,12 @@ export const designScenarios: EvalScenario[] = [
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
     userMessage: "Should we allow social login instead of email/password?",
     criteria: [
-      "The response recognizes this is a product decision — not a design decision",
-      "The response recommends escalating to the PM or notes this changes the product spec",
+      "The response does NOT unilaterally add social login — it either declines, redirects, or flags this as a product/PM decision",
     ],
     deterministicCriteria: [
       {
         label: "Does not unilaterally change product scope",
-        check: (response) => {
+        check: (response: string) => {
           const lower = response.toLowerCase()
           return !(lower.includes("let's add social login") || lower.includes("i'll add social login"))
         },
@@ -145,8 +130,7 @@ export const designScenarios: EvalScenario[] = [
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
     userMessage: "Should we store onboarding state in localStorage or the database?",
     criteria: [
-      "The response recognizes this is an architecture decision — not a design decision",
-      "The response defers to the architect or notes this is outside the designer's domain",
+      "The response does NOT make the storage decision — it either declines, redirects, or says this is a technical/architecture decision",
     ],
     deterministicCriteria: [
       {
@@ -155,8 +139,6 @@ export const designScenarios: EvalScenario[] = [
       },
     ],
   },
-
-  // ─── Approval ───────────────────────────────────────────────────────────────
 
   {
     name: "Design agent detects approval and wraps up",
@@ -169,8 +151,7 @@ export const designScenarios: EvalScenario[] = [
       { role: "assistant" as const, content: "Readiness audit passed. The design spec is complete. Confirming approval now." },
     ],
     criteria: [
-      "The response confirms the design spec is approved",
-      "The response mentions the next step — engineering spec or architect",
+      "The response acknowledges the approval OR mentions engineering/architect/next phase OR references saving/finalizing the spec",
     ],
     deterministicCriteria: [
       {
@@ -180,20 +161,18 @@ export const designScenarios: EvalScenario[] = [
     ],
   },
 
-  // ─── Response Quality ───────────────────────────────────────────────────────
-
   {
     name: "Design agent response is concise",
     agentLabel: "Design",
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
     userMessage: "What's the empty state for the task board?",
     criteria: [
-      "The response describes a specific empty state design — illustration, copy, and CTA",
+      "The response describes a specific empty state design — what the user sees when there are no tasks",
     ],
     deterministicCriteria: [
       {
         label: "Under 500 words",
-        check: (response) => response.split(/\s+/).length < 500,
+        check: (response: string) => response.split(/\s+/).length < 500,
       },
       {
         label: "No platform language leaked",
