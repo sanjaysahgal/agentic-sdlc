@@ -2420,24 +2420,90 @@ async function runArchitectAgent(params: {
     console.log(`[ORIENTATION-GATE] stripped trailing question from orientation response — replaced with architect's next step`)
   }
 
-  // ─── POST-RUN: PM gap auto-escalation (Principle 8) ─────────────────────────
-  // Same pattern as design agent's Gate 2. If upstream PM spec audit found gaps
-  // and the architect did NOT call offer_upstream_revision(pm), auto-trigger.
-  // The architect should escalate PM gaps via tools, not ask the user directly.
+  // ─── POST-RUN: Upstream gap auto-escalation (Principle 8) ───────────────────
+  // Same pattern as design agent's Gate 2. If upstream audit found gaps and the
+  // architect did NOT call offer_upstream_revision, auto-trigger escalation.
+  // PM-first ordering: if BOTH PM and design gaps exist, only escalate PM.
+  // Design gaps wait until PM gaps are resolved.
   if (!readOnly && !getPendingEscalation(featureName)) {
     const archCalledPmEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "pm")
+    const archCalledDesignEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "design")
     const pmGapsInNotice = upstreamNoticeArch.includes("APPROVED PM SPEC")
+    const designGapsInNotice = upstreamNoticeArch.includes("APPROVED DESIGN SPEC")
+
     if (pmGapsInNotice && !archCalledPmEscalation) {
-      // Extract PM gap text from the upstream notice
+      // PM gaps take priority — escalate PM first, design waits
       const pmGapRegex = /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
       const pmGapText = upstreamNoticeArch.match(pmGapRegex)?.[1]?.trim()
       if (pmGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: PM gaps in context but agent did not call offer_upstream_revision(pm) — auto-triggering`)
         setPendingEscalation(featureName, { targetAgent: "pm", question: pmGapText, designContext: "" })
       }
+    } else if (designGapsInNotice && !archCalledDesignEscalation) {
+      // No PM gaps (or already escalated) — now check design gaps
+      const designGapRegex = /APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/
+      const designGapText = upstreamNoticeArch.match(designGapRegex)?.[1]?.trim()
+      if (designGapText) {
+        console.log(`[ESCALATION-GATE] architect post-run: design gaps in context but agent did not call offer_upstream_revision(design) — auto-triggering`)
+        setPendingEscalation(featureName, { targetAgent: "design", question: designGapText, designContext: "" })
+      }
     }
   }
-  // ─── END POST-RUN GATE ───────────────────────────────────────────────────────
+  // ─── END POST-RUN ESCALATION GATE ──────────────────────────────────────────
+
+  // ─── POST-RUN: Recommendation count gate (Principle 10) ────────────────────
+  // Same pattern as PM brief enforcement. If the architect identifies blocking
+  // issues but doesn't provide "My recommendation:" for each one, re-run with
+  // enforcement. Only on substantive turns (not orientation, not auto-escalation).
+  if (!readOnly && !getPendingEscalation(featureName)) {
+    // Count blocking issues: lines starting with a number followed by "**" (bold issue header)
+    const blockingIssueCount = (response.match(/^\d+\.\s+\*\*/gm) ?? []).length
+    const recommendationCount = (response.match(/my recommendation:/gi) ?? []).length
+    if (blockingIssueCount > 0 && recommendationCount < blockingIssueCount) {
+      console.log(`[RECOMMENDATION-GATE] architect: ${blockingIssueCount} blocking issues but only ${recommendationCount} recommendations — re-running with enforcement`)
+      const enforcementMessage = `PLATFORM ENFORCEMENT: Your previous response identified ${blockingIssueCount} blocking issue(s) but only provided ${recommendationCount} "My recommendation:" line(s). For EVERY blocking issue you identify, you MUST provide your expert recommendation — not just state the problem. Output exactly:
+
+[N]. **[issue]** — My recommendation: [one specific, concrete answer — no conditionals, no "it depends"]
+
+If an issue requires an upstream decision, call offer_upstream_revision(pm) or offer_upstream_revision(design) instead of recommending. Do not list issues without either a recommendation or an escalation tool call.
+
+ORIGINAL RESPONSE TO FIX:
+${response}`
+      response = await runAgent({
+        systemPrompt,
+        history: effectiveHistoryArch,
+        userMessage: enforcementMessage,
+        historyLimit: ARCH_HISTORY_LIMIT,
+        tools: ARCHITECT_TOOLS,
+        toolHandler: (name, input) => handleArchitectTool(name, input, {
+          featureName,
+          specFilePath: archFilePath,
+          specBranchName: archBranchName,
+          context,
+          update,
+          readFile: (path, branch) => readFile(path, branch),
+          getHistory: () => getHistory(featureName),
+          loadWorkspaceConfig,
+        }, {
+          auditSpecDraft,
+          saveDraftEngineeringSpec,
+          saveApprovedEngineeringSpec,
+          applySpecPatch,
+          extractAllOpenQuestions,
+          extractHandoffSection,
+          auditSpecDecisions,
+          applyDecisionCorrections,
+          auditDownstreamReadiness,
+          auditSpecStructure,
+          clearHandoffSection,
+          setPendingEscalation,
+          readFile: (path, branch) => readFile(path, branch),
+        }),
+        toolCallsOut: toolCallsOutArch,
+      })
+    }
+  }
+  // ─── END RECOMMENDATION GATE ───────────────────────────────────────────────
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
