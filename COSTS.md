@@ -21,7 +21,7 @@
 | Item | Vendor | Cost | Frequency | Notes |
 |---|---|---|---|---|
 | Domain renewal | Namecheap | ~$15 | Annual (next due ~Mar 2028) | getarchon.dev |
-| Claude API | Anthropic | Variable | Monthly | $5 (Mar 19) + $6 (Mar 22) + $6 (Mar 23) + $10 (Mar 25) + $10 (Apr 2) = $37 to date |
+| Claude API | Anthropic | Variable | Monthly | $5 (Mar 19) + $6 (Mar 22) + $6 (Mar 23) + $10 (Mar 25) + $10 (Apr 2) + $10 (Apr 12) + $10 (Apr 14) + $20 (Apr 15) + $25 (Apr 22) = $102 to date |
 | Claude Pro (claude.ai) | Anthropic | Variable | Monthly | $20 (Mar 11) + $10 (Mar 30) + $5 (Mar 31) = $35 to date |
 | Vercel hosting | Vercel | $0–$20 | Monthly | Upgrade if traffic grows |
 
