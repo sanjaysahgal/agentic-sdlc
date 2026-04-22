@@ -180,6 +180,11 @@ Operates simultaneously at feature level (engineering spec) and product level (o
 
 **Domain boundary — what the architect never owns:** Product behavior (acceptance criteria, user story scope) → `offer_upstream_revision(pm)`; UI layout, visual treatment, copy, interaction patterns → `offer_upstream_revision(design)`. The architect owns the full technical layer: data model, API contracts, caching, migration, infrastructure dependencies, performance SLAs, error handling. After every approved feature spec, drafts the proposed `SYSTEM_ARCHITECTURE.md` updates as ready-to-apply `[PROPOSED ADDITION TO SYSTEM_ARCHITECTURE.md — <Section>]` blocks. Holds cross-feature coherence by reading all other approved engineering specs before opening proposal.
 
+**Platform enforcement (ported from design agent):**
+- **Orientation enforcement:** First message from a userId runs `readOnly: true` — ORIENTATION MODE prompt with no spec content, no tools. Architect orients the newcomer without dumping gaps. Subsequent messages get full context.
+- **Post-run PM gap auto-escalation:** After every response, if upstream PM notice had gaps and the architect did NOT call `offer_upstream_revision(pm)`, the platform auto-triggers `setPendingEscalation(pm)` and appends an assertive CTA. Prevents the architect from asking the user to make PM decisions directly.
+- **Entry/exit asymmetry:** No blocking entry gate — architect runs unconditionally with upstream findings as informational context. Exit gate (`finalize_engineering_spec`) blocks on unvalidated assumptions in `## Design Assumptions To Validate`.
+
 **Triggered by:** `design-approved-awaiting-engineering` or `engineering-in-progress` phase in `getInProgressFeatures()`
 **Inputs:** Approved product spec + approved design spec + current engineering draft (if any) + all other approved engineering specs + product vision + system architecture
 **Native tool-use (Step 13):** The architect agent uses the Anthropic tool-use API:

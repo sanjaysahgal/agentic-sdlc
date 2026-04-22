@@ -729,8 +729,13 @@ ${archPendingEscalation.question}`
       return
     }
     console.log(`[ROUTER] branch=confirmed-architect feature=${featureName}`)
+    // Orientation enforcement (Principle 8): first message from a userId in this feature
+    // runs readOnly — architect orients without spec content, can't dump gaps.
+    // The orientation key is also computed inside runArchitectAgent for notice suppression.
+    const archOrientKey = userId ? `${featureName}:${userId}` : null
+    const archIsOrientation = archOrientKey ? !orientedUsers.has(archOrientKey) : false
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
-      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId })
+      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation })
     }})
     return
   }
@@ -2396,10 +2401,38 @@ async function runArchitectAgent(params: {
     toolCallsOut: toolCallsOutArch,
   })
 
-  // Mark user as oriented after first architect response — pre-run gate fires on subsequent messages.
+  // Mark user as oriented after first architect response.
   if (userId) orientedUsers.add(`${featureName}:${userId}`)
+
+  // ─── POST-RUN: PM gap auto-escalation (Principle 8) ─────────────────────────
+  // Same pattern as design agent's Gate 2. If upstream PM spec audit found gaps
+  // and the architect did NOT call offer_upstream_revision(pm), auto-trigger.
+  // The architect should escalate PM gaps via tools, not ask the user directly.
+  if (!readOnly && !getPendingEscalation(featureName)) {
+    const archCalledPmEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "pm")
+    const pmGapsInNotice = upstreamNoticeArch.includes("APPROVED PM SPEC")
+    if (pmGapsInNotice && !archCalledPmEscalation) {
+      // Extract PM gap text from the upstream notice
+      const pmGapRegex = /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
+      const pmGapText = upstreamNoticeArch.match(pmGapRegex)?.[1]?.trim()
+      if (pmGapText) {
+        console.log(`[ESCALATION-GATE] architect post-run: PM gaps in context but agent did not call offer_upstream_revision(pm) — auto-triggering`)
+        setPendingEscalation(featureName, { targetAgent: "pm", question: pmGapText, designContext: "" })
+      }
+    }
+  }
+  // ─── END POST-RUN GATE ───────────────────────────────────────────────────────
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
-  await update(`${prefix}${response}`)
+
+  // If auto-escalation was triggered, append the escalation CTA after the agent's response
+  const postRunEscalation = getPendingEscalation(featureName)
+  if (postRunEscalation && !readOnly) {
+    const escLabel = postRunEscalation.targetAgent === "pm" ? "PM" : "Design"
+    const escCta = `\n\n---\n\nI found upstream ${escLabel} spec gaps that I need resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
+    await update(`${prefix}${response}${escCta}`)
+  } else {
+    await update(`${prefix}${response}`)
+  }
 }

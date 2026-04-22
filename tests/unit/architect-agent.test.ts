@@ -109,14 +109,15 @@ describe("buildArchitectSystemPrompt", () => {
     expect(prompt).toContain("No other approved engineering specs yet")
   })
 
-  it("read-only mode activates READ-ONLY MODE block", () => {
+  it("readOnly activates ORIENTATION MODE block", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding", true)
-    expect(prompt).toContain("READ-ONLY MODE")
+    expect(prompt).toContain("ORIENTATION MODE")
   })
 
-  it("read-only mode prohibits save and finalize tools", () => {
+  it("readOnly orientation mode prohibits gap analysis and options", () => {
     const prompt = buildArchitectSystemPrompt(baseContext, "onboarding", true)
-    expect(prompt).toContain("Do not call any save tools or finalize tools")
+    expect(prompt).toContain("Do NOT include gap analysis")
+    expect(prompt).toContain("Do NOT present options")
   })
 
   it("includes a direct link to the engineering spec on GitHub", () => {

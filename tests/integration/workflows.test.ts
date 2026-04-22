@@ -8409,10 +8409,13 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 
     await handleFeatureChannelMessage({ ...makeParams(THREAD, "feature-onboarding", "lets go"), userId: "U_N80b" })
 
-    // No gate fired — architect ran normally (no pendingEscalation)
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    // Architect ran (not blocked pre-run) but post-run gate auto-escalated to PM
+    // because PM gaps were in context and agent didn't call offer_upstream_revision(pm)
+    const esc = getPendingEscalation("onboarding")
+    expect(esc).not.toBeNull()
+    expect(esc?.targetAgent).toBe("pm")
 
-    // PM finding appears in the architect's context (injected as notice, not a blocker)
+    // PM finding appears in the architect's context (injected as notice)
     const agentCall = mockAnthropicCreate.mock.calls.find((c: any[]) =>
       c[0]?.messages?.some((m: any) => m.role === "user" && typeof m.content === "string" && m.content.includes("APPROVED PM SPEC"))
     )
