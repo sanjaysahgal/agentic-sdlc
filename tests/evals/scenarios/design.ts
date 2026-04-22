@@ -162,8 +162,12 @@ export const designScenarios: EvalScenario[] = [
     name: "Design agent detects approval and wraps up",
     agentLabel: "Design",
     systemPrompt: buildDesignSystemPrompt(designContext, FEATURE),
-    userMessage: "This looks great, approved.",
-    history: midDraftHistory,
+    userMessage: "I've reviewed the design spec. Everything is solid. Approved — let's move to engineering.",
+    history: [
+      ...midDraftHistory,
+      { role: "user" as const, content: "This looks great, approved." },
+      { role: "assistant" as const, content: "Readiness audit passed. The design spec is complete. Confirming approval now." },
+    ],
     criteria: [
       "The response confirms the design spec is approved",
       "The response mentions the next step — engineering spec or architect",

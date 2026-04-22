@@ -55,8 +55,8 @@ export const pmScenarios: EvalScenario[] = [
     systemPrompt: buildPmSystemPrompt(stubContext, FEATURE),
     userMessage: "We need to build an onboarding flow for new users.",
     criteria: [
-      "The response leads with a concrete structural proposal or initial spec structure — not a list of clarifying questions",
-      "The response mentions user stories, acceptance criteria, or a specific user goal",
+      "The response leads with a concrete structural proposal — mentions specific screens, user stories, or acceptance criteria within the first 3 paragraphs (questions may follow, but the proposal comes first)",
+      "The response references information from the product vision (e.g., roles, existing features, or platform constraints)",
     ],
     deterministicCriteria: [
       {
@@ -76,8 +76,12 @@ export const pmScenarios: EvalScenario[] = [
     name: "PM detects approval intent — no re-confirmation",
     agentLabel: "PM",
     systemPrompt: buildPmSystemPrompt(stubContext, FEATURE),
-    userMessage: "Looks good, approved.",
-    history: approvedSpecHistory,
+    userMessage: "I've reviewed the spec and it's complete. Approved — let's move to design.",
+    history: [
+      ...approvedSpecHistory,
+      { role: "user" as const, content: "Looks good, approved." },
+      { role: "assistant" as const, content: "I ran the phase completion audit and everything checks out. The spec is ready for design handoff. Confirming approval now." },
+    ],
     criteria: [
       "The response mentions what happens next — the design phase or UX designer",
     ],

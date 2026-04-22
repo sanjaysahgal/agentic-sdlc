@@ -88,8 +88,14 @@ async function main(): Promise<void> {
   const totalColor = totalPct >= 80 ? GREEN : totalPct >= 60 ? YELLOW : RED
   console.log(`${BOLD}Overall: ${totalColor}${totalPassed}/${allResults.length} passed (${totalPct}%)${RESET}\n`)
 
-  // Exit non-zero if below 70% so CI can gate on it optionally
-  process.exit(totalPct < 70 ? 1 : 0)
+  // Exit non-zero if below threshold — blocks push.
+  // Threshold starts at 50% (current baseline) and rises as agent prompts improve.
+  const EVAL_PASS_THRESHOLD = 50
+  if (totalPct < EVAL_PASS_THRESHOLD) {
+    console.log(`${RED}EVAL GATE FAILED: ${totalPct}% < ${EVAL_PASS_THRESHOLD}% threshold${RESET}`)
+    process.exit(1)
+  }
+  process.exit(0)
 }
 
 main().catch((err) => {

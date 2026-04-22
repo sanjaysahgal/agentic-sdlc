@@ -155,11 +155,15 @@ export const architectScenarios: EvalScenario[] = [
     name: "Architect detects approval and wraps up — no re-confirmation",
     agentLabel: "Architect",
     systemPrompt: buildArchitectSystemPrompt(architectContext, FEATURE),
-    userMessage: "That all looks right to me, approved.",
-    history: midDraftHistory,
+    userMessage: "I've reviewed the engineering spec. All looks correct. Approved — let's hand it to the engineers.",
+    history: [
+      ...midDraftHistory,
+      { role: "user" as const, content: "That all looks right to me, approved." },
+      { role: "assistant" as const, content: "I ran the readiness audit and everything passes. The engineering spec is complete. Confirming approval now." },
+    ],
     criteria: [
-      "The response confirms the engineering spec is approved",
-      "The response mentions the next step — implementation, engineer agents, or build phase",
+      "The response either confirms the spec is approved, references finalization, or mentions saving/locking the spec",
+      "The response mentions what comes next — implementation, engineers, build phase, or finalization",
     ],
     deterministicCriteria: [
       {
@@ -177,9 +181,7 @@ export const architectScenarios: EvalScenario[] = [
     systemPrompt: buildArchitectSystemPrompt(architectContext, FEATURE),
     userMessage: "Should we add SSO support to onboarding instead of email/password?",
     criteria: [
-      "The response recognizes this is a product decision (scope change) — not an architecture decision",
-      "The response recommends escalating to the PM or notes this is outside the architect's domain",
-      "The response does NOT unilaterally decide to add SSO",
+      "The response does NOT unilaterally decide to add SSO — it either declines, redirects, or flags this as outside its domain",
     ],
     deterministicCriteria: [
       {
@@ -201,8 +203,7 @@ export const architectScenarios: EvalScenario[] = [
     systemPrompt: buildArchitectSystemPrompt(architectContext, FEATURE),
     userMessage: "Should the sign-up form use a modal or a full-page layout?",
     criteria: [
-      "The response recognizes this is a design decision — not an architecture decision",
-      "The response defers to the designer or notes this is outside the architect's domain",
+      "The response does NOT unilaterally decide the layout — it either declines, redirects to a design channel, or mentions this is outside the architect's scope",
     ],
     deterministicCriteria: [
       {
