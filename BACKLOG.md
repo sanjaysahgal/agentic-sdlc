@@ -82,16 +82,16 @@ Tests: 18 new tests across `tool-handlers.test.ts`, `claude-client.test.ts`, and
 
 ### Port remaining design agent enforcement mechanisms to architect (2026-04-21)
 
-Build when the architect starts producing spec content (saving drafts, patching, approaching finalization). Not needed until the architect has clean first conversations working.
+3 of 6 mechanisms ported (2026-04-23). Remaining 3 deferred until architect is actively patching specs in production.
 
 | Mechanism | Design agent impl | Architect status |
 |---|---|---|
-| Uncommitted decisions audit | Post-response Haiku classifier (`identifyUncommittedDecisions`) | **Missing** — architect discusses decisions without saving |
-| Post-patch spec health invariant | Arithmetic gate: blocks if spec size grows >20% or findings increase | **Missing** — no bloat/degradation detection for engineering spec |
-| Platform status line | Item count prepended to response when >0 items remain | **Missing** — no visibility into remaining gaps |
-| Escalation assertive language override | Passive escalation prose → assertive CTA with gap list | **Missing** — architect may use passive framing |
-| Post-patch continuation loop | Re-audit + auto-continue up to 2 passes after patches | **Missing** — no auto-fix loop for engineering spec |
-| Platform-direct finalization | If 0 structural findings on approval intent, call finalize directly | **Missing** — architect relies on agent to call finalize |
+| ~~Uncommitted decisions audit~~ | Post-response Haiku classifier (`identifyUncommittedDecisions`) | **✅ DONE** — same pattern as design: post-response Haiku check, "save those" CTA |
+| Post-patch spec health invariant | Arithmetic gate: blocks if spec size grows >20% or findings increase | **Deferred** — not needed until architect patches regularly |
+| ~~Platform status line~~ | Item count prepended to response when >0 items remain | **✅ DONE** — deterministic count from `auditEngineeringSpec` + `auditSpecStructure` |
+| ~~Escalation assertive language override~~ | Passive escalation prose → assertive CTA with gap list | **✅ DONE** — replaces agent prose with structured CTA on escalation |
+| Post-patch continuation loop | Re-audit + auto-continue up to 2 passes after patches | **Deferred** — not needed until architect patches regularly |
+| Platform-direct finalization | If 0 structural findings on approval intent, call finalize directly | **Deferred** — not needed until architect finalization is common |
 
 ---
 

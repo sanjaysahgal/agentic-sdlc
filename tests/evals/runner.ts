@@ -94,16 +94,35 @@ function evaluateDeterministicCriterion(response: string, criterion: Determinist
 }
 
 // Runs one scenario: calls the real agent, then judges every criterion.
+// Retries once on API timeout errors (transient network issues).
 export async function runScenario(scenario: EvalScenario): Promise<EvalResult> {
   const start = Date.now()
 
-  const response = await runAgent({
-    systemPrompt: scenario.systemPrompt,
-    history: scenario.history ?? [],
-    userMessage: scenario.userMessage,
-    tools: scenario.tools,
-    toolHandler: scenario.toolHandler,
-  })
+  let response: string
+  try {
+    response = await runAgent({
+      systemPrompt: scenario.systemPrompt,
+      history: scenario.history ?? [],
+      userMessage: scenario.userMessage,
+      tools: scenario.tools,
+      toolHandler: scenario.toolHandler,
+    })
+  } catch (err: unknown) {
+    // Retry once on timeout
+    const isTimeout = err instanceof Error && (err.message.includes("timed out") || err.constructor.name.includes("Timeout"))
+    if (isTimeout) {
+      console.log(`[EVAL] ${scenario.name}: API timeout — retrying once`)
+      response = await runAgent({
+        systemPrompt: scenario.systemPrompt,
+        history: scenario.history ?? [],
+        userMessage: scenario.userMessage,
+        tools: scenario.tools,
+        toolHandler: scenario.toolHandler,
+      })
+    } else {
+      throw err
+    }
+  }
 
   // Deterministic criteria first — instant, no API cost, same result every time
   const deterministicResults = (scenario.deterministicCriteria ?? []).map(dc =>
@@ -134,10 +153,24 @@ export async function runScenario(scenario: EvalScenario): Promise<EvalResult> {
 
 // Runs a suite of scenarios sequentially (to avoid API rate limits).
 // Returns all results for the caller to aggregate and display.
+// A single scenario failure does not abort the suite.
 export async function runSuite(scenarios: EvalScenario[]): Promise<EvalResult[]> {
   const results: EvalResult[] = []
   for (const scenario of scenarios) {
-    results.push(await runScenario(scenario))
+    try {
+      results.push(await runScenario(scenario))
+    } catch (err: unknown) {
+      console.error(`[EVAL] ${scenario.name}: CRASHED — ${err instanceof Error ? err.message : String(err)}`)
+      results.push({
+        scenario: scenario.name,
+        agentLabel: scenario.agentLabel,
+        passed: false,
+        score: 0,
+        criteriaResults: [{ criterion: `CRASHED: ${err instanceof Error ? err.message : "unknown"}`, passed: false }],
+        response: "",
+        durationMs: 0,
+      })
+    }
   }
   return results
 }

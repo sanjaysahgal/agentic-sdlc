@@ -2640,15 +2640,63 @@ ${response}`
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
 
+  // ─── POST-RUN: Escalation assertive language override (Principle 10) ───────
+  // Same pattern as design agent: if escalation was offered (agent called
+  // offer_upstream_revision or auto-gate fired), replace agent prose with
+  // structured CTA. Passive framing ("should we ask PM?") → assertive CTA.
+  const escalationBeforeRunArch = !!getPendingEscalation(featureName)
+  const escalationJustOfferedArch = !escalationBeforeRunArch || toolCallsOutArch.some(t => t.name === "offer_upstream_revision")
+  let finalArchResponse = response
+  if (escalationJustOfferedArch && getPendingEscalation(featureName) && !readOnly) {
+    const pending = getPendingEscalation(featureName)
+    if (pending) {
+      const escLabel = pending.targetAgent === "pm" ? "PM" : "Design"
+      finalArchResponse = `${pending.question}\n\nUpstream ${escLabel} gaps must be resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
+      console.log(`[ESCALATION] architect assertive override applied for ${featureName}`)
+    }
+  }
+  // ─── END ESCALATION ASSERTIVE OVERRIDE ─────────────────────────────────────
+
+  // ─── POST-RUN: Uncommitted decisions audit (Principle 7) ───────────────────
+  // Same pattern as design agent: detect decisions discussed but not saved.
+  let archUncommittedNote = ""
+  if (!readOnly) {
+    const archDidSave = toolCallsOutArch.some(t =>
+      ["save_engineering_spec_draft", "apply_engineering_spec_patch", "finalize_engineering_spec"].includes(t.name)
+    )
+    const archStillSeeking = /lock this in\?|confirm\?|shall i (save|apply|commit|update)\?|save this\?|ready to (commit|save|lock)\?/i.test(finalArchResponse)
+    if (!archDidSave && !archStillSeeking) {
+      const archCurrentTurn: Message[] = [
+        { role: "user", content: userMessage },
+        { role: "assistant", content: finalArchResponse },
+      ]
+      const archUncommitted = await identifyUncommittedDecisions(archCurrentTurn, context.currentDraft ?? "").catch(() => "")
+      const archAllCommitted = !archUncommitted || archUncommitted.trim().toLowerCase() === "none"
+      if (archUncommitted && !archAllCommitted) {
+        archUncommittedNote = `\n\n⚠️ *Heads up:* decisions were discussed this turn but not saved to the spec. Say *save those* to commit them.`
+      }
+    }
+  }
+  // ─── END UNCOMMITTED DECISIONS AUDIT ───────────────────────────────────────
+
+  // ─── POST-RUN: Platform status line (Principle 7) ──────────────────────────
+  // Same pattern as design agent: authoritative audit count prepended when items remain.
+  // Suppress only when upstream escalation just fired (user can't act until upstream resolves).
+  const escalationJustOfferedUpstream = escalationJustOfferedArch && !!getPendingEscalation(featureName)
+  const archTotalEffectiveItems = archStructuralFindings.length +
+    (engDraftContent ? auditEngineeringSpec(engDraftContent).findings.length : 0)
+  const archStatusPrefix = (!escalationJustOfferedUpstream && archTotalEffectiveItems > 0 && !readOnly)
+    ? `_${archTotalEffectiveItems} item${archTotalEffectiveItems === 1 ? "" : "s"} to address before implementation handoff._\n\n`
+    : ""
+  // ─── END PLATFORM STATUS LINE ─────────────────────────────────────────────
+
   appendMessage(featureName, { role: "user", content: userMessage })
-  appendMessage(featureName, { role: "assistant", content: response })
+  appendMessage(featureName, { role: "assistant", content: finalArchResponse })
 
   // If auto-escalation was triggered, append the escalation CTA after the agent's response
   const postRunEscalation = getPendingEscalation(featureName)
   if (postRunEscalation && !readOnly) {
-    const escLabel = postRunEscalation.targetAgent === "pm" ? "PM" : "Design"
-    const escCta = `\n\n---\n\nI found upstream ${escLabel} spec gaps that I need resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
-    await update(`${prefix}${response}${escCta}`)
+    await update(`${prefix}${archStatusPrefix}${finalArchResponse}${archUncommittedNote}`)
   } else if (archToolState.pendingDecisionReview && !readOnly) {
     // Fix B: Decisions detected — store in conversation state and surface for human review.
     const review = archToolState.pendingDecisionReview
@@ -2660,8 +2708,8 @@ ${response}`
     })
     const decisionList = review.resolvedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
     const reviewCta = `\n\n---\n\n*Architectural decisions for your review:*\n\n${decisionList}\n\nThese open questions have been resolved in this update. Say *yes* to confirm and save, or tell me what you'd like changed.`
-    await update(`${prefix}${response}${reviewCta}`)
+    await update(`${prefix}${archStatusPrefix}${finalArchResponse}${archUncommittedNote}${reviewCta}`)
   } else {
-    await update(`${prefix}${response}`)
+    await update(`${prefix}${archStatusPrefix}${finalArchResponse}${archUncommittedNote}`)
   }
 }

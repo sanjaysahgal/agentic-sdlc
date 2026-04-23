@@ -1756,6 +1756,7 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
     //   [1] isSpecStateQuery         → false
     //   [2] auditPhaseCompletion     → FINDING (spec not ready)
     //   [3] runAgent                 → agent surfaces the gap
+    //   [4] identifyUncommittedDecisions → none
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery
@@ -1766,6 +1767,7 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
         stop_reason: "end_turn",
         content: [{ type: "text", text: "The engineering spec is NOT implementation-ready. The OnboardingSession data model lacks explicit field names. I recommend adding: id (UUID), userId (UUID FK), completedAt (timestamp nullable), createdAt (timestamp). Shall I apply this now?" }],
       })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })    // identifyUncommittedDecisions
 
     const params = makeParams(THREAD, "feature-onboarding", "how does the data model look?")
     await handleFeatureChannelMessage(params)
@@ -1776,8 +1778,8 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
     expect(userMsg?.content).toContain("[INTERNAL — Engineering readiness")
     expect(userMsg?.content).toContain("OnboardingSession data model missing explicit field names")
 
-    // 4 total Anthropic calls
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // 5 total Anthropic calls (+1 for identifyUncommittedDecisions post-run audit)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
   })
 
   it("auditPhaseCompletion is skipped when no engineering draft exists on branch", async () => {
@@ -1788,15 +1790,17 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
     //   [0] isOffTopicForAgent       → false
     //   [1] isSpecStateQuery         → false
     //   [2] runAgent                 → response (no audit injection)
+    //   [3] identifyUncommittedDecisions → none
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "No engineering spec drafted yet. What would you like to spec out first?" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })   // identifyUncommittedDecisions
 
     await handleFeatureChannelMessage(makeParams(THREAD, "feature-onboarding", "how does the data model look?"))
 
-    // auditPhaseCompletion never ran — only 3 calls total
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(3)
+    // auditPhaseCompletion never ran — 4 calls total (3 + identifyUncommittedDecisions)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
 
     // runAgent call (index 2) does NOT contain audit notice
     const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
@@ -2855,12 +2859,13 @@ describe("Scenario N6 — Architect cache invalidation when engineering spec cha
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })   // auditPhaseCompletion → v1 spec
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Response turn 1." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })   // identifyUncommittedDecisions
 
     const params1 = makeParams(THREAD, `feature-${FEATURE}`, "how is the API?")
     await handleFeatureChannelMessage(params1)
 
-    // Turn 1: auditPhaseCompletion fired once (index 2)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // Turn 1: auditPhaseCompletion fired once (index 2), +1 for identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
     vi.clearAllMocks()
 
@@ -2877,13 +2882,14 @@ describe("Scenario N6 — Architect cache invalidation when engineering spec cha
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }] })   // auditPhaseCompletion → v2 spec (cache miss!)
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Response turn 2." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })   // identifyUncommittedDecisions
 
     const params2 = makeParams(THREAD, `feature-${FEATURE}`, "anything else?")
     await handleFeatureChannelMessage(params2)
 
     // auditPhaseCompletion fired again (cache miss due to spec change)
-    // 4 total calls: isOffTopicForAgent + isSpecStateQuery + auditPhaseCompletion + runAgent
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
+    // 5 total calls: isOffTopicForAgent + isSpecStateQuery + auditPhaseCompletion + runAgent + identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
     clearHistory(FEATURE)
   })
