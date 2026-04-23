@@ -8500,3 +8500,61 @@ describe("Scenario N81 — Architect auto-continue message does not allow re-ori
 // (loadArchitectAgentContext returns approvedProductSpec). The message.ts change
 // adds a readFile call for the PM spec before auditSpecDraft in the state query
 // path — same pattern as the existing PM spec reads at lines 1039-1041.
+
+// ─── Scenario N83 — Universal hedge detection gate ────────────────────────────
+// Hedge detection fires for PM and Design agents (not just architect).
+// detectHedgeLanguage() is pure string matching — no Anthropic calls added.
+
+describe("Scenario N83 — Universal hedge detection gate fires for PM and Design", () => {
+  const THREAD = "workflow-n83"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("PM hedge gate strips trailing questions and appends assertive close", async () => {
+    setConfirmedAgent("onboarding", "pm")
+
+    // PM path: classifyMessageScope → runAgent
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature" }] })  // classifyMessageScope
+      .mockResolvedValueOnce({                                                   // runAgent → hedgy response
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Here are two options for the onboarding flow.\n\nWhat would you like to focus on?\nShall I explore option A or B?" }],
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "let's shape onboarding")
+    await handleFeatureChannelMessage(params)
+
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("I'll proceed with the approach outlined above.")
+    expect(text).not.toContain("What would you like to focus on?")
+    expect(text).not.toContain("Shall I explore option A or B?")
+  })
+
+  it("hedge gate code exists in all three agent paths (structural verification)", () => {
+    const fs = require("fs")
+    const messageTs = fs.readFileSync("interfaces/slack/handlers/message.ts", "utf8")
+
+    // Count hedge gate blocks — should be exactly 3 (PM, Design, Architect)
+    const hedgeGateCount = (messageTs.match(/\[HEDGE-GATE\] (pm|design|architect):/g) ?? []).length
+    expect(hedgeGateCount).toBe(3)
+
+    expect(messageTs).toContain("[HEDGE-GATE] pm:")
+    expect(messageTs).toContain("[HEDGE-GATE] design:")
+    expect(messageTs).toContain("[HEDGE-GATE] architect:")
+  })
+
+  it("upstream gate markers exist for all non-PM agent paths (structural verification)", () => {
+    const fs = require("fs")
+    const messageTs = fs.readFileSync("interfaces/slack/handlers/message.ts", "utf8")
+
+    // Count agent functions and upstream gate markers
+    const agentCount = (messageTs.match(/async function run[A-Z][a-zA-Z]+Agent/g) ?? []).length
+    const gateCount = (messageTs.match(/\/\/ UPSTREAM-GATE:/g) ?? []).length
+
+    // PM is exempt (no upstream) — expected gates = agents - 1
+    expect(gateCount).toBe(agentCount - 1)
+    expect(messageTs).toContain("// UPSTREAM-GATE: design")
+    expect(messageTs).toContain("// UPSTREAM-GATE: architect")
+  })
+})

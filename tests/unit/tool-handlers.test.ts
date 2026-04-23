@@ -147,6 +147,16 @@ describe("handlePmTool", () => {
       // Should still save (gap is a warning, not a block)
       expect(deps.saveDraftSpec).toHaveBeenCalled()
     })
+
+    it("passes approvedProductSpec to auditSpecDraft when available (Call-Site Context Rule)", async () => {
+      const deps = buildPmDeps()
+      const ctx = buildMockCtx({
+        context: { productVision: "Build a health app", systemArchitecture: "React + Node", currentDraft: "", featureConventions: "", approvedProductSpec: "## User Stories\n- US-1: sign up" },
+      })
+      await handleSaveProductSpecDraft({ content: "# Spec" }, ctx, deps)
+      const auditCall = (deps.auditSpecDraft as any).mock.calls[0][0]
+      expect(auditCall.productSpec).toBe("## User Stories\n- US-1: sign up")
+    })
   })
 
   describe("apply_product_spec_patch", () => {

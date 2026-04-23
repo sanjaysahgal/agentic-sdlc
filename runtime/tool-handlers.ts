@@ -119,6 +119,7 @@ export async function handleSaveProductSpecDraft(
     productVision: ctx.context.productVision,
     systemArchitecture: ctx.context.systemArchitecture,
     featureName: ctx.featureName,
+    productSpec: ctx.context.approvedProductSpec,
   })
   if (audit.status === "conflict") {
     return { error: `Conflict detected — spec not saved: ${audit.message}` }

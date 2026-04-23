@@ -910,7 +910,7 @@ async function runPmAgent(params: {
   // ("discussions not committed to GitHub"). Same fix as architect pre-run gate.
   const effectiveHistoryPm = readOnly ? [] : historyPm
 
-  const response = await runAgent({
+  let response = await runAgent({
     systemPrompt,
     history: effectiveHistoryPm,
     userMessage: enrichedUserMessagePm,
@@ -945,6 +945,21 @@ async function runPmAgent(params: {
 
   // Expose collected tool calls to caller if requested (e.g. to detect spec saves in continuation path)
   if (callerToolCallsOut) callerToolCallsOut.push(...toolCallsOutPm)
+
+  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
+  // Same pattern as architect. PM has no escalation-offered state (root agent).
+  if (!readOnly) {
+    const hedges = detectHedgeLanguage(response)
+    if (hedges.length > 0) {
+      console.log(`[HEDGE-GATE] pm: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
+      const lines = response.trim().split("\n")
+      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
+        lines.pop()
+      }
+      response = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    }
+  }
+  // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
@@ -2030,6 +2045,7 @@ async function runDesignAgent(params: {
     }
   }
 
+  // UPSTREAM-GATE: design
   // Platform enforcement: if there are [PM-GAP] findings from the design rubric and the agent
   // did NOT call offer_pm_escalation, auto-trigger escalation. Prompt rules are probabilistic —
   // this makes product gap escalation structurally deterministic regardless of agent prose choices.
@@ -2131,6 +2147,22 @@ async function runDesignAgent(params: {
       console.log(`[ESCALATION] Override applied for ${featureName}. pending.question:\n${pending.question}`)
     }
   }
+
+  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
+  // Same pattern as architect. Guard: skip on readOnly AND on escalation-just-offered
+  // (the CTA text is platform-generated — hedge-stripping it would be a false positive).
+  if (!readOnly && !escalationJustOffered) {
+    const hedges = detectHedgeLanguage(finalResponse)
+    if (hedges.length > 0) {
+      console.log(`[HEDGE-GATE] design: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
+      const lines = finalResponse.trim().split("\n")
+      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
+        lines.pop()
+      }
+      finalResponse = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    }
+  }
+  // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
 
   appendMessage(featureName, { role: "assistant", content: finalResponse })
 
@@ -2535,6 +2567,7 @@ async function runArchitectAgent(params: {
     console.log(`[ORIENTATION-GATE] stripped trailing question from orientation response — replaced with architect's next step`)
   }
 
+  // UPSTREAM-GATE: architect
   // ─── POST-RUN: Upstream gap auto-escalation (Principle 8) ───────────────────
   // Same pattern as design agent's Gate 2. If upstream audit found gaps and the
   // architect did NOT call offer_upstream_revision, auto-trigger escalation.
@@ -2623,23 +2656,6 @@ ${response}`
   }
   // ─── END RECOMMENDATION GATE ───────────────────────────────────────────────
 
-  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
-  // Detect deferral language in agent response. If found, strip trailing questions
-  // and replace with an assertive statement. Same check applies to all agents.
-  if (!readOnly) {
-    const hedges = detectHedgeLanguage(response)
-    if (hedges.length > 0) {
-      console.log(`[HEDGE-GATE] architect: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
-      // Strip trailing questions (lines ending with ?)
-      const lines = response.trim().split("\n")
-      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
-        lines.pop()
-      }
-      response = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
-    }
-  }
-  // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
-
   // ─── POST-RUN: Escalation assertive language override (Principle 10) ───────
   // Same pattern as design agent: if escalation was offered (agent called
   // offer_upstream_revision or auto-gate fired), replace agent prose with
@@ -2656,6 +2672,23 @@ ${response}`
     }
   }
   // ─── END ESCALATION ASSERTIVE OVERRIDE ─────────────────────────────────────
+
+  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
+  // Detect deferral language in agent response. If found, strip trailing questions
+  // and replace with an assertive statement. Same check applies to all agents.
+  // Guard: skip on escalation-just-offered (CTA is platform-generated, not agent prose).
+  if (!readOnly && !escalationJustOfferedArch) {
+    const hedges = detectHedgeLanguage(finalArchResponse)
+    if (hedges.length > 0) {
+      console.log(`[HEDGE-GATE] architect: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
+      const lines = finalArchResponse.trim().split("\n")
+      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
+        lines.pop()
+      }
+      finalArchResponse = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    }
+  }
+  // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
 
   // ─── POST-RUN: Uncommitted decisions audit (Principle 7) ───────────────────
   // Same pattern as design agent: detect decisions discussed but not saved.

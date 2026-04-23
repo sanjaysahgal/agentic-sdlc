@@ -70,13 +70,9 @@ Tests: 18 new tests across `tool-handlers.test.ts`, `claude-client.test.ts`, and
 
 ---
 
-### Universal post-response hedge detection gate — all agents (2026-04-21)
+~~### Universal post-response hedge detection gate — all agents (2026-04-21)~~ ✅ DONE (2026-04-23)
 
-`isHedgeRecommendation()` and `enforceOpinionatedRecommendations()` exist for spec auditor structured findings but do NOT cover agent prose responses. The same deferral pattern ("What would you like to focus on?", "Which option do you prefer?", "Should I proceed?") recurs in every new agent because it's only caught by prompt rules.
-
-**Fix:** Universal post-response gate: after every agent response, check if it contains deferral patterns (agent asks user to make a decision the agent should own). If detected, re-run with enforcement override or strip and replace with the agent's expert assertion. Must handle false positives (legitimate clarifying questions are OK — "Should I escalate to PM?" is fine; "What would you like to focus on?" is not).
-
-**Scope:** All agents. The orientation gate just added for the architect is a narrow instance; this is the general case.
+`detectHedgeLanguage()` (deterministic, `runtime/deterministic-auditor.ts`) now wired as a post-response gate for **all three agents** — PM, Design, and Architect. 16 deferral phrases detected with 5 legitimate-question carveouts. When hedges detected: trailing `?` lines stripped, assertive close appended. Guards: `!readOnly` (all agents), `!escalationJustOffered` (design — CTA is platform-generated), `!escalationJustOfferedArch` (architect). Structural verification test confirms all 3 gates exist.
 
 ---
 
@@ -123,13 +119,9 @@ Implemented in `runtime/claude-client.ts` — `runAgent` logs `[AGENT-RESPONSE] 
 
 ---
 
-### Pre-commit hook: enforce pre-run upstream gate on all agent paths (2026-04-20)
+~~### Pre-commit hook: enforce pre-run upstream gate on all agent paths (2026-04-20)~~ ✅ DONE (2026-04-23)
 
-When `message.ts` has a pre-run upstream gate for one agent path (design N18, architect pre-run), the hook must verify the same pattern exists for ALL agent paths that have upstream dependencies. Prevents the failure mode where a structural gate exists for one agent but is never wired for another — exactly what happened with the architect (design had N18 for months, architect had nothing until manually caught in testing).
-
-**Hook logic:** Scan `message.ts` for `// PRE-RUN GATE` or equivalent marker comments. Count how many agent paths have them vs how many agent paths exist (pm, design, architect). If any non-PM agent path is missing a pre-run gate, block the commit. PM is exempt (no upstream).
-
-**Trigger:** Any commit touching `message.ts` that adds or modifies a pre-run gate pattern.
+`// UPSTREAM-GATE: [agent]` markers added to design (N18 gate) and architect (upstream gap auto-escalation) paths. PreToolUse hook in `.claude/settings.json` counts `async function run[X]Agent` functions vs `UPSTREAM-GATE:` markers — blocks commit if any non-PM agent path is missing a marker. Structural verification test confirms marker count matches `agentFunctions - 1`.
 
 ---
 
@@ -202,13 +194,9 @@ When a design draft exists with open action items and fix intent is NOT confirme
 
 ---
 
-### `auditSpecDraft` false positive — flags PM-spec-covered items as gaps (2026-04-16)
+~~### `auditSpecDraft` false positive — flags PM-spec-covered items as gaps (2026-04-16)~~ ✅ DONE (2026-04-23)
 
-`auditSpecDraft` receives `productVision` + `systemArchitecture` but not the feature PM spec. When a feature PM spec explicitly covers something (e.g. AC#23: "60 minutes of inactivity"), `auditSpecDraft` still surfaces it as a gap because it never sees the PM spec.
-
-**Fix:** Add `approvedProductSpec?: string` param to `auditSpecDraft`. When provided, inject it into the Haiku prompt with an instruction: "If the feature PM spec already explicitly covers this item, do not flag it as a gap." Pass it from every call site (spec state query path + LLM path) the same way `approvedProductSpec` was added to `auditPhaseCompletion` and `classifyForPmGaps`.
-
-**Applies to all agents:** PM spec is available at every call site (it's already read into `approvedPmSpecContent` in the spec state path). No new GitHub reads required.
+`productSpec` parameter already existed on `auditSpecDraft` — the last missing call site (`handleSavePmSpecDraft` in `tool-handlers.ts`) now passes `ctx.context.approvedProductSpec`. All 5 call sites confirmed with call-site context test.
 
 ---
 
