@@ -89,8 +89,10 @@ async function main(): Promise<void> {
   console.log(`${BOLD}Overall: ${totalColor}${totalPassed}/${allResults.length} passed (${totalPct}%)${RESET}\n`)
 
   // Exit non-zero if below threshold — blocks push.
-  // Threshold starts at 50% (current baseline) and rises as agent prompts improve.
-  const EVAL_PASS_THRESHOLD = 50
+  // Raised from 50% → 85% after eval criteria refinement (2026-04-22).
+  // Baseline is 88-92% (23-24/26). 85% = 22/26 minimum — safe margin for
+  // Haiku judging non-determinism while catching real regressions.
+  const EVAL_PASS_THRESHOLD = 85
   if (totalPct < EVAL_PASS_THRESHOLD) {
     console.log(`${RED}EVAL GATE FAILED: ${totalPct}% < ${EVAL_PASS_THRESHOLD}% threshold${RESET}`)
     process.exit(1)

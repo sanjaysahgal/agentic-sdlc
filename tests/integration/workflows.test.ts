@@ -8488,3 +8488,9 @@ describe("Scenario N81 — Architect auto-continue message does not allow re-ori
     expect(block).toContain("structural proposal")
   })
 })
+
+// N82: auditSpecDraft receives productSpec — covered by unit tests in
+// tool-handlers.test.ts (approvedProductSpec passed) and context-loader.test.ts
+// (loadArchitectAgentContext returns approvedProductSpec). The message.ts change
+// adds a readFile call for the PM spec before auditSpecDraft in the state query
+// path — same pattern as the existing PM spec reads at lines 1039-1041.

@@ -150,6 +150,7 @@ export async function handleApplyProductSpecPatch(
     productVision: ctx.context.productVision,
     systemArchitecture: ctx.context.systemArchitecture,
     featureName: ctx.featureName,
+    productSpec: ctx.context.approvedProductSpec,
   })
   if (audit.status === "conflict") {
     return { error: `Conflict detected — patch not saved: ${audit.message}` }
@@ -298,6 +299,7 @@ export async function handleSaveEngineeringSpecDraft(
     productVision: ctx.context.productVision,
     systemArchitecture: ctx.context.systemArchitecture,
     featureName: ctx.featureName,
+    productSpec: ctx.context.approvedProductSpec,
   })
   if (audit.status === "conflict") {
     return { error: `Conflict detected — spec not saved: ${audit.message}` }
@@ -335,6 +337,7 @@ export async function handleApplyEngineeringSpecPatch(
     productVision: ctx.context.productVision,
     systemArchitecture: ctx.context.systemArchitecture,
     featureName: ctx.featureName,
+    productSpec: ctx.context.approvedProductSpec,
   })
   if (audit.status === "conflict") {
     return { error: `Conflict detected — patch not saved: ${audit.message}` }

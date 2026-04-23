@@ -240,6 +240,8 @@ describe("context-loader", () => {
       expect(result.currentDraft).toContain("## Approved Product Spec")
       expect(result.currentDraft).toContain("## Approved Design Spec")
       expect(result.currentDraft).toContain("## Current Engineering Draft")
+      // approvedProductSpec is also returned as a separate field for auditSpecDraft
+      expect(result.approvedProductSpec).toBe("# Product Spec")
     })
 
     it("reads engineering draft from spec branch", async () => {

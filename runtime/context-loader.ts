@@ -150,7 +150,7 @@ export async function loadArchitectAgentContext(featureName: string): Promise<Ag
   ].filter(Boolean).join("\n\n")
 
   console.log(`[CONTEXT] loadArchitectAgentContext: productSpec=${approvedProductSpec ? "loaded" : "404"} designSpec=${approvedDesignSpec ? "loaded" : "404"} engineeringDraft=${engineeringDraft ? "loaded" : "404"}`)
-  return { productVision, featureConventions: "", systemArchitecture, currentDraft, approvedFeatureSpecs }
+  return { productVision, featureConventions: "", systemArchitecture, currentDraft, approvedProductSpec: approvedProductSpec ?? undefined, approvedFeatureSpecs }
 }
 
 // Loads context filtered to what's relevant for a specific user question.

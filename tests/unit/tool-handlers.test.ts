@@ -314,6 +314,16 @@ describe("handleArchitectTool", () => {
       expect(deps.saveDraftEngineeringSpec).not.toHaveBeenCalled()
     })
 
+    it("passes approvedProductSpec to auditSpecDraft when available", async () => {
+      const deps = buildArchDeps()
+      const ctx = archCtx()
+      ctx.context = { ...ctx.context, approvedProductSpec: "# Approved PM Spec" }
+      await handleSaveEngineeringSpecDraft({ content: "# Eng" }, ctx, deps, freshState())
+      expect(deps.auditSpecDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ productSpec: "# Approved PM Spec" })
+      )
+    })
+
     it("holds content for review when open questions are resolved (Fix B)", async () => {
       const ctx = archCtx()
       ctx.readFile = vi.fn().mockResolvedValue("# Spec\n## Open Questions\n- What DB? [blocking: yes]")

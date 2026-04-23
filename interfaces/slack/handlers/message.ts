@@ -1042,7 +1042,8 @@ async function runDesignAgent(params: {
         ])
         if (pvContent || saContent) {
           await update("_Auditing spec for gaps..._")
-          const specAudit = await auditSpecDraft({ draft: draftContent, productVision: pvContent, systemArchitecture: saContent, featureName }).catch(() => ({ status: "ok" as const, message: "" }))
+          const pmSpecForAudit = await readFile(`${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`, "main").catch(() => null)
+          const specAudit = await auditSpecDraft({ draft: draftContent, productVision: pvContent, systemArchitecture: saContent, featureName, productSpec: pmSpecForAudit ?? undefined }).catch(() => ({ status: "ok" as const, message: "" }))
           specGap = specAudit.status === "gap" ? specAudit.message : null
         }
       }
