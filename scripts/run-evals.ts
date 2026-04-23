@@ -15,6 +15,7 @@ import { pmScenarios } from "../tests/evals/scenarios/pm"
 import { designScenarios } from "../tests/evals/scenarios/design"
 import { architectScenarios } from "../tests/evals/scenarios/architect"
 import { conciergeScenarios } from "../tests/evals/scenarios/concierge"
+import { productLevelScenarios } from "../tests/evals/scenarios/product-level"
 
 const RESET  = "\x1b[0m"
 const GREEN  = "\x1b[32m"
@@ -35,6 +36,7 @@ const allSuites: Array<{ label: string; key: string; scenarios: ReturnType<typeo
   { label: "Design",     key: "design",    scenarios: designScenarios.filter(s => s.userMessage !== "__SKIP_AGENT_CALL__") },
   { label: "Architect",  key: "architect", scenarios: architectScenarios },
   { label: "Concierge",  key: "concierge", scenarios: conciergeScenarios },
+  { label: "Product-level", key: "product-level", scenarios: productLevelScenarios },
 ]
 
 const suites = agentFilter
@@ -42,7 +44,7 @@ const suites = agentFilter
   : allSuites
 
 if (suites.length === 0) {
-  console.error(`Unknown agent: ${agentFilter}. Options: pm, design, architect, concierge`)
+  console.error(`Unknown agent: ${agentFilter}. Options: pm, design, architect, concierge, product-level`)
   process.exit(1)
 }
 

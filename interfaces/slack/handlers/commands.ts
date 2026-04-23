@@ -60,11 +60,13 @@ export function registerSlashCommands(app: App): void {
       const threadTs = seed.ts as string
 
       const agent = AGENT_MAP[cmd.command]
+      console.log(`[ROUTER] slash-command: ${cmd.command} in #${channelName} by <@${cmd.user_id}> msg="${text.slice(0, 100)}"`)
 
       if (channelName.startsWith("feature-")) {
         // Feature channel: delegate to existing handler via @agent: prefix
         const channelState = getChannelState(channelName)
         const prefixName = cmd.command.slice(1) // "/pm" → "pm"
+        console.log(`[ROUTER] slash-command: routing to feature handler with @${prefixName}: prefix`)
         await handleFeatureChannelMessage({
           channelName,
           threadTs,
@@ -76,6 +78,7 @@ export function registerSlashCommands(app: App): void {
         })
       } else if (channelName === loadWorkspaceConfig().mainChannel) {
         // General channel: route to agent in product-level mode
+        console.log(`[ROUTER] slash-command: routing to product-level ${agent} agent in general channel`)
         await handleGeneralChannelAgentMessage({
           channelId: cmd.channel_id,
           threadTs,
@@ -84,6 +87,7 @@ export function registerSlashCommands(app: App): void {
           agent,
         })
       } else {
+        console.log(`[ROUTER] slash-command: unsupported channel #${channelName}`)
         const { mainChannel } = loadWorkspaceConfig()
         await client.chat.postMessage({
           channel: cmd.channel_id,
