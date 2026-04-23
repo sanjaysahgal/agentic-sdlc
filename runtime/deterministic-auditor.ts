@@ -58,7 +58,7 @@ export const DEFERRAL_MARKERS = [
 // ────────────────────────────────────────────────────────────────────────────────
 
 /** Extract the body text of a ## section (everything between ## heading and next ## or EOF). */
-function extractSection(content: string, heading: string): string {
+export function extractSection(content: string, heading: string): string {
   // Find the heading line, then capture everything until the next ## heading or end of string
   const lines = content.split("\n")
   const headingPrefix = `## ${heading}`
@@ -79,17 +79,17 @@ function extractSection(content: string, heading: string): string {
 }
 
 /** Extract all ## section headings from a spec. */
-function extractSectionHeadings(content: string): string[] {
+export function extractSectionHeadings(content: string): string[] {
   return (content.match(/^## .+/gm) ?? []).map(h => h.replace(/^## /, "").trim())
 }
 
 /** Extract all ### subsection headings from a section body. */
-function extractSubsectionHeadings(sectionBody: string): string[] {
+export function extractSubsectionHeadings(sectionBody: string): string[] {
   return (sectionBody.match(/^### .+/gm) ?? []).map(h => h.replace(/^### /, "").trim())
 }
 
 /** Check if a line contains any word from a list (case-insensitive, word-boundary). */
-function containsVagueWord(line: string, words: string[]): string | null {
+export function containsVagueWord(line: string, words: string[]): string | null {
   const lower = line.toLowerCase()
   for (const word of words) {
     // Word boundary match to avoid false positives (e.g. "clear" in "clearTimeout")
@@ -100,14 +100,14 @@ function containsVagueWord(line: string, words: string[]): string | null {
 }
 
 /** Extract numbered items from a section (lines starting with number + dot or dash). */
-function extractNumberedItems(section: string): string[] {
+export function extractNumberedItems(section: string): string[] {
   return section.split("\n")
     .filter(l => /^\s*(\d+[\.\)]\s|[-*]\s)/.test(l))
     .map(l => l.replace(/^\s*(\d+[\.\)]\s|[-*]\s)/, "").trim())
 }
 
 /** Extract user stories from ## User Stories section. */
-function extractUserStories(content: string): Array<{ id: string; text: string }> {
+export function extractUserStories(content: string): Array<{ id: string; text: string }> {
   const section = extractSection(content, "User Stories")
   if (!section) return []
   const stories: Array<{ id: string; text: string }> = []
@@ -123,7 +123,7 @@ function extractUserStories(content: string): Array<{ id: string; text: string }
 }
 
 /** Extract screen definitions from ## Screens section. Returns screen name → body. */
-function extractScreens(content: string): Map<string, string> {
+export function extractScreens(content: string): Map<string, string> {
   const screensSection = extractSection(content, "Screens")
   if (!screensSection) return new Map()
   const screens = new Map<string, string>()
@@ -138,7 +138,7 @@ function extractScreens(content: string): Map<string, string> {
 }
 
 /** Extract API endpoints from ## API Contracts section. */
-function extractEndpoints(content: string): Array<{ method: string; path: string; body: string }> {
+export function extractEndpoints(content: string): Array<{ method: string; path: string; body: string }> {
   const section = extractSection(content, "API Contracts")
   if (!section) return []
   const endpoints: Array<{ method: string; path: string; body: string }> = []
@@ -153,7 +153,7 @@ function extractEndpoints(content: string): Array<{ method: string; path: string
 }
 
 /** Extract data model entities from ## Data Model section. */
-function extractEntities(content: string): Array<{ name: string; body: string }> {
+export function extractEntities(content: string): Array<{ name: string; body: string }> {
   const section = extractSection(content, "Data Model")
   if (!section) return []
   const entities: Array<{ name: string; body: string }> = []

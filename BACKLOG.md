@@ -27,30 +27,20 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### Migrate all LLM-based audits to deterministic implementations (Principle 11) (2026-04-22)
+~~### Migrate all LLM-based audits to deterministic implementations (Principle 11) (2026-04-22)~~ ✅ DONE (2026-04-22)
 
-**Priority: CRITICAL — this is an architectural mandate, not a single fix.**
+`runtime/deterministic-auditor.ts` — five `@deterministic` pure-function auditors now serve as the primary gate at all 5 `auditPhaseCompletion` call sites in `message.ts`:
 
-Every `auditPhaseCompletion` call uses Sonnet to evaluate a spec against a rubric. Same spec, same rubric, different run → different findings. This violates Archon's core value proposition: deterministic specialist agents that produce identical results on identical input.
+| Audit | Deterministic primary | LLM @enrichment |
+|---|---|---|
+| Upstream PM spec (Design) | `auditPmDesignReadiness()` | `auditPhaseCompletion(PM_RUBRIC)` |
+| Upstream PM spec (Architect) | `auditPmSpec()` | `auditPhaseCompletion(ARCHITECT_UPSTREAM_PM_RUBRIC)` |
+| Design readiness | `auditDesignSpec()` | `auditPhaseCompletion(buildDesignRubric)` |
+| Engineering readiness | `auditEngineeringSpec()` | `auditPhaseCompletion(ENGINEER_RUBRIC)` |
+| Upstream design spec (Architect) | `auditDesignSpec()` | `auditPhaseCompletion(buildDesignRubric)` |
+| Downstream readiness (all finalize) | N/A — adversarial "what would you need?" has no structural ceiling | `auditDownstreamReadiness` (Sonnet, `@enrichment`) |
 
-**Current LLM-based audits that must be migrated:**
-
-| Audit | Agent | Current impl | Deterministic replacement |
-|---|---|---|---|
-| Upstream PM spec audit | Design | `auditPhaseCompletion(PM_RUBRIC)` | Parse user stories → verify each has error path section; `extractAllOpenQuestions` for unresolved items; word-list vagueness check on ACs |
-| Upstream PM spec audit | Architect | `auditPhaseCompletion(ARCHITECT_UPSTREAM_PM_RUBRIC)` | Same as design — error path per story + open questions |
-| Design readiness audit | Design | `auditPhaseCompletion(buildDesignRubric)` | Parse screens → verify states defined, animations specified, form factors covered; `auditBrandTokens` already deterministic; extend `auditSpecStructure` |
-| Engineering readiness audit | Architect | `auditPhaseCompletion(ENGINEER_RUBRIC)` | Parse sections → verify API contracts have auth, data model has migrations, open questions resolved |
-| Upstream design spec audit | Architect | `auditPhaseCompletion(buildDesignRubric)` | Same as design readiness |
-| Downstream readiness | All finalize handlers | `auditDownstreamReadiness` (Sonnet, open-ended) | This is the ONE audit where LLM enrichment may remain — adversarial "what would you need?" has no structural ceiling. But it must be `@enrichment`, not a primary gate. |
-
-**Migration pattern:**
-1. For each rubric criterion, ask: "What structural property of the spec makes this criterion PASS or FAIL?"
-2. Implement that check as a pure function (parser + counter + matcher)
-3. The LLM rubric stays as `@enrichment` — runs in parallel, surfaces additional findings, but never gates decisions
-4. Add `@deterministic` JSDoc to every new audit function
-
-**Acceptance criteria:** Run every audit twice on the same spec. Results must be identical. Any non-deterministic primary gate is a bug.
+Deduplication: LLM findings overlapping deterministic findings (first 40 chars) are dropped. `detectHedgeLanguage()` wired as universal post-run gate. 31 unit tests with determinism contract (each audit run twice, results asserted identical). Eval suite (13 deterministic + 26 Haiku-judged criteria) wired into pre-push hook; 92% pass rate.
 
 ---
 

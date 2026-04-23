@@ -5,6 +5,15 @@ import {
   auditDesignSpec,
   auditEngineeringSpec,
   detectHedgeLanguage,
+  extractSection,
+  extractSectionHeadings,
+  extractSubsectionHeadings,
+  extractEndpoints,
+  extractUserStories,
+  extractScreens,
+  extractEntities,
+  extractNumberedItems,
+  containsVagueWord,
   VAGUE_WORDS,
   DEFERRAL_MARKERS,
 } from "../../runtime/deterministic-auditor"
@@ -273,5 +282,115 @@ describe("determinism contract", () => {
       expect(JSON.stringify(auditDesignSpec(designSpec))).toBe(JSON.stringify(auditDesignSpec(designSpec)))
       expect(JSON.stringify(auditEngineeringSpec(engSpec))).toBe(JSON.stringify(auditEngineeringSpec(engSpec)))
     }
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Helper utilities — direct tests
+// ────────────────────────────────────────────────────────────────────────────────
+
+describe("extractSection", () => {
+  it("extracts section body between ## headings", () => {
+    const content = "## Alpha\nline one\nline two\n## Beta\nbeta content"
+    expect(extractSection(content, "Alpha")).toBe("line one\nline two")
+    expect(extractSection(content, "Beta")).toBe("beta content")
+  })
+
+  it("returns empty string for missing section", () => {
+    expect(extractSection("## Foo\nbar", "Missing")).toBe("")
+  })
+
+  it("captures until EOF when section is last", () => {
+    expect(extractSection("## Only\nall of this", "Only")).toBe("all of this")
+  })
+})
+
+describe("extractSectionHeadings", () => {
+  it("returns all ## headings", () => {
+    const content = "# Title\n## Screens\ncontent\n## API Contracts\nmore\n### Sub"
+    expect(extractSectionHeadings(content)).toEqual(["Screens", "API Contracts"])
+  })
+
+  it("returns empty array for no headings", () => {
+    expect(extractSectionHeadings("no headings here")).toEqual([])
+  })
+})
+
+describe("extractEndpoints", () => {
+  it("extracts method and path from API Contracts section", () => {
+    const spec = `## API Contracts\n### GET /api/users\nReturns users.\n### POST /api/users\nCreates a user.`
+    const endpoints = extractEndpoints(spec)
+    expect(endpoints).toHaveLength(2)
+    expect(endpoints[0]).toMatchObject({ method: "GET", path: "/api/users" })
+    expect(endpoints[1]).toMatchObject({ method: "POST", path: "/api/users" })
+  })
+
+  it("returns empty for missing section", () => {
+    expect(extractEndpoints("## Data Model\nstuff")).toEqual([])
+  })
+})
+
+describe("extractUserStories", () => {
+  it("extracts numbered user stories", () => {
+    const spec = `## User Stories\n- US-1: As a user, I can sign up\n- US-2: As a user, I can log in`
+    const stories = extractUserStories(spec)
+    expect(stories).toHaveLength(2)
+    expect(stories[0].id).toBe("US-1")
+    expect(stories[1].id).toBe("US-2")
+  })
+
+  it("returns empty for missing section", () => {
+    expect(extractUserStories("## Screens\nstuff")).toEqual([])
+  })
+})
+
+describe("extractSubsectionHeadings", () => {
+  it("returns ### headings from section body", () => {
+    const body = "### Login Screen\ncontent\n### Signup Screen\nmore"
+    expect(extractSubsectionHeadings(body)).toEqual(["Login Screen", "Signup Screen"])
+  })
+})
+
+describe("extractScreens", () => {
+  it("returns screen name → body map", () => {
+    const spec = `## Screens\n### Welcome\nHero section\n### Dashboard\nMetrics`
+    const screens = extractScreens(spec)
+    expect(screens.size).toBe(2)
+    expect(screens.has("Welcome")).toBe(true)
+    expect(screens.has("Dashboard")).toBe(true)
+  })
+
+  it("returns empty map for missing section", () => {
+    expect(extractScreens("## API Contracts\nstuff").size).toBe(0)
+  })
+})
+
+describe("extractEntities", () => {
+  it("extracts entities from Data Model section", () => {
+    const spec = `## Data Model\n### User\nid: uuid\nemail: string\n### Session\ntoken: string`
+    const entities = extractEntities(spec)
+    expect(entities).toHaveLength(2)
+    expect(entities[0].name).toBe("User")
+    expect(entities[1].name).toBe("Session")
+  })
+})
+
+describe("extractNumberedItems", () => {
+  it("extracts numbered and bulleted items", () => {
+    const section = "1. First item\n2. Second item\n- Third item\nplain text"
+    const items = extractNumberedItems(section)
+    expect(items).toHaveLength(3)
+    expect(items[0]).toBe("First item")
+  })
+})
+
+describe("containsVagueWord", () => {
+  it("detects word-boundary matches", () => {
+    expect(containsVagueWord("The transition is smooth and fast", ["smooth"])).toBe("smooth")
+    expect(containsVagueWord("clearTimeout is a JS function", ["clear"])).toBeNull()
+  })
+
+  it("returns null for no match", () => {
+    expect(containsVagueWord("Specific and measurable", ["vague"])).toBeNull()
   })
 })

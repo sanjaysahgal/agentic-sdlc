@@ -28,6 +28,9 @@ export type PhaseCompletionAuditResult = {
   findings: Array<{ issue: string; recommendation: string }>
 }
 
+/** @enrichment — LLM-based rubric evaluation. NOT a primary gate (Principle 11).
+ *  Runs in parallel with deterministic auditors as an additive enrichment layer.
+ *  May surface semantic findings the parser misses, but never gates decisions alone. */
 export async function auditPhaseCompletion(params: {
   specContent: string
   rubric: string
