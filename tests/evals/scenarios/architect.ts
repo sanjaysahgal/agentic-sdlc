@@ -225,13 +225,13 @@ export const architectScenarios: EvalScenario[] = [
     userMessage: "What's the migration strategy for the onboarding state column?",
     history: midDraftHistory,
     criteria: [
-      "The response answers the migration question directly",
-      "The response is under 500 words",
+      "The response answers the migration question with a specific approach — not 'it depends'",
+      "The response is concise and focused — under 800 words",
     ],
     deterministicCriteria: [
       {
-        label: "Under 500 words",
-        check: (response) => response.split(/\s+/).length < 500,
+        label: "Under 800 words",
+        check: (response) => response.split(/\s+/).length < 800,
       },
       {
         label: "No platform language leaked",

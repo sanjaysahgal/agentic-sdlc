@@ -14,8 +14,8 @@ export const productLevelScenarios: EvalScenario[] = [
     userMessage: "What are the non-negotiable constraints for Acme?",
     criteria: [
       "The response references specific constraints from the product vision (mobile-first, no AI suggestions in v1, GitHub/Slack integration, single-tenant)",
-      "The response does not reference any specific feature spec or draft branch",
-      "The response gives an opinionated recommendation or context — not just a list",
+      "The response discusses product-level concerns — not a specific feature's spec draft or branch",
+      "The response is substantive — it explains the constraints with context, not a bare bullet list with no commentary",
     ],
     deterministicCriteria: [
       {
