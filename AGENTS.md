@@ -2,6 +2,8 @@
 
 Every agent in this system has a clearly defined role, a phase it owns, a human counterpart it works with, a specific output it produces, and a persona — the experience level and background it operates from. Agents are AI specialists — they assist the human, not replace them.
 
+**Addressing agents:** Slash commands (`/pm`, `/design`, `/architect`) provide direct agent access from any supported channel. In feature channels, they override phase-based routing. In the general channel, they route to the agent in product-level mode (vision, brand, architecture — each within its domain boundary). The text prefix (`@pm:`, `@design:`, `@architect:`) also works in feature channels for in-thread addressing.
+
 ---
 
 ## Concierge agent

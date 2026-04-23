@@ -27,6 +27,12 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Agent persona names — customer-chosen names for slash commands (deferred)
+
+Slash commands are role-based (`/pm`, `/design`, `/architect`). For a white-label or branded experience, customers may want named personas ("Sarah the PM") with custom avatars. This is a branding layer on top of the existing slash command infrastructure — the routing, domain boundaries, and product-level mode don't change. Defer until a customer requests it.
+
+---
+
 ~~### Migrate all LLM-based audits to deterministic implementations (Principle 11) (2026-04-22)~~ ✅ DONE (2026-04-22)
 
 `runtime/deterministic-auditor.ts` — five `@deterministic` pure-function auditors now serve as the primary gate at all 5 `auditPhaseCompletion` call sites in `message.ts`:

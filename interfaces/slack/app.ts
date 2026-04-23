@@ -3,6 +3,7 @@ import { App } from "@slack/bolt"
 import { handleFeatureChannelMessage, getChannelState } from "./handlers/message"
 import { handleGeneralChannelMessage } from "./handlers/general"
 import { registerReactionHandlers } from "./handlers/reactions"
+import { registerSlashCommands } from "./handlers/commands"
 import { UserImage } from "../../runtime/claude-client"
 
 const app = new App({
@@ -192,5 +193,6 @@ app.message(async ({ message, client, body }) => {
 })
 
 registerReactionHandlers(app)
+registerSlashCommands(app)
 
 export default app
