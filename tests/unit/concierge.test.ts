@@ -147,4 +147,20 @@ describe("buildConciergeSystemPrompt", () => {
     expect(prompt).toContain("Never say \"I don't know what that is\"")
     expect(prompt).toContain("Never tell the user to \"ask someone else\"")
   })
+
+  it("includes slash command instructions for agent discoverability", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    expect(prompt).toContain("/pm")
+    expect(prompt).toContain("/design")
+    expect(prompt).toContain("/architect")
+    expect(prompt).toContain("slash command")
+  })
+
+  it("directs product-level discussions to slash commands, not feature channels", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    expect(prompt).toContain("product vision")
+    expect(prompt).toContain("/pm")
+    // Should NOT say "open a feature channel" for vision/brand/arch discussions
+    expect(prompt).not.toContain("direct them to open a feature channel and work with the PM agent")
+  })
 })
