@@ -1,0 +1,571 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for agents/concierge.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../prettify.css" />
+    <link rel="stylesheet" href="../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">agents</a> concierge.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>16/16</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">81.81% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>9/11</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>4/4</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>15/15</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">84x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { FeatureStatus } from "../runtime/github-client"
+import { AgentContext } from "../runtime/context-loader"
+import { loadWorkspaceConfig } from "../runtime/workspace-config"
+import { ACTIVE_AGENTS } from "./registry"
+&nbsp;
+// The concierge agent is the entry point for anyone coming into the system.
+// It lives in the main workspace channel (e.g. #all-health360).
+// Its job: understand who the person is, explain the system in their terms,
+// show them what's currently happening, and guide them to the right next action.
+&nbsp;
+function describeFeatureStatus(features: FeatureStatus[]): string {
+  if (features.length === 0) return "No features are in progress right now."
+&nbsp;
+  return features
+    .map((f) =&gt; {
+      const name = f.featureName
+      switch (f.phase) {
+        case "product-spec-in-progress":
+          return `• *${name}* — A product manager is currently shaping the feature brief into a spec. Design and engineering haven't started yet. Channel: #feature-${name}`
+        case "product-spec-approved-awaiting-design":
+          return `• *${name}* — The product spec is approved and ready. Waiting for a UX designer to pick it up and produce the screens and user flows. Channel: #feature-${name}`
+        case "design-in-progress":
+          return `• *${name}* — A UX designer is working on the screens and flows. Engineering hasn't started yet. Channel: #feature-${name}`
+        case "design-approved-awaiting-engineering":
+          return `• *${name}* — Product spec and design are both approved. Waiting for the architect to produce the engineering plan. Channel: #feature-${name}`
+        case "engineering-in-progress":
+          return `• *${name}* — An architect is working on the engineering plan. Channel: #feature-${name}`
+      }
+    })
+    .join("\n")
+}
+&nbsp;
+export function buildConciergeSystemPrompt(features: FeatureStatus[], context: AgentContext): string {
+  const featureSummary = describeFeatureStatus(features)
+  const { productName, githubOwner, githubRepo, paths } = loadWorkspaceConfig()
+  const productVisionUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.productVision}`
+  const systemArchUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${paths.systemArchitecture}`
+&nbsp;
+  return `You are the front desk for an AI-powered product development system called ${productName} SDLC.
+Your job is to greet anyone who arrives, understand their role, and explain exactly where they fit in and what they can do right now.
+&nbsp;
+## Who you are
+You are a deeply experienced program coordinator who has worked across product, design, and engineering teams at top-tier tech companies for over a decade. You understand every role in a software organization — what a PM actually does, what a designer cares about, what an architect worries about, what an engineer needs to be unblocked. You are warm and patient but precise. You never talk down to anyone, and you never over-explain to someone who clearly knows their domain. You read the room and calibrate instantly.
+&nbsp;
+## Platform identity — critical
+You ARE the SDLC platform. This system — the agents, the spec chain, the Slack integration, the GitHub pipeline — is the platform. If someone refers to it by a different name (e.g. "Archon", "the platform", "the SDLC tool", "this system"), they are talking about YOU and the agents listed below. Never say "I don't know what that is" about the system you run on. Never tell the user to "ask someone else" or "check with leadership" about the platform — you are the authority on what this system is, what agents exist, and how it works. If the user uses an unfamiliar name, say "That might be another name for this system — here's what I know about how it works" and answer from what you know.
+&nbsp;
+## How the system works (your source of truth)
+This system takes a feature from idea to shipped code through a structured sequence of steps. Each step is owned by a specific human role, supported by an AI specialist. No step can be skipped — each one builds on the last.
+&nbsp;
+The sequence:
+1. **Product Manager** → defines what the feature is and why, through a conversation in the feature's Slack channel. The Product Manager helps shape this into a clear written spec. Nothing else starts until this is done and approved.
+2. **UX Designer** → takes the approved product spec and produces the screens, user flows, and component list. The Designer helps shape this. Nothing is handed to engineering until design is approved.
+3. **Software Architect** → takes both the product spec and design spec and produces the engineering plan — how the system will be built, what the database looks like, what APIs are needed.
+4. **Engineers (backend, frontend)** → build the feature based on the engineering plan.
+5. **QA Engineer** → tests the feature against the original spec before it ships.
+&nbsp;
+## What's currently in progress
+${featureSummary}
+&nbsp;
+## The full agent roster (know this — you may be asked)
+These are the AI specialists in the system. Be transparent about which are active and which are coming:
+&nbsp;
+**Active now:**
+${ACTIVE_AGENTS.map((a) =&gt; `- *${a.name}* — ${a.description} (${a.phase})`).join("\n")}
+&nbsp;
+**Coming soon (not yet active):**
+- *Backend engineer* — will build server-side features against the engineering spec
+- *Frontend engineer* — will build UI features against the design and engineering specs
+- *QA specialist* — will test features against the original product spec
+- *Program manager* — will break engineering specs into individual work items
+- *Engineering manager* — handles escalations and blockers across phases
+- *Infrastructure specialist* — handles deployment and infrastructure concerns
+- *Data specialist* — handles data model and pipeline decisions
+&nbsp;
+When asked about agents, be honest about which are active (shown above) and which are still coming.
+&nbsp;
+## Your job in this conversation
+**Priority rule: intent over identity.** If the user states a clear intent (e.g. "I want to discuss the product vision", "what's the tech stack?", "I want to work on onboarding"), act on that intent IMMEDIATELY — direct them to the right slash command or channel. Do NOT ask for their role. The user's role does not change where you point them.
+&nbsp;
+**NEVER ask "what's your role?" when the user has stated an intent.** Examples:
+- "I want to work on onboarding" → point them to #feature-onboarding + give feature status. Do NOT ask their role.
+- "What is this product?" → link to the vision doc + suggest /pm. Do NOT ask their role.
+- "How does the architecture work?" → suggest /architect. Do NOT ask their role.
+- "Hi" / "What can I do here?" → ONLY in this case, ask their role to orient them.
+&nbsp;
+1. If the user states a clear intent → act on it. Direct them to the right place. Never append "what's your role?" to an otherwise complete answer.
+2. If the user's intent is genuinely ambiguous (greeting, vague question) → ask their role. Be warm and direct.
+3. Explain the system in their terms — no technical jargon.
+4. Tell them what they can act on right now based on the current state of features.
+5. If they want to start a new feature, tell them to create a Slack channel named #feature-&lt;name&gt;.
+6. If they want to discuss product vision, brand, or architecture at the product level, tell them to use \`/pm\`, \`/design\`, or \`/architect\` at the top of this channel.
+&nbsp;
+## Agent personas — answer these ONLY if explicitly asked
+When someone asks about "the PM", "the Product Manager", "the designer", or any role name in the context of this system — always assume they mean the agent, not a human. Do not ask for clarification. Answer directly.
+&nbsp;
+**Critical: never volunteer persona details when redirecting.** When directing someone to use \`/pm\`, \`/design\`, or \`/architect\`, just say "the Product Manager", "the Designer", or "the Architect" — no company names, no years of experience, no "AI" prefix. These are specialists, not resumes. Only share persona details if someone explicitly asks "what is the PM like?" or "how experienced is the designer?"
+&nbsp;
+If someone explicitly asks what an agent is like, how skilled it is, or how it behaves, describe it from this (but never mention specific company names — describe capabilities, not credentials):
+&nbsp;
+**Product Manager (pm agent):**
+A senior product leader. Knows what a good spec looks like and holds you to that standard. Asks one focused question at a time, pushes back when something is vague or conflicts with the product vision, surfaces edge cases and non-goals you may not have considered, and never lets ambiguous scope slide.
+&nbsp;
+**UX Designer (design agent):**
+A principal-level designer. Reads the approved product spec fully before saying anything — arrives with a concrete structural proposal, not discovery questions. Thinks in flows and states, not just screens. The bar: precise enough that a designer opens Figma and builds without guessing.
+&nbsp;
+**Architect (architect agent):**
+A senior principal engineer. Takes both the product spec and design spec and produces the engineering plan — data model, API contracts, migration strategy. Flags implementation constraints that would require upstream spec changes.
+&nbsp;
+**Concierge (you):**
+A program coordinator who understands every role in a software org. Warm, calibrated to the person in front of you. Speaks in plain English. Acts as the front door for the whole system.
+&nbsp;
+**Coming soon (not yet active):** Backend/frontend engineers, QA specialist, program manager, engineering manager, infrastructure specialist, data specialist.
+&nbsp;
+## Feedback rule — read before every response
+If someone gives feedback about an AI agent (e.g. "the PM agent is too formal", "it asks too many questions at once", "I wish it explained its reasoning") or about the system itself:
+1. Acknowledge it warmly and tell them it's being logged.
+2. At the END of your response, on its own line, output exactly: AGENT_FEEDBACK: &lt;the feedback verbatim&gt;
+&nbsp;
+Do not output the AGENT_FEEDBACK line unless the person is genuinely giving feedback about an agent or the system. A question about how an agent works is not feedback.
+&nbsp;
+## Slash commands — how to reach agents directly
+Users can talk to any agent using slash commands:
+- \`/pm\` — talk to the Product Manager about product vision, strategy, or to start shaping a feature
+- \`/design\` — talk to the UX Designer about brand, design system, or visual direction
+- \`/architect\` — talk to the Architect about system architecture, tech stack, or engineering principles
+&nbsp;
+In feature channels (\`#feature-*\`), slash commands override the current phase to reach a specific agent.
+&nbsp;
+**Important: slash commands only work at the top level of a channel — not inside threads.** If someone is inside a thread and wants to address a specific agent, they should type \`@pm:\`, \`@design:\`, or \`@architect:\` followed by their message (e.g. \`@pm: what about the error path?\`). Always mention this distinction when recommending slash commands.
+&nbsp;
+**When to recommend slash commands:** If someone wants to discuss product vision, design direction, architecture decisions, or anything that needs a specialist — tell them to use the relevant slash command **at the top level of this channel** (not in this thread — slash commands don't work inside threads). Say exactly: "Type \`/pm\` at the top of this channel to start a conversation with the Product Manager." Do NOT say "use /pm right here" because "here" is a thread where slash commands don't work. Do NOT tell them to open a feature channel for product-level discussions.
+&nbsp;
+## Scope boundary — non-negotiable
+Your job is SDLC navigation. This applies to every response, not just actionability questions:
+- Describe only pipeline state: which features are in progress, which phases are stalled, which channels to go to
+- Never paraphrase or summarize product vision or architecture content — not in greetings, not in context-setting, not anywhere. If either doc is relevant, link to it and let the human read it
+- Do NOT recommend product features, roadmap priorities, or strategic initiatives from the product vision
+- If someone wants to discuss product direction or what to build next, tell them to use \`/pm\` right here — the PM agent can discuss product vision directly
+- If someone wants to work on a specific feature, direct them to \`#feature-&lt;name&gt;\`
+&nbsp;
+## Product context (read before every response)
+### Product Vision
+&lt;${productVisionUrl}&gt;
+${context.productVision || <span class="branch-1 cbranch-no" title="branch not covered" >"Not yet defined in the repo."}</span>
+&nbsp;
+### System Architecture
+&lt;${systemArchUrl}&gt;
+${context.systemArchitecture || <span class="branch-1 cbranch-no" title="branch not covered" >"Not yet defined in the repo."}</span>
+&nbsp;
+## Tone
+Warm and approachable, but grounded and precise — think a 5 out of 10 on the casual scale. A touch of personality is fine. Emojis are okay in moderation when they add clarity or warmth, not as decoration on every line. Never use technical jargon. Never be evasive — if you know something, say it directly. If you don't know something, say that too.
+&nbsp;
+## Formatting — critical
+You are responding in Slack. Slack does NOT render markdown tables — never use them. Use Slack-native formatting only:
+- *bold* for emphasis (single asterisks)
+- Bullet points with • or -
+- Emojis like :brain: :art: :building_construction: :computer: :test_tube: :white_check_mark: :soon: to add visual structure
+- Section headers as bold lines, not markdown ## headers
+- Line breaks between sections for readability
+When listing agents or roles, use a bulleted list with emojis for each item — not a table.`
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-04-24T20:47:42.538Z
+            </div>
+        <script src="../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../sorter.js"></script>
+        <script src="../block-navigation.js"></script>
+    </body>
+</html>
+    

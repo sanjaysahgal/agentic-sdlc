@@ -1,0 +1,529 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for runtime/pm-escalation-spec-writer.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../prettify.css" />
+    <link rel="stylesheet" href="../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">runtime</a> pm-escalation-spec-writer.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>30/30</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">85.71% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>12/14</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>6/6</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>28/28</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">173x</span>
+<span class="cline-any cline-yes">704x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// Writes confirmed PM/Architect recommendations back to the approved product spec on main.
+// Called after the human confirms escalation recommendations so the spec auditor doesn't
+// re-discover the same gaps on the next design run.
+&nbsp;
+import Anthropic from "@anthropic-ai/sdk"
+import { applySpecPatch } from "./spec-patcher"
+import { readFile, saveApprovedSpec } from "./github-client"
+import { loadWorkspaceConfig } from "./workspace-config"
+&nbsp;
+// 60s timeout — spec patch generation is a focused Haiku call; no retries.
+const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
+&nbsp;
+// Visual detail patterns that should never appear in a PM product spec.
+// PM spec encodes WHAT the user experiences — not animation values, colors, or gradients.
+// These are structural signals: if any criterion in the spec contains these, it has leaked
+// design/implementation detail that Haiku was supposed to strip but didn't.
+const VISUAL_DETAIL_PATTERNS = [
+  /\b\d+\.?\d*\s*%.*opacit/i,          // opacity percentages: "25% opacity", "opacity 50%"
+  /opacit.*\d+\.?\d*\s*%/i,            // opacity percentages reversed
+  /\b\d+\.?\d*\s*(ms|milliseconds?)\b/i, // animation timing in ms
+  /\b\d+\.?\d*\s*s(?:econds?)?\s+(?:over|duration|cycle|loop)/i, // "2.5 seconds over", "4 second cycle"
+  /(?:over|duration|cycle|loop)\s+\d+\.?\d*\s*s/i, // "over 2.5s"
+  /#[0-9a-fA-F]{3,6}\b/,               // hex color values
+  /rgba?\s*\(/i,                        // rgba/rgb color functions
+  /radial.{0,20}gradient|gradient.{0,20}radial/i, // radial gradient specifics
+  /\bglow\s+(?:radius|size|spread|color)\b/i,  // glow implementation details
+  /easing\s+function|cubic.bezier/i,   // animation easing details
+]
+&nbsp;
+// Fast structural check: does this spec content contain visual/animation details
+// that should never appear in a PM product spec?
+function hasVisualDetails(specContent: string): boolean {
+  // Only scan criteria lines (lines starting with - or digits in ## sections)
+  const criteriaLines = specContent
+    .split("\n")
+    .filter(l =&gt; /^\s*[-\d]/.test(l))
+  return criteriaLines.some(line =&gt; VISUAL_DETAIL_PATTERNS.some(p =&gt; p.test(line)))
+}
+&nbsp;
+// Second-pass Haiku call: strip visual/animation/technical details from a spec
+// that already has them. Called only when hasVisualDetails() fires — not on every patch.
+async function stripVisualDetailsFromSpec(specContent: string): Promise&lt;string&gt; {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    system: `You are a product spec cleaner. Remove all visual, animation, and technical implementation details from acceptance criteria and edge cases. The PM spec describes WHAT the user experiences — not HOW it looks or is implemented.
+&nbsp;
+Remove from every criterion:
+- Specific opacity percentages (e.g. "25% → 35% opacity", "50–100% opacity")
+- Animation durations (e.g. "2.5 seconds", "4s cycle", "300ms")
+- Color values (hex, rgba, color names)
+- Gradient specifics (radial vs linear, direction, stops)
+- Glow implementation details (radius, spread, combined vs separate)
+- Easing functions (cubic-bezier, ease-in-out)
+- Pixel measurements
+&nbsp;
+Replace with the behavior the criterion is describing, without the visual specifics. If a criterion is ONLY a visual implementation detail with no underlying user behavior, remove it entirely.
+&nbsp;
+Output the full spec with all sections preserved. No preamble, no explanation — output only the cleaned spec content.`,
+    messages: [{ role: "user", content: specContent }],
+  })
+  const cleaned = response.content[0].type === "text" ? response.content[0].text.trim() : <span class="branch-1 cbranch-no" title="branch not covered" >specContent</span>
+  return cleaned || <span class="branch-1 cbranch-no" title="branch not covered" >specContent</span>
+}
+&nbsp;
+export async function patchProductSpecWithRecommendations(params: {
+  featureName: string
+  question: string          // original blocking questions escalated to PM/Architect
+  recommendations: string  // PM/Architect agent response text (confirmed by human)
+  humanConfirmation: string // what the human said when confirming
+}): Promise&lt;string | null&gt; {
+  const { featureName, question, recommendations, humanConfirmation } = params
+  const { paths } = loadWorkspaceConfig()
+  const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
+&nbsp;
+  const existingSpec = await readFile(productSpecPath, "main")
+  if (!existingSpec) {
+    console.log(`[ESCALATION] product spec writeback: spec not found on main for feature=${featureName}, skipping`)
+    return null
+  }
+&nbsp;
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    system: `You are a product spec editor. Given an approved product spec and PM recommendations that resolve blocking gaps, output a targeted patch to make the spec concrete and actionable.
+&nbsp;
+RULES — follow exactly:
+&nbsp;
+1. REPLACE vague criteria, never keep them alongside concrete versions.
+   For each PM recommendation, find the acceptance criterion it addresses. If that criterion contains vague language — including words like "soft", "non-intrusive", "ambient", "proactively", "seamlessly", "minimal", "appropriate", "subtle", "smooth", "fast", "easy", "good", "improve", or any other unmeasurable adjective — REPLACE the entire criterion with a concrete, measurable version that reflects the PM's confirmed decision. Remove the vague version entirely. Do not output both the old vague criterion and the new concrete one.
+&nbsp;
+2. KEEP all existing acceptance criteria that are not being replaced.
+   The output section must contain every existing criterion from that section — only the vague ones get replaced; non-vague ones are carried forward unchanged.
+&nbsp;
+3. STRIP visual details, technical details, and UI copy from PM recommendations before writing to spec.
+   The spec encodes WHAT the user experiences — not HOW it looks, HOW it is implemented, or WHAT IT SAYS. Strip:
+   - Specific colors (hex values, rgba, color names)
+   - UI component choices (badge, chip, button, label — unless the PM explicitly owns this as a product requirement)
+   - Exact pixel positions or margins
+   - Timing values in milliseconds unless they define a product-level SLA
+   - Exact UI copy and wording — the PM defines intent ("an inline error the user can dismiss"), the designer writes the actual words. NEVER write specific strings like "The AI is currently unavailable. Please try again in a moment." in the spec.
+   Example: "A persistent non-dismissible error indicator appears at the top of the chat" belongs in the spec. "rgba(245, 245, 245, 0.6) badge in the top-right corner saying 'The AI is currently unavailable.'" does not.
+&nbsp;
+4. ADD new concrete criteria for gaps not already in the spec.
+   If a PM recommendation addresses a gap with no existing criterion, add it as a new numbered criterion in the appropriate section.
+&nbsp;
+5. Route to the correct sections:
+   - Product decisions (UX behavior, what the user experiences, when things fire) → ## Acceptance Criteria
+   - Error experiences and failure modes → ## Edge Cases
+&nbsp;
+6. RESOLVE contradictions — never let two criteria say opposite things.
+   If two PM recommendations in this writeback conflict with each other, OR if a PM recommendation conflicts with an existing spec criterion, resolve it: use the more specific, more restrictive recommendation. Remove the contradictory criterion or text entirely. Never output two criteria that contradict each other on the same topic. Example: if one recommendation says "the warning is dismissible" and another says "the warning is not dismissible", choose the more restrictive one ("not dismissible") and remove any criterion that says it is dismissible.
+&nbsp;
+7. COMPLETE or remove incomplete criteria.
+   If any criterion in the spec is incomplete (ends mid-sentence, is a placeholder, or contains "TBD" / "TODO" / "[incomplete]"), either complete it using the PM's confirmed recommendations or remove it. Never leave an incomplete criterion in the output.
+&nbsp;
+8. HYGIENE PASS — scan the entire spec for any remaining vague language beyond what the current PM recommendations directly address.
+   After applying rules 1–7, scan every criterion in ## Acceptance Criteria and ## Edge Cases for the vague words listed in Rule 1. If a criterion contains vague language AND the correct concrete meaning can be inferred from PM decisions already present in the spec (either from this writeback or from prior confirmed decisions visible in the existing spec), replace it. If the meaning cannot be inferred — the PM never addressed it — leave it unchanged for the next escalation. Do not invent decisions the PM has not made.
+&nbsp;
+9. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
+    messages: [{
+      role: "user",
+      content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions, visual/technical details stripped, and any remaining vague language in the spec resolved where the PM's intent is already clear.`,
+    }],
+  })
+&nbsp;
+  const patch = response.content[0].type === "text" ? response.content[0].text.trim() : ""
+  if (!patch || !patch.includes("##")) {
+    console.log(`[ESCALATION] product spec writeback: Haiku returned no valid patch for feature=${featureName}, skipping`)
+    return null
+  }
+&nbsp;
+  let mergedSpec = applySpecPatch(existingSpec, patch)
+&nbsp;
+  // Structural post-patch audit: if the merged spec contains visual/animation details
+  // that Haiku was supposed to strip (Rule 3) but didn't, run a second focused pass to
+  // remove them before saving. This catches opacity values, animation durations, hex
+  // colors, gradient specifics, etc. that should never appear in a PM product spec.
+  if (hasVisualDetails(mergedSpec)) {
+    console.log(`[ESCALATION] product spec writeback: visual details detected in patch for feature=${featureName} — running strip pass`)
+    mergedSpec = await stripVisualDetailsFromSpec(mergedSpec)
+    console.log(`[ESCALATION] product spec writeback: visual detail strip pass complete for feature=${featureName}`)
+  }
+&nbsp;
+  await saveApprovedSpec({ featureName, filePath: productSpecPath, content: mergedSpec })
+  console.log(`[ESCALATION] product spec writeback: patched ${productSpecPath} on main with confirmed PM recommendations`)
+  return mergedSpec
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-04-24T20:47:42.538Z
+            </div>
+        <script src="../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../sorter.js"></script>
+        <script src="../block-navigation.js"></script>
+    </body>
+</html>
+    
