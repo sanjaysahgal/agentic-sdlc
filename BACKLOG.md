@@ -34,11 +34,12 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 Product-level agents (`/pm`, `/design`, `/architect` in the general channel) give different advice on consecutive invocations because there's no deterministic baseline — every call is a fresh LLM read of the same doc. Feature-level agents solved this with `auditPmSpec`, `auditDesignSpec`, `auditEngineeringSpec`. Product-level mode needs the same.
 
 **Required:**
-- `auditProductVision(visionDoc)` — missing sections, vague language, no success metrics, no monetization, no competitive positioning
-- `auditSystemArchitecture(archDoc)` — missing data model entities, no auth strategy, no observability, no migration strategy
-- `auditBrandDoc(brandDoc)` — missing tokens, undefined values, incomplete palette
+- `auditProductVision(visionDoc)` — missing sections, vague language, no success metrics, no monetization, no competitive positioning (PM agent)
+- `auditSystemArchitecture(archDoc)` — missing data model entities, no auth strategy, no observability, no migration strategy (Architect agent)
+- `auditBrandDoc(brandDoc)` — missing tokens, undefined values, incomplete palette (Brand Agent — when it exists, per "Customer onboarding flow" backlog item)
 - Inject findings into product-level prompt as `[INTERNAL — N structural gaps]` — same pattern as feature readiness audits
 - Deterministic baseline ensures same doc always produces same gaps; LLM adds commentary on top
+- Note: Designer agent does not own a product-level doc — brand is the Brand Agent's domain
 
 **Blocked by:** Onboarding end-to-end pipeline completion. Product-level mode is consultation, not the critical path.
 
