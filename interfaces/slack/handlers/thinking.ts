@@ -55,6 +55,7 @@ export async function withThinking(params: {
   let lastStatusText = label
   let heartbeatStep = 0
   const heartbeat = setInterval(async () => {
+    if (finalResponseSent) return  // Guard: don't overwrite the real response
     heartbeatStep = (heartbeatStep % 3) + 1
     const dots = ".".repeat(heartbeatStep)
     // Strip any trailing dots and the closing italic marker so we can
@@ -67,6 +68,7 @@ export async function withThinking(params: {
     await client.chat.update({ channel: channelId, ts: messageTs, text: `${agentPrefix}${animated}` }).catch(() => {})
   }, 8_000)
 
+  let finalResponseSent = false
   const update = async (text: string) => {
     lastStatusText = text
     heartbeatStep = 0
@@ -82,6 +84,7 @@ export async function withThinking(params: {
   incrementActiveRequests()
   try {
     await run(update)
+    finalResponseSent = true  // Prevent heartbeat from overwriting the final response
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err)
     const isOverloaded = errMsg.includes("overloaded")

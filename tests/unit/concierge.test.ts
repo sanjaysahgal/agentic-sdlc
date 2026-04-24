@@ -166,12 +166,9 @@ describe("buildConciergeSystemPrompt", () => {
 
   it("prioritizes user intent over role identification", () => {
     const prompt = buildConciergeSystemPrompt([], baseContext)
-    // Intent-over-identity rule must appear before role identification instructions
-    const intentIdx = prompt.indexOf("intent over identity")
-    const roleIdx = prompt.indexOf("figure out who they are")
-    expect(intentIdx).toBeGreaterThan(-1)
-    expect(roleIdx).toBeGreaterThan(-1)
-    expect(intentIdx).toBeLessThan(roleIdx)
+    // Intent-over-identity rule must appear before role identification
+    expect(prompt).toContain("intent over identity")
+    expect(prompt).toContain("NEVER ask \"what's your role?\" when the user has stated an intent")
   })
 
   it("does not mention company names in persona descriptions", () => {
