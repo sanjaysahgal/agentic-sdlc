@@ -190,6 +190,29 @@ The human cannot be expected to know what to ask. They don't know what they don'
 
 **Enforcement:** Any commit touching `agents/`, `interfaces/slack/handlers/general.ts`, or routing logic in `message.ts` that adds new context injection, domain boundary changes, or cross-agent behavior must include a `// DESIGN-REVIEWED: [1-sentence rationale]` comment at the change site. The pre-commit hook blocks without it.
 
+### 13. Single routing authority — `resolveAgent()` is the only source of truth
+
+**Every feature channel routing decision must flow through `resolveAgent(featureName)`.** No code path may read `confirmedAgent` directly and use it for routing without `resolveAgent()` having run first.
+
+`resolveAgent()` reads the feature's phase from GitHub (deterministic — based on which spec branches exist) and maps it to the canonical agent. If the persisted `confirmedAgent` disagrees, `resolveAgent()` corrects it. This makes stale routing state structurally impossible.
+
+**The phase-to-agent mapping is deterministic:**
+```
+product-spec-in-progress           → pm
+product-spec-approved-awaiting-design → ux-design
+design-in-progress                 → ux-design
+design-approved-awaiting-engineering → architect
+engineering-in-progress            → architect
+```
+
+**What this means in practice:**
+- No scattered phase-advance checks — `resolveAgent()` handles all transitions
+- `setConfirmedAgent()` is only called by `resolveAgent()` for corrections and by phase finalization handlers for advances
+- `@pm:` text prefix and slash commands are temporary overrides — they set the local `confirmedAgent` variable but never call `setConfirmedAgent()`
+- Tests that set `confirmedAgent` manually for a specific agent path must also mock `getInProgressFeatures` to return matching branches
+
+**Historical violation (April 2026):** `/pm` slash command in `#feature-onboarding` persisted `confirmedAgent=pm` via `setConfirmedAgent()`. The feature was in engineering phase. Next message routed to PM instead of Architect — 1,245 tests didn't catch it because no test verified the invariant "confirmedAgent must agree with GitHub phase."
+
 ---
 
 ## Architecture

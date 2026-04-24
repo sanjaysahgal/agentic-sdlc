@@ -91,7 +91,7 @@ const mockOctokitGetContent = vi.hoisted(() => vi.fn())
 const mockOctokitGetRef = vi.hoisted(() => vi.fn())
 const mockOctokitCreateRef = vi.hoisted(() => vi.fn())
 const mockOctokitCreateOrUpdate = vi.hoisted(() => vi.fn())
-const mockOctokitPaginate = vi.hoisted(() => vi.fn())
+const mockOctokitPaginate = vi.hoisted(() => vi.fn().mockResolvedValue([]))
 // Note: Anthropic is already mocked above (mockCreate). The integration tests
 // use mockCreate directly — there is only one @anthropic-ai/sdk mock per file.
 

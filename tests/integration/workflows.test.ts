@@ -32,7 +32,7 @@ const mockGetRef        = vi.hoisted(() => vi.fn())
 const mockCreateRef     = vi.hoisted(() => vi.fn())
 const mockDeleteRef     = vi.hoisted(() => vi.fn())
 const mockCreateOrUpdate = vi.hoisted(() => vi.fn())
-const mockPaginate      = vi.hoisted(() => vi.fn())
+const mockPaginate      = vi.hoisted(() => vi.fn().mockResolvedValue([]))
 const mockAnthropicCreate = vi.hoisted(() => vi.fn())
 
 vi.mock("@octokit/rest", () => ({
@@ -383,21 +383,19 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     expect(thinkingPlaceholder(params.client)).toBe("_Architect is thinking..._")
   })
 
-  it("new thread in product-spec-in-progress routes to PM (via classifyIntent)", async () => {
-    // No spec branches, nothing on main → product-spec-in-progress
+  it("new thread in product-spec-in-progress routes to PM (via resolveAgent)", async () => {
+    // No spec branches, nothing on main → product-spec-in-progress → resolveAgent returns pm
     mockPaginate.mockResolvedValueOnce([])
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "pm" }] })           // classifyIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Tell me more." }] }) // runAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Tell me more." }] }) // runAgent (PM)
 
     const params = makeParams(THREAD, "feature-onboarding", "I want to build onboarding")
     await handleFeatureChannelMessage(params)
 
     expect(getConfirmedAgent("onboarding")).toBe("pm")
-    // New-thread PM routing: the label is "_Thinking..._" because the agent isn't
-    // known until classifyIntent completes. The PM label appears in the final update.
-    expect(thinkingPlaceholder(params.client)).toBe("_Thinking..._")
+    // resolveAgent sets confirmedAgent=pm immediately — PM label shown from the start
+    expect(thinkingPlaceholder(params.client)).toBe("_Product Manager is thinking..._")
     expect(lastUpdateText(params.client)).toContain("Tell me more.")
   })
 })
@@ -2694,35 +2692,29 @@ describe("Scenario N2 — Non-affirmative during architect escalation → remind
   })
 })
 
-// ─── NEW: Scenario N3 — classifyIntent unknown agent fallback ─────────────────
+// ─── Scenario N3 — resolveAgent sets PM for new features (classifyIntent no longer used for routing)
 //
-// classifyIntent returns "pm" as the default when Haiku returns an unrecognised
-// agent name. The fallback is inside agent-router.ts (valid.includes check) so
-// the platform never crashes on an unexpected classification.
-//
-// This test drives the new-thread path (no confirmedAgent) with a product-spec-in-
-// progress phase and mocks classifyIntent to return a text string that is NOT in
-// the valid agent list. The platform must route to PM (the fallback) without crashing.
+// resolveAgent() replaced classifyIntent as the routing mechanism. For a new feature
+// with no spec branches (product-spec-in-progress), resolveAgent deterministically
+// returns "pm" — no LLM classification needed.
 
-describe("Scenario N3 — classifyIntent unknown agent name falls back to PM", () => {
+describe("Scenario N3 — resolveAgent deterministically sets PM for new features", () => {
   const THREAD = "workflow-n3"
 
   beforeEach(() => { clearHistory("onboarding") })
   afterEach(() => { clearHistory("onboarding") })
 
-  it("unknown Haiku response defaults to PM routing — no crash", async () => {
-    // No confirmedAgent — new thread. Phase: product-spec-in-progress
+  it("new feature with no branches → resolveAgent returns pm, no classifyIntent call", async () => {
+    // No confirmedAgent, no branches → resolveAgent returns "pm"
     mockPaginate.mockResolvedValueOnce([])
 
-    // Haiku returns an unrecognised agent name — agent-router falls back to "pm"
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "unknown-agent-xyz" }] }) // classifyIntent → invalid → falls back to "pm"
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let me help you with the product spec." }] }) // PM runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "I want to build something new")
     await handleFeatureChannelMessage(params)
 
-    // Platform did not crash — PM ran as the fallback
+    // resolveAgent set pm — no classifyIntent needed
     expect(getConfirmedAgent("onboarding")).toBe("pm")
     const text = lastUpdateText(params.client)
     expect(text).toContain("product spec")
@@ -8524,13 +8516,20 @@ describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", (
     // Stale state: confirmedAgent was set to PM (e.g. by a slash command test)
     setConfirmedAgent("onboarding", "pm")
 
-    // But the feature is actually in engineering phase (product + design specs approved)
+    // GitHub state: product + design specs approved on main, engineering branch exists
+    // resolveAgent() reads branches AND main-branch files to determine phase
     mockPaginate.mockResolvedValueOnce([
       { name: "spec/onboarding-product", commit: { sha: "a" } },
       { name: "spec/onboarding-design", commit: { sha: "b" } },
     ])
+    // getInProgressFeatures reads specs from main to check approval status
+    mockGetContent.mockImplementation(({ path }: { path?: string }) => {
+      if (path?.endsWith("onboarding.product.md")) return Promise.resolve({ data: { content: Buffer.from("# PM Spec").toString("base64"), type: "file" } })
+      if (path?.endsWith("onboarding.design.md")) return Promise.resolve({ data: { content: Buffer.from("# Design Spec").toString("base64"), type: "file" } })
+      return Promise.reject(new Error("Not Found"))
+    })
 
-    // Architect path: isOffTopicForAgent → isSpecStateQuery → runAgent
+    // Architect path: isOffTopicForAgent → isSpecStateQuery → runAgent → identifyUncommittedDecisions
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
@@ -8550,10 +8549,14 @@ describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", (
   it("confirmedAgent=pm but feature in design phase → routes to designer", async () => {
     setConfirmedAgent("onboarding", "pm")
 
-    // Product spec approved, no design spec branch yet
+    // GitHub state: product spec approved on main, no design on main yet
     mockPaginate.mockResolvedValueOnce([
       { name: "spec/onboarding-product", commit: { sha: "a" } },
     ])
+    mockGetContent.mockImplementation(({ path }: { path?: string }) => {
+      if (path?.endsWith("onboarding.product.md")) return Promise.resolve({ data: { content: Buffer.from("# PM Spec").toString("base64"), type: "file" } })
+      return Promise.reject(new Error("Not Found"))
+    })
 
     // Design path: isOffTopicForAgent → isSpecStateQuery → runAgent → identifyUncommittedDecisions
     mockAnthropicCreate

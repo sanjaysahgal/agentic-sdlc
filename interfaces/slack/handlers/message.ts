@@ -213,6 +213,48 @@ async function getFeaturePhase(featureName: string): Promise<string> {
   }
 }
 
+/**
+ * Single source of truth for routing — resolves the authoritative agent for a feature.
+ *
+ * Reads the feature phase from GitHub and maps it deterministically to the correct agent.
+ * If the persisted `confirmedAgent` disagrees, it is corrected and the correction is logged.
+ * Called at the top of every feature channel message — stale state is structurally impossible.
+ *
+ * @deterministic — same phase always maps to the same agent. No LLM, no heuristics.
+ */
+const PHASE_TO_AGENT: Record<string, string> = {
+  "product-spec-in-progress": "pm",
+  "product-spec-approved-awaiting-design": "ux-design",
+  "design-in-progress": "ux-design",
+  "design-approved-awaiting-engineering": "architect",
+  "engineering-in-progress": "architect",
+}
+
+export async function resolveAgent(featureName: string): Promise<string> {
+  const phase = await getFeaturePhase(featureName)
+  const canonicalAgent = PHASE_TO_AGENT[phase] ?? "pm"
+  const currentConfirmed = getConfirmedAgent(featureName)
+
+  // If no confirmed agent, set from phase (first message in this feature)
+  if (!currentConfirmed) {
+    console.log(`[ROUTER] resolveAgent: setting initial confirmedAgent=${canonicalAgent} for feature=${featureName} (phase=${phase})`)
+    setConfirmedAgent(featureName, canonicalAgent)
+    return canonicalAgent
+  }
+
+  // If confirmed agent disagrees with phase AND the phase indicates advancement
+  // (not the default "product-spec-in-progress"), correct it. The default phase
+  // could mean "no branches found" (GitHub API issue or new feature) — in that
+  // case, trust the existing confirmed agent.
+  if (currentConfirmed !== canonicalAgent && phase !== "product-spec-in-progress") {
+    console.log(`[ROUTER] resolveAgent: correcting stale confirmedAgent=${currentConfirmed} → ${canonicalAgent} for feature=${featureName} (phase=${phase})`)
+    setConfirmedAgent(featureName, canonicalAgent)
+    return canonicalAgent
+  }
+
+  return currentConfirmed
+}
+
 // Handles messages in the design phase — routes to the UX Design agent.
 async function handleDesignPhase(params: {
   channelId: string
@@ -306,6 +348,14 @@ export async function handleFeatureChannelMessage(params: {
 
   try {
 
+  // ─── ROUTING AUTHORITY: resolveAgent() ────────────────────────────────────
+  // Single source of truth for which agent handles this feature.
+  // Reads GitHub phase, maps deterministically to agent, corrects stale state.
+  // Called on EVERY message — stale confirmedAgent is structurally impossible.
+  //
+  // Exception: pending escalation recovery runs first — if the user is confirming
+  // an escalation after a restart, we need to restore the originating agent before
+  // resolveAgent corrects it to the phase agent.
   let confirmedAgent = getConfirmedAgent(featureName)
 
   // Recovery: server restart clears in-memory confirmedAgent but pendingEscalation survives
@@ -314,13 +364,14 @@ export async function handleFeatureChannelMessage(params: {
   // runs correctly without requiring a new message from the user.
   if (!confirmedAgent && isAffirmative(rawUserMessage) && getPendingEscalation(featureName)) {
     const recovered = getPendingEscalation(featureName)!
-    // Infer originating agent from the escalation target:
-    // design→PM or design→architect: targetAgent is "pm" or "architect"
-    // architect→design: targetAgent is "design"
     const recoveredAgent: string = recovered.targetAgent === "design" ? "architect" : "ux-design"
     confirmedAgent = recoveredAgent
     setConfirmedAgent(featureName, recoveredAgent)
     console.log(`[ROUTER] escalation-state-recovered: restored confirmedAgent=${recoveredAgent} from persisted pendingEscalation targetAgent=${recovered.targetAgent} for feature=${featureName}`)
+  } else if (!getPendingEscalation(featureName) && !getPendingApproval(featureName)) {
+    // No active escalation or approval — resolve from GitHub phase (single source of truth).
+    // Skip during active escalation/approval flows to avoid overriding mid-flow state.
+    confirmedAgent = await resolveAgent(featureName)
   }
 
   // Agent addressing: @pm, @design, @architect prefix overrides phase-based routing.
@@ -598,16 +649,8 @@ ${brief}`
       return
     }
 
-    // If the design spec is now approved, route to the architect.
-    const currentPhaseForDesign = await getFeaturePhase(getFeatureName(channelName))
-    if (currentPhaseForDesign === "design-approved-awaiting-engineering" || currentPhaseForDesign === "engineering-in-progress") {
-      setConfirmedAgent(featureName, "architect")
-      await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
-        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
-      }})
-      return
-    }
-
+    // resolveAgent() already verified ux-design is the correct agent for the current phase.
+    // No phase-advance checks needed — stale state was corrected at the top.
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
     }})
@@ -752,26 +795,9 @@ ${archPendingEscalation.question}`
   }
 
   if (confirmedAgent === "pm") {
-    // Phase-based correction: if the feature has moved past PM, route to the correct agent.
-    // This prevents stale confirmedAgent from overriding the actual feature phase.
-    const currentPhase = await getFeaturePhase(getFeatureName(channelName))
-    if (currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress") {
-      console.log(`[ROUTER] branch=confirmed-pm-phase-advance feature=${featureName} phase=${currentPhase} → routing to ux-design`)
-      setConfirmedAgent(featureName, "ux-design")
-      await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-        await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
-      }})
-      return
-    }
-    if (currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress") {
-      console.log(`[ROUTER] branch=confirmed-pm-phase-advance feature=${featureName} phase=${currentPhase} → routing to architect`)
-      setConfirmedAgent(featureName, "architect")
-      await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
-        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
-      }})
-      return
-    }
-    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName} phase=${currentPhase}`)
+    // resolveAgent() already verified this is the correct agent for the current phase.
+    // No phase-advance checks needed — stale state was corrected at the top.
+    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}`)
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
       await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update })
     }})

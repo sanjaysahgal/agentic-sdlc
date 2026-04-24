@@ -19,7 +19,7 @@ const mockOctokitGetContent = vi.hoisted(() => vi.fn())
 const mockOctokitGetRef = vi.hoisted(() => vi.fn())
 const mockOctokitCreateRef = vi.hoisted(() => vi.fn())
 const mockOctokitCreateOrUpdate = vi.hoisted(() => vi.fn())
-const mockOctokitPaginate = vi.hoisted(() => vi.fn())
+const mockOctokitPaginate = vi.hoisted(() => vi.fn().mockResolvedValue([]))
 const mockAnthropicCreate = vi.hoisted(() => vi.fn())
 
 vi.mock("@octokit/rest", () => ({

@@ -387,7 +387,7 @@ The system determines feature phase by reading GitHub — no separate state stor
 | `<feature>.design.md` on `main`, `.engineering.md` not on `main` | Engineering phase |
 | `<feature>.engineering.md` on `main` | Build phase |
 
-Phase detection drives routing: `handleFeatureChannelMessage` reads the current phase and routes to the correct agent without human configuration.
+Phase detection drives routing: `resolveAgent(featureName)` is the single source of truth (Principle 13). Called at the top of every `handleFeatureChannelMessage` invocation, it reads the feature phase from GitHub, maps it deterministically to the canonical agent, and corrects stale `confirmedAgent` if they disagree. No routing decision bypasses `resolveAgent()`. Temporary overrides (`@pm:` prefix, slash commands) set the local variable only — they never persist. Invariant tests in `tests/invariants/routing-contract.test.ts` verify the contract holds under every state permutation.
 
 ---
 
