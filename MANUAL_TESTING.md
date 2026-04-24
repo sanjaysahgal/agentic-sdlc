@@ -33,7 +33,7 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 | # | Test | Channel | Input | Expected | Status |
 |---|---|---|---|---|---|
 | 3.1 | PM answers vision question | General | `/pm What are the non-negotiable constraints?` | PM answers from PRODUCT_VISION.md content | ✅ 2026-04-23 |
-| 3.2 | PM stays in domain | General | `/pm What tech stack should we use?` | PM redirects to architect | |
+| 3.2 | PM stays in domain | General | `/pm What tech stack should we use?` | PM redirects to architect | ✅ 2026-04-23 |
 | 3.3 | PM thread continuity | General | Follow-up in PM thread (no slash) | PM responds (not concierge) | ✅ 2026-04-23 |
 | 3.4 | Designer answers brand question | General | `/design What should our design system look like?` | Designer talks brand/visual language | |
 | 3.5 | Designer stays in domain | General | `/design What features should we build next?` | Designer redirects to PM | |
