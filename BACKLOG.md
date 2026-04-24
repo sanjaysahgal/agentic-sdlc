@@ -55,6 +55,14 @@ Product-level agents (`/pm`, `/design`, `/architect` in the general channel) can
 
 ---
 
+### Branch hygiene — prevent rogue draft branches + periodic cleanup (2026-04-24)
+
+**Preventive:** `saveDraftSpec` should check if the spec already exists on `main` before creating a draft branch. If it does, refuse — the spec is approved and should only be modified through the escalation patch flow, not a new draft. This prevents agents running in unintended modes (e.g. PM with full tools during an escalation continuation) from creating orphaned branches.
+
+**Cleanup:** On bot startup, scan for spec branches whose corresponding spec is already approved on `main`. Log them and optionally delete. Also scan for branches with no recent commits (stale drafts from abandoned conversations).
+
+---
+
 ### Agent persona names — customer-chosen names for slash commands (deferred)
 
 Slash commands are role-based (`/pm`, `/design`, `/architect`). For a white-label or branded experience, customers may want named personas ("Sarah the PM") with custom avatars. This is a branding layer on top of the existing slash command infrastructure — the routing, domain boundaries, and product-level mode don't change. Defer until a customer requests it.
