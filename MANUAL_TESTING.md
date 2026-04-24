@@ -35,9 +35,9 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 | 3.1 | PM answers vision question | General | `/pm What are the non-negotiable constraints?` | PM answers from PRODUCT_VISION.md content | ✅ 2026-04-23 |
 | 3.2 | PM stays in domain | General | `/pm What tech stack should we use?` | PM redirects to architect | ✅ 2026-04-23 |
 | 3.3 | PM thread continuity | General | Follow-up in PM thread (no slash) | PM responds (not concierge) | ✅ 2026-04-23 |
-| 3.4 | Designer answers brand question | General | `/design What should our design system look like?` | Designer talks brand/visual language | |
+| 3.4 | Designer answers design system question | General | `/design What is the overall UX philosophy?` | Designer talks design system/UX patterns (not brand) | ✅ 2026-04-24 |
 | 3.5 | Designer stays in domain | General | `/design What features should we build next?` | Designer redirects to PM | |
-| 3.6 | Designer thread continuity | General | Follow-up in design thread (no slash) | Designer responds (not concierge) | |
+| 3.6 | Designer thread continuity | General | Follow-up in design thread (no slash) | Designer responds (not concierge) | ✅ 2026-04-24 |
 | 3.7 | Architect answers arch question | General | `/architect What is our current tech stack?` | Architect answers from system-architecture.md | ✅ 2026-04-24 |
 | 3.8 | Architect stays in domain | General | `/architect What should our brand colors be?` | Architect redirects to design | |
 | 3.9 | Architect thread continuity | General | Follow-up in architect thread (no slash) | Architect responds (not concierge) | ✅ 2026-04-24 |
@@ -114,4 +114,5 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 | 2026-04-23 | 4.1 | /pm in feature channel wiped 154 messages of history | setConfirmedAgent triggered phase transition | Temporary override — no setConfirmedAgent call | ✅ Fixed |
 | 2026-04-23 | — | PM formatting inconsistent in product-context mode | classifyMessageScope bypass used minimal prompt | Removed bypass — one PM code path, one prompt | ✅ Fixed |
 | 2026-04-23 | 3.1 | PM refused to edit vision doc + hallucinated "#design-and-docs agent" | Product-level prompt said "no draft branches" → PM interpreted as "can't edit anything" | Added "you own it, format as ready-to-paste, never refuse" + "never reference nonexistent agents" | ✅ Fixed |
-| 2026-04-24 | 3.7 | Architect deflected "which feature is being worked on?" to PM | Domain description too narrow — architect thought pipeline status = PM territory | Injected feature status into all product-level prompts + "pipeline status is common knowledge" | ✅ Fixed |
+| 2026-04-24 | 3.7 | Architect deflected "which feature is being worked on?" to PM | Domain description too narrow — architect thought pipeline status = PM territory | Summary count injected (not individual features) + redirect to Concierge for details | ✅ Fixed |
+| 2026-04-24 | 3.4 | Designer claimed "I own brand identity, color palette, typography" | Product-level prompt gave Designer brand ownership | Brand removed from Designer domain — Brand Agent's territory (backlog) | ✅ Fixed |
