@@ -57,7 +57,7 @@ Product-level agents (`/pm`, `/design`, `/architect` in the general channel) can
 
 ### Branch hygiene — prevent rogue draft branches + periodic cleanup (2026-04-24)
 
-**Preventive:** `saveDraftSpec` should check if the spec already exists on `main` before creating a draft branch. If it does, refuse — the spec is approved and should only be modified through the escalation patch flow, not a new draft. This prevents agents running in unintended modes (e.g. PM with full tools during an escalation continuation) from creating orphaned branches.
+**Preventive:** Already handled — escalation continuation paths run agents with `readOnly=true`, which strips spec-writing tools. The rogue PM scenario is no longer possible. A `saveDraftSpec` guard (check main before saving) was attempted but breaks test mocks — the `readOnly` layer is the correct prevention point.
 
 **Cleanup:** On bot startup, scan for spec branches whose corresponding spec is already approved on `main`. Log them and optionally delete. Also scan for branches with no recent commits (stale drafts from abandoned conversations).
 
