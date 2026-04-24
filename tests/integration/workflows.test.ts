@@ -8507,3 +8507,68 @@ describe("Scenario N83 — Universal hedge detection gate fires for PM and Desig
     expect(messageTs).toContain("// UPSTREAM-GATE: architect")
   })
 })
+
+// ─── Scenario N84 — Stale confirmedAgent corrected by phase detection ─────────
+// If confirmedAgent is "pm" but the feature is in engineering phase,
+// the router must correct to architect — not run the PM.
+// Regression: slash command set confirmedAgent=pm, persisted to disk,
+// feature advanced to engineering phase, PM ran instead of architect.
+
+describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", () => {
+  const THREAD = "workflow-n84"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("confirmedAgent=pm but feature in engineering phase → routes to architect", async () => {
+    // Stale state: confirmedAgent was set to PM (e.g. by a slash command test)
+    setConfirmedAgent("onboarding", "pm")
+
+    // But the feature is actually in engineering phase (product + design specs approved)
+    mockPaginate.mockResolvedValueOnce([
+      { name: "spec/onboarding-product", commit: { sha: "a" } },
+      { name: "spec/onboarding-design", commit: { sha: "b" } },
+    ])
+
+    // Architect path: isOffTopicForAgent → isSpecStateQuery → runAgent
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })  // isSpecStateQuery
+      .mockResolvedValueOnce({                                                 // runAgent (architect)
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "The engineering spec needs API contracts defined." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })   // identifyUncommittedDecisions
+
+    const params = makeParams(THREAD, "feature-onboarding", "what needs to be done next?")
+    await handleFeatureChannelMessage(params)
+
+    // confirmedAgent must have been corrected to architect
+    expect(getConfirmedAgent("onboarding")).toBe("architect")
+  })
+
+  it("confirmedAgent=pm but feature in design phase → routes to designer", async () => {
+    setConfirmedAgent("onboarding", "pm")
+
+    // Product spec approved, no design spec branch yet
+    mockPaginate.mockResolvedValueOnce([
+      { name: "spec/onboarding-product", commit: { sha: "a" } },
+    ])
+
+    // Design path: isOffTopicForAgent → isSpecStateQuery → runAgent → identifyUncommittedDecisions
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Let me propose the screen layout." }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "let's start the design")
+    await handleFeatureChannelMessage(params)
+
+    // confirmedAgent must have been corrected to ux-design
+    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+  })
+})

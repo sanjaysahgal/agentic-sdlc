@@ -752,17 +752,26 @@ ${archPendingEscalation.question}`
   }
 
   if (confirmedAgent === "pm") {
-    // If the product spec is already approved, route to the design phase.
+    // Phase-based correction: if the feature has moved past PM, route to the correct agent.
+    // This prevents stale confirmedAgent from overriding the actual feature phase.
     const currentPhase = await getFeaturePhase(getFeatureName(channelName))
-    if (currentPhase === "product-spec-approved-awaiting-design") {
-      console.log(`[ROUTER] branch=confirmed-pm-phase-advance feature=${featureName} → routing to ux-design (product spec approved)`)
+    if (currentPhase === "product-spec-approved-awaiting-design" || currentPhase === "design-in-progress") {
+      console.log(`[ROUTER] branch=confirmed-pm-phase-advance feature=${featureName} phase=${currentPhase} → routing to ux-design`)
       setConfirmedAgent(featureName, "ux-design")
       await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
         await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
       }})
       return
     }
-    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}`)
+    if (currentPhase === "design-approved-awaiting-engineering" || currentPhase === "engineering-in-progress") {
+      console.log(`[ROUTER] branch=confirmed-pm-phase-advance feature=${featureName} phase=${currentPhase} → routing to architect`)
+      setConfirmedAgent(featureName, "architect")
+      await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
+        await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+      }})
+      return
+    }
+    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName} phase=${currentPhase}`)
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
       await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update })
     }})
