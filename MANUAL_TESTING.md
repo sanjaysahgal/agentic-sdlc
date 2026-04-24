@@ -112,3 +112,4 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 | 2026-04-23 | — | "Concierge is thinking..." stuck, no response | Heartbeat timer overwrote final response | finalResponseSent guard flag in withThinking | ✅ Fixed |
 | 2026-04-23 | 4.1 | /pm in feature channel wiped 154 messages of history | setConfirmedAgent triggered phase transition | Temporary override — no setConfirmedAgent call | ✅ Fixed |
 | 2026-04-23 | — | PM formatting inconsistent in product-context mode | classifyMessageScope bypass used minimal prompt | Removed bypass — one PM code path, one prompt | ✅ Fixed |
+| 2026-04-23 | 3.1 | PM refused to edit vision doc + hallucinated "#design-and-docs agent" | Product-level prompt said "no draft branches" → PM interpreted as "can't edit anything" | Added "you own it, format as ready-to-paste, never refuse" + "never reference nonexistent agents" | ✅ Fixed |

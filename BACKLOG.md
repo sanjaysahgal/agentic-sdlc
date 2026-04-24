@@ -27,6 +27,16 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Product-level doc editing — agents can edit vision, architecture, brand docs (2026-04-23)
+
+Product-level agents (`/pm`, `/design`, `/architect` in the general channel) can discuss and recommend changes but cannot edit documents. When a user asks the PM to add open questions to PRODUCT_VISION.md, the PM formats ready-to-paste content but can't commit it.
+
+**Required:** Same branch/audit/approve infrastructure as feature specs — draft on a branch (e.g. `spec/product-vision`), deterministic audit, user approval, merge to main. Each agent edits only docs in its domain: PM → PRODUCT_VISION.md, Designer → BRAND.md, Architect → system-architecture.md.
+
+**Blocked by:** Tool registration for product-level mode (currently runs with no tools). Need `save_product_vision_draft`, `save_brand_draft`, `save_architecture_draft` or a generic `save_product_doc_draft(docType, content)`.
+
+---
+
 ### Agent persona names — customer-chosen names for slash commands (deferred)
 
 Slash commands are role-based (`/pm`, `/design`, `/architect`). For a white-label or branded experience, customers may want named personas ("Sarah the PM") with custom avatars. This is a branding layer on top of the existing slash command infrastructure — the routing, domain boundaries, and product-level mode don't change. Defer until a customer requests it.
