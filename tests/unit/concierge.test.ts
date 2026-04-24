@@ -194,4 +194,10 @@ describe("buildConciergeSystemPrompt", () => {
     expect(prompt).toContain("@pm:")
     expect(prompt).toContain("inside threads")
   })
+
+  it("directs users to slash commands at channel top level, not 'right here'", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    expect(prompt).toContain("at the top level of this channel")
+    expect(prompt).toContain("not in this thread")
+  })
 })
