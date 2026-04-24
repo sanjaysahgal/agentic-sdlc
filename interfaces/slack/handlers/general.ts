@@ -97,7 +97,9 @@ ${context.systemArchitecture || "(No system architecture document found.)"}
 
 ### Current Pipeline Status
 ${features && features.length > 0
-    ? features.map(f => `- **${f.featureName}** — ${f.phase}`).join("\n")
+    ? (features.length <= 10
+        ? features.map(f => `- **${f.featureName}** — ${f.phase}`).join("\n")
+        : features.slice(0, 10).map(f => `- **${f.featureName}** — ${f.phase}`).join("\n") + `\n- _(${features.length - 10} more features in progress)_`)
     : "No features currently in progress."}
 
 ## Rules
