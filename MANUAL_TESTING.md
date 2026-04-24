@@ -65,10 +65,10 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 
 | # | Test | Channel | Input | Expected | Status |
 |---|---|---|---|---|---|
-| 5.1 | Phase-based routing works | `#feature-onboarding` | Normal message (no slash command) | Routes to current phase agent | |
+| 5.1 | Phase-based routing works | `#feature-onboarding` | Normal message (no slash command) | Routes to current phase agent | ✅ 2026-04-24 |
 | 5.2 | @pm: text prefix works in thread | `#feature-onboarding` | `@pm: What about the error path?` | Routes to PM (text prefix still functional) | |
 | 5.3 | @pm: is temporary override | `#feature-onboarding` | `@pm: hi` then normal message | Next message routes back to phase agent | |
-| 5.4 | Escalation flow works | `#feature-onboarding` | Trigger a PM gap in design | Escalation CTA appears, "yes" routes to PM | |
+| 5.4 | Escalation flow works | `#feature-onboarding` | Architect found PM gap, user said "yes" | PM ran with brief, gave recommendation, @mentioned user for confirmation | ✅ 2026-04-24 |
 
 ---
 

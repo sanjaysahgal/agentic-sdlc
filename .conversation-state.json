@@ -2,7 +2,14 @@
   "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
-  "escalationNotifications": {},
+  "escalationNotifications": {
+    "onboarding": {
+      "targetAgent": "pm",
+      "question": "While specifying the token expiry mid-session flow in AC#27, I found that \"the Not signed in indicator reappears automatically\" uses no numeric bound on \"automatically.\" This requires the product spec to be revised to replace \"automatically\" with a specific duration (e.g. \"within 200ms of access token expiry detection\") so engineers have a testable target for the re-appearance latency.",
+      "recommendations": "1. My recommendation: The \"Not signed in\" indicator reappears within 500ms of access token expiry detection on the client.\n→ Rationale: 500ms is fast enough to feel immediate to the user while giving the client a realistic window to detect the token expiry event, update auth state, and re-render the indicator — well within the threshold where users perceive a UI change as responsive rather than delayed.\n\nUpdating AC#27 now.\n\n---\n\n**AC#27 — revised text:**\n\n*\"If a user's authentication token expires mid-session, the \"Not signed in\" indicator reappears within 500ms of access token expiry detection on the client and all chat functionality becomes read-only — the user can view conversation history but cannot send new messages; attempting to send a message triggers an inline error; the user can sign in again via the Auth Sheet without losing conversation history.\"*",
+      "originAgent": "architect"
+    }
+  },
   "threadAgents": {
     "1777052952.437459": "architect",
     "1777053753.153509": "ux-design"
