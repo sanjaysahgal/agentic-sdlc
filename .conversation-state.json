@@ -2,5 +2,8 @@
   "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
-  "escalationNotifications": {}
+  "escalationNotifications": {},
+  "threadAgents": {
+    "1777052952.437459": "architect"
+  }
 }
