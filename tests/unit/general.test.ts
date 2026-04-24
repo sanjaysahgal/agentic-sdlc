@@ -20,6 +20,8 @@ vi.mock("../../runtime/claude-client", () => ({
 vi.mock("../../runtime/conversation-store", () => ({
   getHistory: (...args: any[]) => mockGetHistory(...args),
   appendMessage: (...args: any[]) => mockAppendMessage(...args),
+  getThreadAgent: vi.fn().mockReturnValue(null),
+  setThreadAgent: vi.fn(),
 }))
 vi.mock("../../runtime/context-loader", () => ({
   loadAgentContextForQuery: (...args: any[]) => mockLoadAgentContextForQuery(...args),

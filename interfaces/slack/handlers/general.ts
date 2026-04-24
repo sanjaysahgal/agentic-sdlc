@@ -45,24 +45,10 @@ export async function handleGeneralChannelMessage(params: {
   }})
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Thread-to-agent mapping — tracks which agent owns a general channel thread.
-// When a slash command starts a thread, the agent is saved here. Follow-up
-// messages in that thread route to the same agent instead of the concierge.
-// ────────────────────────────────────────────────────────────────────────────────
-
-const threadAgentMap = new Map<string, "pm" | "ux-design" | "architect">()
-
-/** Get the agent that owns a general channel thread (if any). */
-export function getThreadAgent(threadTs: string): "pm" | "ux-design" | "architect" | null {
-  return threadAgentMap.get(threadTs) ?? null
-}
-
-/** Set the agent that owns a general channel thread. */
-export function setThreadAgent(threadTs: string, agent: "pm" | "ux-design" | "architect"): void {
-  threadAgentMap.set(threadTs, agent)
-  console.log(`[ROUTER] thread-agent: set ${agent} for general:${threadTs}`)
-}
+// Thread-to-agent mapping is persisted in conversation-store.ts (survives bot restarts).
+// Import getThreadAgent/setThreadAgent from there — re-export for convenience.
+import { getThreadAgent, setThreadAgent } from "../../../runtime/conversation-store"
+export { getThreadAgent }
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Product-level agent conversations — invoked via slash commands in the general channel.

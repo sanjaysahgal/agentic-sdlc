@@ -62,6 +62,7 @@ const pendingEscalations = new Map<string, PendingEscalation>()         // threa
 const pendingApprovals = new Map<string, PendingApproval>()             // threadTs → pending spec approval
 const pendingDecisionReviews = new Map<string, PendingDecisionReview>() // threadTs → pending decision review
 const escalationNotifications = new Map<string, EscalationNotification>() // featureName → active notification
+const threadAgents = new Map<string, string>()                           // general channel threadTs → agent type (persisted)
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
@@ -141,11 +142,13 @@ function loadConversationState(): void {
       pendingApprovals?: Record<string, PendingApproval>
       pendingDecisionReviews?: Record<string, PendingDecisionReview>
       escalationNotifications?: Record<string, EscalationNotification>
+      threadAgents?: Record<string, string>
     }
     for (const [k, v] of Object.entries(parsed.pendingEscalations ?? {})) pendingEscalations.set(k, v)
     for (const [k, v] of Object.entries(parsed.pendingApprovals ?? {})) pendingApprovals.set(k, v)
     for (const [k, v] of Object.entries(parsed.pendingDecisionReviews ?? {})) pendingDecisionReviews.set(k, v)
     for (const [k, v] of Object.entries(parsed.escalationNotifications ?? {})) escalationNotifications.set(k, v)
+    for (const [k, v] of Object.entries(parsed.threadAgents ?? {})) threadAgents.set(k, v)
   } catch {
     // File doesn't exist yet — start fresh
   }
@@ -165,6 +168,7 @@ export function disableFilePersistence(): void {
   pendingApprovals.clear()
   pendingDecisionReviews.clear()
   escalationNotifications.clear()
+  threadAgents.clear()
 }
 
 function persistConversationState(): void {
@@ -175,6 +179,7 @@ function persistConversationState(): void {
       pendingApprovals: Object.fromEntries(pendingApprovals),
       pendingDecisionReviews: Object.fromEntries(pendingDecisionReviews),
       escalationNotifications: Object.fromEntries(escalationNotifications),
+      threadAgents: Object.fromEntries(threadAgents),
     }
     console.log(`[STORE] persistConversationState: writing escalations=[${[...pendingEscalations.keys()].join(",")}]`)
     fs.writeFileSync(CONVERSATION_STATE_FILE, JSON.stringify(obj, null, 2))
@@ -265,6 +270,18 @@ export function setConfirmedAgent(threadTs: string, agent: string): void {
 
 export function clearConfirmedAgent(featureName: string): void {
   confirmedAgents.delete(featureName)
+}
+
+// Thread agent — tracks which agent owns a general channel thread (persisted across restarts).
+// Set when a slash command starts a thread; used by app.ts to route follow-up messages.
+export function getThreadAgent(threadTs: string): string | null {
+  return threadAgents.get(threadTs) ?? null
+}
+
+export function setThreadAgent(threadTs: string, agent: string): void {
+  threadAgents.set(threadTs, agent)
+  persistConversationState()
+  console.log(`[STORE] setThreadAgent: ${agent} for general:${threadTs}`)
 }
 
 // Pending escalation — set when an agent offers to pull another agent into the thread.
