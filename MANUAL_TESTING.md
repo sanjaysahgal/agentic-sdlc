@@ -38,9 +38,9 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 | 3.4 | Designer answers brand question | General | `/design What should our design system look like?` | Designer talks brand/visual language | |
 | 3.5 | Designer stays in domain | General | `/design What features should we build next?` | Designer redirects to PM | |
 | 3.6 | Designer thread continuity | General | Follow-up in design thread (no slash) | Designer responds (not concierge) | |
-| 3.7 | Architect answers arch question | General | `/architect What is our current tech stack?` | Architect answers from system-architecture.md | |
+| 3.7 | Architect answers arch question | General | `/architect What is our current tech stack?` | Architect answers from system-architecture.md | ✅ 2026-04-23 |
 | 3.8 | Architect stays in domain | General | `/architect What should our brand colors be?` | Architect redirects to design | |
-| 3.9 | Architect thread continuity | General | Follow-up in architect thread (no slash) | Architect responds (not concierge) | |
+| 3.9 | Architect thread continuity | General | Follow-up in architect thread (no slash) | Architect responds (not concierge) | ✅ 2026-04-23 |
 | 3.10 | Seed message appears | General | Any slash command | "_@you → [Agent] Agent:_" visible in channel | ✅ 2026-04-23 |
 | 3.11 | Response in thread | General | Any slash command | Agent response appears as thread reply | ✅ 2026-04-23 |
 | 3.12 | No formatting inconsistency | General | Any slash command | Numbered lists where appropriate, consistent style | |
