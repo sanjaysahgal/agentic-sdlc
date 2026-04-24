@@ -2,7 +2,14 @@
   "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
-  "escalationNotifications": {},
+  "escalationNotifications": {
+    "onboarding": {
+      "targetAgent": "pm",
+      "question": "While specifying the token expiry mid-session flow in AC#27, I found that \"the Not signed in indicator reappears automatically\" uses no numeric bound on \"automatically.\" This requires the product spec to be revised to replace \"automatically\" with a specific duration (e.g. \"within 200ms of access token expiry detection\") so engineers have a testable target for the re-appearance latency.",
+      "recommendations": "Three architecture questions have been escalated to the architect — they'll be resolved before engineering begins and don't block the design phase.\n\nThe spec is clean. No open questions remain. Ready for your approval whenever you are — say *approve* and I'll finalize it and hand it to the design team.",
+      "originAgent": "architect"
+    }
+  },
   "threadAgents": {
     "1777052952.437459": "architect",
     "1777053753.153509": "ux-design"
