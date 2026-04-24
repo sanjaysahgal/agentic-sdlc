@@ -5,7 +5,7 @@ import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../age
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
 import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, saveDraftAuditCache, readDraftAuditCache, getInProgressFeatures, readFile, preseedEngineeringSpec, seedHandoffSection, clearHandoffSection } from "../../../runtime/github-client"
-import { classifyIntent, classifyMessageScope, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
+import { classifyIntent, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness, auditSpecStructure } from "../../../runtime/spec-auditor"
@@ -324,8 +324,9 @@ export async function handleFeatureChannelMessage(params: {
   }
 
   // Agent addressing: @pm, @design, @architect prefix overrides phase-based routing.
-  // Allows the user to reach any agent at any time regardless of current phase.
-  // The prefix is stripped from the message before passing to the agent.
+  // TEMPORARY override — routes this one message to the addressed agent without
+  // persisting the change or wiping conversation history. The next unaddressed
+  // message routes back to the phase-based agent.
   let userMessage = rawUserMessage
   const agentAddressMatch = rawUserMessage.match(/^@(pm|design|architect)[:\s]\s*([\s\S]*)$/i)
   if (agentAddressMatch) {
@@ -334,10 +335,11 @@ export async function handleFeatureChannelMessage(params: {
     const targetAgent = agentMap[addressedAgent]
     if (targetAgent) {
       if (targetAgent !== confirmedAgent) {
-        console.log(`[ROUTER] agent-addressing: user addressed @${addressedAgent}, overriding confirmedAgent=${confirmedAgent} → ${targetAgent}`)
+        console.log(`[ROUTER] agent-addressing: temporary override @${addressedAgent}, confirmedAgent=${confirmedAgent} stays (no phase transition)`)
       }
       confirmedAgent = targetAgent
-      setConfirmedAgent(featureName, targetAgent)
+      // Do NOT call setConfirmedAgent — this is a temporary override for this message only.
+      // Persisting would trigger a phase transition and wipe conversation history.
       userMessage = agentAddressMatch[2].trim() || rawUserMessage
     }
   }
@@ -876,26 +878,11 @@ async function runPmAgent(params: {
     ? userMessage  // escalation brief is already complete
     : buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsPm, priorContext: priorContextPm })
 
-  // If the message is asking about the product as a whole (vision, architecture, principles),
-  // answer from context directly — the pm agent is not the right framing for product-level questions.
-  if (!readOnly) {
-    const scope = await classifyMessageScope(userMessage)
-    if (scope === "product-context") {
-      const prefix = routingNote ? `${routingNote}\n\n` : ""
-      await update("_Product Manager is thinking..._")
-      await update(
-        `${prefix}_Answering from the ${loadWorkspaceConfig().productName} product context:_\n\n` +
-        await runAgent({
-          systemPrompt: `You are a knowledgeable assistant for ${loadWorkspaceConfig().productName}. ` +
-            `Answer the user's question directly using the product vision and architecture below. Be concise.\n\n` +
-            `## Product Vision\n${context.productVision}\n\n## System Architecture\n${context.systemArchitecture}`,
-          history: [],
-          userMessage,
-        })
-      )
-      return
-    }
-  }
+  // Product-level questions (vision, architecture, principles) in feature channels:
+  // The PM answers from its full prompt with feature context — it already has the vision loaded.
+  // For deep product-level discussions, use /pm in the general channel.
+  // (The product-context bypass was removed because it used a minimal prompt without
+  // the PM's formatting rules, causing inconsistent output.)
 
   const systemPrompt = buildPmSystemBlocks(context, featureName, readOnly, approvedSpecContext)
 
