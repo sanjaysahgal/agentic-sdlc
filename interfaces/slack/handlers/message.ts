@@ -741,14 +741,19 @@ ${archPendingEscalation.question}`
 
       if (!isStandaloneConfirmation(userMessage)) {
         // Human continues the conversation with the Designer or PM — keep notification active.
+        // readOnly: true — the PM/Designer can discuss and recommend but cannot patch specs,
+        // escalate, or offer to finalize. This is an escalation response, not a full agent session.
         console.log(`[ROUTER] branch=arch-upstream-continuation target=${archNotifTarget} msg="${userMessage.slice(0, 80)}"`)
         let updatedRecommendations = ""
         await withThinking({ client, channelId, threadTs, agent: archNotifAgentLabel, run: async (update) => {
           const capturingUpdate = async (text: string) => { updatedRecommendations = text; await update(text) }
           if (archNotifTarget === "design") {
+            // Design escalation continuation — design agent handles its own tool scoping
             await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages: [], client, update: capturingUpdate })
           } else {
-            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate })
+            // PM escalation continuation — readOnly prevents the PM from patching specs,
+            // escalating new items, or offering to finalize. Answer the question only.
+            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate, readOnly: true })
           }
         }})
         setEscalationNotification(featureName, { ...archEscalationNotification, recommendations: updatedRecommendations || archEscalationNotification.recommendations })
