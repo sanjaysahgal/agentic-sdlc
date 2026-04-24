@@ -166,7 +166,6 @@ describe("bug #6 — premature spec approval: text-only agent responses must nev
     // save_product_spec_draft, apply_product_spec_patch, or finalize_product_spec tools.
     // A text-only response (no tool calls) must never trigger a save.
     mockCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         content: [{ type: "text", text: "I recommend option A for the data model. Here's why..." }],
       }) // runAgent — text-only, no tool calls

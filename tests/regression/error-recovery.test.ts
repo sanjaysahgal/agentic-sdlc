@@ -142,10 +142,9 @@ describe("bug #8 — blocking gate: finalize tool returns error when [blocking: 
       return Promise.reject(new Error("Not Found"))
     })
 
-    // [0] classifyMessageScope, [1] runAgent (tool_use: finalize_product_spec → blocking error),
-    // [2] runAgent (end_turn: agent surfaces the error)
+    // [0] runAgent (tool_use: finalize_product_spec → blocking error),
+    // [1] runAgent (end_turn: agent surfaces the error)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
@@ -202,7 +201,6 @@ function setupGapScenario() {
   mockOctokitGetContent.mockResolvedValue({ data: { content: encodedVision, type: "file" } })
 
   mockAnthropicCreate
-    .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
     .mockResolvedValueOnce({                                                            // runAgent: tool_use
       stop_reason: "tool_use",
       content: [{ type: "tool_use", id: "t1", name: "save_product_spec_draft", input: { content: "## Problem\nHelp users.\n## Open Questions\n- [type: product] [blocking: no] Define power user.\n" } }],

@@ -118,7 +118,6 @@ describe("bug #2 — failed agent call leaves no user message in history", () =>
   it("user message is not stored when the agent call fails", async () => {
     setConfirmedAgent("onboarding", "pm" as any)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockRejectedValueOnce(new Error("API overloaded"))
 
     // withThinking re-throws after logging — catch it so the test can assert history
@@ -144,7 +143,6 @@ describe("bug #3 — corrupted history (leading assistant) is sanitized", () => 
     appendMessage("onboarding", { role: "assistant", content: "Fast-path response with no preceding user message." })
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my answer." }] })
 
     // This must NOT throw — sanitization makes the API call valid

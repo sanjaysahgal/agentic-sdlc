@@ -131,7 +131,6 @@ describe("blocking gate — PM agent", () => {
     // [3] auditDownstreamReadiness(designer) → PASS (parallel with [2]),
     // [4] runAgent (end_turn text) — auditSpecDecisions skips (history < 2)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
@@ -159,7 +158,6 @@ describe("blocking gate — PM agent", () => {
     // [0] classifyMessageScope, [1] runAgent (tool_use: finalize_product_spec → blocking error),
     // [2] runAgent (end_turn: agent surfaces blocking error to user)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
@@ -237,7 +235,6 @@ function setupGapScenario() {
   mockOctokitGetContent.mockResolvedValue({ data: { content: encodedVision, type: "file" } })
 
   mockAnthropicCreate
-    .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
     .mockResolvedValueOnce({                                                            // runAgent: tool_use
       stop_reason: "tool_use",
       content: [{ type: "tool_use", id: "t1", name: "save_product_spec_draft", input: { content: "## Problem\nHelp users.\n## Open Questions\n- [type: product] [blocking: no] Define power user.\n" } }],

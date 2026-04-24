@@ -119,14 +119,13 @@ describe("locked decisions — PM agent", () => {
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary color\n• Mobile-first layout" }] }) // [0] extractLockedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })                           // [1] classifyMessageScope
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })                       // [2] runAgent (Sonnet)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })                       // [1] runAgent (Sonnet)
 
     const client = makeClient()
     await handleFeatureChannelMessage(makeParams("let's keep going", client))
 
-    // Sonnet call is index 2 — last user message is the enriched current message
-    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[2])
+    // Sonnet call is index 1 — extractLockedDecisions [0], runAgent [1]
+    const lastUserContent = getLastUserContent(mockAnthropicCreate.mock.calls[1])
     expect(lastUserContent).toContain("Decisions locked in this conversation")
     expect(lastUserContent).toContain("Dark primary color")
     expect(lastUserContent).toContain("let's keep going")
@@ -138,7 +137,6 @@ describe("locked decisions — PM agent", () => {
 
     mockAnthropicCreate
       .mockRejectedValueOnce(new Error("Haiku API failure"))                                                       // [0] extractLockedDecisions → caught by .catch(() => "")
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })                           // [1] classifyMessageScope
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my response." }] })                       // [2] runAgent
 
     const client = makeClient()

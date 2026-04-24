@@ -389,7 +389,6 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "pm" }] })           // classifyIntent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Tell me more." }] }) // runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "I want to build onboarding")
@@ -490,7 +489,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // PM ran — exactly 2 calls (readOnly=true skips classifyMessageScope)
+    // PM ran — exactly 2 calls (PM run + enforcement re-run)
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
 
     // Pending escalation cleared (PM ran successfully)
@@ -619,7 +618,6 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
     mockPaginate.mockResolvedValueOnce([]) // no branches → product-spec-in-progress for Thread A
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // classifyMessageScope (PM)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PM response." }] })       // PM runAgent
 
     const paramsA = makeParams(THREAD_A, "feature-onboarding", "refine the spec")
@@ -668,14 +666,13 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
     mockPaginate.mockResolvedValueOnce([])
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })       // classifyMessageScope
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Still on the PM." }] })        // PM runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "follow-up question")
     await handleFeatureChannelMessage(params)
 
     // Only 2 Anthropic calls — classifyIntent was NOT called (would add a third call)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
     expect(thinkingPlaceholder(params.client)).toBe("_Product Manager is thinking..._")
   })
 
@@ -888,7 +885,6 @@ describe("Scenario 10 — PM patch flow", () => {
     // PM Anthropic call sequence: classifyMessageScope → runAgent (tool_use) → runAgent (end_turn)
     // auditSpecDraft skips API call (empty productVision/architecture)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "apply_product_spec_patch", input: { patch: "## Goals\n1. Reduce onboarding time from 10 min to 3 min.\n2. Achieve 80% day-1 activation." } }],
@@ -2721,7 +2717,6 @@ describe("Scenario N3 — classifyIntent unknown agent name falls back to PM", (
     // Haiku returns an unrecognised agent name — agent-router falls back to "pm"
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "unknown-agent-xyz" }] }) // classifyIntent → invalid → falls back to "pm"
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // classifyMessageScope
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Let me help you with the product spec." }] }) // PM runAgent
 
     const params = makeParams(THREAD, "feature-onboarding", "I want to build something new")
@@ -2734,41 +2729,10 @@ describe("Scenario N3 — classifyIntent unknown agent name falls back to PM", (
   })
 })
 
-// ─── NEW: Scenario N4 — PM message scope "product-context" path ──────────────
-//
-// When classifyMessageScope returns "product-context", the PM handler answers
-// from the product vision / system architecture directly — without building a
-// full PM system prompt or calling save tools.
-
-describe("Scenario N4 — PM classifyMessageScope product-context path", () => {
-  const THREAD = "workflow-n4"
-
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
-
-  it("PM handles product-context query by answering from product vision directly", async () => {
-    setConfirmedAgent("onboarding", "pm")
-
-    // Phase: still product-spec-in-progress (no branches)
-    mockPaginate.mockResolvedValueOnce([])
-
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "product-context" }] })  // classifyMessageScope → product-context
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "TestApp is a platform for X." }] }) // runAgent (product context path)
-
-    const params = makeParams(THREAD, "feature-onboarding", "what is this product for?")
-    await handleFeatureChannelMessage(params)
-
-    // Exactly 2 Anthropic calls — classifyMessageScope + product-context runAgent
-    // (no extractLockedDecisions because history is empty; no PM rubric system prompt)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
-
-    const text = lastUpdateText(params.client)
-    expect(text).toContain("TestApp is a platform for X.")
-    // Response should include the "product context" label
-    expect(text).toContain("product context")
-  })
-})
+// ─── Scenario N4 — DELETED ────────────────────────────────────────────────────
+// classifyMessageScope product-context bypass was removed (2026-04-23).
+// Product-level discussions now happen in the general channel via /pm.
+// Feature channels always use the full PM agent with feature context.
 
 // ─── NEW: Scenario N5 — PM history limit (40 messages) ───────────────────────
 //
@@ -2800,7 +2764,6 @@ describe("Scenario N5 — PM history limit 40 messages", () => {
     //   [2] summarizeUnlockedDiscussion → summary (history.length > PM_HISTORY_LIMIT=40)
     //   [3] PM runAgent              → response
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })   // classifyMessageScope
       .mockResolvedValueOnce({ content: [{ type: "text", text: "" }] })                   // extractLockedDecisions
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Summary of earlier discussion." }] }) // summarizeUnlockedDiscussion
       .mockResolvedValueOnce({ content: [{ type: "text", text: "PM response on history-limited context." }] }) // runAgent
@@ -2808,8 +2771,8 @@ describe("Scenario N5 — PM history limit 40 messages", () => {
     const params = makeParams(THREAD, "feature-onboarding", "latest question")
     await handleFeatureChannelMessage(params)
 
-    // PM runAgent call (index 3) — inspect messages array
-    const runAgentCall = mockAnthropicCreate.mock.calls[3][0]
+    // PM runAgent call (index 2) — extractLockedDecisions[0], summarize[1], runAgent[2]
+    const runAgentCall = mockAnthropicCreate.mock.calls[2][0]
     // messages array: ≤40 history messages + 1 current user message = ≤41 total
     expect(runAgentCall.messages.length).toBeLessThanOrEqual(41)
 
@@ -3326,7 +3289,6 @@ describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design ph
     // auditSpecDecisions skips LLM (empty history)
     // No brand audit calls — PM does not load BRAND.md
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "finalize_product_spec", input: {} }],
@@ -3346,7 +3308,7 @@ describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design ph
 
     // Exactly 5 Anthropic calls — NO brand audit calls (PM doesn't touch brand)
     // Two extra calls vs prior: auditPhaseCompletion + auditDownstreamReadiness inside finalize handler
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(4)
   })
 })
 
@@ -4787,7 +4749,7 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     expect(notification?.targetAgent).toBe("pm")
     expect(notification?.recommendations).toContain("My recommendation:")
 
-    // PM ran — exactly 2 calls total (readOnly=true skips classifyMessageScope)
+    // PM ran — exactly 2 calls total (PM run + enforcement re-run)
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 })
@@ -4825,9 +4787,8 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
 
     const UPDATED_RECOMMENDATIONS = "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Confirmed by human.\n\n2. My recommendation: Use a 3-second delay before showing the nudge.\n→ Rationale: Avoids jarring immediate appearance.\n\n3. My recommendation: Position nudge at bottom of screen.\n→ Rationale: Follows mobile HIG guidelines."
 
-    // PM agent called once: classifyMessageScope → feature-specific, runAgent → updated recommendations
+    // PM agent called once: runAgent → updated recommendations
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: UPDATED_RECOMMENDATIONS }],
@@ -4980,7 +4941,7 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     expect(notification?.recommendations).toContain("1. My recommendation:")
     expect(notification?.recommendations).toContain("2. My recommendation:")
 
-    // PM ran — exactly 2 calls total (readOnly=true skips classifyMessageScope)
+    // PM ran — exactly 2 calls total (PM run + enforcement re-run)
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
   })
 })
@@ -5024,7 +4985,6 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     // PM path: classifyMessageScope (1) + PM agent run (1). 2 items → 2 recommendations → no enforcement.
     // Two-step: design does NOT run yet — escalationNotification set, awaiting human approval.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
@@ -5044,7 +5004,7 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     expect(notification?.recommendations).toContain("My recommendation:")
 
     // PM ran — exactly 2 calls total (no design phase yet)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -5094,7 +5054,6 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     //   [1] PM agent run → PM_RECOMMENDATIONS (1 item, 1 "My recommendation:" → no enforcement)
     // Two-step: design does NOT run yet — escalationNotification set, awaiting human approval.
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
@@ -5104,8 +5063,8 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     await handleFeatureChannelMessage(params)
 
     // PM agent should have gotten the product spec — verify via the content passed to the Anthropic call.
-    // Call index [1] is the PM agent run — its user message (brief) includes product spec section.
-    const pmCall = mockAnthropicCreate.mock.calls[1]
+    // Call index [0] is the PM agent run (classifyMessageScope removed)
+    const pmCall = mockAnthropicCreate.mock.calls[0]
     const systemBlocks = pmCall[0].system as Array<{ type: string; text: string }>
     const systemText = systemBlocks.map((b: any) => b.text ?? "").join("")
     // The approved spec is injected via context.currentDraft in the PM system prompt
@@ -5209,7 +5168,6 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
     //   [5] design agent              → "Let's continue the design."
     //   default: NONE for all remaining (identifyUncommittedDecisions etc.)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "tu_1", name: "save_product_spec_draft", input: { content: "## Problem\nLocked decision." } }],
@@ -5268,7 +5226,6 @@ describe("Scenario N41 — per-feature in-flight lock rejects concurrent message
     const firstCallBlock = new Promise<void>((res) => { resolveFirst = res })
 
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } }) // classifyMessageScope
       .mockImplementationOnce(async () => {
         await firstCallBlock // Block until second message has been processed
         return { content: [{ type: "text", text: "Here is the spec." }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } }
@@ -5299,7 +5256,7 @@ describe("Scenario N41 — per-feature in-flight lock rejects concurrent message
 
     // Only 2 API calls total: classifyMessageScope + PM agent (both for params1).
     // params2 made zero — lock prevented it from reaching any agent call.
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -5360,7 +5317,6 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
     //   [3] PM: stop_reason=end_turn → "Done."
     //   auto-close fires → architect escalation detected → postMessage, no design agent call
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "tu_1", name: "save_product_spec_draft", input: { content: "## Problem\nDecisions locked." } }],
@@ -5929,7 +5885,6 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     //   [0] classifyMessageScope → "feature-specific"
     //   [1] PM agent → PM_RECOMMENDATIONS (1 item, enforcement gate passes — 1 "My recommendation:")
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })  // [0] classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "end_turn",
         content: [{ type: "text", text: PM_RECOMMENDATIONS }],
@@ -5952,7 +5907,7 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     expect(notif?.targetAgent).toBe("pm")
 
     // Design did NOT run (only 2 Anthropic calls)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
   })
 
   it("Turn 3: human approves → spec patched (or skipped if 404), design resumes", async () => {
@@ -6034,7 +5989,6 @@ describe("Scenario N51 — PM spec sanitizer strips design-scope content before 
 
     // PM call sequence: classifyMessageScope → runAgent (tool_use: save_product_spec_draft) → runAgent (end_turn)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "save_product_spec_draft", input: { content: specWithDesignSection } }],
@@ -6082,7 +6036,6 @@ describe("Scenario N51 — PM spec sanitizer strips design-scope content before 
 
     // PM call sequence: classifyMessageScope → runAgent (tool_use: apply_product_spec_patch) → runAgent (end_turn)
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] }) // classifyMessageScope
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t2", name: "apply_product_spec_patch", input: { patch } }],
@@ -7646,11 +7599,11 @@ describe("Scenario N67 — Agent addressing overrides phase-based routing", () =
       client,
     })
 
-    // confirmedAgent should now be ux-design (overridden from architect)
-    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+    // confirmedAgent stays architect — @design: is a temporary override, not a phase transition
+    expect(getConfirmedAgent("onboarding")).toBe("architect")
 
-    // The message logged should have the prefix stripped
-    // (verified by the [ROUTER] log showing msg="show me the current state" not "@design: ...")
+    // The design agent still ran (verified by the response containing design content)
+    // and the message was stripped of the @design: prefix
   })
 })
 
@@ -7681,11 +7634,10 @@ describe("Scenario N71 — PM run_phase_completion_audit tool handler", () => {
     })
 
     // PM path: [0] classifyMessageScope → feature,
-    // [1] runAgent → tool_use: run_phase_completion_audit,
-    //     [2] auditPhaseCompletion → PASS,
-    // [3] runAgent → end_turn
+    // [0] runAgent → tool_use: run_phase_completion_audit,
+    //     [1] auditPhaseCompletion → PASS,
+    // [2] runAgent → end_turn
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature" }] })
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "run_phase_completion_audit", input: {} }],
@@ -7716,10 +7668,8 @@ describe("Scenario N72 — PM offer_architect_escalation tool handler", () => {
     setConfirmedAgent("onboarding", "pm")
     mockGetContent.mockImplementation(() => Promise.reject(new Error("Not Found")))
 
-    // PM path: [0] classifyMessageScope → feature,
-    // [1] runAgent → tool_use, [2] runAgent → end_turn
+    // PM path: [0] runAgent → tool_use, [1] runAgent → end_turn
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature" }] })
       .mockResolvedValueOnce({
         stop_reason: "tool_use",
         content: [{ type: "tool_use", id: "t1", name: "offer_architect_escalation", input: { question: "How should we handle caching?" } }],
@@ -8516,7 +8466,6 @@ describe("Scenario N83 — Universal hedge detection gate fires for PM and Desig
 
     // PM path: classifyMessageScope → runAgent
     mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "feature" }] })  // classifyMessageScope
       .mockResolvedValueOnce({                                                   // runAgent → hedgy response
         stop_reason: "end_turn",
         content: [{ type: "text", text: "Here are two options for the onboarding flow.\n\nWhat would you like to focus on?\nShall I explore option A or B?" }],
