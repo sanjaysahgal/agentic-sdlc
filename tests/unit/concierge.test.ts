@@ -173,4 +173,25 @@ describe("buildConciergeSystemPrompt", () => {
     expect(roleIdx).toBeGreaterThan(-1)
     expect(intentIdx).toBeLessThan(roleIdx)
   })
+
+  it("does not mention company names in persona descriptions", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    const companyNames = ["Stripe", "Airbnb", "Google", "Apple", "Meta", "Amazon"]
+    for (const name of companyNames) {
+      expect(prompt).not.toContain(name)
+    }
+  })
+
+  it("never uses 'AI' prefix when describing agents", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    expect(prompt).not.toContain("AI Product Manager")
+    expect(prompt).not.toContain("AI UX Design")
+    expect(prompt).not.toContain("AI Concierge")
+  })
+
+  it("includes thread guidance for @agent: text prefix", () => {
+    const prompt = buildConciergeSystemPrompt([], baseContext)
+    expect(prompt).toContain("@pm:")
+    expect(prompt).toContain("inside threads")
+  })
 })
