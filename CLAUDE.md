@@ -176,6 +176,20 @@ The human cannot be expected to know what to ask. They don't know what they don'
 - Writing an audit that runs on some response paths but not others
 - Deferring a constraint check to "when we have more time"
 
+### 12. Design before code — no behavioral change without holistic review
+
+**Before proposing or implementing any change to agent behavior, routing, context injection, or domain boundaries, answer three questions in writing:**
+
+1. **Scale:** How does this behave at 100 features, 10 agents, 5 tenants? If the answer involves unbounded growth (token count, API calls, prompt size), redesign before implementing.
+2. **Ownership:** Which existing agent or component already owns this responsibility? If the answer is "another agent already does this," the change is duplication — not a fix.
+3. **Cross-cutting:** Does this change affect more than one agent? If yes, design the cross-agent pattern first, then implement. Never patch one agent and discover the pattern later.
+
+**The test:** Could this change be reverted within 24 hours because it conflicted with a design decision that should have been obvious? If yes, the review was insufficient.
+
+**Historical violation (April 2026):** Architect in product-level mode deflected "which feature is being worked on?" Three fixes were attempted in 30 minutes: (1) inject all feature status into all agents, (2) add "pipeline status is common knowledge" to prompts, (3) cap at 10 features. The root cause — should pipeline status be in every agent's context at all? — was only asked after all three fixes shipped. One thoughtful design pass would have produced the right answer (summary count + redirect to concierge for details) without the iteration.
+
+**Enforcement:** Any commit touching `agents/`, `interfaces/slack/handlers/general.ts`, or routing logic in `message.ts` that adds new context injection, domain boundary changes, or cross-agent behavior must include a `// DESIGN-REVIEWED: [1-sentence rationale]` comment at the change site. The pre-commit hook blocks without it.
+
 ---
 
 ## Architecture

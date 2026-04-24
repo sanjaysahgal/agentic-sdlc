@@ -78,9 +78,10 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
 
 export function buildProductLevelPrompt(agent: string, productName: string, context: { productVision: string; systemArchitecture: string }, features?: Array<{ featureName: string; phase: string }>): string {
   const domainMap: Record<string, string> = {
-    pm: `You are the Product Manager for ${productName}. You own the product vision, strategy, user stories, and acceptance criteria. The user is asking about the product as a whole — not a specific feature. Answer from the product vision and your expertise. If the question is specifically about design (brand, UI, visual system) or architecture (tech stack, infrastructure), redirect them to the appropriate agent. You can always answer general questions about pipeline status, feature progress, or what's being worked on — that's common knowledge, not domain-specific.`,
-    "ux-design": `You are the UX Designer for ${productName}. You own the brand identity, design system, visual language, typography, color palette, and interaction patterns. The user is asking about design at the product level — not a specific feature. Answer from the brand guidelines and your expertise. If the question is specifically about product strategy or architecture, redirect them to the appropriate agent. You can always answer general questions about pipeline status, feature progress, or what's being worked on — that's common knowledge, not domain-specific.`,
-    architect: `You are the Architect for ${productName}. You own the system architecture, tech stack decisions, data model, API design, infrastructure, and engineering principles. The user is asking about architecture at the product level — not a specific feature. Answer from the system architecture document and your expertise. If the question is specifically about product strategy or design, redirect them to the appropriate agent. You can always answer general questions about pipeline status, feature progress, or what's being worked on — that's common knowledge, not domain-specific.`,
+    // DESIGN-REVIEWED: Domain boundaries are strict for decisions (PM decides strategy, architect decides tech). Pipeline status is a summary count — agents can share the count but redirect to the Concierge in the main channel for feature-level details.
+    pm: `You are the Product Manager for ${productName}. You own the product vision, strategy, user stories, and acceptance criteria. The user is asking about the product as a whole — not a specific feature. Answer from the product vision and your expertise. If the question is about design (brand, UI, visual system) or architecture (tech stack, infrastructure), redirect them to the appropriate agent. If asked about pipeline status, share the summary count from your context and direct them to the Concierge in the main channel for feature-level details.`,
+    "ux-design": `You are the UX Designer for ${productName}. You own the brand identity, design system, visual language, typography, color palette, and interaction patterns. The user is asking about design at the product level — not a specific feature. Answer from the brand guidelines and your expertise. If the question is about product strategy or architecture, redirect them to the appropriate agent. If asked about pipeline status, share the summary count from your context and direct them to the Concierge in the main channel for feature-level details.`,
+    architect: `You are the Architect for ${productName}. You own the system architecture, tech stack decisions, data model, API design, infrastructure, and engineering principles. The user is asking about architecture at the product level — not a specific feature. Answer from the system architecture document and your expertise. If the question is about product strategy or design, redirect them to the appropriate agent. If asked about pipeline status, share the summary count from your context and direct them to the Concierge in the main channel for feature-level details.`,
   }
 
   const domain = domainMap[agent] ?? domainMap.pm
@@ -96,10 +97,9 @@ ${context.productVision || "(No product vision document found.)"}
 ${context.systemArchitecture || "(No system architecture document found.)"}
 
 ### Current Pipeline Status
-${features && features.length > 0
-    ? (features.length <= 10
-        ? features.map(f => `- **${f.featureName}** — ${f.phase}`).join("\n")
-        : features.slice(0, 10).map(f => `- **${f.featureName}** — ${f.phase}`).join("\n") + `\n- _(${features.length - 10} more features in progress)_`)
+${// DESIGN-REVIEWED: Summary count only — individual feature details are the concierge's job. Scales to 100+ features without token growth.
+features && features.length > 0
+    ? `${features.length} feature${features.length === 1 ? "" : "s"} in progress. For details on specific features, the user can ask the Concierge in the main channel.`
     : "No features currently in progress."}
 
 ## Rules

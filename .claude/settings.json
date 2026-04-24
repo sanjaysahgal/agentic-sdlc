@@ -31,6 +31,10 @@
           {
             "type": "command",
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then STAGED=$(git diff --name-only --cached 2>/dev/null); if echo \"$STAGED\" | grep -v '^coverage/' | grep -qF 'message.ts'; then FILE='interfaces/slack/handlers/message.ts'; AGENTS=$(grep -cE 'async function run[A-Z][a-zA-Z]+Agent' \"$FILE\" 2>/dev/null || echo 0); GATES=$(grep -c 'UPSTREAM-GATE:' \"$FILE\" 2>/dev/null || echo 0); EXPECTED=$((AGENTS - 1)); if [ \"$GATES\" -lt \"$EXPECTED\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[UPSTREAM GATE COVERAGE] message.ts has fewer UPSTREAM-GATE markers than expected. Every non-PM agent path must have a // UPSTREAM-GATE: [agent] marker at its pre-run upstream audit. Add the missing marker and gate implementation.\"}}'; fi; fi; fi; true"
+          },
+          {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then DIFF=$(git diff --cached 2>/dev/null); if echo \"$DIFF\" | grep -qE '^\\+.*(context|inject|domain|boundary|pipeline|feature.*status)' && (git diff --name-only --cached | grep -qE 'agents/|handlers/general\\.ts'); then if ! echo \"$DIFF\" | grep -q 'DESIGN-REVIEWED:'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[DESIGN REVIEW GATE] This commit adds context injection, domain boundary, or cross-agent behavior to agents/ or general.ts without a DESIGN-REVIEWED comment. Principle 12 requires answering: (1) How does this scale to 100 features/10 agents? (2) Which component already owns this? (3) Is this cross-cutting? Add // DESIGN-REVIEWED: [rationale] at the change site.\"}}'; fi; fi; fi; true"
           }
         ]
       },

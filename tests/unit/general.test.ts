@@ -140,4 +140,23 @@ describe("handleGeneralChannelAgentMessage", () => {
     expect(prompt).toContain("product-level conversation")
     expect(prompt).toContain("no feature specs")
   })
+
+  it("pipeline status is summary count only — no individual feature names", async () => {
+    // Mock 3 features in progress
+    const { getInProgressFeatures } = await import("../../runtime/github-client")
+    ;(getInProgressFeatures as any).mockResolvedValueOnce([
+      { featureName: "onboarding", phase: "engineering-in-progress" },
+      { featureName: "notifications", phase: "design-in-progress" },
+      { featureName: "search", phase: "product-spec-in-progress" },
+    ])
+
+    await handleGeneralChannelAgentMessage({ ...baseParams, agent: "architect" })
+    const prompt = mockRunAgent.mock.calls[0][0].systemPrompt
+    // Should contain count, not individual names
+    expect(prompt).toContain("3 features in progress")
+    expect(prompt).not.toContain("onboarding")
+    expect(prompt).not.toContain("notifications")
+    // Should redirect to concierge for details
+    expect(prompt).toContain("Concierge")
+  })
 })
