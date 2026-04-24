@@ -46,6 +46,25 @@ export async function handleGeneralChannelMessage(params: {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
+// Thread-to-agent mapping — tracks which agent owns a general channel thread.
+// When a slash command starts a thread, the agent is saved here. Follow-up
+// messages in that thread route to the same agent instead of the concierge.
+// ────────────────────────────────────────────────────────────────────────────────
+
+const threadAgentMap = new Map<string, "pm" | "ux-design" | "architect">()
+
+/** Get the agent that owns a general channel thread (if any). */
+export function getThreadAgent(threadTs: string): "pm" | "ux-design" | "architect" | null {
+  return threadAgentMap.get(threadTs) ?? null
+}
+
+/** Set the agent that owns a general channel thread. */
+export function setThreadAgent(threadTs: string, agent: "pm" | "ux-design" | "architect"): void {
+  threadAgentMap.set(threadTs, agent)
+  console.log(`[ROUTER] thread-agent: set ${agent} for general:${threadTs}`)
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
 // Product-level agent conversations — invoked via slash commands in the general channel.
 // Each agent stays in its domain: PM → vision/product strategy, Design → brand/design system,
 // Architect → system architecture/tech decisions.
@@ -93,6 +112,10 @@ export async function handleGeneralChannelAgentMessage(params: {
 }): Promise<void> {
   const { channelId, threadTs, userMessage, userImages, client, agent } = params
   const displayName = AGENT_DISPLAY_NAMES[agent] ?? "Agent"
+
+  // Save agent for this thread — follow-up messages route here instead of concierge
+  setThreadAgent(threadTs, agent)
+
   console.log(`[ROUTER] product-level-agent: ${agent} (${displayName}) in general:${threadTs} msg="${userMessage.slice(0, 100)}"`)
 
   await withThinking({ client, channelId, threadTs, agent: displayName, run: async (update) => {

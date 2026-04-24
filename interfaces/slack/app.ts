@@ -1,7 +1,7 @@
 import "dotenv/config"
 import { App } from "@slack/bolt"
 import { handleFeatureChannelMessage, getChannelState } from "./handlers/message"
-import { handleGeneralChannelMessage } from "./handlers/general"
+import { handleGeneralChannelMessage, handleGeneralChannelAgentMessage, getThreadAgent } from "./handlers/general"
 import { registerReactionHandlers } from "./handlers/reactions"
 import { registerSlashCommands } from "./handlers/commands"
 import { UserImage } from "../../runtime/claude-client"
@@ -182,13 +182,31 @@ app.message(async ({ message, client, body }) => {
       userId,
     })
   } else {
-    await handleGeneralChannelMessage({
-      channelId: msg.channel,
-      threadTs,
-      userMessage,
-      userImages,
-      client,
-    })
+    // General channel: check if this thread already has an agent (from a slash command).
+    // If so, route to that agent. Otherwise, route to concierge.
+    // A thread belongs to the agent that started it — no switching mid-thread.
+    // To talk to a different agent, start a new thread with a new slash command.
+    const threadAgent = getThreadAgent(threadTs)
+
+    if (threadAgent) {
+      console.log(`[ROUTER] general-channel thread: routing to ${threadAgent} (thread continuity)`)
+      await handleGeneralChannelAgentMessage({
+        channelId: msg.channel,
+        threadTs,
+        userMessage,
+        userImages,
+        client,
+        agent: threadAgent,
+      })
+    } else {
+      await handleGeneralChannelMessage({
+        channelId: msg.channel,
+        threadTs,
+        userMessage,
+        userImages,
+        client,
+      })
+    }
   }
 })
 
