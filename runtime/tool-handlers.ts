@@ -278,7 +278,7 @@ export async function handleArchitectTool(
     return handleReadApprovedSpecs(input, ctx, deps)
   }
   if (name === "finalize_engineering_spec") {
-    return handleFinalizeEngineeringSpec(ctx, deps)
+    return handleFinalizeEngineeringSpec(ctx, deps, state)
   }
   if (name === "offer_upstream_revision") {
     state.escalationFired = true
@@ -382,11 +382,47 @@ export async function handleReadApprovedSpecs(
 export async function handleFinalizeEngineeringSpec(
   ctx: ToolHandlerContext,
   deps: ArchitectToolDeps,
+  state?: ArchitectToolState,
 ): Promise<ToolResult> {
+  // Gate 0: Block if escalation already fired in this turn (Principle 14 — retroactive enforcement)
+  if (state?.escalationFired) {
+    console.log(`[FINALIZE-GATE] engineering: BLOCKED — escalation fired in this turn`)
+    return { error: "Cannot finalize while upstream gaps are pending. Resolve the escalation first." }
+  }
+
   const existingDraft = await ctx.readFile(ctx.specFilePath, ctx.specBranchName)
   if (!existingDraft) {
     return { error: "No draft saved yet — save a draft first before finalizing." }
   }
+
+  // Gate 1: Upstream PM spec deterministic audit (Principle 14 — retroactive enforcement)
+  // DESIGN-REVIEWED: Approved specs that fail current deterministic audits block downstream
+  // finalization. The spec chain is only as strong as its weakest link. Scales to any number
+  // of upstream specs — one auditPmSpec call per finalization, deterministic, <1ms.
+  if (ctx.context.approvedProductSpec) {
+    const { auditPmSpec } = await import("./deterministic-auditor")
+    const pmFindings = auditPmSpec(ctx.context.approvedProductSpec)
+    if (!pmFindings.ready) {
+      console.log(`[FINALIZE-GATE] engineering: BLOCKED — PM spec has ${pmFindings.findings.length} deterministic finding(s)`)
+      const findingLines = pmFindings.findings.map((f, i) => `${i + 1}. [PM SPEC] ${f.issue}`).join("\n")
+      return { error: `Approval blocked — the approved PM spec has ${pmFindings.findings.length} deterministic finding(s) that must be resolved before engineering can finalize (Principle 14: deterministic audits are retroactive):\n${findingLines}\n\nUse offer_upstream_revision(pm) to escalate these to the PM for resolution.` }
+    }
+  }
+
+  // Gate 2: Upstream design spec deterministic audit
+  const { paths: wsPaths } = ctx.loadWorkspaceConfig()
+  const designSpecPath = `${wsPaths.featuresRoot}/${ctx.featureName}/${ctx.featureName}.design.md`
+  const approvedDesignSpec = await deps.readFile(designSpecPath, "main")
+  if (approvedDesignSpec) {
+    const { auditDesignSpec } = await import("./deterministic-auditor")
+    const designFindings = auditDesignSpec(approvedDesignSpec)
+    if (!designFindings.ready) {
+      console.log(`[FINALIZE-GATE] engineering: BLOCKED — design spec has ${designFindings.findings.length} deterministic finding(s)`)
+      const findingLines = designFindings.findings.map((f, i) => `${i + 1}. [DESIGN SPEC] ${f.issue}`).join("\n")
+      return { error: `Approval blocked — the approved design spec has ${designFindings.findings.length} deterministic finding(s) that must be resolved before engineering can finalize (Principle 14: deterministic audits are retroactive):\n${findingLines}\n\nUse offer_upstream_revision(design) to escalate these to the designer for resolution.` }
+    }
+  }
+
   const allOpenQuestions = deps.extractAllOpenQuestions(existingDraft)
   if (allOpenQuestions.length > 0) {
     return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }
@@ -801,6 +837,19 @@ export async function handleFinalizeDesignSpec(
   if (!existingDraft) {
     return { error: "No draft saved yet — save a draft first before finalizing." }
   }
+
+  // Gate: Upstream PM spec deterministic audit (Principle 14 — retroactive enforcement)
+  // DESIGN-REVIEWED: Design finalization logs PM spec findings as a WARNING — the PM must fix
+  // them but design can proceed. The HARD gate is at engineering finalization where the full
+  // spec chain must be clean. This avoids blocking design when PM hasn't caught up yet.
+  if (ctx.auditProductSpec) {
+    const { auditPmSpec } = await import("./deterministic-auditor")
+    const pmFindings = auditPmSpec(ctx.auditProductSpec)
+    if (!pmFindings.ready) {
+      console.log(`[FINALIZE-GATE] design: WARNING — PM spec has ${pmFindings.findings.length} deterministic finding(s) — must be fixed before engineering finalization`)
+    }
+  }
+
   const allOpenQuestions = deps.extractAllOpenQuestions(existingDraft)
   if (allOpenQuestions.length > 0) {
     return { error: `Approval blocked — ${allOpenQuestions.length} open question${allOpenQuestions.length > 1 ? "s" : ""} must be resolved first (blocking and non-blocking questions both block finalization):\n${allOpenQuestions.map(q => `• ${q}`).join("\n")}` }

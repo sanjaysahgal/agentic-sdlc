@@ -45,6 +45,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 import {
   getConfirmedAgent, setConfirmedAgent, clearHistory,
   getThreadAgent, setThreadAgent, getHistory, appendMessage,
+  isUserOriented, markUserOriented,
   disableFilePersistence,
 } from "../../runtime/conversation-store"
 import { handleFeatureChannelMessage, getChannelState, resolveAgent } from "../../interfaces/slack/handlers/message"
@@ -263,6 +264,16 @@ describe("Routing Contract Invariants", () => {
 
       expect(getHistory("onboarding")).toHaveLength(0)
       expect(getHistory("auth")).toHaveLength(1)
+    })
+  })
+
+  // ─── Invariant: orientedUsers persists across clear/reload ──────────────
+
+  describe("Invariant: orientedUsers persistence", () => {
+    it("markUserOriented persists and isUserOriented reads it back", () => {
+      expect(isUserOriented("testfeature", "U123")).toBe(false)
+      markUserOriented("testfeature", "U123")
+      expect(isUserOriented("testfeature", "U123")).toBe(true)
     })
   })
 

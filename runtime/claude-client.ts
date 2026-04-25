@@ -125,7 +125,16 @@ export async function runAgent(params: {
     // If the model finished with no tool calls, extract and return the final text.
     if (response.stop_reason === "end_turn" || !tools || tools.length === 0) {
       const block = response.content.find(b => b.type === "text")
-      const text = block?.type === "text" ? block.text : ""
+      let text = block?.type === "text" ? block.text : ""
+      // Strip tool call references leaked into prose — the agent sometimes writes
+      // "finalize_engineering_spec()" or "save_product_spec_draft()" in its text response.
+      // These are internal tool names that should never appear in user-facing output.
+      const toolNamePattern = /\b(save_|apply_|finalize_|offer_|run_|read_|rewrite_|generate_|fetch_)\w+\(\)/g
+      const stripped = text.match(toolNamePattern)
+      if (stripped) {
+        console.log(`[AGENT-RESPONSE] stripping tool name references from response: ${stripped.join(", ")}`)
+        text = text.replace(toolNamePattern, "").replace(/\n{3,}/g, "\n\n").trim()
+      }
       console.log(`[AGENT-RESPONSE] ${text.slice(0, 500)}`)
       return text
     }

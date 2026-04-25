@@ -1,6 +1,6 @@
 import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
-import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getPendingDecisionReview, setPendingDecisionReview, clearPendingDecisionReview, getEscalationNotification, setEscalationNotification, clearEscalationNotification, Message } from "../../../runtime/conversation-store"
+import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getPendingDecisionReview, setPendingDecisionReview, clearPendingDecisionReview, getEscalationNotification, setEscalationNotification, clearEscalationNotification, isUserOriented, markUserOriented, Message } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
@@ -41,7 +41,8 @@ const featureInFlight = new Map<string, boolean>()
 // being compelled by "MUST surface" notices. Structural enforcement of Principle 8:
 // the agent cannot dump gaps on orientation turns because it doesn't have them in context.
 // Key: `${featureName}:${userId}` — set after first turn completes.
-const orientedUsers = new Set<string>()
+// orientedUsers moved to conversation-store.ts for persistence across restarts.
+// Import isUserOriented/markUserOriented from there.
 
 // Content-addressed cache for phase entry upstream spec audits.
 // Key: `${agentType}:${featureName}:${specFingerprint}` — invalidates automatically when upstream spec content changes.
@@ -783,8 +784,7 @@ ${archPendingEscalation.question}`
     // Orientation enforcement (Principle 8): first message from a userId in this feature
     // runs readOnly — architect orients without spec content, can't dump gaps.
     // The orientation key is also computed inside runArchitectAgent for notice suppression.
-    const archOrientKey = (userId && userId.length > 0) ? `${featureName}:${userId}` : null
-    const archIsOrientation = archOrientKey ? !orientedUsers.has(archOrientKey) : false
+    const archIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureName, userId) : false
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation })
     }})
@@ -2516,8 +2516,7 @@ async function runArchitectAgent(params: {
   // userId in this feature so the architect can orient the newcomer first.
   // Orientation tracking requires a real userId — if userId is not available
   // (e.g. Slack API didn't provide it), skip orientation suppression and show notices.
-  const orientationKey = (userId && userId.length > 0) ? `${featureName}:${userId}` : null
-  const isOrientationTurn = orientationKey ? !orientedUsers.has(orientationKey) : false
+  const isOrientationTurn = (userId && userId.length > 0) ? !isUserOriented(featureName, userId) : false
 
   // Suppress upstream notices on orientation turns — architect orients first, gaps come next turn.
   const archNotices = readOnly ? "" : isOrientationTurn ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
@@ -2575,8 +2574,8 @@ async function runArchitectAgent(params: {
     forceStopToolNames: ["offer_upstream_revision"],
   })
 
-  // Mark user as oriented after first architect response.
-  if (userId) orientedUsers.add(`${featureName}:${userId}`)
+  // Mark user as oriented after first architect response (persisted across restarts).
+  if (userId) markUserOriented(featureName, userId)
 
   // ─── POST-RUN: Orientation response enforcement (Principle 8 + 10) ──────────
   // Orientation responses must NEVER end with a question that defers to the user.

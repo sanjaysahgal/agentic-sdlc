@@ -213,6 +213,19 @@ engineering-in-progress            → architect
 
 **Historical violation (April 2026):** `/pm` slash command in `#feature-onboarding` persisted `confirmedAgent=pm` via `setConfirmedAgent()`. The feature was in engineering phase. Next message routed to PM instead of Architect — 1,245 tests didn't catch it because no test verified the invariant "confirmedAgent must agree with GitHub phase."
 
+### 14. Deterministic audits are retroactive — approved specs are not exempt
+
+**When a deterministic auditor is added or improved, all existing specs — including approved ones — must pass the new checks before downstream phases can finalize.**
+
+An approved spec that fails current audits is a platform enforcement gap, not a grandfathered exception. The spec chain is only as strong as its weakest link.
+
+**What this means in practice:**
+- `handleFinalizeEngineeringSpec` runs `auditPmSpec()` and `auditDesignSpec()` on the approved upstream specs. If either has findings, finalization is blocked until the upstream agent fixes them via the escalation flow.
+- `handleFinalizeDesignSpec` logs `auditPmSpec()` findings as a warning (the hard gate is at engineering finalization).
+- When a new deterministic check is added to any auditor, it automatically applies to all specs — past and future — on the next finalization attempt.
+
+**Historical violation (April 2026):** The PM spec was approved before `auditPmSpec()` existed. When the architect tried to finalize the engineering spec, 7 deterministic findings (vague timing, vague language) were present in the approved PM spec but not caught — the finalization gate didn't check upstream specs. The architect finalized AND then escalated PM gaps, which is a contradiction.
+
 ---
 
 ## Architecture

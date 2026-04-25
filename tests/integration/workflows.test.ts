@@ -8575,3 +8575,56 @@ describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", (
     expect(getConfirmedAgent("onboarding")).toBe("ux-design")
   })
 })
+
+// ─── Scenario N85 — Finalization gate blocks on upstream deterministic findings ──
+
+describe("Scenario N85 — Engineering finalization blocked by upstream PM spec findings", () => {
+  const THREAD = "workflow-n85"
+
+  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+
+  it("finalize_engineering_spec returns error when PM spec has deterministic findings", async () => {
+    // The PM spec has vague language that auditPmSpec catches
+    const { handleFinalizeEngineeringSpec } = await import("../../runtime/tool-handlers")
+    const ctx = {
+      featureName: "onboarding",
+      specFilePath: "specs/features/onboarding/onboarding.engineering.md",
+      specBranchName: "spec/onboarding-engineering",
+      context: {
+        productVision: "Build a health app",
+        systemArchitecture: "React + Node",
+        currentDraft: "",
+        featureConventions: "",
+        approvedProductSpec: "## Acceptance Criteria\n- AC#1: The transition should be smooth and seamless\n## Non-Goals\n(none)",
+      },
+      update: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockResolvedValue("## API Contracts\n### GET /api/users\nReturns users."),
+      getHistory: () => [],
+      loadWorkspaceConfig: () => ({ githubOwner: "org", githubRepo: "repo", paths: { featuresRoot: "specs/features" } }),
+    }
+    const deps = {
+      auditSpecDraft: vi.fn().mockResolvedValue({ status: "ok" }),
+      saveDraftEngineeringSpec: vi.fn(),
+      saveApprovedEngineeringSpec: vi.fn(),
+      applySpecPatch: vi.fn(),
+      extractAllOpenQuestions: vi.fn().mockReturnValue([]),
+      extractHandoffSection: vi.fn().mockReturnValue(""),
+      auditSpecDecisions: vi.fn().mockResolvedValue({ status: "ok" }),
+      applyDecisionCorrections: vi.fn(),
+      auditDownstreamReadiness: vi.fn().mockResolvedValue({ findings: [] }),
+      auditSpecStructure: vi.fn().mockReturnValue([]),
+      clearHandoffSection: vi.fn().mockResolvedValue(undefined),
+      setPendingEscalation: vi.fn(),
+      readFile: vi.fn().mockResolvedValue(""),
+    }
+
+    const result = await handleFinalizeEngineeringSpec(ctx as any, deps as any)
+
+    // Should be blocked by PM spec findings
+    expect(result.error).toContain("PM spec")
+    expect(result.error).toContain("deterministic finding")
+    // Spec should NOT be saved
+    expect(deps.saveApprovedEngineeringSpec).not.toHaveBeenCalled()
+  })
+})

@@ -63,6 +63,7 @@ const pendingApprovals = new Map<string, PendingApproval>()             // threa
 const pendingDecisionReviews = new Map<string, PendingDecisionReview>() // threadTs → pending decision review
 const escalationNotifications = new Map<string, EscalationNotification>() // featureName → active notification
 const threadAgents = new Map<string, string>()                           // general channel threadTs → agent type (persisted)
+const orientedUsers = new Set<string>()                                  // featureName:userId → oriented (persisted)
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
@@ -143,12 +144,14 @@ function loadConversationState(): void {
       pendingDecisionReviews?: Record<string, PendingDecisionReview>
       escalationNotifications?: Record<string, EscalationNotification>
       threadAgents?: Record<string, string>
+      orientedUsers?: string[]
     }
     for (const [k, v] of Object.entries(parsed.pendingEscalations ?? {})) pendingEscalations.set(k, v)
     for (const [k, v] of Object.entries(parsed.pendingApprovals ?? {})) pendingApprovals.set(k, v)
     for (const [k, v] of Object.entries(parsed.pendingDecisionReviews ?? {})) pendingDecisionReviews.set(k, v)
     for (const [k, v] of Object.entries(parsed.escalationNotifications ?? {})) escalationNotifications.set(k, v)
     for (const [k, v] of Object.entries(parsed.threadAgents ?? {})) threadAgents.set(k, v)
+    for (const key of (parsed.orientedUsers ?? [])) orientedUsers.add(key)
   } catch {
     // File doesn't exist yet — start fresh
   }
@@ -169,6 +172,7 @@ export function disableFilePersistence(): void {
   pendingDecisionReviews.clear()
   escalationNotifications.clear()
   threadAgents.clear()
+  orientedUsers.clear()
 }
 
 function persistConversationState(): void {
@@ -180,6 +184,7 @@ function persistConversationState(): void {
       pendingDecisionReviews: Object.fromEntries(pendingDecisionReviews),
       escalationNotifications: Object.fromEntries(escalationNotifications),
       threadAgents: Object.fromEntries(threadAgents),
+      orientedUsers: [...orientedUsers],
     }
     console.log(`[STORE] persistConversationState: writing escalations=[${[...pendingEscalations.keys()].join(",")}]`)
     fs.writeFileSync(CONVERSATION_STATE_FILE, JSON.stringify(obj, null, 2))
@@ -282,6 +287,23 @@ export function setThreadAgent(threadTs: string, agent: string): void {
   threadAgents.set(threadTs, agent)
   persistConversationState()
   console.log(`[STORE] setThreadAgent: ${agent} for general:${threadTs}`)
+}
+
+// Oriented users — tracks which users have been oriented in each feature (persisted across restarts).
+// Prevents re-orientation after bot restart, which was causing returning users to see welcome messages.
+// TRIGGER-JUSTIFIED: isUserOriented is a persistence accessor (reads from persisted Set), not a classifier.
+// It runs on every message to check orientation state — not trigger-dependent.
+export function isUserOriented(featureName: string, userId: string): boolean {
+  return orientedUsers.has(`${featureName}:${userId}`)
+}
+
+export function markUserOriented(featureName: string, userId: string): void {
+  const key = `${featureName}:${userId}`
+  if (!orientedUsers.has(key)) {
+    orientedUsers.add(key)
+    persistConversationState()
+    console.log(`[STORE] markUserOriented: ${key}`)
+  }
 }
 
 // Pending escalation — set when an agent offers to pull another agent into the thread.
