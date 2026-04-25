@@ -127,13 +127,27 @@ export async function runAgent(params: {
       const block = response.content.find(b => b.type === "text")
       let text = block?.type === "text" ? block.text : ""
       // Strip tool call references leaked into prose — the agent sometimes writes
-      // "finalize_engineering_spec()" or "save_product_spec_draft()" in its text response.
-      // These are internal tool names that should never appear in user-facing output.
+      // Strip internal platform language that should never appear in user-facing output:
+      // 1. Tool call names: "finalize_engineering_spec()", "save_product_spec_draft()"
+      // 2. Platform commentary: "I have no tools available", "the platform should route"
       const toolNamePattern = /\b(save_|apply_|finalize_|offer_|run_|read_|rewrite_|generate_|fetch_)\w+\(\)/g
+      const platformCommentaryPatterns = [
+        /\bI have no tools available[^.]*\./gi,
+        /\bthe platform should[^.]*\./gi,
+        /\bI cannot apply[^.]*directly[^.]*\./gi,
+        /\bNote:.*tool access[^.]*\./gi,
+        /\bNote:.*no tools[^.]*\./gi,
+      ]
       const stripped = text.match(toolNamePattern)
       if (stripped) {
-        console.log(`[AGENT-RESPONSE] stripping tool name references from response: ${stripped.join(", ")}`)
+        console.log(`[AGENT-RESPONSE] stripping tool name references: ${stripped.join(", ")}`)
         text = text.replace(toolNamePattern, "").replace(/\n{3,}/g, "\n\n").trim()
+      }
+      for (const pattern of platformCommentaryPatterns) {
+        if (pattern.test(text)) {
+          console.log(`[AGENT-RESPONSE] stripping platform commentary: ${pattern.source}`)
+          text = text.replace(pattern, "").replace(/\n{3,}/g, "\n\n").trim()
+        }
       }
       console.log(`[AGENT-RESPONSE] ${text.slice(0, 500)}`)
       return text

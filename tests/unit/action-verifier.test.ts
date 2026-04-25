@@ -98,3 +98,16 @@ describe("verifyActionClaims", () => {
     expect(r1).toBe(r2)
   })
 })
+
+// ─── Platform commentary stripping (claude-client.ts) ─────────────────
+
+describe("platform commentary stripping — structural verification", () => {
+  it("claude-client.ts contains patterns to strip internal platform language", () => {
+    const fs = require("fs")
+    const clientCode = fs.readFileSync("runtime/claude-client.ts", "utf8")
+    expect(clientCode).toContain("I have no tools available")
+    expect(clientCode).toContain("the platform should")
+    expect(clientCode).toContain("I cannot apply")
+    expect(clientCode).toContain("platformCommentaryPatterns")
+  })
+})
