@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">83.34% </span>
+                <span class="strong">83.3% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>1061/1273</span>
+                <span class='fraction'>1058/1270</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">76.16% </span>
+                <span class="strong">76.06% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>700/919</span>
+                <span class='fraction'>696/915</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">85.37% </span>
+                <span class="strong">85.33% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>992/1162</span>
+                <span class='fraction'>989/1159</span>
             </div>
         
             
@@ -2833,7 +2833,11 @@
 <a name='L2768'></a><a href='#L2768'>2768</a>
 <a name='L2769'></a><a href='#L2769'>2769</a>
 <a name='L2770'></a><a href='#L2770'>2770</a>
-<a name='L2771'></a><a href='#L2771'>2771</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L2771'></a><a href='#L2771'>2771</a>
+<a name='L2772'></a><a href='#L2772'>2772</a>
+<a name='L2773'></a><a href='#L2773'>2773</a>
+<a name='L2774'></a><a href='#L2774'>2774</a>
+<a name='L2775'></a><a href='#L2775'>2775</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2876,7 +2880,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -3576,12 +3581,17 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -3614,7 +3624,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">35x</span>
-<span class="cline-any cline-yes">38x</span>
 <span class="cline-any cline-yes">38x</span>
 <span class="cline-any cline-yes">35x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -5347,7 +5356,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">38x</span>
-<span class="cline-any cline-yes">42x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">42x</span>
@@ -5398,7 +5406,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -5605,7 +5613,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { loadAgentContext, loadDesignAgentContext, loadArchitectAgentContext } from "../../../runtime/context-loader"
 import { runAgent, UserImage, ToolCallRecord } from "../../../runtime/claude-client"
-import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getPendingDecisionReview, setPendingDecisionReview, clearPendingDecisionReview, getEscalationNotification, setEscalationNotification, clearEscalationNotification, Message } from "../../../runtime/conversation-store"
+import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setConfirmedAgent, getPendingEscalation, setPendingEscalation, clearPendingEscalation, getPendingApproval, setPendingApproval, clearPendingApproval, getPendingDecisionReview, setPendingDecisionReview, clearPendingDecisionReview, getEscalationNotification, setEscalationNotification, clearEscalationNotification, isUserOriented, markUserOriented, Message } from "../../../runtime/conversation-store"
 import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
@@ -5646,7 +5654,8 @@ const featureInFlight = new Map&lt;string, boolean&gt;()
 // being compelled by "MUST surface" notices. Structural enforcement of Principle 8:
 // the agent cannot dump gaps on orientation turns because it doesn't have them in context.
 // Key: `${featureName}:${userId}` — set after first turn completes.
-const orientedUsers = new Set&lt;string&gt;()
+// orientedUsers moved to conversation-store.ts for persistence across restarts.
+// Import isUserOriented/markUserOriented from there.
 &nbsp;
 // Content-addressed cache for phase entry upstream spec audits.
 // Key: `${agentType}:${featureName}:${specFingerprint}` — invalidates automatically when upstream spec content changes.
@@ -6346,14 +6355,19 @@ ${archPendingEscalation.question}`
 &nbsp;
       <span class="missing-if-branch" title="if path not taken" >I</span>if (!isStandaloneConfirmation(userMessage)) {
         // Human continues the conversation with the Designer or PM — keep notification active.
+        // readOnly: true — the PM/Designer can discuss and recommend but cannot patch specs,
+        // escalate, or offer to finalize. This is an escalation response, not a full agent session.
 <span class="cstat-no" title="statement not covered" >        console.log(`[ROUTER] branch=arch-upstream-continuation target=${archNotifTarget} msg="${userMessage.slice(0, 80)}"`)</span>
         let updatedRecommendations = <span class="cstat-no" title="statement not covered" >""</span>
 <span class="cstat-no" title="statement not covered" >        await withThinking({ client, channelId, threadTs, agent: archNotifAgentLabel, run: <span class="fstat-no" title="function not covered" >async (u</span>pdate) =&gt; {</span>
           const capturingUpdate = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async (t</span>ext: string) =&gt; { <span class="cstat-no" title="statement not covered" >updatedRecommendations = text; <span class="cstat-no" title="statement not covered" >a</span>wait update(text) }</span></span>
 <span class="cstat-no" title="statement not covered" >          if (archNotifTarget === "design") {</span>
+            // Design escalation continuation — design agent handles its own tool scoping
 <span class="cstat-no" title="statement not covered" >            await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages: [], client, update: capturingUpdate })</span>
           } else {
-<span class="cstat-no" title="statement not covered" >            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate })</span>
+            // PM escalation continuation — readOnly prevents the PM from patching specs,
+            // escalating new items, or offering to finalize. Answer the question only.
+<span class="cstat-no" title="statement not covered" >            await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate, readOnly: true })</span>
           }
         }})
 <span class="cstat-no" title="statement not covered" >        setEscalationNotification(featureName, { ...archEscalationNotification, recommendations: updatedRecommendations || archEscalationNotification.recommendations })</span>
@@ -6383,8 +6397,7 @@ ${archPendingEscalation.question}`
     // Orientation enforcement (Principle 8): first message from a userId in this feature
     // runs readOnly — architect orients without spec content, can't dump gaps.
     // The orientation key is also computed inside runArchitectAgent for notice suppression.
-    const archOrientKey = (userId &amp;&amp; userId.length &gt; 0) ? `${featureName}:${userId}` : null
-    const archIsOrientation = archOrientKey ? !orientedUsers.has(archOrientKey) : false
+    const archIsOrientation = (userId &amp;&amp; userId.length &gt; 0) ? !isUserOriented(featureName, userId) : false
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) =&gt; {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation })
     }})
@@ -8116,8 +8129,7 @@ async function runArchitectAgent(params: {
   // userId in this feature so the architect can orient the newcomer first.
   // Orientation tracking requires a real userId — if userId is not available
   // (e.g. Slack API didn't provide it), skip orientation suppression and show notices.
-  const orientationKey = (userId &amp;&amp; userId.length &gt; 0) ? `${featureName}:${userId}` : null
-  const isOrientationTurn = orientationKey ? !orientedUsers.has(orientationKey) : false
+  const isOrientationTurn = (userId &amp;&amp; userId.length &gt; 0) ? !isUserOriented(featureName, userId) : false
 &nbsp;
   // Suppress upstream notices on orientation turns — architect orients first, gaps come next turn.
   const archNotices = readOnly ? "" : isOrientationTurn ? <span class="branch-0 cbranch-no" title="branch not covered" >"" : (u</span>pstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
@@ -8175,8 +8187,8 @@ async function runArchitectAgent(params: {
     forceStopToolNames: ["offer_upstream_revision"],
   })
 &nbsp;
-  // Mark user as oriented after first architect response.
-  if (userId) orientedUsers.add(`${featureName}:${userId}`)
+  // Mark user as oriented after first architect response (persisted across restarts).
+  if (userId) markUserOriented(featureName, userId)
 &nbsp;
   // ─── POST-RUN: Orientation response enforcement (Principle 8 + 10) ──────────
   // Orientation responses must NEVER end with a question that defers to the user.
@@ -8380,7 +8392,7 @@ ${response}`
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-24T20:47:42.538Z
+                at 2026-04-25T00:08:47.556Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
