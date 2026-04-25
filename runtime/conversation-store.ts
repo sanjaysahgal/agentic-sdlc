@@ -199,19 +199,16 @@ loadConversationHistory()
 loadConversationState()
 migrateThreadTsKeys()
 
-// Clean stale escalation state on restart — pending escalations and notifications from
-// a prior session will never resolve (the user confirmation was lost when the bot crashed).
-// Clear them so the next message routes normally instead of getting stuck in a hold loop.
-if (pendingEscalations.size > 0 || escalationNotifications.size > 0) {
-  if (pendingEscalations.size > 0) {
-    console.log(`[STORE] startup: clearing ${pendingEscalations.size} stale pending escalation(s): [${[...pendingEscalations.keys()].join(", ")}]`)
-    pendingEscalations.clear()
-  }
-  if (escalationNotifications.size > 0) {
-    console.log(`[STORE] startup: clearing ${escalationNotifications.size} stale escalation notification(s): [${[...escalationNotifications.keys()].join(", ")}]`)
-    escalationNotifications.clear()
-  }
-  persistConversationState()
+// Escalation state is persisted to disk and survives restarts intentionally.
+// The user's pending "yes" confirmation should still work after a bot restart.
+// Previously these were cleared on startup, but that caused escalation loops:
+// user says "yes" → bot restarted → escalation gone → message routes to agent
+// → agent re-discovers the same gap → re-escalates → user says "yes" again → loop.
+if (pendingEscalations.size > 0) {
+  console.log(`[STORE] startup: restored ${pendingEscalations.size} pending escalation(s): [${[...pendingEscalations.keys()].join(", ")}]`)
+}
+if (escalationNotifications.size > 0) {
+  console.log(`[STORE] startup: restored ${escalationNotifications.size} escalation notification(s): [${[...escalationNotifications.keys()].join(", ")}]`)
 }
 
 export function getHistory(featureName: string): Message[] {

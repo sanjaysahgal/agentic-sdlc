@@ -181,10 +181,10 @@ describe("conversation-store", () => {
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
-  it("pendingEscalation is cleared on startup — stale escalation state from prior session does not block routing", async () => {
+  it("pendingEscalation is RESTORED on startup — survives restarts for user confirmation", async () => {
     // Simulate: a previously-set escalation was persisted to .conversation-state.json
     // and the process restarted (module re-imported). On restart, pending escalations
-    // are cleared because the user confirmation was lost when the bot crashed.
+    // are restored so the user can still confirm them after a restart.
     const savedState = {
       pendingEscalations: {
         "onboarding": { targetAgent: "pm", question: "What is the session expiry?", designContext: "" }
@@ -192,7 +192,6 @@ describe("conversation-store", () => {
       pendingApprovals: {},
       escalationNotifications: {},
     }
-    // readFileSync called in order: confirmed-agents (throw), history (throw), state (return saved)
     fsMocks.readFileSync
       .mockImplementationOnce(() => { throw new Error("ENOENT") }) // confirmed-agents
       .mockImplementationOnce(() => { throw new Error("ENOENT") }) // history
@@ -200,7 +199,8 @@ describe("conversation-store", () => {
 
     const { getPendingEscalation } = await import("../../runtime/conversation-store")
     const loaded = getPendingEscalation("onboarding")
-    expect(loaded).toBeNull()  // cleared on startup — stale state
+    expect(loaded).not.toBeNull()  // restored on startup — survives restarts
+    expect(loaded?.question).toBe("What is the session expiry?")
   })
 
   // ─── pending approval ─────────────────────────────────────────────────────
@@ -311,11 +311,10 @@ describe("conversation-store", () => {
     const { disableFilePersistence, getPendingEscalation, getPendingApproval, getEscalationNotification, getHistory } = await import("../../runtime/conversation-store")
 
     // Before disableFilePersistence: disk state is in memory.
-    // Pending escalations and escalation notifications are cleared on startup
-    // (stale state from prior session). Only approvals survive.
-    expect(getPendingEscalation("onboarding")).toBeNull()  // cleared on startup
+    // All state survives startup — escalations, approvals, notifications all restored.
+    expect(getPendingEscalation("onboarding")).not.toBeNull()  // restored on startup
     expect(getPendingApproval("onboarding")?.specType).toBe("product")
-    expect(getEscalationNotification("onboarding")).toBeNull()  // cleared on startup
+    expect(getEscalationNotification("onboarding")).not.toBeNull()  // restored on startup
 
     // After disableFilePersistence: all state is wiped — tests start clean
     disableFilePersistence()
