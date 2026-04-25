@@ -764,17 +764,40 @@ ${archPendingEscalation.question}`
 
       // Standalone confirmation — resume architect with injected revision.
       console.log(`[ROUTER] branch=arch-upstream-revision-reply target=${archNotifTarget}`)
-      // Write the architect's question + upstream answer to the engineering spec (non-blocking)
-      // so the decision is recorded before the architect resumes.
+      // Write the decision to BOTH the engineering spec AND the upstream spec.
+      // Engineering spec: records the decision so the architect has it.
+      // Upstream spec (product or design): applies the PM/designer's recommendation
+      // so the approved spec on main reflects the confirmed change.
       if (archEscalationNotification.recommendations) {
+        // Write to engineering spec (non-blocking)
         await patchEngineeringSpecWithDecision({
           featureName,
           question: archEscalationNotification.question,
           decision: archEscalationNotification.recommendations,
         }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
+
+        // Write to upstream spec — product spec for PM escalations, design spec for design escalations
+        if (archNotifTarget === "pm") {
+          await patchProductSpecWithRecommendations({
+            featureName,
+            question: archEscalationNotification.question,
+            recommendations: archEscalationNotification.recommendations,
+            humanConfirmation: userMessage,
+          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+          console.log(`[ESCALATION] product spec patched with confirmed PM recommendation for ${featureName}`)
+        }
+        // TODO: design spec writeback for architect→design escalations
       }
-      clearEscalationNotification(featureName)
+
+      // Closure message — confirm to user that the upstream spec was updated
       const respondingRole = archNotifTarget === "design" ? "Designer" : "PM"
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `*${respondingRole}* — ${respondingRole === "PM" ? "Product" : "Design"} spec updated with the confirmed decision. The architect will resume.`,
+      }).catch(err => console.log(`[ESCALATION] closure message failed (non-blocking): ${err}`))
+
+      clearEscalationNotification(featureName)
       const injectedMessage = `${respondingRole} resolved the upstream constraint: "${archEscalationNotification.question}" → "${userMessage}". The upstream spec has been revised. Resume engineering spec development with this revision applied — update the affected sections and continue.`
       await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
         await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages: [], client, update })
