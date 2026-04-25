@@ -2,14 +2,7 @@
   "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "While specifying the onboarding engineering spec, I found that AC#23 uses \"after inactivity\" without a numeric bound on how quickly the timer reset is reflected server-side. This requires the product spec to be revised to specify that the inactivity timer reset is applied server-side within one request-response cycle (within 500ms) of the triggering user action.",
-      "recommendations": "1. My recommendation: the inactivity timer reset must be applied server-side within one request-response cycle of the triggering user action, with a maximum server-side propagation delay of 500ms.\n→ Rationale: a user who sends a message or types in the prompt bar has a reasonable expectation that their session is immediately extended — any perceptible delay between action and reset creates a risk of unexpected expiry and erodes trust in the logged-out experience.\n\nAC#23 should be updated to read: \"Unauthenticated sessions expire after 60 minutes of inactivity; each user action (message send, keystroke, tap) resets the inactivity timer; the timer reset is applied server-side within one request-response cycle, with a maximum server-side propagation delay of 500ms.\"\n\nI'll apply that now.",
-      "originAgent": "architect"
-    }
-  },
+  "escalationNotifications": {},
   "threadAgents": {
     "1777052952.437459": "architect",
     "1777053753.153509": "ux-design"
