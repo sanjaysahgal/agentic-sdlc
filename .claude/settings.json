@@ -39,6 +39,14 @@
           {
             "type": "command",
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then STAGED=$(git diff --name-only --cached 2>/dev/null); if echo \"$STAGED\" | grep -v '^coverage/' | grep -qF 'message.ts'; then FILE='interfaces/slack/handlers/message.ts'; REPLY_PATHS=$(grep -c 'branch=.*reply\\|branch=.*revision-reply' \"$FILE\" 2>/dev/null || echo 0); WRITEBACKS=$(grep -c 'patchProductSpecWithRecommendations\\|patchEngineeringSpecWithDecision' \"$FILE\" 2>/dev/null || echo 0); if [ \"$WRITEBACKS\" -lt \"$REPLY_PATHS\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[ESCALATION WRITEBACK GATE] message.ts has fewer spec writeback calls than escalation reply paths. Every escalation confirmation path must write back to the upstream spec. Check that all branch=*-reply paths have patchProductSpecWithRecommendations or patchEngineeringSpecWithDecision.\"}}'; fi; fi; fi; true"
+          },
+          {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then UNSTAGED=$(git diff --name-only 2>/dev/null | grep -vE '^coverage/|^\\.conversation|^\\.confirmed' | head -5); if [ -n \"$UNSTAGED\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[COMMIT EVERYTHING] There are unstaged tracked files. Stage all changed files before committing \u2014 no selective staging. Unstaged files: '\"$(echo $UNSTAGED | tr '\\n' ', ')\"'\"}}'; fi; fi; true"
+          },
+          {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then DIFF=$(git diff --cached 2>/dev/null); if echo \"$DIFF\" | grep -qE '^\\+.*(userMessage|rawUserMessage)\\.(includes|startsWith|match|indexOf)\\(' && ! echo \"$DIFF\" | grep -q 'KEYWORD-JUSTIFIED:'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[FREE TEXT CLASSIFICATION] Code uses keyword/substring matching on user message content (includes, startsWith, match, indexOf). Human free-text must be classified by LLM (Haiku), not keywords. Add // KEYWORD-JUSTIFIED: [reason] if this is matching machine-generated structured input, not user prose.\"}}'; fi; fi; true"
           }
         ]
       },
@@ -103,6 +111,17 @@
             "type": "command",
             "timeout": 5,
             "command": "file=$(jq -r \".tool_input.file_path // empty\" 2>/dev/null); if echo \"$file\" | grep -q \"/memory/feedback_\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookSpecificOutput\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"[MEMORY vs PRINCIPLE GATE] You just wrote a feedback memory. STOP and answer: Does this rule need to be enforced 100% of the time across all conversations? If YES it belongs in CLAUDE.md as a numbered principle with a hook in .claude/settings.json, NOT in memory. Memory is recalled probabilistically. Principles are enforced structurally. If you already agreed with the user on this rule before and are writing it to memory again, that proves memory failed -- escalate to CLAUDE.md immediately.\\\"}}\"; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "echo '{\"hookSpecificOutput\": {\"hookSpecificOutput\": \"Stop\", \"additionalContext\": \"[COVERAGE AUDIT] Before ending: if source files were committed this session, verify npx vitest run --coverage shows functions > 83%. Flag any coverage drops.\"}}'; true"
           }
         ]
       }
