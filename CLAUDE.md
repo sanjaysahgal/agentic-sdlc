@@ -226,6 +226,21 @@ An approved spec that fails current audits is a platform enforcement gap, not a 
 
 **Historical violation (April 2026):** The PM spec was approved before `auditPmSpec()` existed. When the architect tried to finalize the engineering spec, 7 deterministic findings (vague timing, vague language) were present in the approved PM spec but not caught — the finalization gate didn't check upstream specs. The architect finalized AND then escalated PM gaps, which is a contradiction.
 
+### 15. Cross-agent parity — every enforcement mechanism must exist in ALL analogous paths
+
+**When an enforcement mechanism (writeback, gate, audit, closure message) exists in one agent's escalation/confirmation path, it must exist in EVERY analogous path across all agents. No exceptions.**
+
+This is not "nice to have" — it's a structural invariant. When a new agent is added or an existing path is modified, the commit must include the same mechanism in every analogous path. The pre-commit hook counts reply paths vs writeback calls and blocks if they don't match.
+
+**What this means in practice:**
+- Design→PM escalation reply has `patchProductSpecWithRecommendations` + closure message → architect→PM escalation reply MUST have the same
+- PM finalization has open question blocking → design and engineering finalization MUST have the same
+- Design agent has hedge detection → PM and architect MUST have the same
+
+**Historical violation (April 2026):** The architect→PM escalation confirmation path was built without `patchProductSpecWithRecommendations`. The design→PM path had it. The PM said "I'll apply that now" and the user confirmed, but the product spec was never updated. The same writeback existed 200 lines above in the design path — it was never ported.
+
+**Enforcement:** Pre-commit hook `[ESCALATION WRITEBACK GATE]` counts `branch=*-reply` paths vs `patchProductSpecWithRecommendations`/`patchEngineeringSpecWithDecision` calls. Blocks if writebacks < reply paths.
+
 ---
 
 ## Architecture
