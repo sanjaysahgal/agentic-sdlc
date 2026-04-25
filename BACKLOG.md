@@ -55,6 +55,20 @@ Product-level agents (`/pm`, `/design`, `/architect` in the general channel) can
 
 ---
 
+### Batch escalation — inject ALL deterministic upstream findings into escalation brief (2026-04-24)
+
+**Priority: HIGH — before onboarding end-to-end completion.**
+
+When the architect escalates one vague AC to the PM, the platform should inject ALL deterministic upstream findings (`auditPmSpec` + `auditDesignSpec`) into the escalation question — not just the one the architect mentioned. The PM resolves all gaps in one round, user confirms once, architect resumes.
+
+Currently: architect surfaces 1 finding per turn → 7 findings = 7 escalation round-trips. At scale with 20+ findings this is unusable.
+
+**Fix:** In the `offer_upstream_revision` tool handler (or the escalation confirmation path in `message.ts`), run `auditPmSpec(approvedPmSpec)` and append all findings to the escalation question before sending to the PM. Same for `auditDesignSpec` when escalating to design.
+
+**DESIGN-REVIEWED:** (1) Scale: one `auditPmSpec` call per escalation, <1ms. (2) Ownership: escalation brief construction in `message.ts`. (3) Cross-cutting: applies to all upstream escalation paths (architect→PM, architect→design).
+
+---
+
 ### Branch hygiene — prevent rogue draft branches + periodic cleanup (2026-04-24)
 
 **Preventive:** Already handled — escalation continuation paths run agents with `readOnly=true`, which strips spec-writing tools. The rogue PM scenario is no longer possible. A `saveDraftSpec` guard (check main before saving) was attempted but breaks test mocks — the `readOnly` layer is the correct prevention point.
