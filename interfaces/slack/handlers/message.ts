@@ -12,6 +12,7 @@ import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLo
 import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, detectHedgeLanguage } from "../../../runtime/deterministic-auditor"
+import { verifyActionClaims } from "../../../runtime/action-verifier"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
 import { extractBlockingQuestions, extractAllOpenQuestions, extractDesignAssumptions, extractHandoffSection, extractSpecTextLiterals } from "../../../runtime/spec-utils"
@@ -987,6 +988,13 @@ async function runPmAgent(params: {
     }
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
+
+  // ─── POST-RUN: Action verification (Principle 8) ───────────────────────────
+  // Verify agent prose claims match actual tool calls. Strip false claims.
+  if (!readOnly) {
+    response = verifyActionClaims(response, toolCallsOutPm)
+  }
+  // ─── END ACTION VERIFICATION ──────────────────────────────────────────────
 
   appendMessage(featureName, { role: "user", content: userMessage })
   appendMessage(featureName, { role: "assistant", content: response })
@@ -2191,6 +2199,12 @@ async function runDesignAgent(params: {
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
 
+  // ─── POST-RUN: Action verification (Principle 8) ───────────────────────────
+  if (!readOnly && !escalationJustOffered) {
+    finalResponse = verifyActionClaims(finalResponse, toolCallsOutDesign)
+  }
+  // ─── END ACTION VERIFICATION ──────────────────────────────────────────────
+
   appendMessage(featureName, { role: "assistant", content: finalResponse })
 
   // Platform-enforced structured action menu — built from EFFECTIVE audit data (post-patch
@@ -2715,6 +2729,12 @@ ${response}`
     }
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
+
+  // ─── POST-RUN: Action verification (Principle 8) ───────────────────────────
+  if (!readOnly && !escalationJustOfferedArch) {
+    finalArchResponse = verifyActionClaims(finalArchResponse, toolCallsOutArch)
+  }
+  // ─── END ACTION VERIFICATION ──────────────────────────────────────────────
 
   // ─── POST-RUN: Uncommitted decisions audit (Principle 7) ───────────────────
   // Same pattern as design agent: detect decisions discussed but not saved.

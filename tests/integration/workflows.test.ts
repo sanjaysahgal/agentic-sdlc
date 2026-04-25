@@ -8628,3 +8628,31 @@ describe("Scenario N85 — Engineering finalization blocked by upstream PM spec 
     expect(deps.saveApprovedEngineeringSpec).not.toHaveBeenCalled()
   })
 })
+
+// ─── Scenario N86 — Action verification gate catches hallucinated finalization ──
+
+describe("Scenario N86 — verifyActionClaims strips false finalization in agent prose", () => {
+  it("structural test: verifyActionClaims wired in all three agent paths", () => {
+    const fs = require("fs")
+    const messageTs = fs.readFileSync("interfaces/slack/handlers/message.ts", "utf8")
+
+    // All three agent paths must call verifyActionClaims
+    const verifyCount = (messageTs.match(/verifyActionClaims\(/g) ?? []).length
+    expect(verifyCount).toBe(3) // PM, Design, Architect
+  })
+
+  it("verifyActionClaims strips false finalization and appends correction", async () => {
+    const { verifyActionClaims } = await import("../../../runtime/action-verifier")
+    const response = "The spec is finalized and ready for the engineer agents."
+    const result = verifyActionClaims(response, []) // no tools called
+    expect(result).toContain("NOT been finalized")
+    expect(result).toContain("approve")
+  })
+
+  it("verifyActionClaims preserves valid finalization when tool was called", async () => {
+    const { verifyActionClaims } = await import("../../../runtime/action-verifier")
+    const response = "The spec is finalized and ready for the engineer agents."
+    const result = verifyActionClaims(response, [{ name: "finalize_engineering_spec" }])
+    expect(result).toBe(response)
+  })
+})
