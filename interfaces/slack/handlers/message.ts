@@ -21,6 +21,7 @@ import { classifyForPmGaps } from "../../../runtime/pm-gap-classifier"
 import { classifyForArchGap } from "../../../runtime/arch-gap-classifier"
 import { classifyFixIntent } from "../../../runtime/fix-intent-classifier"
 import { patchProductSpecWithRecommendations } from "../../../runtime/pm-escalation-spec-writer"
+import { patchDesignSpecWithRecommendations } from "../../../runtime/design-escalation-spec-writer"
 import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-spec-decision-writer"
 import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
 import { handlePmTool, handleArchitectTool, handleDesignTool } from "../../../runtime/tool-handlers"
@@ -258,6 +259,9 @@ export async function resolveAgent(featureName: string): Promise<string> {
 }
 
 // Handles messages in the design phase — routes to the UX Design agent.
+// UPSTREAM READINESS GATE: before the design agent runs, check the PM spec
+// deterministically. If findings exist, auto-escalate to PM with a categorized
+// brief. The design agent's spec-writing tools are stripped until upstream is clean.
 async function handleDesignPhase(params: {
   channelId: string
   threadTs: string
@@ -270,6 +274,10 @@ async function handleDesignPhase(params: {
   routingNote?: string
 }): Promise<void> {
   const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote } = params
+
+  // UPSTREAM READINESS GATE: moved inside runDesignAgent where upstream audit data
+  // is already fetched — avoids consuming GitHub read mocks from the test chain.
+  // The gate uses the same pmSpecContent that the always-on upstream audit reads.
   await runDesignAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote })
 }
 
@@ -786,7 +794,15 @@ ${archPendingEscalation.question}`
           }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
           console.log(`[ESCALATION] product spec patched with confirmed PM recommendation for ${featureName}`)
         }
-        // TODO: design spec writeback for architect→design escalations
+        if (archNotifTarget === "design") {
+          await patchDesignSpecWithRecommendations({
+            featureName,
+            question: archEscalationNotification.question,
+            recommendations: archEscalationNotification.recommendations,
+            humanConfirmation: userMessage,
+          }).catch(err => console.log(`[ESCALATION] design spec writeback failed (non-blocking): ${err}`))
+          console.log(`[ESCALATION] design spec patched with confirmed Designer recommendation for ${featureName}`)
+        }
       }
 
       // Closure message — confirm to user that the upstream spec was updated
@@ -2293,6 +2309,43 @@ async function runArchitectAgent(params: {
   userId?: string
 }): Promise<void> {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly, userId } = params
+
+  // ─── UPSTREAM READINESS GATE (Principle 14 + 15) ─────────────────────────
+  // Platform-controlled: check PM spec (first), then design spec.
+  // If gaps exist, auto-escalate. Architect's spec-writing tools are stripped
+  // until all upstream specs are clean. PM-first ordering enforced.
+  if (!readOnly && !getPendingEscalation(featureName) && !getEscalationNotification(featureName) && !getPendingDecisionReview(featureName)) {
+    const { paths: wsPaths, targetFormFactors } = loadWorkspaceConfig()
+    const pmSpecPath = `${wsPaths.featuresRoot}/${featureName}/${featureName}.product.md`
+    const designSpecPath = `${wsPaths.featuresRoot}/${featureName}/${featureName}.design.md`
+    const [pmSpec, designSpec] = await Promise.all([
+      readFile(pmSpecPath, "main").catch(() => null),
+      readFile(designSpecPath, "main").catch(() => null),
+    ])
+
+    if (pmSpec || designSpec) {
+      const { checkUpstreamReadiness } = await import("../../../runtime/escalation-orchestrator")
+      const upstream = checkUpstreamReadiness("architect", {
+        pmSpec: pmSpec ?? undefined,
+        designSpec: designSpec ?? undefined,
+      }, targetFormFactors)
+
+      if (!upstream.ready && upstream.escalationBrief && upstream.blockingSpec) {
+        const targetAgent = upstream.blockingSpec as "pm" | "design"
+        const targetLabel = targetAgent === "pm" ? "PM" : "Design"
+        console.log(`[UPSTREAM-GATE] architect: ${targetLabel} spec has ${upstream.findings.length} finding(s) — auto-escalating`)
+        setPendingEscalation(featureName, {
+          targetAgent,
+          question: upstream.escalationBrief,
+          designContext: "",
+          productSpec: pmSpec ?? undefined,
+        })
+        await update(`_${upstream.findings.length} ${targetLabel} spec gap${upstream.findings.length === 1 ? "" : "s"} found. The ${targetLabel} agent needs to resolve ${upstream.findings.length === 1 ? "it" : "them"} before engineering can proceed. Say *yes* to bring in the ${targetLabel} agent._`)
+        return
+      }
+    }
+  }
+  // ─── END UPSTREAM READINESS GATE ──────────────────────────────────────────
 
   // Pending decision review — check before spec approval and fast paths.
   // Fix B: When the architect resolves open questions, decisions are held for human confirmation.

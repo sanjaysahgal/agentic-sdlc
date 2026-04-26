@@ -212,6 +212,29 @@ export async function saveApprovedSpec(params: {
   return "saved"
 }
 
+// Updates an existing approved spec on main without touching any branches.
+// Used by escalation writebacks to patch upstream specs after confirmation.
+export async function updateApprovedSpecOnMain(params: {
+  filePath: string
+  content: string
+  commitMessage: string
+}): Promise<void> {
+  const { filePath, content, commitMessage } = params
+  if (isDryRun()) { console.log(`[DRY RUN] updateApprovedSpecOnMain: would update ${filePath}`); return }
+
+  // Get existing file SHA for update
+  const existing = await octokit.repos.getContent({ owner, repo, path: filePath })
+  const sha = (existing.data as { sha: string }).sha
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner, repo, path: filePath,
+    message: commitMessage,
+    content: Buffer.from(content).toString("base64"),
+    sha,
+  })
+  console.log(`[GITHUB] updateApprovedSpecOnMain: ${filePath} → updated`)
+}
+
 // Opens a GitHub issue tagged agent-feedback to track feedback about AI agent behavior.
 export async function saveAgentFeedback(params: {
   feedback: string

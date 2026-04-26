@@ -86,7 +86,7 @@ import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
 const originalEnv = process.env
 
 // Shared GitHub state helpers
-const PRODUCT_SPEC_CONTENT = Buffer.from("# Onboarding Product Spec\n\n## Problem\nHelp users onboard.").toString("base64")
+const PRODUCT_SPEC_CONTENT = Buffer.from("# Onboarding Product Spec\n\n## Problem\nHelp users onboard.\n\n## Acceptance Criteria\n- AC#1: User completes onboarding within 120 seconds\n\n## Non-Goals\n- Desktop-only optimization is out of scope for v1\n\n## Open Questions\n(none)").toString("base64")
 const DESIGN_SPEC_CONTENT  = Buffer.from("# Onboarding Design Spec\n\n## Screens\nScreen 1.").toString("base64")
 
 function specOnMain(content = PRODUCT_SPEC_CONTENT) {
