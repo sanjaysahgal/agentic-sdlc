@@ -55,17 +55,29 @@ Product-level agents (`/pm`, `/design`, `/architect` in the general channel) can
 
 ---
 
-### Batch escalation — inject ALL deterministic upstream findings into escalation brief (2026-04-24)
+### Integrated escalation lifecycle redesign (2026-04-25)
 
-**Priority: HIGH — before onboarding end-to-end completion.**
+**Priority: P0 — BLOCKS onboarding end-to-end completion. This is Archon's core value proposition.**
 
-When the architect escalates one vague AC to the PM, the platform should inject ALL deterministic upstream findings (`auditPmSpec` + `auditDesignSpec`) into the escalation question — not just the one the architect mentioned. The PM resolves all gaps in one round, user confirms once, architect resumes.
+Manual testing (April 23-25) revealed 5 structural gaps in the escalation flow. These are not individual bugs — they are missing platform orchestration that the desired flow has always required.
 
-Currently: architect surfaces 1 finding per turn → 7 findings = 7 escalation round-trips. At scale with 20+ findings this is unusable.
+**The 5 gaps:**
 
-**Fix:** In the `offer_upstream_revision` tool handler (or the escalation confirmation path in `message.ts`), run `auditPmSpec(approvedPmSpec)` and append all findings to the escalation question before sending to the PM. Same for `auditDesignSpec` when escalating to design.
+1. **No pre-work gate** — agents can save specs while upstream escalations are pending. Tools should be stripped until upstream is clean.
+2. **No batch escalation** — agent escalates one finding at a time via tool calls. Platform should batch ALL deterministic findings by category, with counts.
+3. **No PM-first ordering** — architect should resolve all PM gaps before moving to design gaps.
+4. **No design spec writeback** — architect→design escalation confirmation doesn't update design spec on main (TODO at line 789 of message.ts).
+5. **No hard re-audit after escalation** — passive cache invalidation instead of explicit gate.
 
-**DESIGN-REVIEWED:** (1) Scale: one `auditPmSpec` call per escalation, <1ms. (2) Ownership: escalation brief construction in `message.ts`. (3) Cross-cutting: applies to all upstream escalation paths (architect→PM, architect→design).
+**Design requirements (from user):**
+- At scale: 100+ findings grouped by category, not enumerated individually
+- Upstream agent resolves at category level where possible
+- Some findings need individual answers (TBDs, specific values)
+- Human reviews category-level recommendations, confirms once per escalation brief
+- Deterministic auditor re-runs to verify resolution; remaining items trigger new brief
+- This has been the desired flow since day 1 — every fix must align with it
+
+**Requires comprehensive integrated design before any implementation.**
 
 ---
 

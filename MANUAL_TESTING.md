@@ -122,3 +122,7 @@ Track live Slack testing results. Each test builds on the previous — fix failu
 | 2026-04-24 | 4.1 | /pm follow-up went to Architect instead of PM | @pm: temporary override only lasts one message — follow-up reverts to phase agent | By design — but confusing UX. User expects thread continuity with PM |
 | 2026-04-24 | 5.4 | Architect claims "no blocking questions" then escalates AC#13 in same turn | Architect self-assessment contradicts its own escalation behavior | Pending — finalization gate must block when upstream gaps found |
 | 2026-04-24 | 5.4 | Architect claimed spec was "finalized" but link points to draft branch | finalize_engineering_spec may have failed silently or spec link is wrong | Pending — investigate |
+| 2026-04-25 | 5.4 | Escalation state lost on restart — "yes" went to architect, not PM | Startup code cleared all pendingEscalations | Escalation state now survives restarts | ✅ Fixed |
+| 2026-04-25 | 5.4 | PM told user "I have no tools available in this context" | readOnly PM leaked internal platform state in prose | Platform commentary stripping added | ✅ Fixed |
+| 2026-04-25 | 5.4 | Architect escalates 1 finding at a time instead of all 7 | No structural batch escalation — agent picks a subset per turn | Backlogged — integrated escalation redesign |
+| 2026-04-25 | 5.4 | Architect escalated PM then design sequentially with round-trips | No pre-work gate, no PM-first ordering, no batch per upstream agent | Backlogged — integrated escalation redesign |
