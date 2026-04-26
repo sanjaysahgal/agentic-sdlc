@@ -8656,3 +8656,219 @@ describe("Scenario N86 — verifyActionClaims strips false finalization in agent
     expect(result).toBe(response)
   })
 })
+
+// ─── Scenario N38: Design upstream readiness gate fires on dirty PM spec ─────
+//
+// When the design agent's pre-run gate detects deterministic findings in the
+// approved PM spec, it auto-escalates to PM without running the design agent.
+// No Anthropic calls should be made — the gate is fully deterministic.
+
+describe("Scenario N38 — Design upstream readiness gate auto-escalates on dirty PM spec", () => {
+  const THREAD = "workflow-n38"
+
+  // Dirty PM spec: "seamless" is in VAGUE_WORDS → auditPmSpec finds VAGUE_LANGUAGE
+  const DIRTY_PM_SPEC = [
+    "## Acceptance Criteria",
+    "- AC#1: The transition should be seamless and natural",
+    "## Non-Goals",
+    "- Desktop app out of scope",
+    "## Open Questions",
+    "(none)",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    clearPhaseAuditCaches()
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("dirty PM spec triggers auto-escalation — no Anthropic calls, pending escalation set", async () => {
+    mockGetContent.mockImplementation(async ({ path }: any) => {
+      if (path?.includes("onboarding.product.md")) {
+        return { data: { content: Buffer.from(DIRTY_PM_SPEC).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic calls for isOffTopicForAgent and isSpecStateQuery (before context loading)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isOffTopicForAgent
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isSpecStateQuery
+
+    const params = makeParams(THREAD, "feature-onboarding", "let's start on the welcome screen")
+    await handleFeatureChannelMessage(params)
+
+    // Pending escalation must be set — targeting PM
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending!.targetAgent).toBe("pm")
+    expect(pending!.question).toContain("PRODUCT MANAGER")
+
+    // Update message must tell the user about PM spec gaps
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("PM spec gap")
+    expect(text).toContain("Say *yes*")
+  })
+})
+
+// ─── Scenario N39: Re-audit after design→PM escalation reply — remaining findings ────
+//
+// After the human confirms PM escalation and the spec is patched, the platform
+// re-audits the patched spec. If findings remain, it re-escalates instead of
+// resuming the design agent.
+
+describe("Scenario N39 — Re-audit after design→PM escalation reply re-escalates on remaining findings", () => {
+  const THREAD = "workflow-n39"
+
+  // Patched spec that STILL has a vague word → verifyEscalationResolution returns not-ready
+  const STILL_DIRTY_SPEC = [
+    "## Acceptance Criteria",
+    "- AC#1: The transition should be smooth and complete within 200ms",
+    "## Non-Goals",
+    "- Desktop out of scope",
+    "## Open Questions",
+    "(none)",
+  ].join("\n")
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "AC#1 uses vague language: seamless",
+      recommendations: "My recommendation: replace seamless with 200ms cross-fade.",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("patched spec with remaining findings triggers new pending escalation", async () => {
+    // patchProductSpecWithRecommendations reads spec from main, calls Haiku to merge,
+    // then saves. We mock: getContent returns the original, Anthropic returns the still-dirty patch,
+    // saveApprovedSpec SHA lookup and write.
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        return { data: { content: Buffer.from(STILL_DIRTY_SPEC).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      if (path?.includes("onboarding.product.md") && !ref) {
+        return { data: { content: Buffer.from(STILL_DIRTY_SPEC).toString("base64"), sha: "abc123", type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Anthropic call: patchProductSpecWithRecommendations Haiku merge
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: STILL_DIRTY_SPEC }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 50, output_tokens: 50 },
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "approved — go ahead")
+    await handleFeatureChannelMessage(params)
+
+    // Re-audit should have found remaining findings → new pending escalation
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending!.targetAgent).toBe("pm")
+    expect(pending!.question).toContain("PRODUCT MANAGER")
+
+    // Escalation notification should be cleared
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).toBeNull()
+
+    // Design agent should NOT have been called — no "UX Designer is thinking" message
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const designThinking = postCalls.find((c: any) => c[0]?.text?.includes("UX Designer is thinking"))
+    expect(designThinking).toBeUndefined()
+  })
+})
+
+// ─── Scenario N40: Re-audit after architect→PM escalation reply — remaining findings ────
+//
+// Mirrors N39 for the architect path. After the human confirms architect→PM
+// escalation and the spec is patched, re-audit catches remaining findings
+// and re-escalates instead of resuming the architect.
+
+describe("Scenario N40 — Re-audit after architect→PM escalation reply re-escalates on remaining findings", () => {
+  const THREAD = "workflow-n40"
+
+  const STILL_DIRTY_SPEC = [
+    "## Acceptance Criteria",
+    "- AC#1: The onboarding flow should be seamless and elegant",
+    "## Non-Goals",
+    "- Desktop out of scope",
+    "## Open Questions",
+    "(none)",
+  ].join("\n")
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "AC#1 uses vague error behavior",
+      recommendations: "My recommendation: define error UI as inline toast with specific copy.",
+      originAgent: "architect",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("patched spec with remaining findings triggers new pending escalation", async () => {
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        return { data: { content: Buffer.from(STILL_DIRTY_SPEC).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      if (path?.includes("onboarding.product.md") && !ref) {
+        return { data: { content: Buffer.from(STILL_DIRTY_SPEC).toString("base64"), sha: "abc123", type: "file", encoding: "base64" } }
+      }
+      if (path?.includes("onboarding.engineering.md")) {
+        return { data: { content: Buffer.from("## Engineering Spec\nDraft.").toString("base64"), sha: "eng123", type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Anthropic call: patchProductSpecWithRecommendations Haiku merge
+    // Then patchEngineeringSpecWithDecision (no Anthropic — direct write)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: STILL_DIRTY_SPEC }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 50, output_tokens: 50 },
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "confirmed — apply the PM fix")
+    await handleFeatureChannelMessage(params)
+
+    // Re-audit should have found remaining findings → new pending escalation
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending!.targetAgent).toBe("pm")
+
+    // Escalation notification should be cleared
+    const { getEscalationNotification } = await import("../../../runtime/conversation-store")
+    expect(getEscalationNotification("onboarding")).toBeNull()
+
+    // Architect should NOT have resumed
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const archThinking = postCalls.find((c: any) => c[0]?.text?.includes("Architect is thinking"))
+    expect(archThinking).toBeUndefined()
+  })
+})

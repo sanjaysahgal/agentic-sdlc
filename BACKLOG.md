@@ -63,21 +63,21 @@ Manual testing (April 23-25) revealed 5 structural gaps in the escalation flow. 
 
 **The 5 gaps:**
 
-1. **No pre-work gate** — agents can save specs while upstream escalations are pending. Tools should be stripped until upstream is clean.
-2. **No batch escalation** — agent escalates one finding at a time via tool calls. Platform should batch ALL deterministic findings by category, with counts.
-3. **No PM-first ordering** — architect should resolve all PM gaps before moving to design gaps.
-4. **No design spec writeback** — architect→design escalation confirmation doesn't update design spec on main (TODO at line 789 of message.ts).
-5. **No hard re-audit after escalation** — passive cache invalidation instead of explicit gate.
+1. ~~**No pre-work gate**~~ ✅ DONE (2026-04-25) — `checkUpstreamReadiness` wired as pre-run gate in both design and architect paths. Design: checks PM spec. Architect: PM-first ordering (PM spec → design spec). Gate fires before agent runs, strips tools, sets pending escalation. 3 integration tests (N38, N39, N40).
+2. ~~**No batch escalation**~~ ✅ DONE (2026-04-25) — `escalation-orchestrator.ts`: `groupFindingsByCategory()` batches all deterministic findings by criterion, `buildCategorizedEscalationBrief()` produces structured brief with category counts and recommendations.
+3. ~~**No PM-first ordering**~~ ✅ DONE (2026-04-25) — `checkUpstreamReadiness("architect", ...)` checks PM spec first; only checks design spec if PM is clean. PM-first ordering enforced deterministically.
+4. ~~**No design spec writeback**~~ ✅ DONE (2026-04-25) — `patchDesignSpecWithRecommendations` wired in architect→design escalation confirmation path. Dual-spec writeback: engineering spec + upstream design spec.
+5. ~~**No hard re-audit after escalation**~~ ✅ DONE (2026-04-25) — `verifyEscalationResolution` wired in both design→PM and architect→PM/Design escalation reply paths. After writeback, deterministic re-audit runs on patched spec. If findings remain, new pending escalation with fresh brief — downstream agent does NOT resume.
 
 **Design requirements (from user):**
-- At scale: 100+ findings grouped by category, not enumerated individually
-- Upstream agent resolves at category level where possible
-- Some findings need individual answers (TBDs, specific values)
-- Human reviews category-level recommendations, confirms once per escalation brief
-- Deterministic auditor re-runs to verify resolution; remaining items trigger new brief
-- This has been the desired flow since day 1 — every fix must align with it
+- At scale: 100+ findings grouped by category, not enumerated individually ✅
+- Upstream agent resolves at category level where possible ✅
+- Some findings need individual answers (TBDs, specific values) ✅
+- Human reviews category-level recommendations, confirms once per escalation brief ✅
+- Deterministic auditor re-runs to verify resolution; remaining items trigger new brief ✅
+- This has been the desired flow since day 1 — every fix must align with it ✅
 
-**Requires comprehensive integrated design before any implementation.**
+**Remaining:** Manual verification of end-to-end flow in live Slack testing.
 
 ---
 

@@ -634,12 +634,36 @@ ${brief}`
             decision: escalationNotification.recommendations,
           }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
         } else {
-          await patchProductSpecWithRecommendations({
+          const patchedSpec = await patchProductSpecWithRecommendations({
             featureName,
             question: escalationNotification.question,
             recommendations: escalationNotification.recommendations,
             humanConfirmation: userMessage,
-          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+          }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
+
+          // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
+          // Deterministic re-audit: verify the patched PM spec is now clean.
+          // If findings remain, trigger a new escalation brief instead of resuming design.
+          if (patchedSpec) {
+            const { verifyEscalationResolution } = await import("../../../runtime/escalation-orchestrator")
+            const reaudit = verifyEscalationResolution("pm", patchedSpec, "ux-design", targetFormFactors)
+            if (!reaudit.ready && reaudit.escalationBrief) {
+              console.log(`[ESCALATION] re-audit: PM spec still has ${reaudit.findings.length} finding(s) after writeback — re-escalating`)
+              setPendingEscalation(featureName, {
+                targetAgent: "pm",
+                question: reaudit.escalationBrief,
+                designContext: "",
+                productSpec: patchedSpec,
+              })
+              await client.chat.postMessage({
+                channel: channelId,
+                thread_ts: threadTs,
+                text: `*Product Manager* — Spec partially updated, but ${reaudit.findings.length} gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Say *yes* to bring the PM back.`,
+              }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
+              return
+            }
+          }
+          // ─── END RE-AUDIT ───────────────────────────────────────────────────
         }
       }
 
@@ -785,24 +809,53 @@ ${archPendingEscalation.question}`
         }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
 
         // Write to upstream spec — product spec for PM escalations, design spec for design escalations
+        // Capture the patched spec for re-audit below.
+        let patchedUpstreamSpec: string | null = null
         if (archNotifTarget === "pm") {
-          await patchProductSpecWithRecommendations({
+          patchedUpstreamSpec = await patchProductSpecWithRecommendations({
             featureName,
             question: archEscalationNotification.question,
             recommendations: archEscalationNotification.recommendations,
             humanConfirmation: userMessage,
-          }).catch(err => console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`))
+          }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
           console.log(`[ESCALATION] product spec patched with confirmed PM recommendation for ${featureName}`)
         }
         if (archNotifTarget === "design") {
-          await patchDesignSpecWithRecommendations({
+          patchedUpstreamSpec = await patchDesignSpecWithRecommendations({
             featureName,
             question: archEscalationNotification.question,
             recommendations: archEscalationNotification.recommendations,
             humanConfirmation: userMessage,
-          }).catch(err => console.log(`[ESCALATION] design spec writeback failed (non-blocking): ${err}`))
+          }).catch((err: unknown) => { console.log(`[ESCALATION] design spec writeback failed (non-blocking): ${err}`); return null })
           console.log(`[ESCALATION] design spec patched with confirmed Designer recommendation for ${featureName}`)
         }
+
+        // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
+        // Deterministic re-audit: verify the patched upstream spec is now clean.
+        // If findings remain, trigger a new escalation brief instead of resuming architect.
+        if (patchedUpstreamSpec && archNotifTarget) {
+          const { verifyEscalationResolution } = await import("../../../runtime/escalation-orchestrator")
+          const blockingSpec = archNotifTarget as "pm" | "design"
+          const reaudit = verifyEscalationResolution(blockingSpec, patchedUpstreamSpec, "architect", targetFormFactors)
+          if (!reaudit.ready && reaudit.escalationBrief) {
+            const targetLabel = blockingSpec === "pm" ? "PM" : "Design"
+            console.log(`[ESCALATION] re-audit: ${targetLabel} spec still has ${reaudit.findings.length} finding(s) after writeback — re-escalating`)
+            setPendingEscalation(featureName, {
+              targetAgent: blockingSpec,
+              question: reaudit.escalationBrief,
+              designContext: "",
+              productSpec: blockingSpec === "pm" ? patchedUpstreamSpec : undefined,
+            })
+            await client.chat.postMessage({
+              channel: channelId,
+              thread_ts: threadTs,
+              text: `*${targetLabel === "PM" ? "Product Manager" : "Designer"}* — Spec partially updated, but ${reaudit.findings.length} gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Say *yes* to bring the ${targetLabel} agent back.`,
+            }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
+            clearEscalationNotification(featureName)
+            return
+          }
+        }
+        // ─── END RE-AUDIT ───────────────────────────────────────────────────
       }
 
       // Closure message — confirm to user that the upstream spec was updated
@@ -1363,6 +1416,28 @@ async function runDesignAgent(params: {
   let upstreamNoticeDesign = ""
   const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const pmSpecContent = await readFile(pmSpecPath, "main").catch(() => null)
+
+  // ─── UPSTREAM READINESS GATE (Principle 14 + 15) ─────────────────────────
+  // Platform-controlled: check PM spec deterministically before design agent runs.
+  // If gaps exist, auto-escalate to PM. Design tools stripped until upstream is clean.
+  // Uses the same pmSpecContent already fetched — no extra GitHub read.
+  if (!readOnly && pmSpecContent && !getPendingEscalation(featureName) && !getEscalationNotification(featureName)) {
+    const { checkUpstreamReadiness } = await import("../../../runtime/escalation-orchestrator")
+    const upstream = checkUpstreamReadiness("ux-design", { pmSpec: pmSpecContent }, targetFormFactors)
+    if (!upstream.ready && upstream.escalationBrief && upstream.blockingSpec) {
+      console.log(`[UPSTREAM-GATE] design: PM spec has ${upstream.findings.length} finding(s) — auto-escalating`)
+      setPendingEscalation(featureName, {
+        targetAgent: "pm",
+        question: upstream.escalationBrief,
+        designContext: "",
+        productSpec: pmSpecContent,
+      })
+      await update(`_${upstream.findings.length} PM spec gap${upstream.findings.length === 1 ? "" : "s"} found. The PM agent needs to resolve ${upstream.findings.length === 1 ? "it" : "them"} before design can proceed. Say *yes* to bring in the PM agent._`)
+      return
+    }
+  }
+  // ─── END UPSTREAM READINESS GATE ──────────────────────────────────────────
+
   if (pmSpecContent) {
     const fp = specFingerprint(pmSpecContent)
     const cacheKey = `design:${featureName}:${fp}`
