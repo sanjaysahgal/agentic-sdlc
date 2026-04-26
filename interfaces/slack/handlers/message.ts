@@ -4,7 +4,7 @@ import { getHistory, getLegacyMessages, appendMessage, getConfirmedAgent, setCon
 import { buildPmSystemPrompt, buildPmSystemBlocks, PM_TOOLS } from "../../../agents/pm"
 import { buildDesignSystemPrompt, buildDesignSystemBlocks, buildDesignStateResponse, DESIGN_TOOLS } from "../../../agents/design"
 import { buildArchitectSystemPrompt, buildArchitectSystemBlocks, ARCHITECT_TOOLS } from "../../../agents/architect"
-import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, saveDraftAuditCache, readDraftAuditCache, getInProgressFeatures, readFile, preseedEngineeringSpec, seedHandoffSection, clearHandoffSection } from "../../../runtime/github-client"
+import { createSpecPR, saveDraftSpec, saveApprovedSpec, saveDraftDesignSpec, saveApprovedDesignSpec, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, saveDraftHtmlPreview, saveDraftAuditCache, readDraftAuditCache, getInProgressFeatures, readFile, preseedEngineeringSpec, seedHandoffSection, clearHandoffSection, updateApprovedSpecOnMain } from "../../../runtime/github-client"
 import { classifyIntent, detectPhase, isOffTopicForAgent, isSpecStateQuery, AgentType } from "../../../runtime/agent-router"
 import { withThinking } from "./thinking"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
@@ -574,11 +574,45 @@ ${brief}`
         // Platform enforcement: if the PM saved the spec this turn, the escalation is structurally
         // resolved regardless of how the human phrased their message ("agree", "looks good", etc.).
         // A spec save is a deterministic signal — clear the notification and resume design.
+        // Invariant: approved spec lives on main. PM saved to a branch; apply to main before resuming.
         const PM_SAVE_TOOLS = ["save_product_spec_draft", "apply_product_spec_patch", "finalize_product_spec"]
         const pmDidSave = !isArchitectEscalation && continuationToolCalls.some(t => PM_SAVE_TOOLS.includes(t.name))
         if (pmDidSave) {
-          console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn, escalation resolved`)
+          console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn`)
           clearEscalationNotification(featureName)
+
+          // Apply PM's branch changes to main — approved specs live on main.
+          const pmBranch = `spec/${featureName}-product`
+          const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
+          const updatedPmSpec = await readFile(pmSpecPath, pmBranch).catch(() => null)
+          if (updatedPmSpec) {
+            await updateApprovedSpecOnMain({
+              filePath: pmSpecPath,
+              content: updatedPmSpec,
+              commitMessage: `[SPEC] ${featureName} · product.md — escalation fix applied`,
+            }).catch((err: unknown) => console.log(`[ESCALATION] auto-close writeback to main failed (non-blocking): ${err}`))
+            console.log(`[ESCALATION] auto-close: PM branch content applied to main for ${featureName}`)
+
+            // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
+            const { verifyEscalationResolution } = await import("../../../runtime/escalation-orchestrator")
+            const reaudit = verifyEscalationResolution("pm", updatedPmSpec, "ux-design", targetFormFactors)
+            if (!reaudit.ready && reaudit.escalationBrief) {
+              console.log(`[ESCALATION] auto-close re-audit: PM spec still has ${reaudit.findings.length} finding(s) — re-escalating`)
+              setPendingEscalation(featureName, {
+                targetAgent: "pm",
+                question: reaudit.escalationBrief,
+                designContext: "",
+                productSpec: updatedPmSpec,
+              })
+              await client.chat.postMessage({
+                channel: channelId,
+                thread_ts: threadTs,
+                text: `*Product Manager* — Spec updated on main, but ${reaudit.findings.length} gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Say *yes* to bring the PM back.`,
+              }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
+              return
+            }
+            // ─── END RE-AUDIT ───────────────────────────────────────────────────
+          }
 
           // If the PM also called offer_architect_escalation this turn, surface it before resuming design.
           // Platform enforcement: the tool call is the signal — not prose. Principle 8.

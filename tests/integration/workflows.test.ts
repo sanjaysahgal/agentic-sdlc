@@ -8872,3 +8872,93 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
     expect(archThinking).toBeUndefined()
   })
 })
+
+// ─── Scenario N41: Auto-close applies PM branch to main + re-audits ─────────
+//
+// When the PM calls save_product_spec_draft during escalation continuation,
+// the platform reads the saved content from the PM branch, writes it to main
+// (approved specs live on main), and re-audits. If findings remain, re-escalates.
+
+describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", () => {
+  const THREAD = "workflow-n41"
+
+  // PM saved a spec that still has vague language
+  const STILL_DIRTY_ON_BRANCH = [
+    "## Acceptance Criteria",
+    "- AC#1: The transition should be smooth and intuitive",
+    "## Non-Goals",
+    "- Desktop out of scope",
+    "## Open Questions",
+    "(none)",
+  ].join("\n")
+
+  beforeEach(async () => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification("onboarding", {
+      targetAgent: "pm",
+      question: "AC#1 uses vague language",
+      recommendations: "My recommendation: replace seamless with 200ms cross-fade.",
+    })
+  })
+  afterEach(async () => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+    clearEscalationNotification("onboarding")
+  })
+
+  it("PM saves to branch → platform applies to main → re-audit finds remaining gaps → re-escalates", async () => {
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      // PM branch read (auto-close reads saved content from branch)
+      if (path?.includes("onboarding.product.md") && ref === "spec/onboarding-product") {
+        return { data: { content: Buffer.from(STILL_DIRTY_ON_BRANCH).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      // updateApprovedSpecOnMain SHA lookup (no ref = default branch)
+      if (path?.includes("onboarding.product.md") && !ref) {
+        return { data: { content: Buffer.from(STILL_DIRTY_ON_BRANCH).toString("base64"), sha: "main-sha-123", type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "branch-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // PM agent run in continuation:
+    //   [0] PM returns tool_use for save_product_spec_draft
+    //   [1] PM wraps up after tool result
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        content: [
+          { type: "text", text: "I've updated AC#1." },
+          { type: "tool_use", id: "tool_1", name: "save_product_spec_draft", input: { content: STILL_DIRTY_ON_BRANCH } },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 50, output_tokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "Done — AC#1 updated." }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 20, output_tokens: 10 },
+      })
+
+    // Non-standalone message: no "yes" prefix → not affirmative → continuation path
+    const params = makeParams(THREAD, "feature-onboarding", "fix AC#1 and make it concrete")
+    await handleFeatureChannelMessage(params)
+
+    // updateApprovedSpecOnMain should have been called (PM branch → main)
+    const mainWriteCall = mockCreateOrUpdate.mock.calls.find(
+      (call: any) => call[0]?.message?.includes("escalation fix applied")
+    )
+    expect(mainWriteCall).toBeDefined()
+
+    // Re-audit should find remaining findings → new pending escalation
+    const pending = getPendingEscalation("onboarding")
+    expect(pending).not.toBeNull()
+    expect(pending!.targetAgent).toBe("pm")
+
+    // Design should NOT have resumed
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const designThinking = postCalls.find((c: any) => c[0]?.text?.includes("UX Designer is thinking"))
+    expect(designThinking).toBeUndefined()
+  })
+})
