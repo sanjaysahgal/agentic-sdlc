@@ -9265,3 +9265,90 @@ describe("Scenario N53 — Slash override follow-ups stay with the overridden ag
     expect(mockCreateOrUpdate).not.toHaveBeenCalled()
   })
 })
+
+// ─── Scenario N73: Routing V2 shadow mode emits proposal log on every message ──
+//
+// Phase 3 Stage 2 of the routing state machine refactor. Every feature-channel
+// message must produce a [ROUTING-V2-PROPOSED] log line capturing the new
+// pure router's decision so scripts/shadow-coverage-report.ts can detect
+// divergences between the old (production) routing path and the new pure
+// routers. The shadow runs alongside the old code and must NOT alter
+// production behavior.
+//
+// This scenario verifies:
+//   (1) the [ROUTING-V2-PROPOSED] log appears for a vanilla feature message
+//   (2) the log captures the right phase, entry, kind, agent, mode
+//   (3) production behavior is unchanged (PM still runs as before)
+
+describe("Scenario N73 — Routing V2 shadow mode emits [ROUTING-V2-PROPOSED] log on every feature message", () => {
+  const THREAD = "workflow-n73"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+  })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
+
+  it("emits [ROUTING-V2-PROPOSED] with phase, entry, kind, agent, mode — and does not affect production routing", async () => {
+    // Spy on console.log to capture the shadow proposal line. Restore in afterEach
+    // via vitest's automatic spy cleanup (vi.spyOn auto-restores at end of test).
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValueOnce([{ name: "spec/onboarding-product" }])
+    mockAnthropicCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "Product spec recommendations follow." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 15 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "what's the next step?")
+    await handleFeatureChannelMessage(params)
+
+    // (1) The shadow log must have fired exactly once for this message.
+    const proposalLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.startsWith("[ROUTING-V2-PROPOSED]"))
+    expect(proposalLines.length).toBeGreaterThanOrEqual(1)
+
+    // (2) The log must capture the correct shape: feature, phase, entry, kind, agent, mode.
+    const line = proposalLines[0]
+    expect(line).toContain("feature=onboarding")
+    expect(line).toContain("phase=product-spec-in-progress")
+    expect(line).toContain("entry=E1")
+    expect(line).toContain("kind=run-agent")
+    expect(line).toContain("agent=pm")
+    expect(line).toContain("mode=primary")
+
+    // (3) Production routing must still run as expected — PM agent invoked, no
+    //     architect / designer involvement.
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
+
+    logSpy.mockRestore()
+  })
+
+  it("classifies @pm: prefix as E5 in the proposal log", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValueOnce([{ name: "spec/onboarding-product" }])
+    mockAnthropicCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "Sure, here's my take." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 30, output_tokens: 10 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "@pm: any thoughts on auth?")
+    await handleFeatureChannelMessage(params)
+
+    const proposalLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.startsWith("[ROUTING-V2-PROPOSED]"))
+    expect(proposalLines.length).toBeGreaterThanOrEqual(1)
+    expect(proposalLines[0]).toContain("entry=E5")
+    expect(proposalLines[0]).toContain("agent=pm")
+
+    logSpy.mockRestore()
+  })
+})

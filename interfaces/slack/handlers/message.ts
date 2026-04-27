@@ -27,6 +27,7 @@ import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
 import { handlePmTool, handleArchitectTool, handleDesignTool } from "../../../runtime/tool-handlers"
 import type { ToolHandlerContext, PmToolDeps, ArchitectToolDeps, ArchitectToolState, DesignToolDeps, DesignToolCtx, DesignToolState } from "../../../runtime/tool-handlers"
 import { featureKey, threadKey } from "../../../runtime/routing/types"
+import { logShadowProposalForFeature } from "../../../runtime/routing/shadow"
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -234,8 +235,12 @@ const PHASE_TO_AGENT: Record<string, string> = {
   "engineering-in-progress": "architect",
 }
 
-export async function resolveAgent(featureName: string): Promise<string> {
-  const phase = await getFeaturePhase(featureName)
+export async function resolveAgent(featureName: string, prefetchedPhase?: string): Promise<string> {
+  // Phase 3 stage 2: callers can pass a pre-computed phase so the shadow runner
+  // and resolveAgent share one getFeaturePhase call (test mocks use
+  // mockResolvedValueOnce — duplicate calls cause production to see the
+  // default-empty mock and route incorrectly).
+  const phase = prefetchedPhase ?? await getFeaturePhase(featureName)
   const canonicalAgent = PHASE_TO_AGENT[phase] ?? "pm"
   const currentConfirmed = getConfirmedAgent(featureKey(featureName))
 
@@ -342,6 +347,22 @@ export async function handleFeatureChannelMessage(params: {
   const { channelName, threadTs, userMessage: rawUserMessage, userImages, channelId, client, channelState, userId } = params
   const featureName = getFeatureName(channelName)
 
+  // ─── ROUTING V2 SHADOW (Phase 3 Stage 2) ────────────────────────────────────
+  // Compute the phase once at function entry and share it with both the
+  // shadow runner and resolveAgent below. Sharing the call avoids consuming
+  // a second slot in test mockResolvedValueOnce setups and keeps production
+  // GitHub traffic identical to pre-shadow.
+  // DESIGN-REVIEWED: phase fetch was already happening inside resolveAgent;
+  // pulling it out keeps the call count at 1 per message. Goes away at
+  // Phase 4 cutover when the new router becomes the single source of truth.
+  let resolvedPhase: string | undefined
+  try {
+    resolvedPhase = await getFeaturePhase(featureName)
+    logShadowProposalForFeature({ featureName, rawText: rawUserMessage, user: userId, phase: resolvedPhase })
+  } catch (err) {
+    console.log(`[ROUTING-V2-SHADOW-ERROR] feature=${featureName} reason=${String(err).slice(0, 200)}`)
+  }
+
   // In-flight lock: reject concurrent messages for the same feature.
   // PM agent runs take 10s+; without this, a Slack retry or rapid follow-up triggers a second
   // agent run while the first is still active, causing both PM and Design to respond in parallel.
@@ -396,7 +417,7 @@ export async function handleFeatureChannelMessage(params: {
   } else if (!threadAgent && !getPendingEscalation(featureKey(featureName)) && !getPendingApproval(featureKey(featureName))) {
     // No thread agent, no active escalation or approval — resolve from GitHub phase (single source of truth).
     // Skip during active escalation/approval/thread-agent flows to avoid overriding mid-flow state.
-    confirmedAgent = await resolveAgent(featureName)
+    confirmedAgent = await resolveAgent(featureName, resolvedPhase)
   }
 
   // Agent addressing: @pm, @design, @architect prefix overrides phase-based routing.

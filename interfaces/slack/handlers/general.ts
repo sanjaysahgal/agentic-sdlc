@@ -5,6 +5,7 @@ import { buildConciergeSystemPrompt } from "../../../agents/concierge"
 import { loadAgentContextForQuery } from "../../../runtime/context-loader"
 import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { withThinking } from "./thinking"
+import { logShadowProposalForGeneral } from "../../../runtime/routing/shadow"
 
 // Handles messages in non-feature channels (e.g. #all-health360).
 // Acts as the front door — explains the system, identifies the person's role,
@@ -18,6 +19,9 @@ export async function handleGeneralChannelMessage(params: {
   client: any
 }): Promise<void> {
   const { channelId, threadTs, userMessage, userImages, client } = params
+
+  // ROUTING V2 SHADOW (Phase 3 Stage 2) — fire-and-forget proposal log; never blocks.
+  logShadowProposalForGeneral({ threadTs, rawText: userMessage, user: undefined })
 
   await withThinking({ client, channelId, threadTs, agent: "Concierge", run: async (update) => {
     const [features, context, history] = await Promise.all([
@@ -109,6 +113,10 @@ export async function handleGeneralChannelAgentMessage(params: {
 }): Promise<void> {
   const { channelId, threadTs, userMessage, userImages, client, agent } = params
   const displayName = AGENT_DISPLAY_NAMES[agent] ?? "Agent"
+
+  // ROUTING V2 SHADOW (Phase 3 Stage 2) — emit proposal log for the slash-spawned agent invocation.
+  const entryHint = agent === "pm" ? "/pm" : agent === "ux-design" ? "/design" : agent === "architect" ? "/architect" : undefined
+  logShadowProposalForGeneral({ threadTs, rawText: userMessage, user: undefined, entryHint })
 
   // Save agent for this thread — follow-up messages route here instead of concierge
   setThreadAgent(threadKey(threadTs), agent)
