@@ -3,15 +3,15 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for runtime/claude-client.ts</title>
+    <title>Code coverage report for runtime/routing/snapshot.ts</title>
     <meta charset="utf-8" />
-    <link rel="stylesheet" href="../prettify.css" />
-    <link rel="stylesheet" href="../base.css" />
-    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <link rel="stylesheet" href="../../prettify.css" />
+    <link rel="stylesheet" href="../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style type='text/css'>
         .coverage-summary .sorter {
-            background-image: url(../sort-arrow-sprite.png);
+            background-image: url(../../sort-arrow-sprite.png);
         }
     </style>
 </head>
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../index.html">All files</a> / <a href="index.html">runtime</a> claude-client.ts</h1>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">runtime/routing</a> snapshot.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">94.66% </span>
+                <span class="strong">77.04% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>71/75</span>
+                <span class='fraction'>47/61</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">88.7% </span>
+                <span class="strong">63.49% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>55/62</span>
+                <span class='fraction'>40/63</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">66.66% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>11/11</span>
+                <span class='fraction'>10/15</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">94.02% </span>
+                <span class="strong">76.59% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>63/67</span>
+                <span class='fraction'>36/47</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line medium'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -285,15 +285,44 @@
 <a name='L220'></a><a href='#L220'>220</a>
 <a name='L221'></a><a href='#L221'>221</a>
 <a name='L222'></a><a href='#L222'>222</a>
-<a name='L223'></a><a href='#L223'>223</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a>
+<a name='L229'></a><a href='#L229'>229</a>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a>
+<a name='L246'></a><a href='#L246'>246</a>
+<a name='L247'></a><a href='#L247'>247</a>
+<a name='L248'></a><a href='#L248'>248</a>
+<a name='L249'></a><a href='#L249'>249</a>
+<a name='L250'></a><a href='#L250'>250</a>
+<a name='L251'></a><a href='#L251'>251</a>
+<a name='L252'></a><a href='#L252'>252</a>
+<a name='L253'></a><a href='#L253'>253</a>
+<a name='L254'></a><a href='#L254'>254</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -302,7 +331,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -320,9 +348,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">185x</span>
-<span class="cline-any cline-yes">185x</span>
-<span class="cline-any cline-yes">184x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -341,392 +366,460 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">197x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">197x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">197x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">197x</span>
-<span class="cline-any cline-yes">398x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">197x</span>
-<span class="cline-any cline-yes">197x</span>
-<span class="cline-any cline-yes">595x</span>
-<span class="cline-any cline-yes">201x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">394x</span>
-<span class="cline-any cline-yes">378x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">16x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">197x</span>
-<span class="cline-any cline-yes">197x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">273x</span>
-<span class="cline-any cline-yes">273x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">273x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">270x</span>
-<span class="cline-any cline-yes">49x</span>
-<span class="cline-any cline-yes">49x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">270x</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-yes">151x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-yes">755x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">151x</span>
-<span class="cline-any cline-yes">151x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">122x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">119x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">43x</span>
-<span class="cline-any cline-yes">43x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
-<span class="cline-any cline-yes">70x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">75x</span>
-<span class="cline-any cline-yes">75x</span>
-<span class="cline-any cline-yes">75x</span>
-<span class="cline-any cline-yes">74x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
-<span class="cline-any cline-yes">76x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import Anthropic from "@anthropic-ai/sdk"
-import { Message } from "./conversation-store"
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">39x</span>
+<span class="cline-any cline-yes">38x</span>
+<span class="cline-any cline-yes">37x</span>
+<span class="cline-any cline-yes">36x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">51x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">207x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">47x</span>
+<span class="cline-any cline-yes">38x</span>
+<span class="cline-any cline-yes">38x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// Phase 2 — the only place that reads conversation-store getters.
+//
+// The pure routers (route-feature-message.ts, route-general-message.ts) operate on
+// plain-data RoutingInput values. This file is the single boundary that:
+//
+//   1. Reads every per-feature state value at one atomic moment via buildFeatureStateSnapshot.
+//   2. Reads per-thread state via buildThreadStateSnapshot.
+//   3. Builds FeatureRoutingInput / GeneralRoutingInput from the resolved phase, the
+//      classified entry point, and a parsed message intent.
+//
+// Phase 4 will wire the production handlers to call these builders. Phase 2's matrix
+// test uses the row-driven helpers at the bottom of this file to drive parsed SpecRow
+// values through the same RoutingInput shape — keeping tests and production aligned.
 &nbsp;
-// 5 minute timeout, no retries — agents generate large drafts that take time, but a
-// timed-out request won't succeed on retry; it just multiplies the user's wait.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 300_000, maxRetries: 0 })
+import {
+  type FeatureKey,
+  type ThreadKey,
+  type AgentId,
+  type FeaturePhase,
+  type FeatureEntry,
+  type GeneralEntry,
+  type FeatureStateSnapshot,
+  type ThreadStateSnapshot,
+  type FeatureRoutingInput,
+  type GeneralRoutingInput,
+  type RoutingIntent,
+  type RoutingDepth,
+  userId as toUserId,
+} from "./types"
+import {
+  getConfirmedAgent,
+  getPendingEscalation,
+  getEscalationNotification,
+  getPendingApproval,
+  getPendingDecisionReview,
+  isUserOriented,
+  getHistory,
+  getThreadAgent,
+  type Message,
+  type PendingEscalation,
+  type EscalationNotification,
+  type PendingApproval,
+  type PendingDecisionReview,
+} from "../conversation-store"
+import { isAgentId } from "./agent-registry"
+import type { SpecRow } from "./spec-parser"
 &nbsp;
-// In dev mode, use Haiku for all agent calls — 5x cheaper, safe for testing routing/formatting/structure.
-const AGENT_MODEL = process.env.SDLC_DEV_MODE === "true"
-  ? <span class="branch-0 cbranch-no" title="branch not covered" >"claude-haiku-4-5-20251001"</span>
-  : "claude-sonnet-4-6"
+// ── Production-time builders ──────────────────────────────────────────────────
 &nbsp;
-// Cap history at 40 messages (20 exchanges) to prevent token explosion on long threads.
-// The system prompt + context already carries the full spec state — the agent
-// doesn't need the full conversation history to stay coherent.
-// 40 is enough for a full design conversation; the auto-save draft mechanism
-// means agreed decisions are in the spec even if they scroll out of history.
-const HISTORY_LIMIT = 40
+export function <span class="fstat-no" title="function not covered" >buildFeatureStateSnapshot(</span>
+  key: FeatureKey,
+  user: string | undefined,
+): FeatureStateSnapshot {
+  // Read all per-feature state at one atomic moment. The router never reads conv-store
+  // directly; if a future agent writes state mid-turn the dispatcher's re-evaluate
+  // post-effect rebuilds the snapshot before the second pass (I17 bounds depth at 1).
+  const <span class="cstat-no" title="statement not covered" >confirmedRaw = getConfirmedAgent(key)</span>
+  const confirmedAgent: AgentId | null = <span class="cstat-no" title="statement not covered" >confirmedRaw &amp;&amp; isAgentId(confirmedRaw) ? confirmedRaw : null</span>
 &nbsp;
-export type UserImage = { data: string; mediaType: string }
-&nbsp;
-export type ToolHandler = (
-  name: string,
-  input: Record&lt;string, unknown&gt;
-) =&gt; Promise&lt;{ result?: unknown; error?: string }&gt;
-&nbsp;
-// Tracks which tools were called during a single runAgent() invocation.
-// Callers can inspect this after the call to detect unsaved decisions.
-export type ToolCallRecord = { name: string; input: Record&lt;string, unknown&gt; }
-&nbsp;
-// Splits a system prompt string at a known stable/dynamic boundary for prompt caching.
-// Block 1 (stable, cached): persona, workflow, tools, spec format — never changes for a given workspace.
-// Block 2 (dynamic, uncached): currentDraft, approvedSpecs — changes as the spec evolves.
-// If marker is not found, falls back to single cached block (safe but not optimal).
-export function splitSystemPrompt(prompt: string, dynamicMarker: string): Anthropic.TextBlockParam[] {
-  const idx = prompt.indexOf(dynamicMarker)
-  if (idx === -1) return [{ type: "text", text: prompt, cache_control: { type: "ephemeral" } }]
-  return [
-    { type: "text", text: prompt.slice(0, idx), cache_control: { type: "ephemeral" } },
-    { type: "text", text: prompt.slice(idx) },
-  ]
+<span class="cstat-no" title="statement not covered" >  return {</span>
+    confirmedAgent,
+    pendingEscalation:      getPendingEscalation(key),
+    escalationNotification: getEscalationNotification(key),
+    pendingApproval:        getPendingApproval(key),
+    pendingDecisionReview:  getPendingDecisionReview(key),
+    isUserOriented:         user ? isUserOriented(key, user) : false,
+    history:                getHistory(key),
+  }
 }
 &nbsp;
-export async function runAgent(params: {
-  systemPrompt: string | Anthropic.TextBlockParam[]
-  history: Message[]
-  userMessage: string
-  userImages?: UserImage[]
-  historyLimit?: number
-  tools?: Anthropic.Tool[]
-  toolHandler?: ToolHandler
-  toolCallsOut?: ToolCallRecord[]  // Optional output — caller passes [] to collect records
-  /** When any tool in this list is called, strip tools from the next API call so the model
-   *  wraps up its response and the loop exits. Used for escalation-stops-the-turn enforcement. */
-  forceStopToolNames?: string[]
-}): Promise&lt;string&gt; {
-  const { systemPrompt, history, userMessage, userImages, historyLimit = HISTORY_LIMIT, tools, toolHandler, toolCallsOut, forceStopToolNames } = params
+export function <span class="fstat-no" title="function not covered" >buildThreadStateSnapshot(k</span>ey: ThreadKey): ThreadStateSnapshot {
+  const <span class="cstat-no" title="statement not covered" >raw = getThreadAgent(key)</span>
+  const threadAgent: AgentId | null = <span class="cstat-no" title="statement not covered" >raw &amp;&amp; isAgentId(raw) ? raw : null</span>
+<span class="cstat-no" title="statement not covered" >  return { threadAgent }</span>
+}
 &nbsp;
-  const systemBlocks: Anthropic.TextBlockParam[] = Array.isArray(systemPrompt)
-    ? systemPrompt
-    : [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
+export function <span class="fstat-no" title="function not covered" >buildFeatureRoutingInput(p</span>arams: {
+  key:    FeatureKey
+  entry:  FeatureEntry
+  phase:  FeaturePhase
+  intent: RoutingIntent
+  user:   string | undefined
+  depth?: RoutingDepth
+}): FeatureRoutingInput {
+<span class="cstat-no" title="statement not covered" >  return {</span>
+    channel: "feature",
+    key:     params.key,
+    entry:   params.entry,
+    phase:   params.phase,
+    state:   buildFeatureStateSnapshot(params.key, params.user),
+    intent:  params.intent,
+    depth:   params.depth ?? 0,
+  }
+}
 &nbsp;
-  const userContent: Anthropic.ContentBlockParam[] | string =
-    userImages &amp;&amp; userImages.length &gt; 0
-      ? [
-          ...userImages.map((img) =&gt; ({
-            type: "image" as const,
-            source: {
-              type: "base64" as const,
-              media_type: img.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-              data: img.data,
-            },
-          })),
-          { type: "text" as const, text: userMessage || <span class="branch-1 cbranch-no" title="branch not covered" >"Please look at the attached image." },</span>
-        ]
-      : userMessage
+export function <span class="fstat-no" title="function not covered" >buildGeneralRoutingInput(p</span>arams: {
+  threadKey: ThreadKey
+  entry:     GeneralEntry
+  intent:    RoutingIntent
+  depth?:    RoutingDepth
+}): GeneralRoutingInput {
+<span class="cstat-no" title="statement not covered" >  return {</span>
+    channel:   "general",
+    threadKey: params.threadKey,
+    entry:     params.entry,
+    state:     buildThreadStateSnapshot(params.threadKey),
+    intent:    params.intent,
+    depth:     params.depth ?? 0,
+  }
+}
 &nbsp;
-  const raw: Anthropic.MessageParam[] = [
-    ...history.slice(-historyLimit).map((m) =&gt; ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-    { role: "user", content: userContent },
-  ]
+// ── Test-only builders that hydrate a SpecRow into a RoutingInput ─────────────
+//
+// These translate the human-readable cell values from the spec doc into typed
+// RoutingInput state. The matrix test uses them as the bridge between docs and
+// router, so the contract is: "given this row in the spec, the router must emit
+// the row's expected RoutingDecision.kind".
+//
+// They live alongside the production builders so the data shape can never drift —
+// any new state column added to the spec must produce a typed value here, which
+// surfaces as a TypeScript error at every call site.
 &nbsp;
-  // Sanitize: Anthropic requires messages to start with "user" and strictly alternate roles.
-  // Corrupted history (e.g. leading assistant messages from a fast-path bug, consecutive
-  // same-role entries from failed retries) would cause a 400 and show "Something went wrong".
-  // Strip leading assistant messages, then collapse consecutive same-role entries (keep last).
-  const messages: Anthropic.MessageParam[] = []
-  for (const msg of raw) {
-    if (messages.length === 0) {
-      if (msg.role === "user") messages.push(msg)
-      // skip any leading assistant messages
-    } else if (msg.role !== messages[messages.length - 1].role) {
-      messages.push(msg)
-    } else {
-      // consecutive same role — replace with the more recent one
-      messages[messages.length - 1] = msg
-    }
+const PLACEHOLDER_KEY: FeatureKey = { tenant: "default" as any, feature: "spec-fixture" as any }
+&nbsp;
+const STANDALONE_AFFIRMATIVES = new Set([
+  "yes", "yep", "yeah", "yes (standalone)", "approved", "confirmed", "ok", "okay", "sounds good",
+])
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >isStandaloneConfirmationFixture(u</span>serMsg: string): boolean {
+<span class="cstat-no" title="statement not covered" >  return STANDALONE_AFFIRMATIVES.has(userMsg.trim().toLowerCase())</span>
+}
+&nbsp;
+export function buildFeatureRoutingInputFromRow(row: SpecRow): FeatureRoutingInput {
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (row.channel !== "feature" || !row.phase) {
+<span class="cstat-no" title="statement not covered" >    throw new Error(`buildFeatureRoutingInputFromRow: not a feature row at line ${row.lineNumber}`)</span>
+  }
+  // Matrix tests default to oriented=true unless the row's expected mode asserts
+  // orientation, in which case we hydrate isUserOriented=false so the router
+  // produces the orientation branch.
+  const oriented = !(row.expected.args.mode ?? "").startsWith("orientation")
+  const state: FeatureStateSnapshot = {
+    confirmedAgent:         normalizeAgent(row.state["confirmedAgent"]),
+    pendingEscalation:      normalizePendingEscalation(row.state["pendingEscalation"]),
+    escalationNotification: normalizeEscalationNotification(row.state["escalationNotification"]),
+    pendingApproval:        normalizePendingApproval(findStateValue(row.state, ["pendingApproval", "pendingApproval (product)"])),
+    pendingDecisionReview:  normalizePendingDecisionReview(row.state["pendingDecisionReview"]),
+    isUserOriented:         oriented,
+    history:                [] as Message[],
   }
 &nbsp;
-  // Tool-use loop. When no tools are provided, this executes exactly once (single API call,
-  // same behaviour as before). When tools are provided, the loop continues until the model
-  // stops with "end_turn" (no more tool calls to make).
-  let forceStopFired = false  // Set when a force-stop tool is called — next iteration strips tools
-  while (true) {
-    // When forceStopFired, strip tools so the model must produce end_turn (wraps up its response).
-    const effectiveTools = forceStopFired ? undefined : tools
-    const requestParams: Anthropic.MessageCreateParamsNonStreaming = {
-      model: AGENT_MODEL,
-      max_tokens: 64000,
-      system: systemBlocks,
-      messages,
-      ...(effectiveTools &amp;&amp; effectiveTools.length &gt; 0 ? { tools: effectiveTools } : {}),
-    }
+  return {
+    channel: "feature",
+    key:     PLACEHOLDER_KEY,
+    entry:   (row.entry ?? <span class="branch-1 cbranch-no" title="branch not covered" >"E1") as FeatureEntry,</span>
+    phase:   row.phase,
+    state,
+    intent:  { kind: "slack-message", rawText: rawTextFromCell(row.userMsg), userId: toUserId("U_TEST") },
+    depth:   0,
+  }
+}
 &nbsp;
-    const response: Anthropic.Message = await client.messages.create(requestParams)
+// Spec rows use meta-text in the userMsg column to describe a class of message
+// rather than a literal user input — e.g. `"non-affirmative"` means "any message
+// that is non-affirmative" and `"(any except affirm/decline)"` means "any message
+// that is neither". Translate those to a concrete sample input that exercises the
+// intended branch in the router.
+function rawTextFromCell(userMsg: string | undefined): string {
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!userMsg) <span class="cstat-no" title="statement not covered" >return ""</span>
+  const t = userMsg.trim()
+  if (t === "non-affirmative")                         return "no"
+  if (/^\(any except affirm\/decline\)$/i.test(t))     return "tell me more"
+  if (/^any\s*\(new thread\)$/i.test(t))               return "hi"
+  if (/^any$/i.test(t))                                return "any input"
+  return userMsg
+}
 &nbsp;
-    if (response.usage) {
-      const { input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens } = response.usage
-      console.log(`[tokens] model=${AGENT_MODEL} in=${input_tokens} out=${output_tokens} cache_hit=${cache_read_input_tokens ?? 0} cache_write=${cache_creation_input_tokens ?? 0} history_msgs=${messages.length - 1}`)
-    }
+export function buildGeneralRoutingInputFromRow(row: SpecRow): GeneralRoutingInput {
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (row.channel !== "general") {
+<span class="cstat-no" title="statement not covered" >    throw new Error(`buildGeneralRoutingInputFromRow: not a general row at line ${row.lineNumber}`)</span>
+  }
+  return {
+    channel:   "general",
+    threadKey: { tenant: "default" as any, thread: "T_TEST" as any },
+    entry:     (row.entry ?? <span class="branch-1 cbranch-no" title="branch not covered" >"G1") as GeneralEntry,</span>
+    state:     { threadAgent: normalizeAgent(row.state["threadAgent"]) },
+    intent:    { kind: "slack-message", rawText: row.userMsg ?? <span class="branch-1 cbranch-no" title="branch not covered" >"", u</span>serId: toUserId("U_TEST") },
+    depth:     0,
+  }
+}
 &nbsp;
-    // If the model finished with no tool calls, extract and return the final text.
-    if (response.stop_reason === "end_turn" || !tools || tools.length === 0) {
-      const block = response.content.find(b =&gt; b.type === "text")
-      let text = block?.type === "text" ? block.text : ""
-      // Strip tool call references leaked into prose — the agent sometimes writes
-      // Strip internal platform language that should never appear in user-facing output:
-      // 1. Tool call names: "finalize_engineering_spec()", "save_product_spec_draft()"
-      // 2. Platform commentary: "I have no tools available", "the platform should route"
-      const toolNamePattern = /\b(save_|apply_|finalize_|offer_|run_|read_|rewrite_|generate_|fetch_)\w+\(\)/g
-      const platformCommentaryPatterns = [
-        /\bI have no tools available[^.]*\./gi,
-        /\bthe platform should[^.]*\./gi,
-        /\bI cannot apply[^.]*directly[^.]*\./gi,
-        /\bNote:.*tool access[^.]*\./gi,
-        /\bNote:.*no tools[^.]*\./gi,
-      ]
-      const stripped = text.match(toolNamePattern)
-      <span class="missing-if-branch" title="if path not taken" >I</span>if (stripped) {
-<span class="cstat-no" title="statement not covered" >        console.log(`[AGENT-RESPONSE] stripping tool name references: ${stripped.join(", ")}`)</span>
-<span class="cstat-no" title="statement not covered" >        text = text.replace(toolNamePattern, "").replace(/\n{3,}/g, "\n\n").trim()</span>
-      }
-      for (const pattern of platformCommentaryPatterns) {
-        <span class="missing-if-branch" title="if path not taken" >I</span>if (pattern.test(text)) {
-<span class="cstat-no" title="statement not covered" >          console.log(`[AGENT-RESPONSE] stripping platform commentary: ${pattern.source}`)</span>
-<span class="cstat-no" title="statement not covered" >          text = text.replace(pattern, "").replace(/\n{3,}/g, "\n\n").trim()</span>
-        }
-      }
-      console.log(`[AGENT-RESPONSE] ${text.slice(0, 500)}`)
-      return text
-    }
+// ── Field normalizers ─────────────────────────────────────────────────────────
 &nbsp;
-    // stop_reason === "tool_use" — execute all tool calls and feed results back.
-    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock =&gt; b.type === "tool_use")
+function findStateValue(state: Record&lt;string, string&gt;, candidates: string[]): string | undefined {
+  for (const c of candidates) if (state[c] !== undefined) return state[c]
+  return undefined
+}
 &nbsp;
-    if (toolUseBlocks.length === 0) {
-      // No tool_use blocks despite stop_reason — treat as end_turn
-      const block = response.content.find(b =&gt; b.type === "text")
-      return block?.type === "text" ? block.text : <span class="branch-1 cbranch-no" title="branch not covered" >""</span>
-    }
+function isUnset(v: string | undefined): boolean {
+  return !v || v === "—" || v.trim() === ""
+}
 &nbsp;
-    // Execute all tool calls (in parallel — tools are independent within a single turn).
-    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
-      toolUseBlocks.map(async (toolUse) =&gt; {
-        if (toolCallsOut) {
-          toolCallsOut.push({ name: toolUse.name, input: toolUse.input as Record&lt;string, unknown&gt; })
-        }
+function normalizeAgent(v: string | undefined): AgentId | null {
+  if (isUnset(v) || v === "any/none") return null
+  const candidate = v!.trim()
+  return isAgentId(candidate) ? (candidate as AgentId) : <span class="branch-1 cbranch-no" title="branch not covered" >null</span>
+}
 &nbsp;
-        if (!toolHandler) {
-          console.error(`[tool] No toolHandler provided but agent called tool: ${toolUse.name}`)
-          return {
-            type: "tool_result" as const,
-            tool_use_id: toolUse.id,
-            is_error: true,
-            content: `Error: No tool handler registered for "${toolUse.name}"`,
-          }
-        }
+function normalizePendingEscalation(v: string | undefined): PendingEscalation | null {
+  if (isUnset(v)) return null
+  const m = v!.match(/target=([a-z-]+)/i)
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!m) <span class="cstat-no" title="statement not covered" >return null</span>
+  // The `target=corrupt` row is intentional FLAG-B fixture data — preserved verbatim.
+  return {
+    targetAgent:   m[1] as PendingEscalation["targetAgent"],
+    question:      "fixture: blocking question",
+    designContext: "fixture: design draft",
+  }
+}
 &nbsp;
-        try {
-          console.log(`[tool] calling ${toolUse.name}`, JSON.stringify(toolUse.input).slice(0, 120))
-          const outcome = await toolHandler(toolUse.name, toolUse.input as Record&lt;string, unknown&gt;)
-          const content = outcome.error
-            ? `Error: ${outcome.error}`
-            : JSON.stringify(outcome.result ?? <span class="branch-1 cbranch-no" title="branch not covered" >{})</span>
-          return {
-            type: "tool_result" as const,
-            tool_use_id: toolUse.id,
-            is_error: outcome.error !== undefined,
-            content,
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : <span class="branch-1 cbranch-no" title="branch not covered" >String(err)</span>
-          console.error(`[tool] ${toolUse.name} threw: ${msg}`)
-          return {
-            type: "tool_result" as const,
-            tool_use_id: toolUse.id,
-            is_error: true,
-            content: `Error: ${msg}`,
-          }
-        }
-      })
-    )
+function normalizeEscalationNotification(v: string | undefined): EscalationNotification | null {
+  if (isUnset(v)) return null
+  const target = v!.match(/target=([a-z-]+)/i)?.[1]
+  const origin = v!.match(/origin=([a-z-]+)/i)?.[1]
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!target) <span class="cstat-no" title="statement not covered" >return null</span>
+  return {
+    targetAgent: target as EscalationNotification["targetAgent"],
+    question:    "fixture: notification question",
+    originAgent: origin as EscalationNotification["originAgent"] | undefined,
+  }
+}
 &nbsp;
-    // Check if a force-stop tool was called in this batch. If so, set the flag —
-    // the next iteration will strip tools, forcing the model to wrap up.
-    if (forceStopToolNames &amp;&amp; forceStopToolNames.length &gt; 0) {
-      const batchNames = toolUseBlocks.map(b =&gt; b.name)
-      if (forceStopToolNames.some(n =&gt; batchNames.includes(n))) {
-        console.log(`[FORCE-STOP] Tool ${batchNames.filter(n =&gt; forceStopToolNames.includes(n)).join(",")} triggered turn stop — next iteration will strip tools`)
-        forceStopFired = true
-      }
-    }
+function normalizePendingApproval(v: string | undefined): PendingApproval | null {
+  if (isUnset(v)) return null
+  // Cell forms: "set", "set (product)", "set (design)", "set (engineering)".
+  const m = v!.match(/set\s*\(([a-z]+)\)/i)
+  const specType = (m ? m[1] : "product") as PendingApproval["specType"]
+  return {
+    specType,
+    specContent: "fixture: approved spec content",
+    filePath:    `fixture/path/${specType}.md`,
+    featureName: "spec-fixture",
+  }
+}
 &nbsp;
-    // Append the assistant turn (with its tool_use blocks) + the tool results turn,
-    // then loop for the next API call.
-    messages.push({ role: "assistant", content: response.content })
-    messages.push({ role: "user", content: toolResults })
+function normalizePendingDecisionReview(v: string | undefined): PendingDecisionReview | null {
+  if (isUnset(v)) return null
+  return {
+    specContent:       "fixture: engineering spec",
+    filePath:          "fixture/path/engineering.md",
+    featureName:       "spec-fixture",
+    resolvedQuestions: ["fixture question 1"],
   }
 }
 &nbsp;</pre></td></tr></table></pre>
@@ -738,14 +831,14 @@ export async function runAgent(params: {
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
                 at 2026-04-27T21:34:35.318Z
             </div>
-        <script src="../prettify.js"></script>
+        <script src="../../prettify.js"></script>
         <script>
             window.onload = function () {
                 prettyPrint();
             };
         </script>
-        <script src="../sorter.js"></script>
-        <script src="../block-navigation.js"></script>
+        <script src="../../sorter.js"></script>
+        <script src="../../block-navigation.js"></script>
     </body>
 </html>
     
