@@ -272,13 +272,11 @@ async function handleDesignPhase(params: {
   client: any
   update: (text: string) => Promise<void>
   routingNote?: string
+  readOnly?: boolean
 }): Promise<void> {
-  const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote } = params
+  const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly } = params
 
-  // UPSTREAM READINESS GATE: moved inside runDesignAgent where upstream audit data
-  // is already fetched — avoids consuming GitHub read mocks from the test chain.
-  // The gate uses the same pmSpecContent that the always-on upstream audit reads.
-  await runDesignAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote })
+  await runDesignAgent({ channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly })
 }
 
 export type ChannelState = {
@@ -407,6 +405,49 @@ export async function handleFeatureChannelMessage(params: {
 
   console.log(`[ROUTER] handleFeatureChannelMessage: feature=${featureName} confirmedAgent=${confirmedAgent ?? "(none)"} msg="${userMessage.slice(0, 100)}"`)
 
+  // ─── UNIVERSAL PRE-ROUTING GUARDS ──────────────────────────────────────────
+  // Run on EVERY message regardless of which agent is confirmed.
+  // Slash command overrides cannot bypass these.
+
+  // Guard 1: Pending escalation — blocks ALL agents until resolved.
+  const universalPending = getPendingEscalation(featureName)
+  if (universalPending && !isAffirmative(userMessage)) {
+    const holderName = universalPending.targetAgent === "design"
+      ? "Designer" : universalPending.targetAgent === "architect" ? "Architect" : "PM"
+    const originPhase = universalPending.targetAgent === "design"
+      ? "Engineering" : "Design"
+    console.log(`[ROUTER] universal-guard: pending escalation hold — targetAgent=${universalPending.targetAgent}`)
+    await client.chat.postMessage({
+      channel: channelId, thread_ts: threadTs,
+      text: `${originPhase} is paused — the ${holderName} needs to resolve a constraint:\n\n*"${universalPending.question}"*\n\nSay *yes* to bring the ${holderName} into this thread.`,
+    })
+    featureInFlight.delete(featureName)
+    return
+  }
+
+  // Guard 2: Pending escalation + affirmative → restore confirmedAgent to originating agent
+  // so the correct branch handles the confirmation flow.
+  if (universalPending && isAffirmative(userMessage)) {
+    const originAgent = universalPending.targetAgent === "design" ? "architect" : "ux-design"
+    if (confirmedAgent !== originAgent) {
+      console.log(`[ROUTER] universal-guard: restoring confirmedAgent=${confirmedAgent} → ${originAgent} for escalation confirmation`)
+      confirmedAgent = originAgent
+    }
+  }
+
+  // Guard 3: Slash override → read-only when past the agent's phase.
+  // If addressed agent ≠ phase agent AND there's active downstream work, run read-only.
+  // Exception: completed features (all specs on main, no active branches) get full tools.
+  let slashOverrideReadOnly = false
+  if (agentAddressMatch) {
+    const phaseAgent = getConfirmedAgent(featureName)
+    if (phaseAgent && phaseAgent !== confirmedAgent) {
+      slashOverrideReadOnly = true
+      console.log(`[ROUTER] universal-guard: slash override ${confirmedAgent} in ${phaseAgent}-phase → read-only`)
+    }
+  }
+  // ─── END UNIVERSAL PRE-ROUTING GUARDS ──────────────────────────────────────
+
   // Confirmed agent — check phase first, then run
   if (confirmedAgent === "ux-design") {
     // If the design agent offered a PM escalation last turn and the user is confirming it,
@@ -531,20 +572,9 @@ ${brief}`
       }
       return
     }
-    // Escalation pending but user did not confirm — remind and hold. Do not clear, do not run agent.
-    if (pendingEscalation) {
-      console.log(`[ROUTER] branch=pending-escalation-hold targetAgent=${pendingEscalation.targetAgent}`)
-
-      const q = pendingEscalation.question
-      const pendingAgentLabel = pendingEscalation.targetAgent === "architect" ? "Architect" : "PM"
-      const pendingAgentFull = pendingEscalation.targetAgent === "architect" ? "the Architect" : "the PM"
-      await client.chat.postMessage({
-        channel: channelId,
-        thread_ts: threadTs,
-        text: `Design is paused — ${pendingAgentFull} needs to resolve a blocking gap before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring ${pendingAgentLabel} into this thread.`,
-      })
-      return
-    }
+    // Pending escalation hold is handled by the universal pre-routing guard above.
+    // If we reach here with a pending escalation, the user said "yes" and Guard 2
+    // restored confirmedAgent to the originating agent — this branch handles confirmation.
 
     // Escalation notification active — the PM/Architect/Designer was @mentioned and is expected
     // to resolve blocking items before design resumes.
@@ -579,19 +609,25 @@ ${brief}`
         const pmDidSave = !isArchitectEscalation && continuationToolCalls.some(t => PM_SAVE_TOOLS.includes(t.name))
         if (pmDidSave) {
           console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn`)
-          clearEscalationNotification(featureName)
 
           // Apply PM's branch changes to main — approved specs live on main.
           const pmBranch = `spec/${featureName}-product`
           const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
           const updatedPmSpec = await readFile(pmSpecPath, pmBranch).catch(() => null)
           if (updatedPmSpec) {
-            await updateApprovedSpecOnMain({
+            const writebackOk = await updateApprovedSpecOnMain({
               filePath: pmSpecPath,
               content: updatedPmSpec,
               commitMessage: `[SPEC] ${featureName} · product.md — escalation fix applied`,
-            }).catch((err: unknown) => console.log(`[ESCALATION] auto-close writeback to main failed (non-blocking): ${err}`))
+            }).then(() => true).catch((err: unknown) => { console.log(`[ESCALATION] auto-close writeback to main FAILED: ${err}`); return false })
+
+            if (!writebackOk) {
+              // Writeback failed — do NOT clear escalation; keep PM in the loop
+              console.log(`[ESCALATION] auto-close: writeback failed — keeping escalation active for ${featureName}`)
+              return
+            }
             console.log(`[ESCALATION] auto-close: PM branch content applied to main for ${featureName}`)
+            clearEscalationNotification(featureName)
 
             // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
             const { verifyEscalationResolution } = await import("../../../runtime/escalation-orchestrator")
@@ -612,6 +648,11 @@ ${brief}`
               return
             }
             // ─── END RE-AUDIT ───────────────────────────────────────────────────
+          } else {
+            // Branch read failed — PM saved but we can't read the content.
+            // Clear escalation anyway — PM's work is done, resume design.
+            console.log(`[ESCALATION] auto-close: could not read PM branch — clearing escalation and resuming`)
+            clearEscalationNotification(featureName)
           }
 
           // If the PM also called offer_architect_escalation this turn, surface it before resuming design.
@@ -655,11 +696,11 @@ ${brief}`
         ? "Architect"
         : "PM"
       console.log(`[ROUTER] branch=escalation-reply targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
-      clearEscalationNotification(featureName)
 
       // Write confirmed recommendations back to the appropriate spec:
       // - PM escalation → product spec (auditor won't re-discover same gaps)
       // - Architect escalation → engineering spec (decision captured before engineering begins)
+      // NOTE: escalationNotification is cleared AFTER writeback succeeds — not before.
       if (escalationNotification.recommendations) {
         if (isArchitectEscalation) {
           await patchEngineeringSpecWithDecision({
@@ -667,13 +708,21 @@ ${brief}`
             question: escalationNotification.question,
             decision: escalationNotification.recommendations,
           }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
+          clearEscalationNotification(featureName)
         } else {
           const patchedSpec = await patchProductSpecWithRecommendations({
             featureName,
             question: escalationNotification.question,
             recommendations: escalationNotification.recommendations,
             humanConfirmation: userMessage,
-          }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
+          }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback FAILED: ${err}`); return null })
+
+          if (!patchedSpec) {
+            // Writeback failed — keep escalation active, don't resume design
+            console.log(`[ESCALATION] product spec writeback failed — keeping escalation active for ${featureName}`)
+            return
+          }
+          clearEscalationNotification(featureName)
 
           // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
           // Deterministic re-audit: verify the patched PM spec is now clean.
@@ -701,6 +750,9 @@ ${brief}`
         }
       }
 
+      // Clear notification if not already cleared (no-recommendations path)
+      if (getEscalationNotification(featureName)) clearEscalationNotification(featureName)
+
       // PM posts closure message — PM owns the spec update, not the design agent
       if (escalationNotification.recommendations) {
         await client.chat.postMessage({
@@ -720,7 +772,7 @@ ${brief}`
     // resolveAgent() already verified ux-design is the correct agent for the current phase.
     // No phase-advance checks needed — stale state was corrected at the top.
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update })
+      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update, readOnly: slashOverrideReadOnly })
     }})
     return
   }
@@ -787,18 +839,8 @@ ${archPendingEscalation.question}`
       setEscalationNotification(featureName, { targetAgent: target, question: archPendingEscalation.question, recommendations: capturedResponse || undefined, originAgent: "architect" })
       return
     }
-    if (archPendingEscalation) {
-      // Hold — upstream revision pending, user has not confirmed
-      console.log(`[ROUTER] branch=arch-upstream-escalation-hold target=${archPendingEscalation.targetAgent}`)
-      const q = archPendingEscalation.question
-      const holderName = archPendingEscalation.targetAgent === "design" ? "Designer" : "PM"
-      await client.chat.postMessage({
-        channel: channelId,
-        thread_ts: threadTs,
-        text: `Engineering is paused — the ${holderName} needs to review a constraint before we can continue:\n\n*"${q}"*\n\nSay *yes* to bring the ${holderName} into this thread.`,
-      })
-      return
-    }
+    // Pending escalation hold is handled by the universal pre-routing guard above.
+
     // Upstream revision reply — Designer or PM is responding to architect's upstream escalation.
     // If standalone confirmation → resume architect. Otherwise → continue the conversation with
     // the design/PM agent, keeping the notification active until the human explicitly confirms.
@@ -864,6 +906,12 @@ ${archPendingEscalation.question}`
           console.log(`[ESCALATION] design spec patched with confirmed Designer recommendation for ${featureName}`)
         }
 
+        // If upstream writeback failed entirely, keep escalation active
+        if (!patchedUpstreamSpec) {
+          console.log(`[ESCALATION] upstream spec writeback failed — keeping escalation active for ${featureName}`)
+          return
+        }
+
         // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
         // Deterministic re-audit: verify the patched upstream spec is now clean.
         // If findings remain, trigger a new escalation brief instead of resuming architect.
@@ -913,7 +961,7 @@ ${archPendingEscalation.question}`
     // The orientation key is also computed inside runArchitectAgent for notice suppression.
     const archIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureName, userId) : false
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
-      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation })
+      await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation || slashOverrideReadOnly })
     }})
     // Auto-continue: after orientation, immediately run the full-context turn so the
     // user doesn't have to send a second message. One user message → orientation + proposal.
@@ -929,9 +977,9 @@ ${archPendingEscalation.question}`
   if (confirmedAgent === "pm") {
     // resolveAgent() already verified this is the correct agent for the current phase.
     // No phase-advance checks needed — stale state was corrected at the top.
-    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}`)
+    console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}${slashOverrideReadOnly ? " (read-only slash override)" : ""}`)
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
-      await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update })
+      await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update, readOnly: slashOverrideReadOnly })
     }})
     return
   }
@@ -1450,27 +1498,6 @@ async function runDesignAgent(params: {
   let upstreamNoticeDesign = ""
   const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const pmSpecContent = await readFile(pmSpecPath, "main").catch(() => null)
-
-  // ─── UPSTREAM READINESS GATE (Principle 14 + 15) ─────────────────────────
-  // Platform-controlled: check PM spec deterministically before design agent runs.
-  // If gaps exist, auto-escalate to PM. Design tools stripped until upstream is clean.
-  // Uses the same pmSpecContent already fetched — no extra GitHub read.
-  if (!readOnly && pmSpecContent && !getPendingEscalation(featureName) && !getEscalationNotification(featureName)) {
-    const { checkUpstreamReadiness } = await import("../../../runtime/escalation-orchestrator")
-    const upstream = checkUpstreamReadiness("ux-design", { pmSpec: pmSpecContent }, targetFormFactors)
-    if (!upstream.ready && upstream.escalationBrief && upstream.blockingSpec) {
-      console.log(`[UPSTREAM-GATE] design: PM spec has ${upstream.findings.length} finding(s) — auto-escalating`)
-      setPendingEscalation(featureName, {
-        targetAgent: "pm",
-        question: upstream.escalationBrief,
-        designContext: "",
-        productSpec: pmSpecContent,
-      })
-      await update(`_${upstream.findings.length} PM spec gap${upstream.findings.length === 1 ? "" : "s"} found. The PM agent needs to resolve ${upstream.findings.length === 1 ? "it" : "them"} before design can proceed. Say *yes* to bring in the PM agent._`)
-      return
-    }
-  }
-  // ─── END UPSTREAM READINESS GATE ──────────────────────────────────────────
 
   if (pmSpecContent) {
     const fp = specFingerprint(pmSpecContent)
@@ -2419,42 +2446,8 @@ async function runArchitectAgent(params: {
 }): Promise<void> {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly, userId } = params
 
-  // ─── UPSTREAM READINESS GATE (Principle 14 + 15) ─────────────────────────
-  // Platform-controlled: check PM spec (first), then design spec.
-  // If gaps exist, auto-escalate. Architect's spec-writing tools are stripped
-  // until all upstream specs are clean. PM-first ordering enforced.
-  if (!readOnly && !getPendingEscalation(featureName) && !getEscalationNotification(featureName) && !getPendingDecisionReview(featureName)) {
-    const { paths: wsPaths, targetFormFactors } = loadWorkspaceConfig()
-    const pmSpecPath = `${wsPaths.featuresRoot}/${featureName}/${featureName}.product.md`
-    const designSpecPath = `${wsPaths.featuresRoot}/${featureName}/${featureName}.design.md`
-    const [pmSpec, designSpec] = await Promise.all([
-      readFile(pmSpecPath, "main").catch(() => null),
-      readFile(designSpecPath, "main").catch(() => null),
-    ])
-
-    if (pmSpec || designSpec) {
-      const { checkUpstreamReadiness } = await import("../../../runtime/escalation-orchestrator")
-      const upstream = checkUpstreamReadiness("architect", {
-        pmSpec: pmSpec ?? undefined,
-        designSpec: designSpec ?? undefined,
-      }, targetFormFactors)
-
-      if (!upstream.ready && upstream.escalationBrief && upstream.blockingSpec) {
-        const targetAgent = upstream.blockingSpec as "pm" | "design"
-        const targetLabel = targetAgent === "pm" ? "PM" : "Design"
-        console.log(`[UPSTREAM-GATE] architect: ${targetLabel} spec has ${upstream.findings.length} finding(s) — auto-escalating`)
-        setPendingEscalation(featureName, {
-          targetAgent,
-          question: upstream.escalationBrief,
-          designContext: "",
-          productSpec: pmSpec ?? undefined,
-        })
-        await update(`_${upstream.findings.length} ${targetLabel} spec gap${upstream.findings.length === 1 ? "" : "s"} found. The ${targetLabel} agent needs to resolve ${upstream.findings.length === 1 ? "it" : "them"} before engineering can proceed. Say *yes* to bring in the ${targetLabel} agent._`)
-        return
-      }
-    }
-  }
-  // ─── END UPSTREAM READINESS GATE ──────────────────────────────────────────
+  // Upstream readiness: informational only — findings injected into agent context via
+  // always-on upstream audit (below). Blocking gates apply at finalization time (Principle 14).
 
   // Pending decision review — check before spec approval and fast paths.
   // Fix B: When the architect resolves open questions, decisions are held for human confirmation.

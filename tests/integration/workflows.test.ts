@@ -525,16 +525,33 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
       originAgent: "design",
     })
 
-    // patchProductSpecWithRecommendations: readFile(main) → 404 → Haiku skipped (non-blocking)
-    // handleDesignPhase: isOffTopicForAgent, isSpecStateQuery, extractLockedDecisions (history=6≥6),
-    //   runAgent, identifyUncommittedDecisions, Gate4 classifyForPmGaps
+    // PM spec must exist on main for patchProductSpecWithRecommendations to succeed.
+    // Writeback failure now keeps the escalation active (correct behavior).
+    const pmSpecB64 = Buffer.from("## Acceptance Criteria\n- AC#1: User can sign in via SSO\n## Non-Goals\n- Desktop-only optimization is out of scope for v1\n- Password-based authentication — SSO only\n## Open Questions\n(none)").toString("base64")
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") return { data: { content: pmSpecB64, type: "file" } }
+      if (path?.includes("onboarding.product.md") && !ref) return { data: { content: pmSpecB64, sha: "abc123", type: "file" } }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Anthropic call sequence:
+    //   [0] patchProductSpecWithRecommendations Haiku merge
+    //   [1] isOffTopicForAgent → false
+    //   [2] isSpecStateQuery → false
+    //   [3] extractLockedDecisions (history ≥ 6)
+    //   [4] auditPhaseCompletion (upstream PM spec audit) → PASS
+    //   [5] runAgent (design)
+    //   [6] identifyUncommittedDecisions
     mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- AC#1: User can sign in via SSO (Google OAuth)\n## Non-Goals\n- Desktop-only optimization is out of scope for v1\n- Password-based authentication — SSO only\n## Open Questions\n(none)" }] }) // Haiku merge
       .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // isSpecStateQuery
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })               // extractLockedDecisions (history=6≥6)
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }] })               // extractLockedDecisions
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } }) // auditPhaseCompletion
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing with the design." }] }) // runAgent (design)
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // identifyUncommittedDecisions
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "NONE" }] })               // Gate4 classifyForPmGaps
+      .mockResolvedValue({ content: [{ type: "text", text: "NONE" }] })                   // identifyUncommittedDecisions + any remaining
 
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
@@ -548,8 +565,10 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     expect(getEscalationNotification("onboarding")).toBeNull()
 
-    // Design agent ran — 5 calls total (history=4, extractLockedDecisions fires at ≥6)
-    expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
+    // Design agent ran — 7 calls total: Haiku merge (patchProductSpecWithRecommendations) +
+    // isOffTopicForAgent + isSpecStateQuery + extractLockedDecisions (history≥6) +
+    // upstream PM spec audit (auditPhaseCompletion) + runAgent + identifyUncommittedDecisions
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
   })
 
   it("Turn 2 with productSpec — approved product spec injected into PM brief so agent has full context", async () => {
@@ -4641,15 +4660,25 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
       originAgent: "architect",
     })
 
-    // All GitHub reads → 404
-    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    // Design spec must exist on main for patchDesignSpecWithRecommendations to succeed.
+    const designSpecB64 = Buffer.from("## Screens\n### Auth Sheet\nFull-screen modal.\n#### Mobile\nBottom sheet.\n#### Desktop\nCentered modal 480px.\n## Open Questions\n(none)").toString("base64")
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.design.md") && ref === "main") return { data: { content: designSpecB64, type: "file" } }
+      if (path?.includes("onboarding.design.md") && !ref) return { data: { content: designSpecB64, sha: "abc123", type: "file" } }
+      if (path?.includes("onboarding.engineering.md")) return { data: { content: Buffer.from("## Eng Spec").toString("base64"), sha: "eng123", type: "file" } }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
 
-    // Anthropic sequence — runArchitectAgent runs with injected design decision:
-    //   [0] isOffTopicForAgent (arch) → false
-    //   [1] isSpecStateQuery (arch)   → false
-    //   [2] runAgent (architect)      → continues engineering spec with revision applied
-    //   [3] identifyUncommittedDecisions → none
+    // Anthropic sequence:
+    //   [0] patchDesignSpecWithRecommendations Haiku merge
+    //   [1] isOffTopicForAgent (arch) → false
+    //   [2] isSpecStateQuery (arch)   → false
+    //   [3] runAgent (architect)      → continues engineering spec with revision applied
+    //   [4] identifyUncommittedDecisions → none
     mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Screens\n### Auth Sheet\nBottom sheet 60% height with drag-to-dismiss.\n#### Mobile\nBottom sheet.\n#### Desktop\nCentered modal 480px.\n## Open Questions\n(none)" }] }) // Haiku merge
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })
       .mockResolvedValueOnce({
@@ -5902,7 +5931,7 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
   })
 
-  it("Turn 3: human approves → spec patched (or skipped if 404), design resumes", async () => {
+  it("Turn 3: human approves → spec patched, design resumes", async () => {
     // Set up Turn 3 state directly (Turn 2 was the PM round)
     const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
     clrEsc("onboarding")
@@ -5914,12 +5943,20 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
       originAgent: "design",
     })
 
-    // Spec 404 → Haiku skipped (patchProductSpecWithRecommendations returns null non-blocking)
-    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    // PM spec must exist on main for patchProductSpecWithRecommendations to succeed.
+    const pmSpecB64 = Buffer.from("## Acceptance Criteria\n- AC#1: Logged-out indicator visible\n## Non-Goals\n- Desktop-only optimization is out of scope for v1\n- Password-based authentication — SSO only\n## Open Questions\n(none)").toString("base64")
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") return { data: { content: pmSpecB64, type: "file" } }
+      if (path?.includes("onboarding.product.md") && !ref) return { data: { content: pmSpecB64, sha: "abc123", type: "file" } }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
     mockPaginate.mockResolvedValue([])
 
-    // Design phase calls (no Haiku — spec 404):
+    // patchProductSpecWithRecommendations Haiku merge + design phase calls:
     mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "## Acceptance Criteria\n- AC#1: Logged-out indicator displays 'Not signed in'\n## Non-Goals\n- Desktop-only optimization is out of scope for v1\n- Password-based authentication — SSO only\n## Open Questions\n(none)" }] }) // Haiku merge
       .mockResolvedValueOnce({ content: [{ type: "text", text: "on-topic" }] })           // isOffTopicForAgent
       .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })                 // isSpecStateQuery
       .mockResolvedValueOnce({ stop_reason: "end_turn", content: [{ type: "text", text: "Continuing." }] }) // runAgent (design)
@@ -8657,63 +8694,9 @@ describe("Scenario N86 — verifyActionClaims strips false finalization in agent
   })
 })
 
-// ─── Scenario N38: Design upstream readiness gate fires on dirty PM spec ─────
-//
-// When the design agent's pre-run gate detects deterministic findings in the
-// approved PM spec, it auto-escalates to PM without running the design agent.
-// No Anthropic calls should be made — the gate is fully deterministic.
-
-describe("Scenario N38 — Design upstream readiness gate auto-escalates on dirty PM spec", () => {
-  const THREAD = "workflow-n38"
-
-  // Dirty PM spec: "seamless" is in VAGUE_WORDS → auditPmSpec finds VAGUE_LANGUAGE
-  const DIRTY_PM_SPEC = [
-    "## Acceptance Criteria",
-    "- AC#1: The transition should be seamless and natural",
-    "## Non-Goals",
-    "- Desktop app out of scope",
-    "## Open Questions",
-    "(none)",
-  ].join("\n")
-
-  beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
-    clearPhaseAuditCaches()
-  })
-  afterEach(async () => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
-  })
-
-  it("dirty PM spec triggers auto-escalation — no Anthropic calls, pending escalation set", async () => {
-    mockGetContent.mockImplementation(async ({ path }: any) => {
-      if (path?.includes("onboarding.product.md")) {
-        return { data: { content: Buffer.from(DIRTY_PM_SPEC).toString("base64"), type: "file", encoding: "base64" } }
-      }
-      throw Object.assign(new Error("not found"), { status: 404 })
-    })
-
-    // Anthropic calls for isOffTopicForAgent and isSpecStateQuery (before context loading)
-    mockAnthropicCreate
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isOffTopicForAgent
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })  // isSpecStateQuery
-
-    const params = makeParams(THREAD, "feature-onboarding", "let's start on the welcome screen")
-    await handleFeatureChannelMessage(params)
-
-    // Pending escalation must be set — targeting PM
-    const pending = getPendingEscalation("onboarding")
-    expect(pending).not.toBeNull()
-    expect(pending!.targetAgent).toBe("pm")
-    expect(pending!.question).toContain("PRODUCT MANAGER")
-
-    // Update message must tell the user about PM spec gaps
-    const text = lastUpdateText(params.client)
-    expect(text).toContain("PM spec gap")
-    expect(text).toContain("Say *yes*")
-  })
-})
+// Scenario N38 (pre-run upstream readiness gate) REMOVED — the pre-run gate was rolled back.
+// Upstream findings are now informational (always-on injection), not blocking.
+// The Archon promise is fulfilled by: inform (Principle 7) + post-run escalation (Principle 8) + finalization hard gate (Principle 14).
 
 // ─── Scenario N39: Re-audit after design→PM escalation reply — remaining findings ────
 //
