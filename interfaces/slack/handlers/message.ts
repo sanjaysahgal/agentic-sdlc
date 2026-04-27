@@ -358,7 +358,7 @@ export async function handleFeatureChannelMessage(params: {
   let resolvedPhase: string | undefined
   try {
     resolvedPhase = await getFeaturePhase(featureName)
-    logShadowProposalForFeature({ featureName, rawText: rawUserMessage, user: userId, phase: resolvedPhase })
+    logShadowProposalForFeature({ featureName, threadTs, rawText: rawUserMessage, user: userId, phase: resolvedPhase })
   } catch (err) {
     console.log(`[ROUTING-V2-SHADOW-ERROR] feature=${featureName} reason=${String(err).slice(0, 200)}`)
   }

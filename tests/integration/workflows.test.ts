@@ -9311,9 +9311,12 @@ describe("Scenario N73 — Routing V2 shadow mode emits [ROUTING-V2-PROPOSED] lo
       .filter((line) => line.startsWith("[ROUTING-V2-PROPOSED]"))
     expect(proposalLines.length).toBeGreaterThanOrEqual(1)
 
-    // (2) The log must capture the correct shape: feature, phase, entry, kind, agent, mode.
+    // (2) The log must capture the correct shape: feature, thread, phase, entry, kind, agent, mode.
+    //     The `thread=` field is what scripts/shadow-coverage-report.ts uses to
+    //     pair this proposal with the [ROUTER] branch=… line emitted later.
     const line = proposalLines[0]
     expect(line).toContain("feature=onboarding")
+    expect(line).toContain(`thread=${THREAD}`)
     expect(line).toContain("phase=product-spec-in-progress")
     expect(line).toContain("entry=E1")
     expect(line).toContain("kind=run-agent")

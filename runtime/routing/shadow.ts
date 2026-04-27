@@ -85,6 +85,7 @@ function decisionMode(d: RoutingDecision): string {
 
 export function logShadowProposalForFeature(params: {
   featureName: string
+  threadTs:    string
   rawText:     string
   user:        string | undefined
   phase:       FeaturePhase | string
@@ -102,11 +103,15 @@ export function logShadowProposalForFeature(params: {
       user:   params.user,
     })
     const decision = routeFeatureMessage(input)
+    // The thread= field is what scripts/shadow-coverage-report.ts uses to pair
+    // this proposal with the [ROUTER] branch=… line emitted later in the same
+    // handler invocation. Without it, concurrent threads in the same feature
+    // channel can't be disambiguated.
     console.log(
-      `[ROUTING-V2-PROPOSED] feature=${params.featureName} phase=${phase} entry=${entry} kind=${decision.kind} agent=${decisionAgent(decision)} mode=${decisionMode(decision)}`,
+      `[ROUTING-V2-PROPOSED] feature=${params.featureName} thread=${params.threadTs} phase=${phase} entry=${entry} kind=${decision.kind} agent=${decisionAgent(decision)} mode=${decisionMode(decision)}`,
     )
   } catch (err) {
-    console.log(`[ROUTING-V2-SHADOW-ERROR] feature=${params.featureName} reason=${String(err).slice(0, 200)}`)
+    console.log(`[ROUTING-V2-SHADOW-ERROR] feature=${params.featureName} thread=${params.threadTs} reason=${String(err).slice(0, 200)}`)
   }
 }
 
