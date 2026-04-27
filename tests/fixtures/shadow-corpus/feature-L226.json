@@ -1,0 +1,30 @@
+{
+  "id": "feature-L226",
+  "channel": "feature",
+  "specLine": 226,
+  "phase": "complete",
+  "entry": "E2",
+  "stateSetup": {
+    "confirmedAgent": "any/none"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "pm",
+    "agent": "pm",
+    "_1": "read-only-consultant",
+    "mode": "read-only-consultant",
+    "_2": "complete-template",
+    "modeQualifier": "complete-template"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-complete",
+    "threadTs": "T_FEA_226",
+    "userId": "U_SHADOW",
+    "text": "@pm: anything",
+    "entryHint": "/pm"
+  },
+  "invariants": [
+    "I5",
+    "I20"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "feature-L214",
+  "channel": "feature",
+  "specLine": 214,
+  "phase": "engineering-in-progress",
+  "entry": "E5",
+  "stateSetup": {
+    "confirmedAgent": "architect",
+    "pendingEscalation": "target=pm",
+    "escalationNotification": "—",
+    "pendingApproval": "—",
+    "pendingDecisionReview": "—"
+  },
+  "expectedKind": "show-hold-message",
+  "expectedArgs": {},
+  "slackEvent": {
+    "channel": "feature-shadow-engineering-in-progress",
+    "threadTs": "T_FEA_214",
+    "userId": "U_SHADOW",
+    "text": "@pm: actually...",
+    "entryHint": "@pm:"
+  },
+  "flag": "FLAG-A",
+  "invariants": [
+    "I1",
+    "FLAG-A"
+  ]
+}

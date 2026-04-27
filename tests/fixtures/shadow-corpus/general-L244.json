@@ -1,0 +1,26 @@
+{
+  "id": "general-L244",
+  "channel": "general",
+  "specLine": 244,
+  "entry": "G5",
+  "stateSetup": {
+    "threadAgent": "pm"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "pm",
+    "agent": "pm",
+    "_1": "primary",
+    "mode": "primary",
+    "_2": "product-level",
+    "modeQualifier": "product-level"
+  },
+  "slackEvent": {
+    "channel": "general",
+    "threadTs": "T_GEN_244",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}

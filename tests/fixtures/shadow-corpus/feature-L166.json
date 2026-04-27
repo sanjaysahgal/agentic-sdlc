@@ -1,0 +1,25 @@
+{
+  "id": "feature-L166",
+  "channel": "feature",
+  "specLine": 166,
+  "phase": "product-spec-in-progress",
+  "entry": "E1",
+  "stateSetup": {
+    "confirmedAgent": "pm",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval (product)": "set"
+  },
+  "expectedKind": "decline-approval-fall-through",
+  "expectedArgs": {},
+  "slackEvent": {
+    "channel": "feature-shadow-product-spec-in-progress",
+    "threadTs": "T_FEA_166",
+    "userId": "U_SHADOW",
+    "text": "no",
+    "entryHint": ""
+  },
+  "invariants": [
+    "I10"
+  ]
+}

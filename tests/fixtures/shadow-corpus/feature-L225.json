@@ -1,0 +1,25 @@
+{
+  "id": "feature-L225",
+  "channel": "feature",
+  "specLine": 225,
+  "phase": "complete",
+  "entry": "E1",
+  "stateSetup": {
+    "confirmedAgent": "any/none"
+  },
+  "expectedKind": "show-routing-note",
+  "expectedArgs": {
+    "_0": "complete",
+    "note": "complete"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-complete",
+    "threadTs": "T_FEA_225",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": [
+    "I20"
+  ]
+}

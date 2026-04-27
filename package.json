@@ -22,7 +22,10 @@
     "eval:design": "tsx scripts/run-evals.ts -- --agent design",
     "eval:architect": "tsx scripts/run-evals.ts -- --agent architect",
     "eval:concierge": "tsx scripts/run-evals.ts -- --agent concierge",
-    "eval:pipeline": "vitest run --config vitest.pipeline.config.ts"
+    "eval:pipeline": "vitest run --config vitest.pipeline.config.ts",
+    "shadow:corpus": "tsx scripts/generate-shadow-corpus.ts",
+    "shadow:coverage": "tsx scripts/shadow-coverage-driver.ts",
+    "shadow:report": "tsx scripts/shadow-coverage-report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

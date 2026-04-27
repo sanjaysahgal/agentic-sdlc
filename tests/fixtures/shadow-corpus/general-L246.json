@@ -1,0 +1,26 @@
+{
+  "id": "general-L246",
+  "channel": "general",
+  "specLine": 246,
+  "entry": "G5",
+  "stateSetup": {
+    "threadAgent": "architect"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "architect",
+    "agent": "architect",
+    "_1": "primary",
+    "mode": "primary",
+    "_2": "product-level",
+    "modeQualifier": "product-level"
+  },
+  "slackEvent": {
+    "channel": "general",
+    "threadTs": "T_GEN_246",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}

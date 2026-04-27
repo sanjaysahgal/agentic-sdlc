@@ -1,0 +1,30 @@
+{
+  "id": "feature-L196",
+  "channel": "feature",
+  "specLine": 196,
+  "phase": "design-in-progress",
+  "entry": "E7",
+  "stateSetup": {
+    "confirmedAgent": "ux-design",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "architect",
+    "agent": "architect",
+    "_1": "read-only-consultant",
+    "mode": "read-only-consultant"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-design-in-progress",
+    "threadTs": "T_FEA_196",
+    "userId": "U_SHADOW",
+    "text": "@architect: any thoughts?",
+    "entryHint": "@architect:"
+  },
+  "invariants": [
+    "I5"
+  ]
+}

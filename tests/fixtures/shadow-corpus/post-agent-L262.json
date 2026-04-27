@@ -1,0 +1,18 @@
+{
+  "id": "post-agent-L262",
+  "channel": "post-agent",
+  "specLine": 262,
+  "stateSetup": {},
+  "expectedKind": "resume-after-escalation",
+  "expectedArgs": {
+    "_0": "origin"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-post-agent",
+    "threadTs": "T_FEA_262",
+    "userId": "U_SHADOW",
+    "text": "",
+    "entryHint": ""
+  },
+  "invariants": []
+}

@@ -1,0 +1,30 @@
+{
+  "id": "feature-L169",
+  "channel": "feature",
+  "specLine": 169,
+  "phase": "product-spec-in-progress",
+  "entry": "E4",
+  "stateSetup": {
+    "confirmedAgent": "pm",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval (product)": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "architect",
+    "agent": "architect",
+    "_1": "read-only-consultant",
+    "mode": "read-only-consultant"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-product-spec-in-progress",
+    "threadTs": "T_FEA_169",
+    "userId": "U_SHADOW",
+    "text": "@architect: anything",
+    "entryHint": "/architect"
+  },
+  "invariants": [
+    "I5"
+  ]
+}

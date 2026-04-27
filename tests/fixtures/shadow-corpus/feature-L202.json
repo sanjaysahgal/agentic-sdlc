@@ -1,0 +1,28 @@
+{
+  "id": "feature-L202",
+  "channel": "feature",
+  "specLine": 202,
+  "phase": "design-approved-awaiting-engineering",
+  "entry": "E1",
+  "stateSetup": {
+    "confirmedAgent": "architect",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "architect",
+    "agent": "architect",
+    "_1": "primary",
+    "mode": "orientation if !S7"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-design-approved-awaiting-engineering",
+    "threadTs": "T_FEA_202",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}

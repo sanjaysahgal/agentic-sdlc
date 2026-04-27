@@ -1,0 +1,28 @@
+{
+  "id": "feature-L195",
+  "channel": "feature",
+  "specLine": 195,
+  "phase": "design-in-progress",
+  "entry": "E6",
+  "stateSetup": {
+    "confirmedAgent": "ux-design",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "ux-design",
+    "agent": "ux-design",
+    "_1": "primary",
+    "mode": "primary"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-design-in-progress",
+    "threadTs": "T_FEA_195",
+    "userId": "U_SHADOW",
+    "text": "@design: how about X",
+    "entryHint": "@design:"
+  },
+  "invariants": []
+}

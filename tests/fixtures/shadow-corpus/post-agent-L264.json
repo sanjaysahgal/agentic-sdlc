@@ -1,0 +1,18 @@
+{
+  "id": "post-agent-L264",
+  "channel": "post-agent",
+  "specLine": 264,
+  "stateSetup": {},
+  "expectedKind": "set-pending-escalation",
+  "expectedArgs": {
+    "_0": "retry brief"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-post-agent",
+    "threadTs": "T_FEA_264",
+    "userId": "U_SHADOW",
+    "text": "",
+    "entryHint": ""
+  },
+  "invariants": []
+}

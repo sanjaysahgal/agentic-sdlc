@@ -1,0 +1,18 @@
+{
+  "id": "post-agent-L263",
+  "channel": "post-agent",
+  "specLine": 263,
+  "stateSetup": {},
+  "expectedKind": "set-pending-escalation",
+  "expectedArgs": {
+    "_0": "new brief"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-post-agent",
+    "threadTs": "T_FEA_263",
+    "userId": "U_SHADOW",
+    "text": "",
+    "entryHint": ""
+  },
+  "invariants": []
+}

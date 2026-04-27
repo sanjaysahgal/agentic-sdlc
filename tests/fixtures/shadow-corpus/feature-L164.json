@@ -1,0 +1,28 @@
+{
+  "id": "feature-L164",
+  "channel": "feature",
+  "specLine": 164,
+  "phase": "product-spec-in-progress",
+  "entry": "E1",
+  "stateSetup": {
+    "confirmedAgent": "pm",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval (product)": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "pm",
+    "agent": "pm",
+    "_1": "primary",
+    "mode": "primary"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-product-spec-in-progress",
+    "threadTs": "T_FEA_164",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}

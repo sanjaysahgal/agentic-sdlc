@@ -1,0 +1,28 @@
+{
+  "id": "feature-L185",
+  "channel": "feature",
+  "specLine": 185,
+  "phase": "design-in-progress",
+  "entry": "E1",
+  "stateSetup": {
+    "confirmedAgent": "ux-design",
+    "pendingEscalation": "target=pm",
+    "escalationNotification": "—",
+    "pendingApproval": "—"
+  },
+  "expectedKind": "run-escalation-confirmed",
+  "expectedArgs": {
+    "origin": "ux-design",
+    "target": "pm"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-design-in-progress",
+    "threadTs": "T_FEA_185",
+    "userId": "U_SHADOW",
+    "text": "yes",
+    "entryHint": ""
+  },
+  "invariants": [
+    "I9"
+  ]
+}

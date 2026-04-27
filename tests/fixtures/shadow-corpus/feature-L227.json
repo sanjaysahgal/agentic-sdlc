@@ -1,0 +1,30 @@
+{
+  "id": "feature-L227",
+  "channel": "feature",
+  "specLine": 227,
+  "phase": "complete",
+  "entry": "E3",
+  "stateSetup": {
+    "confirmedAgent": "any/none"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "ux-design",
+    "agent": "ux-design",
+    "_1": "read-only-consultant",
+    "mode": "read-only-consultant",
+    "_2": "complete-template",
+    "modeQualifier": "complete-template"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-complete",
+    "threadTs": "T_FEA_227",
+    "userId": "U_SHADOW",
+    "text": "@design: anything",
+    "entryHint": "/design"
+  },
+  "invariants": [
+    "I5",
+    "I20"
+  ]
+}

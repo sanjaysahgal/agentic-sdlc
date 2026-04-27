@@ -1,0 +1,24 @@
+{
+  "id": "general-L240",
+  "channel": "general",
+  "specLine": 240,
+  "entry": "G1",
+  "stateSetup": {
+    "threadAgent": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "concierge",
+    "agent": "concierge",
+    "_1": "primary",
+    "mode": "primary"
+  },
+  "slackEvent": {
+    "channel": "general",
+    "threadTs": "T_GEN_240",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}

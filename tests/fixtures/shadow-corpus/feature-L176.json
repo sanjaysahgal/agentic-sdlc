@@ -1,0 +1,28 @@
+{
+  "id": "feature-L176",
+  "channel": "feature",
+  "specLine": 176,
+  "phase": "product-spec-approved-awaiting-design",
+  "entry": "E1",
+  "stateSetup": {
+    "confirmedAgent": "ux-design",
+    "pendingEscalation": "—",
+    "escalationNotification": "—",
+    "pendingApproval": "—"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "ux-design",
+    "agent": "ux-design",
+    "_1": "primary",
+    "mode": "orientation if !S7"
+  },
+  "slackEvent": {
+    "channel": "feature-shadow-product-spec-approved-awaiting-design",
+    "threadTs": "T_FEA_176",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}

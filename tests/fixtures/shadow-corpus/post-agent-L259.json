@@ -1,0 +1,16 @@
+{
+  "id": "post-agent-L259",
+  "channel": "post-agent",
+  "specLine": 259,
+  "stateSetup": {},
+  "expectedKind": "show-escalation-offer-prompt",
+  "expectedArgs": {},
+  "slackEvent": {
+    "channel": "feature-shadow-post-agent",
+    "threadTs": "T_FEA_259",
+    "userId": "U_SHADOW",
+    "text": "",
+    "entryHint": ""
+  },
+  "invariants": []
+}

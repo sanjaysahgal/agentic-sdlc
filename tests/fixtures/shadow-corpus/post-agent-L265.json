@@ -1,0 +1,16 @@
+{
+  "id": "post-agent-L265",
+  "channel": "post-agent",
+  "specLine": 265,
+  "stateSetup": {},
+  "expectedKind": "(no second pass — re-evaluate not in postEffects)",
+  "expectedArgs": {},
+  "slackEvent": {
+    "channel": "feature-shadow-post-agent",
+    "threadTs": "T_FEA_265",
+    "userId": "U_SHADOW",
+    "text": "",
+    "entryHint": ""
+  },
+  "invariants": []
+}

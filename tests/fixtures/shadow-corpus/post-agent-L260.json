@@ -1,0 +1,16 @@
+{
+  "id": "post-agent-L260",
+  "channel": "post-agent",
+  "specLine": 260,
+  "stateSetup": {},
+  "expectedKind": "show-approval-prompt",
+  "expectedArgs": {},
+  "slackEvent": {
+    "channel": "feature-shadow-post-agent",
+    "threadTs": "T_FEA_260",
+    "userId": "U_SHADOW",
+    "text": "",
+    "entryHint": ""
+  },
+  "invariants": []
+}

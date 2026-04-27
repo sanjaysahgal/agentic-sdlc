@@ -1,0 +1,66 @@
+name: Shadow coverage (routing state machine)
+
+# Phase 3 of the routing state machine refactor. Runs nightly and on every PR
+# touching the spec doc or routing code. Asserts that the synthesized corpus
+# (one fixture per row in docs/ROUTING_STATE_MACHINE.md) replays through the
+# pure routers with zero divergences.
+#
+# This is gate (a) of Phase 3's three-part coverage gate. Gate (b) — zero
+# divergences over 48h of real production traffic — is checked manually by
+# `npm run shadow:report -- --since YYYY-MM-DD` against logs/. Gate (c) —
+# nightly green for 3 consecutive nights — is satisfied by this workflow's
+# scheduled run history.
+#
+# Phase 4 cutover (ROUTING_V2=1) is gated on all three.
+
+on:
+  schedule:
+    # 04:17 UTC — early enough that any failure surfaces before the team's day
+    # starts, late enough that GitHub's runner queue is light.
+    - cron: "17 4 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "docs/ROUTING_STATE_MACHINE.md"
+      - "runtime/routing/**"
+      - "scripts/generate-shadow-corpus.ts"
+      - "scripts/shadow-coverage-driver.ts"
+      - "tests/fixtures/shadow-corpus/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/ROUTING_STATE_MACHINE.md"
+      - "runtime/routing/**"
+      - "scripts/generate-shadow-corpus.ts"
+      - "scripts/shadow-coverage-driver.ts"
+      - "tests/fixtures/shadow-corpus/**"
+
+jobs:
+  shadow:
+    name: Replay corpus through pure routers
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      # Regenerate the corpus from the current spec doc and confirm no fixtures
+      # need updating. If the spec changed without regenerating, this step
+      # fails the build with a clear "git diff" describing the missing files.
+      - name: Regenerate corpus from spec
+        run: |
+          npm run shadow:corpus
+          if [ -n "$(git status --porcelain tests/fixtures/shadow-corpus/)" ]; then
+            echo "Corpus is out of date — run 'npm run shadow:corpus' locally and commit the result."
+            git --no-pager diff tests/fixtures/shadow-corpus/ | head -200
+            exit 1
+          fi
+
+      - name: Replay corpus through routers
+        run: npm run shadow:coverage

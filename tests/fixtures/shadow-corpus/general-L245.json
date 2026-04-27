@@ -1,0 +1,26 @@
+{
+  "id": "general-L245",
+  "channel": "general",
+  "specLine": 245,
+  "entry": "G5",
+  "stateSetup": {
+    "threadAgent": "ux-design"
+  },
+  "expectedKind": "run-agent",
+  "expectedArgs": {
+    "_0": "ux-design",
+    "agent": "ux-design",
+    "_1": "primary",
+    "mode": "primary",
+    "_2": "product-level",
+    "modeQualifier": "product-level"
+  },
+  "slackEvent": {
+    "channel": "general",
+    "threadTs": "T_GEN_245",
+    "userId": "U_SHADOW",
+    "text": "anything",
+    "entryHint": ""
+  },
+  "invariants": []
+}
