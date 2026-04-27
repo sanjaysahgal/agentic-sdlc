@@ -58,7 +58,7 @@ vi.mock("../../runtime/workspace-config", () => ({
   }),
 }))
 
-import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, buildPreviewUrl, createSpecPR, saveAgentFeedback, saveUserFeedback, saveDraftAuditCache, readDraftAuditCache } from "../../runtime/github-client"
+import { readFile, saveDraftSpec, saveApprovedSpec, getInProgressFeatures, listSubdirectories, saveDraftEngineeringSpec, saveApprovedEngineeringSpec, buildPreviewUrl, createSpecPR, saveAgentFeedback, saveUserFeedback, saveDraftAuditCache, readDraftAuditCache, seedHandoffSection, clearHandoffSection, saveDraftHtmlPreview, saveDraftDesignSpec, updateApprovedSpecOnMain, saveApprovedDesignSpec, preseedEngineeringSpec } from "../../runtime/github-client"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -808,5 +808,298 @@ describe("dry-run mode (SIMULATE_DRY_RUN=true)", () => {
       reactingUser: "U456",
     })
     expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+})
+
+// ─── seedHandoffSection ──────────────────────────────────────────────────────
+
+describe("seedHandoffSection", () => {
+  it("no-ops when content is blank/whitespace", async () => {
+    await seedHandoffSection({
+      featureName: "onboarding",
+      targetFilePath: "specs/features/onboarding/onboarding.engineering.md",
+      targetBranchName: "spec/onboarding-engineering",
+      targetSectionHeading: "## Design Assumptions To Validate",
+      content: "   ",
+    })
+    expect(mockGetContent).not.toHaveBeenCalled()
+  })
+
+  it("creates new file with section when no existing file", async () => {
+    // readFile for the branch will 404
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+    // saveDraftEngineeringSpec calls saveDraftFile which needs getRef, createRef, getContent, createOrUpdate
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // file not on branch
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await seedHandoffSection({
+      featureName: "onboarding",
+      targetFilePath: "specs/features/onboarding/onboarding.engineering.md",
+      targetBranchName: "spec/onboarding-engineering",
+      targetSectionHeading: "## Design Assumptions To Validate",
+      content: "- Bottom sheet is 90vh",
+    })
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "specs/features/onboarding/onboarding.engineering.md",
+      })
+    )
+    // Verify the content includes both the file header and the section
+    const written = Buffer.from(
+      mockCreateOrUpdateFileContents.mock.calls[0][0].content, "base64"
+    ).toString("utf-8")
+    expect(written).toContain("# onboarding Engineering Spec")
+    expect(written).toContain("## Design Assumptions To Validate")
+    expect(written).toContain("- Bottom sheet is 90vh")
+  })
+
+  it("appends section when existing file lacks the heading", async () => {
+    const existing = "# onboarding Engineering Spec\n\n## Open Questions\n\n- TBD\n"
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from(existing).toString("base64") },
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await seedHandoffSection({
+      featureName: "onboarding",
+      targetFilePath: "specs/features/onboarding/onboarding.engineering.md",
+      targetBranchName: "spec/onboarding-engineering",
+      targetSectionHeading: "## Design Assumptions To Validate",
+      content: "- Bottom sheet is 90vh",
+    })
+
+    const written = Buffer.from(
+      mockCreateOrUpdateFileContents.mock.calls[0][0].content, "base64"
+    ).toString("utf-8")
+    expect(written).toContain("## Open Questions")
+    expect(written).toContain("## Design Assumptions To Validate")
+    expect(written).toContain("- Bottom sheet is 90vh")
+  })
+})
+
+// ─── clearHandoffSection ─────────────────────────────────────────────────────
+
+describe("clearHandoffSection", () => {
+  it("no-ops when file not found on main", async () => {
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+
+    await clearHandoffSection({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.design.md",
+      sectionHeading: "## Design Assumptions",
+    })
+
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it("no-ops when section heading absent from file", async () => {
+    const content = "# Design Spec\n\n## Screens\n\nSome screens\n"
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from(content).toString("base64") },
+    })
+
+    await clearHandoffSection({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.design.md",
+      sectionHeading: "## Design Assumptions",
+    })
+
+    expect(mockCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it("clears section body when heading is present", async () => {
+    const content = "# Design Spec\n\n## Design Assumptions\n\n- Assumption 1\n- Assumption 2\n"
+    // First call: readFile for the content
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from(content).toString("base64") },
+    })
+    // Second call: get SHA for update
+    mockGetContent.mockResolvedValueOnce({
+      data: { sha: "file-sha-123" },
+    })
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await clearHandoffSection({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.design.md",
+      sectionHeading: "## Design Assumptions",
+    })
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({ sha: "file-sha-123" })
+    )
+  })
+})
+
+// ─── saveDraftHtmlPreview ────────────────────────────────────────────────────
+
+describe("saveDraftHtmlPreview", () => {
+  it("saves HTML content to the design branch", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await saveDraftHtmlPreview({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.preview.html",
+      content: "<html><body>Preview</body></html>",
+    })
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "specs/features/onboarding/onboarding.preview.html",
+        branch: "spec/onboarding-design",
+      })
+    )
+  })
+})
+
+// ─── saveDraftDesignSpec ─────────────────────────────────────────────────────
+
+describe("saveDraftDesignSpec", () => {
+  it("saves design spec to spec/{featureName}-design branch", async () => {
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await saveDraftDesignSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.design.md",
+      content: "# Design Spec\n\n## Screens\n",
+    })
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "specs/features/onboarding/onboarding.design.md",
+        branch: "spec/onboarding-design",
+      })
+    )
+  })
+})
+
+// ─── updateApprovedSpecOnMain ────────────────────────────────────────────────
+
+describe("updateApprovedSpecOnMain", () => {
+  it("updates an existing file on main with new content", async () => {
+    mockGetContent.mockResolvedValueOnce({ data: { sha: "existing-sha" } })
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await updateApprovedSpecOnMain({
+      filePath: "specs/features/onboarding/onboarding.product.md",
+      content: "# Updated Spec\n\nNew content",
+      commitMessage: "[SPEC] onboarding — escalation writeback",
+    })
+
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "specs/features/onboarding/onboarding.product.md",
+        sha: "existing-sha",
+        message: "[SPEC] onboarding — escalation writeback",
+      })
+    )
+  })
+})
+
+// ─── saveApprovedDesignSpec ──────────────────────────────────────────────────
+
+describe("saveApprovedDesignSpec", () => {
+  it("returns 'already-on-main' when file exists on main", async () => {
+    mockGetContent.mockResolvedValueOnce({ data: { sha: "main-sha" } })
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+    mockDeleteRef.mockResolvedValue({})
+
+    const result = await saveApprovedDesignSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.design.md",
+      content: "# Final Design",
+    })
+
+    expect(result).toBe("already-on-main")
+    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({ sha: "main-sha" })
+    )
+  })
+
+  it("returns 'saved' when file is not on main", async () => {
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // not on main
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // file not on branch
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+    mockDeleteRef.mockResolvedValue({})
+
+    const result = await saveApprovedDesignSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.design.md",
+      content: "# Final Design",
+    })
+
+    expect(result).toBe("saved")
+  })
+})
+
+// ─── preseedEngineeringSpec ──────────────────────────────────────────────────
+
+describe("preseedEngineeringSpec", () => {
+  it("no-ops when architectItems is empty", async () => {
+    await preseedEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      architectItems: [],
+    })
+    expect(mockGetContent).not.toHaveBeenCalled()
+  })
+
+  it("appends to existing Open Questions section when file already has one", async () => {
+    const existing = "# onboarding Engineering Spec\n\n## Open Questions\n\n- [open: architecture] Existing question?\n\n## Next Section\n"
+    mockGetContent.mockResolvedValueOnce({
+      data: { content: Buffer.from(existing).toString("base64") },
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found"))
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await preseedEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      architectItems: ["New DB question?"],
+    })
+
+    const written = Buffer.from(
+      mockCreateOrUpdateFileContents.mock.calls[0][0].content, "base64"
+    ).toString("utf-8")
+    expect(written).toContain("Existing question?")
+    expect(written).toContain("[open: architecture] New DB question?")
+    expect(written).toContain("## Next Section")
+  })
+
+  it("creates new file with open questions when no existing file", async () => {
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // readFile 404
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateRef.mockResolvedValue({})
+    mockGetContent.mockRejectedValueOnce(new Error("Not Found")) // file not on branch
+    mockCreateOrUpdateFileContents.mockResolvedValue({})
+
+    await preseedEngineeringSpec({
+      featureName: "onboarding",
+      filePath: "specs/features/onboarding/onboarding.engineering.md",
+      architectItems: ["DB schema?", "API contract?"],
+    })
+
+    const written = Buffer.from(
+      mockCreateOrUpdateFileContents.mock.calls[0][0].content, "base64"
+    ).toString("utf-8")
+    expect(written).toContain("## Open Questions")
+    expect(written).toContain("[open: architecture] DB schema?")
+    expect(written).toContain("[open: architecture] API contract?")
   })
 })

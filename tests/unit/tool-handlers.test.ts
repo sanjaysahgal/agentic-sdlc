@@ -782,6 +782,16 @@ describe("handleDesignTool", () => {
       const result = await handleGenerateDesignPreview(buildDesignCtx(), deps)
       expect(result.error).toContain("Preview failed")
     })
+
+    it("continues when saveDraftHtmlPreview rejects (non-blocking)", async () => {
+      const deps = buildDesignDeps({
+        saveDraftHtmlPreview: vi.fn().mockRejectedValue(new Error("GitHub write failed")),
+      })
+      const result = await handleGenerateDesignPreview(buildDesignCtx(), deps)
+      expect(deps.generateDesignPreview).toHaveBeenCalled()
+      expect(deps.uploadFileToSlack).toHaveBeenCalled()
+      expect((result.result as any).previewUrl).toBe("uploaded_to_slack")
+    })
   })
 
   describe("offer_pm_escalation", () => {
@@ -822,6 +832,24 @@ describe("handleDesignTool", () => {
       expect(deps.preseedEngineeringSpec).toHaveBeenCalledWith(expect.objectContaining({
         architectItems: ["DB schema?"],
       }))
+    })
+
+    it("continues when preseedEngineeringSpec rejects on rejection path (non-blocking)", async () => {
+      const deps = buildDesignDeps({
+        classifyForPmGaps: vi.fn().mockResolvedValue({ gaps: [], architectItems: ["DB schema?"], designItems: [] }),
+        preseedEngineeringSpec: vi.fn().mockRejectedValue(new Error("GitHub write failed")),
+      })
+      const result = await handleOfferPmEscalation({ question: "DB schema?" }, buildDesignCtx(), deps)
+      expect((result.result as string)).toContain("REJECTED")
+    })
+
+    it("continues when preseedEngineeringSpec rejects on escalation path (non-blocking)", async () => {
+      const deps = buildDesignDeps({
+        classifyForPmGaps: vi.fn().mockResolvedValue({ gaps: ["TTL?"], architectItems: ["DB schema?"], designItems: [] }),
+        preseedEngineeringSpec: vi.fn().mockRejectedValue(new Error("GitHub write failed")),
+      })
+      const result = await handleOfferPmEscalation({ question: "TTL? DB schema?" }, buildDesignCtx(), deps)
+      expect((result.result as string)).toContain("Escalation offer stored")
     })
   })
 
@@ -982,6 +1010,17 @@ describe("handleDesignTool", () => {
         targetSectionHeading: "## Design Assumptions To Validate",
         content: "- Bottom sheet is 90vh",
       }))
+    })
+
+    it("continues when seedHandoffSection rejects (non-blocking)", async () => {
+      const deps = buildDesignDeps({
+        extractDesignAssumptions: vi.fn().mockReturnValue("- Bottom sheet is 90vh"),
+        seedHandoffSection: vi.fn().mockRejectedValue(new Error("GitHub write failed")),
+      })
+      const ctx = buildDesignCtx({ readFile: vi.fn().mockResolvedValue("# Spec") })
+      const result = await handleFinalizeDesignSpec(ctx, deps)
+      expect(deps.saveApprovedDesignSpec).toHaveBeenCalled()
+      expect((result.result as any).nextPhase).toBe("engineering")
     })
 
     it("skips brand drift check when no brand context", async () => {
