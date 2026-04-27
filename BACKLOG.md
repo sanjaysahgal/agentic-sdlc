@@ -91,6 +91,23 @@ Manual testing (April 23-25) revealed 5 structural gaps in the escalation flow. 
 
 ---
 
+### Spec iteration — reopen approved specs via slash override (2026-04-27)
+
+When a user invokes `/pm` (or `/design`, `/architect`) in a channel where that agent's spec is already approved, the agent currently runs read-only. If the user explicitly requests a change ("update AC#5 to include email/password"), the platform should recognize the intent and give the agent write tools to create a new draft branch and make the edit.
+
+**Requirements:**
+- User must explicitly request a change — read-only discussion stays read-only
+- On reopen, agent creates a new draft branch from the approved spec on main
+- The change flows through the existing lifecycle: draft → audit → finalization → approval
+- Downstream agents' upstream audits (Principle 14) catch the change at their next finalization
+- If the feature has active downstream work (e.g. architect is mid-spec), the upstream change triggers an escalation to the downstream agent via the existing escalation flow
+- Works for all three agents: PM can reopen product spec, Designer can reopen design spec, Architect can reopen engineering spec
+- Post-completion (all specs approved, no active branches): slash override gets full tools immediately — no "reopen" step needed (the explicit invocation IS the intent signal)
+
+**Blocked by:** Nothing — can implement after current session's routing hardening is stable.
+
+---
+
 ### Agent persona names — customer-chosen names for slash commands (deferred)
 
 Slash commands are role-based (`/pm`, `/design`, `/architect`). For a white-label or branded experience, customers may want named personas ("Sarah the PM") with custom avatars. This is a branding layer on top of the existing slash command infrastructure — the routing, domain boundaries, and product-level mode don't change. Defer until a customer requests it.
