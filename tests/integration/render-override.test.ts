@@ -46,6 +46,7 @@ import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/
 import { clearHistory, clearLegacyMessages, setConfirmedAgent, appendMessage, disableFilePersistence } from "../../../runtime/conversation-store"
 disableFilePersistence()
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
+import { featureKey } from "../../runtime/routing/types"
 
 const originalEnv = process.env
 const THREAD = "thread-render-override"
@@ -80,7 +81,7 @@ function makeParams(userMessage: string, client = makeClient()) {
 
 function seedHistory(count = 7) {
   for (let i = 0; i < count; i++) {
-    appendMessage(FEATURE, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    appendMessage(featureKey(FEATURE), { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
   }
 }
 
@@ -104,14 +105,14 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory(FEATURE)
+  clearHistory(featureKey(FEATURE))
   clearLegacyMessages()
   clearSummaryCache(FEATURE)
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory(FEATURE)
+  clearHistory(featureKey(FEATURE))
   clearSummaryCache(FEATURE)
 })
 
@@ -120,7 +121,7 @@ afterEach(() => {
 describe("post-response uncommitted decisions audit", () => {
   it("appends uncommitted note when no save tool called and history > 6", async () => {
     seedHistory(7)
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions,
     // [3] runAgent (text-only, no tool calls), [4] identifyUncommittedDecisions
@@ -143,7 +144,7 @@ describe("post-response uncommitted decisions audit", () => {
 
   it("skips uncommitted note when no decisions discussed (fresh conversation)", async () => {
     // No seedHistory — audit now fires on every turn, but classifier returns "all committed"
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] runAgent, [3] identifyUncommittedDecisions
     mockAnthropicCreate
@@ -162,7 +163,7 @@ describe("post-response uncommitted decisions audit", () => {
 
   it("skips uncommitted note when save tool was called", async () => {
     seedHistory(7)
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     // [0] isOffTopicForAgent, [1] isSpecStateQuery, [2] extractLockedDecisions,
     // [3] runAgent (tool_use: apply_design_spec_patch), [4] auditSpecRenderAmbiguity (in tool handler),

@@ -75,7 +75,7 @@ function makeParams(userMessage: string, client = makeClient()) {
 // Seed enough history for extractLockedDecisions to fire (threshold = 6 messages)
 function seedHistory(count = 7) {
   for (let i = 0; i < count; i++) {
-    appendMessage(FEATURE, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    appendMessage(featureKey(FEATURE), { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
   }
 }
 
@@ -101,12 +101,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory(FEATURE)
+  clearHistory(featureKey(FEATURE))
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory(FEATURE)
+  clearHistory(featureKey(FEATURE))
 })
 
 // ─── PM agent ─────────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ afterEach(() => {
 describe("locked decisions — PM agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
     seedHistory()
-    setConfirmedAgent(FEATURE, "pm")
+    setConfirmedAgent(featureKey(FEATURE), "pm")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "• Dark primary color\n• Mobile-first layout" }] }) // [0] extractLockedDecisions
@@ -133,7 +133,7 @@ describe("locked decisions — PM agent", () => {
 
   it("runner does NOT crash when extractLockedDecisions throws — agent still responds", async () => {
     seedHistory()
-    setConfirmedAgent(FEATURE, "pm")
+    setConfirmedAgent(featureKey(FEATURE), "pm")
 
     mockAnthropicCreate
       .mockRejectedValueOnce(new Error("Haiku API failure"))                                                       // [0] extractLockedDecisions → caught by .catch(() => "")
@@ -157,7 +157,7 @@ describe("locked decisions — PM agent", () => {
 describe("locked decisions — design agent", () => {
   it("injects locked decisions into Sonnet call when Haiku returns bullets", async () => {
     seedHistory()
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })                                      // [0] isOffTopicForAgent
@@ -177,7 +177,7 @@ describe("locked decisions — design agent", () => {
 
   it("runner does NOT crash when extractLockedDecisions throws — design agent still responds", async () => {
     seedHistory()
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
@@ -201,7 +201,7 @@ describe("locked decisions — design agent", () => {
 describe("locked decisions — architect agent", () => {
   it("runner does NOT crash when extractLockedDecisions throws — architect still responds", async () => {
     seedHistory()
-    setConfirmedAgent(FEATURE, "architect")
+    setConfirmedAgent(featureKey(FEATURE), "architect")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // [0] isOffTopicForAgent
@@ -227,26 +227,27 @@ describe("locked decisions — architect agent", () => {
 // a fresh thread in #feature-onboarding loads all prior context immediately.
 
 import { getHistory } from "../../../runtime/conversation-store"
+import { featureKey } from "../../runtime/routing/types"
 
 describe("featureName keying — two threads in the same feature channel share history", () => {
   const THREAD_A = "thread-first-session"
   const THREAD_B = "thread-new-member"
 
-  beforeEach(() => { clearHistory(FEATURE) })
-  afterEach(() => { clearHistory(FEATURE) })
+  beforeEach(() => { clearHistory(featureKey(FEATURE)) })
+  afterEach(() => { clearHistory(featureKey(FEATURE)) })
 
   it("messages appended via thread A are visible when the agent runs in thread B", async () => {
     // Seed history as if prior conversation happened in thread A
-    appendMessage(FEATURE, { role: "user", content: "I want dark mode as the default" })
-    appendMessage(FEATURE, { role: "assistant", content: "Locked: dark mode default." })
-    appendMessage(FEATURE, { role: "user", content: "Use the Archon palette" })
-    appendMessage(FEATURE, { role: "assistant", content: "Locked: Archon palette." })
-    appendMessage(FEATURE, { role: "user", content: "Chips above the prompt bar" })
-    appendMessage(FEATURE, { role: "assistant", content: "Locked: chips above prompt bar." })
-    appendMessage(FEATURE, { role: "user", content: "One more thing" })
+    appendMessage(featureKey(FEATURE), { role: "user", content: "I want dark mode as the default" })
+    appendMessage(featureKey(FEATURE), { role: "assistant", content: "Locked: dark mode default." })
+    appendMessage(featureKey(FEATURE), { role: "user", content: "Use the Archon palette" })
+    appendMessage(featureKey(FEATURE), { role: "assistant", content: "Locked: Archon palette." })
+    appendMessage(featureKey(FEATURE), { role: "user", content: "Chips above the prompt bar" })
+    appendMessage(featureKey(FEATURE), { role: "assistant", content: "Locked: chips above prompt bar." })
+    appendMessage(featureKey(FEATURE), { role: "user", content: "One more thing" })
 
     // New team member sends their first message in thread B (different threadTs, same channel)
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent
@@ -279,7 +280,7 @@ describe("featureName keying — two threads in the same feature channel share h
     expect(lastUserMsg).toContain("Dark mode default")
 
     // Both threads' messages are now in shared history
-    const history = getHistory(FEATURE)
+    const history = getHistory(featureKey(FEATURE))
     expect(history.some(m => m.content.includes("dark mode"))).toBe(true)
     expect(history.some(m => m.content.includes("new here"))).toBe(true)
   })

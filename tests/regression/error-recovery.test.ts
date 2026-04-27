@@ -45,6 +45,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import { clearHistory, setConfirmedAgent, getHistory, disableFilePersistence } from "../../../runtime/conversation-store"
+import { featureKey } from "../../runtime/routing/types"
 disableFilePersistence()
 
 const originalEnv = process.env
@@ -66,12 +67,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 const makeParams = (userMessage = "approved") => ({
@@ -154,14 +155,14 @@ describe("bug #8 — blocking gate: finalize tool returns error when [blocking: 
         content: [{ type: "text", text: "Approval blocked — 1 blocking question must be resolved first:\n• Who is the primary user?" }],
       })
 
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
     await handleFeatureChannelMessage(makeParams())
 
     // saveApprovedSpec must NOT have been called
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
 
     // Blocking error must be surfaced in the agent's response (stored in history)
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
     expect(lastAssistant?.content).toContain("Approval blocked")
     expect(lastAssistant?.content).toContain("Who is the primary user")
@@ -176,7 +177,7 @@ describe("bug #8 — blocking gate: finalize tool returns error when [blocking: 
       .mockResolvedValueOnce({ content: [{ type: "text", text: "no" }] })     // isReadinessQuery
       .mockResolvedValueOnce({ content: [{ type: "text", text: "There's a blocking question about session TTL. Resolve it before finalizing." }] }) // runAgent — text-only
 
-    setConfirmedAgent("onboarding", "ux-design" as any)
+    setConfirmedAgent(featureKey("onboarding"), "ux-design" as any)
     await handleFeatureChannelMessage(makeParams())
 
     expect(mockOctokitCreateOrUpdate).not.toHaveBeenCalled()
@@ -218,10 +219,10 @@ describe("bug #9 — gap detection: gap question is stored in history", () => {
   it("gap message appears in conversation history so agent can interpret next reply", async () => {
     setupGapScenario()
 
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
     await handleFeatureChannelMessage(makeParams("let's keep going"))
 
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const assistantMessages = history.filter(m => m.role === "assistant")
     expect(assistantMessages.length).toBeGreaterThan(0)
 
@@ -233,7 +234,7 @@ describe("bug #9 — gap detection: gap question is stored in history", () => {
   it("draft is saved even when a gap is detected", async () => {
     setupGapScenario()
 
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
     await handleFeatureChannelMessage(makeParams("let's keep going"))
 
     expect(mockOctokitCreateOrUpdate).toHaveBeenCalled()

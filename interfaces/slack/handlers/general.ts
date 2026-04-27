@@ -23,15 +23,15 @@ export async function handleGeneralChannelMessage(params: {
     const [features, context, history] = await Promise.all([
       getInProgressFeatures(),
       loadAgentContextForQuery(userMessage),
-      Promise.resolve(getHistory(threadTs)),
+      Promise.resolve(getHistory(featureKey(threadTs))),
     ])
 
     const systemPrompt = buildConciergeSystemPrompt(features, context)
     // Append user message before the Claude call — if the call fails, the message
     // is still in history so the next attempt has full context.
-    appendMessage(threadTs, { role: "user", content: userMessage })
+    appendMessage(featureKey(threadTs), { role: "user", content: userMessage })
     const response = await runAgent({ systemPrompt, history, userMessage, userImages })
-    appendMessage(threadTs, { role: "assistant", content: response })
+    appendMessage(featureKey(threadTs), { role: "assistant", content: response })
 
     // Extract and log any agent feedback the concierge detected
     const feedbackMatch = response.match(/\nAGENT_FEEDBACK: (.+)$/s)
@@ -48,6 +48,7 @@ export async function handleGeneralChannelMessage(params: {
 // Thread-to-agent mapping is persisted in conversation-store.ts (survives bot restarts).
 // Import getThreadAgent/setThreadAgent from there — re-export for convenience.
 import { getThreadAgent, setThreadAgent } from "../../../runtime/conversation-store"
+import { featureKey, threadKey } from "../../../runtime/routing/types"
 export { getThreadAgent }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ export async function handleGeneralChannelAgentMessage(params: {
   const displayName = AGENT_DISPLAY_NAMES[agent] ?? "Agent"
 
   // Save agent for this thread — follow-up messages route here instead of concierge
-  setThreadAgent(threadTs, agent)
+  setThreadAgent(threadKey(threadTs), agent)
 
   console.log(`[ROUTER] product-level-agent: ${agent} (${displayName}) in general:${threadTs} msg="${userMessage.slice(0, 100)}"`)
 
@@ -118,16 +119,16 @@ export async function handleGeneralChannelAgentMessage(params: {
     const [context, features, history] = await Promise.all([
       loadAgentContextForQuery(userMessage),
       getInProgressFeatures(),
-      Promise.resolve(getHistory(`general:${threadTs}`)),
+      Promise.resolve(getHistory(featureKey(`general:${threadTs}`))),
     ])
 
     const { productName } = loadWorkspaceConfig()
     const systemPrompt = buildProductLevelPrompt(agent, productName, context, features)
 
-    appendMessage(`general:${threadTs}`, { role: "user", content: userMessage })
+    appendMessage(featureKey(`general:${threadTs}`), { role: "user", content: userMessage })
     console.log(`[CONTEXT] product-level ${agent}: loaded vision=${context.productVision ? "yes" : "no"} arch=${context.systemArchitecture ? "yes" : "no"} history=${history.length} msgs`)
     const response = await runAgent({ systemPrompt, history, userMessage, userImages })
-    appendMessage(`general:${threadTs}`, { role: "assistant", content: response })
+    appendMessage(featureKey(`general:${threadTs}`), { role: "assistant", content: response })
 
     await update(response)
   }})

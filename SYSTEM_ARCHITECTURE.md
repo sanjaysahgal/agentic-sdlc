@@ -1,6 +1,8 @@
 # archcon — Platform Architecture
 
 > **Routing in flux (2026-04-27):** Routing logic is being refactored into a pure state machine per Path B. The canonical spec for routing decisions is `docs/ROUTING_STATE_MACHINE.md`; the migration plan is `~/.claude/plans/elegant-percolating-newell.md`; the BACKLOG entry is "Routing state machine refactor — system-level architecture (Path B)". Sections of this document describing today's interleaved routing in `interfaces/slack/handlers/message.ts` will be replaced when Phase 6 of the refactor lands. Until then, both this doc and the spec are correct: this doc describes today's implementation; the spec describes the target.
+>
+> **Phase 1 landed (2026-04-27):** `runtime/routing/types.ts` introduces compile-time tenancy via branded `FeatureKey`/`ThreadKey` structs and the full `RoutingInput`/`RoutingDecision`/`StateEffect`/`PostEffect` vocabulary that Phase 2's pure routers will produce. `runtime/routing/agent-registry.ts` is the single source of truth for agents — `agents/registry.ts` now derives `ACTIVE_AGENTS` (concierge view) from it so adding an agent is one entry. `runtime/conversation-store.ts` accepts the branded keys directly and projects them to the existing flat string keys internally — on-disk persistence format is byte-equivalent. ~120 call sites across `interfaces/slack/handlers/`, `runtime/tool-handlers.ts`, and the test suite were mechanically codemodded (see `scripts/codemod-routing-keys.mjs`). Behavior is unchanged; cross-tenant or feature-vs-thread mixups are now compile errors.
 
 ## Platform Identity
 

@@ -13,6 +13,7 @@
 import "dotenv/config"
 import { handleFeatureChannelMessage } from "../interfaces/slack/handlers/message"
 import { setConfirmedAgent, clearHistory } from "../runtime/conversation-store"
+import { featureKey } from "../runtime/routing/types"
 
 async function main() {
 const args = process.argv.slice(2)
@@ -38,9 +39,9 @@ if (!agent || !feature || !message) {
 // Signal dry-run mode to GitHub client — all write operations will log and no-op
 process.env.SIMULATE_DRY_RUN = dryRun ? "true" : "false"
 
-if (reset) clearHistory(feature)
+if (reset) clearHistory(featureKey(feature))
 
-setConfirmedAgent(feature, agent as any)
+setConfirmedAgent(featureKey(feature), agent as any)
 
 const updates: string[] = []
 

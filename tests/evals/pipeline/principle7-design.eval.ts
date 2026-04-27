@@ -45,6 +45,7 @@ vi.mock("@octokit/rest", () => ({
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import { clearHistory, setConfirmedAgent } from "../../../runtime/conversation-store"
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
+import { featureKey } from "../../../runtime/routing/types"
 
 // ─── GitHub state — PM spec with 2 blocking questions, no design draft ────────
 
@@ -115,7 +116,7 @@ function makeSlackClient() {
 describe("Principle 7 — design agent surfaces gaps proactively on neutral phrases", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    clearHistory(FEATURE)
+    clearHistory(featureKey(FEATURE))
     clearSummaryCache(FEATURE)
 
     mockPaginate.mockResolvedValue([])
@@ -131,7 +132,7 @@ describe("Principle 7 — design agent surfaces gaps proactively on neutral phra
       return Promise.reject(new Error("Not Found"))
     })
 
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
   })
 
   it("surfaces PM blocking questions without being asked — does not answer generically", async () => {

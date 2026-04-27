@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // Bugs tracked here:
 //   #1 — Fast-path early returns only appended assistant message, skipping the
 //        user message. Next API call had consecutive [assistant, assistant] → 400.
-//   #2 — appendMessage(user) was called BEFORE runAgent. If runAgent threw,
+//   #2 — appendMessage(featureKey(user)) was called BEFORE runAgent. If runAgent threw,
 //        the user message stayed in history, accumulating on each retry.
 //   #3 — Corrupted history (leading assistant from #1) caused every subsequent
 //        Anthropic call to fail with 400, making the thread permanently broken.
@@ -44,6 +44,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import { clearHistory, setConfirmedAgent, getHistory, appendMessage, disableFilePersistence } from "../../../runtime/conversation-store"
+import { featureKey } from "../../runtime/routing/types"
 disableFilePersistence()
 
 const originalEnv = process.env
@@ -63,12 +64,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
@@ -97,12 +98,12 @@ const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
 
 describe("bug #1 — fast-path off-topic appends user then assistant (never assistant-only)", () => {
   it("off-topic redirect appends user then assistant in correct order", async () => {
-    setConfirmedAgent("onboarding", "ux-design" as any)
+    setConfirmedAgent(featureKey("onboarding"), "ux-design" as any)
     mockAnthropicCreate.mockResolvedValue({ content: [{ type: "text", text: "off-topic" }] })
 
     await handleFeatureChannelMessage(makeParams({ userMessage: "what features are in progress globally?" }))
 
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     expect(history.length).toBe(2)
     expect(history[0].role).toBe("user")
     expect(history[1].role).toBe("assistant")
@@ -110,20 +111,20 @@ describe("bug #1 — fast-path off-topic appends user then assistant (never assi
 })
 
 // ─── Bug #2: duplicate user messages on retry ─────────────────────────────────
-// Regression: appendMessage(user) before runAgent left the user message in
+// Regression: appendMessage(featureKey(user)) before runAgent left the user message in
 // history when runAgent threw. Retries accumulated duplicate user entries,
 // causing Anthropic 400 on the next real call.
 
 describe("bug #2 — failed agent call leaves no user message in history", () => {
   it("user message is not stored when the agent call fails", async () => {
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
     mockAnthropicCreate
       .mockRejectedValueOnce(new Error("API overloaded"))
 
     // withThinking re-throws after logging — catch it so the test can assert history
     await handleFeatureChannelMessage(makeParams({ userMessage: "let's refine the scope" })).catch(() => {})
 
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     expect(history.filter(m => m.role === "user")).toHaveLength(0)
   })
 })
@@ -137,10 +138,10 @@ describe("bug #2 — failed agent call leaves no user message in history", () =>
 
 describe("bug #3 — corrupted history (leading assistant) is sanitized", () => {
   it("subsequent call succeeds even when history starts with assistant", async () => {
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
 
     // Inject corrupted state: history starts with assistant (as happens after bug #1)
-    appendMessage("onboarding", { role: "assistant", content: "Fast-path response with no preceding user message." })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Fast-path response with no preceding user message." })
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my answer." }] })
@@ -148,7 +149,7 @@ describe("bug #3 — corrupted history (leading assistant) is sanitized", () => 
     // This must NOT throw — sanitization makes the API call valid
     await handleFeatureChannelMessage(makeParams({ userMessage: "what are the open questions?" }))
 
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const last2 = history.slice(-2)
     expect(last2[0].role).toBe("user")
     expect(last2[1].role).toBe("assistant")
@@ -160,14 +161,14 @@ describe("bug #3 — corrupted history (leading assistant) is sanitized", () => 
 
 describe("invariant — no consecutive same-role messages after a normal turn", () => {
   it("history alternates user/assistant after each successful turn", async () => {
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "feature-specific" }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: "Here is my answer." }] })
 
     await handleFeatureChannelMessage(makeParams({ userMessage: "tell me about the feature" }))
 
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     for (let i = 1; i < history.length; i++) {
       expect(history[i].role).not.toBe(history[i - 1].role)
     }

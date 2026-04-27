@@ -50,6 +50,7 @@ import {
 } from "../../runtime/conversation-store"
 import { handleFeatureChannelMessage, getChannelState, resolveAgent } from "../../interfaces/slack/handlers/message"
 import { clearSummaryCache } from "../../runtime/conversation-summarizer"
+import { featureKey, threadKey } from "../../runtime/routing/types"
 
 disableFilePersistence()
 
@@ -128,8 +129,8 @@ function mockPhase(phase: string) {
 
 describe("Routing Contract Invariants", () => {
   beforeEach(() => {
-    clearHistory("onboarding")
-    clearHistory("auth")
+    clearHistory(featureKey("onboarding"))
+    clearHistory(featureKey("auth"))
     clearSummaryCache("onboarding")
     clearSummaryCache("auth")
     vi.clearAllMocks()
@@ -161,32 +162,32 @@ describe("Routing Contract Invariants", () => {
 
   describe("Invariant 2-4: Stale confirmedAgent corrected by resolveAgent", () => {
     it("confirmedAgent=pm but phase=engineering → corrected to architect", async () => {
-      setConfirmedAgent("onboarding", "pm")
+      setConfirmedAgent(featureKey("onboarding"), "pm")
       mockPhase("engineering-in-progress")
       const agent = await resolveAgent("onboarding")
       expect(agent).toBe("architect")
-      expect(getConfirmedAgent("onboarding")).toBe("architect")
+      expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
     })
 
     it("confirmedAgent=pm but phase=design → corrected to ux-design", async () => {
-      setConfirmedAgent("onboarding", "pm")
+      setConfirmedAgent(featureKey("onboarding"), "pm")
       mockPhase("design-in-progress")
       const agent = await resolveAgent("onboarding")
       expect(agent).toBe("ux-design")
-      expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+      expect(getConfirmedAgent(featureKey("onboarding"))).toBe("ux-design")
     })
 
     it("confirmedAgent=architect but phase=product-spec-in-progress → trusts existing (ambiguous phase)", async () => {
       // product-spec-in-progress is the default/fallback — could mean no branches OR new feature
       // In this case, trust the existing confirmedAgent (it was set deliberately)
-      setConfirmedAgent("onboarding", "architect")
+      setConfirmedAgent(featureKey("onboarding"), "architect")
       mockPhase("product-spec-in-progress")
       const agent = await resolveAgent("onboarding")
       expect(agent).toBe("architect") // trusted, not corrected
     })
 
     it("confirmedAgent=ux-design but phase=engineering → corrected to architect", async () => {
-      setConfirmedAgent("onboarding", "ux-design")
+      setConfirmedAgent(featureKey("onboarding"), "ux-design")
       mockPhase("engineering-in-progress")
       const agent = await resolveAgent("onboarding")
       expect(agent).toBe("architect")
@@ -197,7 +198,7 @@ describe("Routing Contract Invariants", () => {
 
   describe("Invariant 5: Temporary agent override doesn't persist", () => {
     it("@pm: prefix does not change confirmedAgent in store", async () => {
-      setConfirmedAgent("onboarding", "architect")
+      setConfirmedAgent(featureKey("onboarding"), "architect")
       mockPhase("engineering-in-progress")
 
       mockAnthropicCreate
@@ -209,7 +210,7 @@ describe("Routing Contract Invariants", () => {
       await handleFeatureChannelMessage(params)
 
       // confirmedAgent must still be architect — @pm: was temporary
-      expect(getConfirmedAgent("onboarding")).toBe("architect")
+      expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
     })
   })
 
@@ -217,15 +218,15 @@ describe("Routing Contract Invariants", () => {
 
   describe("Invariant 8: Cross-feature state isolation", () => {
     it("setting state for feature A does not affect feature B", () => {
-      setConfirmedAgent("onboarding", "pm")
-      setConfirmedAgent("auth", "architect")
+      setConfirmedAgent(featureKey("onboarding"), "pm")
+      setConfirmedAgent(featureKey("auth"), "architect")
 
-      expect(getConfirmedAgent("onboarding")).toBe("pm")
-      expect(getConfirmedAgent("auth")).toBe("architect")
+      expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
+      expect(getConfirmedAgent(featureKey("auth"))).toBe("architect")
 
       // Modifying onboarding doesn't touch auth
-      setConfirmedAgent("onboarding", "ux-design")
-      expect(getConfirmedAgent("auth")).toBe("architect")
+      setConfirmedAgent(featureKey("onboarding"), "ux-design")
+      expect(getConfirmedAgent(featureKey("auth"))).toBe("architect")
     })
   })
 
@@ -233,13 +234,13 @@ describe("Routing Contract Invariants", () => {
 
   describe("Invariant 9: Thread agent does not affect feature agent", () => {
     it("setThreadAgent for general channel thread does not change confirmedAgent for features", () => {
-      setConfirmedAgent("onboarding", "architect")
-      setThreadAgent("general-thread-123", "pm")
+      setConfirmedAgent(featureKey("onboarding"), "architect")
+      setThreadAgent(threadKey("general-thread-123"), "pm")
 
       // Feature agent unchanged
-      expect(getConfirmedAgent("onboarding")).toBe("architect")
+      expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
       // Thread agent set correctly
-      expect(getThreadAgent("general-thread-123")).toBe("pm")
+      expect(getThreadAgent(threadKey("general-thread-123"))).toBe("pm")
     })
   })
 
@@ -247,23 +248,23 @@ describe("Routing Contract Invariants", () => {
 
   describe("Invariant 10: History key isolation between features", () => {
     it("appending to feature A history does not affect feature B", () => {
-      appendMessage("onboarding", { role: "user", content: "onboarding msg" })
-      appendMessage("auth", { role: "user", content: "auth msg" })
+      appendMessage(featureKey("onboarding"), { role: "user", content: "onboarding msg" })
+      appendMessage(featureKey("auth"), { role: "user", content: "auth msg" })
 
-      expect(getHistory("onboarding")).toHaveLength(1)
-      expect(getHistory("auth")).toHaveLength(1)
-      expect(getHistory("onboarding")[0].content).toBe("onboarding msg")
-      expect(getHistory("auth")[0].content).toBe("auth msg")
+      expect(getHistory(featureKey("onboarding"))).toHaveLength(1)
+      expect(getHistory(featureKey("auth"))).toHaveLength(1)
+      expect(getHistory(featureKey("onboarding"))[0].content).toBe("onboarding msg")
+      expect(getHistory(featureKey("auth"))[0].content).toBe("auth msg")
     })
 
     it("clearing feature A history does not affect feature B", () => {
-      appendMessage("onboarding", { role: "user", content: "msg1" })
-      appendMessage("auth", { role: "user", content: "msg2" })
+      appendMessage(featureKey("onboarding"), { role: "user", content: "msg1" })
+      appendMessage(featureKey("auth"), { role: "user", content: "msg2" })
 
-      clearHistory("onboarding")
+      clearHistory(featureKey("onboarding"))
 
-      expect(getHistory("onboarding")).toHaveLength(0)
-      expect(getHistory("auth")).toHaveLength(1)
+      expect(getHistory(featureKey("onboarding"))).toHaveLength(0)
+      expect(getHistory(featureKey("auth"))).toHaveLength(1)
     })
   })
 
@@ -271,9 +272,9 @@ describe("Routing Contract Invariants", () => {
 
   describe("Invariant: orientedUsers persistence", () => {
     it("markUserOriented persists and isUserOriented reads it back", () => {
-      expect(isUserOriented("testfeature", "U123")).toBe(false)
-      markUserOriented("testfeature", "U123")
-      expect(isUserOriented("testfeature", "U123")).toBe(true)
+      expect(isUserOriented(featureKey("testfeature"), "U123")).toBe(false)
+      markUserOriented(featureKey("testfeature"), "U123")
+      expect(isUserOriented(featureKey("testfeature"), "U123")).toBe(true)
     })
   })
 

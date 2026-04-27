@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { featureKey } from "../../runtime/routing/types"
 
 // Mock all external dependencies
 const mockRunAgent = vi.fn().mockResolvedValue("Here is my expert recommendation on the product vision.")
@@ -66,9 +67,9 @@ describe("handleGeneralChannelAgentMessage", () => {
 
   it("keys history by general:threadTs to avoid feature key collision", async () => {
     await handleGeneralChannelAgentMessage({ ...baseParams, agent: "pm" })
-    expect(mockGetHistory).toHaveBeenCalledWith("general:thread-123")
-    expect(mockAppendMessage).toHaveBeenCalledWith("general:thread-123", expect.objectContaining({ role: "user" }))
-    expect(mockAppendMessage).toHaveBeenCalledWith("general:thread-123", expect.objectContaining({ role: "assistant" }))
+    expect(mockGetHistory).toHaveBeenCalledWith(featureKey("general:thread-123"))
+    expect(mockAppendMessage).toHaveBeenCalledWith(featureKey("general:thread-123"), expect.objectContaining({ role: "user" }))
+    expect(mockAppendMessage).toHaveBeenCalledWith(featureKey("general:thread-123"), expect.objectContaining({ role: "assistant" }))
   })
 
   it("calls runAgent with product-level system prompt for PM", async () => {

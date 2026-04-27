@@ -6,6 +6,7 @@ import { getThreadAgent } from "../../runtime/conversation-store"
 import { registerReactionHandlers } from "./handlers/reactions"
 import { registerSlashCommands } from "./handlers/commands"
 import { UserImage } from "../../runtime/claude-client"
+import { threadKey } from "../../runtime/routing/types"
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -187,7 +188,7 @@ app.message(async ({ message, client, body }) => {
     // If so, route to that agent. Otherwise, route to concierge.
     // A thread belongs to the agent that started it — no switching mid-thread.
     // To talk to a different agent, start a new thread with a new slash command.
-    const threadAgent = getThreadAgent(threadTs)
+    const threadAgent = getThreadAgent(threadKey(threadTs))
 
     if (threadAgent) {
       console.log(`[ROUTER] general-channel thread: routing to ${threadAgent} (thread continuity)`)

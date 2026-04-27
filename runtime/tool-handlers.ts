@@ -11,6 +11,8 @@
 
 import { AgentContext } from "./context-loader"
 import { Message } from "./conversation-store"
+import type { FeatureKey } from "./routing/types"
+import { featureKey } from "./routing/types"
 import type { DecisionCorrection, DecisionAuditResult } from "./spec-auditor"
 import type { DownstreamRole } from "./phase-completion-auditor"
 
@@ -237,7 +239,7 @@ export type ArchitectToolDeps = {
   auditDownstreamReadiness: PmToolDeps["auditDownstreamReadiness"]
   auditSpecStructure: (content: string, specType: "design" | "product" | "engineering") => Array<{ issue: string; recommendation: string }>
   clearHandoffSection: (params: { featureName: string; filePath: string; sectionHeading: string }) => Promise<void>
-  setPendingEscalation: (featureName: string, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; engineeringContext?: string }) => void
+  setPendingEscalation: (key: FeatureKey, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; engineeringContext?: string }) => void
   readFile: FileReader
 }
 
@@ -467,7 +469,7 @@ export async function handleOfferUpstreamRevision(
   const target = input.targetAgent as "pm" | "design"
   const question = input.question as string
   console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
-  deps.setPendingEscalation(ctx.featureName, {
+  deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: target,
     question,
     designContext: "",
@@ -500,7 +502,7 @@ export type DesignToolDeps = {
   classifyForPmGaps: (params: { agentResponse: string; approvedProductSpec?: string }) => Promise<{ gaps: string[]; architectItems: string[]; designItems: string[] }>
   classifyForArchGap: (question: string) => Promise<string>
   preseedEngineeringSpec: (params: { featureName: string; filePath: string; architectItems: string[] }) => Promise<void>
-  setPendingEscalation: (featureName: string, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; productSpec?: string }) => void
+  setPendingEscalation: (key: FeatureKey, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; productSpec?: string }) => void
   generateDesignPreview: (params: { specContent: string; featureName: string; brandContent?: string }) => Promise<{ html: string; warnings: string[] }>
   saveDraftHtmlPreview: (params: { featureName: string; filePath: string; content: string }) => Promise<void>
   filterDesignContent: (html: string) => Promise<string>
@@ -754,7 +756,7 @@ export async function handleOfferPmEscalation(
   if (classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
     console.log(`[ESCALATION] Gate 2 classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
   }
-  deps.setPendingEscalation(ctx.featureName, {
+  deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: "pm",
     question: filteredQuestion,
     designContext: ctx.context.currentDraft ?? "",
@@ -783,7 +785,7 @@ export async function handleOfferArchitectEscalation(
       result: `[PLATFORM REJECTION] This question is an implementation detail — the UI design does not depend on the answer. Do NOT escalate this to the architect.\n\nInstead:\n1. Decide the user-visible behavior (e.g. "conversation is preserved when the user signs in").\n2. Add an entry to the ## Design Assumptions section documenting what the architect will need to confirm.\n3. Continue designing — the architect resolves this during engineering, not before.\n\nExample Design Assumption entry: "- Conversation data is preserved on sign-in via server-side or client-side storage (implementation TBD by architect)."`,
     }
   }
-  deps.setPendingEscalation(ctx.featureName, {
+  deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: "architect",
     question: archQuestion,
     designContext: ctx.context.currentDraft ?? "",

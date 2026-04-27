@@ -82,6 +82,7 @@ import {
 // would wipe .conversation-state.json and lose real pending escalation state.
 disableFilePersistence()
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
+import { featureKey } from "../../runtime/routing/types"
 
 const originalEnv = process.env
 
@@ -162,7 +163,7 @@ function thinkingPlaceholder(client: ReturnType<typeof makeClient>): string {
 // Seed N messages so extractLockedDecisions fires (threshold = 6)
 function seedHistory(featureName: string, count = 7) {
   for (let i = 0; i < count; i++) {
-    appendMessage(featureName, { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+    appendMessage(featureKey(featureName), { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
   }
 }
 
@@ -175,14 +176,14 @@ beforeEach(() => {
   // Clear escalation notification state — tests that run the escalation confirmation path
   // set this as a side effect. Without global cleanup, it leaks into subsequent tests that
   // use confirmedAgent=ux-design, causing the escalation-continuation branch to fire.
-  clearEscalationNotification("onboarding")
-  clearEscalationNotification("dashboard")
-  clearPendingEscalation("onboarding")
-  clearPendingEscalation("dashboard")
+  clearEscalationNotification(featureKey("onboarding"))
+  clearEscalationNotification(featureKey("dashboard"))
+  clearPendingEscalation(featureKey("onboarding"))
+  clearPendingEscalation(featureKey("dashboard"))
   // Clear confirmedAgent so phase-transition detection in setConfirmedAgent doesn't
   // accidentally clear history when a test sets a different agent than a prior test left.
-  clearConfirmedAgent("onboarding")
-  clearConfirmedAgent("dashboard")
+  clearConfirmedAgent(featureKey("onboarding"))
+  clearConfirmedAgent(featureKey("dashboard"))
   process.env = {
     ...originalEnv,
     PRODUCT_NAME: "TestApp",
@@ -227,17 +228,17 @@ afterEach(() => {
 describe("Scenario 1 — PM spec approval → design agent routing", () => {
   const THREAD = "workflow-s1"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("Turn 1: approval confirmation shows approval message and preserves pm as confirmedAgent", async () => {
-    setPendingApproval("onboarding", {
+    setPendingApproval(featureKey("onboarding"), {
       specType: "product",
       specContent: "# Onboarding Product Spec\n\n## Problem\nHelp users onboard.",
       filePath: "specs/features/onboarding/onboarding.product.md",
       featureName: "onboarding",
     })
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     const params = makeParams(THREAD, "feature-onboarding", "confirmed")
     await handleFeatureChannelMessage(params)
@@ -247,7 +248,7 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
     expect(text).toContain("UX designer")
 
     // confirmedAgent stays "pm" — phase check happens on next message, not during approval
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
 
     // saveApprovedSpec was called — createOrUpdateFileContents or getContent reached
     expect(mockGetContent).toHaveBeenCalled()
@@ -255,9 +256,9 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
 
   it("Turn 2: next message after approval routes to UX Designer based on GitHub phase", async () => {
     // State after approval: confirmedAgent = "pm", product spec on main
-    setConfirmedAgent("onboarding", "pm")
-    appendMessage("onboarding", { role: "user", content: "confirmed" })
-    appendMessage("onboarding", { role: "assistant", content: "Product spec approved." })
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+    appendMessage(featureKey("onboarding"), { role: "user", content: "confirmed" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Product spec approved." })
 
     // GitHub: product spec on main, no design spec, no design branch → product-spec-approved-awaiting-design
     mockProductApprovedState()
@@ -274,7 +275,7 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
     await handleFeatureChannelMessage(params)
 
     // confirmedAgent must switch to ux-design
-    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("ux-design")
 
     // Response contains UX Designer label (prepended by withThinking)
     const text = lastUpdateText(params.client)
@@ -292,17 +293,17 @@ describe("Scenario 1 — PM spec approval → design agent routing", () => {
 describe("Scenario 2 — Design spec approval → architect routing", () => {
   const THREAD = "workflow-s2"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("Turn 1: design approval confirmation shows approval message", async () => {
-    setPendingApproval("onboarding", {
+    setPendingApproval(featureKey("onboarding"), {
       specType: "design",
       specContent: "# Onboarding Design Spec\n\n## Screens\nScreen 1.",
       filePath: "specs/features/onboarding/onboarding.design.md",
       featureName: "onboarding",
     })
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     const params = makeParams(THREAD, "feature-onboarding", "confirmed")
     await handleFeatureChannelMessage(params)
@@ -310,13 +311,13 @@ describe("Scenario 2 — Design spec approval → architect routing", () => {
     const text = lastUpdateText(params.client)
     expect(text).toContain("design spec is saved and approved")
     expect(text).toContain("architect")
-    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("ux-design")
   })
 
   it("Turn 2: next message after design approval routes to Architect", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
-    appendMessage("onboarding", { role: "user", content: "confirmed" })
-    appendMessage("onboarding", { role: "assistant", content: "Design spec approved." })
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    appendMessage(featureKey("onboarding"), { role: "user", content: "confirmed" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Design spec approved." })
 
     // GitHub: product + design specs on main → design-approved-awaiting-engineering
     mockDesignApprovedState()
@@ -330,7 +331,7 @@ describe("Scenario 2 — Design spec approval → architect routing", () => {
     const params = makeParams(THREAD, "feature-onboarding", "let's plan the engineering")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent("onboarding")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
     expect(thinkingPlaceholder(params.client)).toBe("_Architect is thinking..._")
 
     const text = lastUpdateText(params.client)
@@ -347,8 +348,8 @@ describe("Scenario 2 — Design spec approval → architect routing", () => {
 describe("Scenario 3 — Phase-aware routing on new thread", () => {
   const THREAD = "workflow-s3"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("new thread in design-in-progress feature routes straight to UX Designer", async () => {
     // No confirmedAgent — fresh thread
@@ -363,7 +364,7 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     const params = makeParams(THREAD, "feature-onboarding", "what are we designing?")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("ux-design")
     expect(thinkingPlaceholder(params.client)).toBe("_UX Designer is thinking..._")
     expect(lastUpdateText(params.client)).toContain("Here are the flows.")
   })
@@ -379,7 +380,7 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     const params = makeParams(THREAD, "feature-onboarding", "let's start the arch")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent("onboarding")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
     expect(thinkingPlaceholder(params.client)).toBe("_Architect is thinking..._")
   })
 
@@ -393,7 +394,7 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
     const params = makeParams(THREAD, "feature-onboarding", "I want to build onboarding")
     await handleFeatureChannelMessage(params)
 
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
     // resolveAgent sets confirmedAgent=pm immediately — PM label shown from the start
     expect(thinkingPlaceholder(params.client)).toBe("_Product Manager is thinking..._")
     expect(lastUpdateText(params.client)).toContain("Tell me more.")
@@ -413,11 +414,11 @@ describe("Scenario 3 — Phase-aware routing on new thread", () => {
 describe("Scenario 4 — PM escalation round-trip from design agent", () => {
   const THREAD = "workflow-s4"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("Turn 1: design agent calls offer_pm_escalation tool → pending escalation stored", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Anthropic call sequence:
     //   [0] isOffTopicForAgent       → false
@@ -444,7 +445,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
     // Escalation was stored — platform can serve it on Turn 2
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.question).toBe("Should chips be permanent for authenticated users?")
 
@@ -458,12 +459,12 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
   it("Turn 2: user says yes → PM agent runs with brief, escalation notification set, awaiting human approval", async () => {
     // Two-step PM escalation: first "yes" runs PM agent and waits for human approval.
     // Spec is NOT patched and design does NOT resume until the human explicitly approves.
-    setConfirmedAgent("onboarding", "ux-design")
-    appendMessage("onboarding", { role: "user", content: "should we support social login?" })
-    appendMessage("onboarding", { role: "assistant", content: "Should chips be permanent for authenticated users?\n\nDesign cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now." })
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    appendMessage(featureKey("onboarding"), { role: "user", content: "should we support social login?" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Should chips be permanent for authenticated users?\n\nDesign cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now." })
 
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
@@ -492,11 +493,11 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
     // Pending escalation cleared (PM ran successfully)
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     // EscalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notif = getEscalationNotification("onboarding")
+    const notif = getEscalationNotification(featureKey("onboarding"))
     expect(notif).not.toBeNull()
     expect(notif?.targetAgent).toBe("pm")
     expect(notif?.originAgent).toBe("design")
@@ -510,15 +511,15 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
   it("Turn 3: human approves PM recommendations → spec patched, 'Product spec updated' posted, design resumes", async () => {
     // Second "yes" hits escalationNotification path — patches spec and resumes design.
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // History = 4 messages (Turn 1 + Turn 2 user/assistant pairs)
-    appendMessage("onboarding", { role: "user", content: "should we support social login?" })
-    appendMessage("onboarding", { role: "assistant", content: "Design cannot move forward. Say *yes*..." })
-    appendMessage("onboarding", { role: "user", content: "yes" })
-    appendMessage("onboarding", { role: "assistant", content: "1. My recommendation: Support Google OAuth..." })
+    appendMessage(featureKey("onboarding"), { role: "user", content: "should we support social login?" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Design cannot move forward. Say *yes*..." })
+    appendMessage(featureKey("onboarding"), { role: "user", content: "yes" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "1. My recommendation: Support Google OAuth..." })
 
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "Should social login be supported?",
       recommendations: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.",
@@ -563,7 +564,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
     // EscalationNotification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
 
     // Design agent ran — 7 calls total: Haiku merge (patchProductSpecWithRecommendations) +
     // isOffTopicForAgent + isSpecStateQuery + extractLockedDecisions (history≥6) +
@@ -575,12 +576,12 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     // Root cause of Apr 2026 bug: PM agent replied "I need to see the spec" because
     // loadAgentContext reads from the draft branch (404 after approval). Fix: store
     // productSpec in PendingEscalation and inject it directly into the brief.
-    setConfirmedAgent("onboarding", "ux-design")
-    appendMessage("onboarding", { role: "user", content: "what's blocking design?" })
-    appendMessage("onboarding", { role: "assistant", content: "1. SSO failure path undefined.\n\nDesign cannot move forward. Say *yes*..." })
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    appendMessage(featureKey("onboarding"), { role: "user", content: "what's blocking design?" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "1. SSO failure path undefined.\n\nDesign cannot move forward. Say *yes*..." })
 
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "1. SSO failure path undefined — what is the recovery path?",
       designContext: "",
@@ -618,17 +619,17 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
   const THREAD_B = "workflow-s5-dashboard"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    clearHistory("dashboard")
+    clearHistory(featureKey("onboarding"))
+    clearHistory(featureKey("dashboard"))
   })
   afterEach(() => {
-    clearHistory("onboarding")
-    clearHistory("dashboard")
+    clearHistory(featureKey("onboarding"))
+    clearHistory(featureKey("dashboard"))
   })
 
   it("PM message in Thread A does not affect UX Designer routing in Thread B", async () => {
-    setConfirmedAgent("onboarding", "pm")
-    setConfirmedAgent("dashboard", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+    setConfirmedAgent(featureKey("dashboard"), "ux-design")
 
     // Thread A: PM agent call
     // confirmedAgent = "pm" → getFeaturePhase check → still product-in-progress → run PM
@@ -641,10 +642,10 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
     await handleFeatureChannelMessage(paramsA)
 
     expect(thinkingPlaceholder(paramsA.client)).toBe("_Product Manager is thinking..._")
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
 
     // Thread B: design agent — confirmedAgent should still be ux-design (not contaminated by A)
-    expect(getConfirmedAgent("dashboard")).toBe("ux-design")
+    expect(getConfirmedAgent(featureKey("dashboard"))).toBe("ux-design")
 
     vi.clearAllMocks()
 
@@ -658,8 +659,8 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
     await handleFeatureChannelMessage(paramsB)
 
     expect(thinkingPlaceholder(paramsB.client)).toBe("_UX Designer is thinking..._")
-    expect(getConfirmedAgent("dashboard")).toBe("ux-design")
-    expect(getConfirmedAgent("onboarding")).toBe("pm") // Thread A unaffected
+    expect(getConfirmedAgent(featureKey("dashboard"))).toBe("ux-design")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm") // Thread A unaffected
   })
 })
 
@@ -671,13 +672,13 @@ describe("Scenario 5 — Thread isolation across concurrent features", () => {
 describe("Scenario 6 — confirmedAgent sticky routing", () => {
   const THREAD = "workflow-s6"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("second message in PM thread skips classifyIntent and goes straight to PM", async () => {
-    setConfirmedAgent("onboarding", "pm")
-    appendMessage("onboarding", { role: "user", content: "first message" })
-    appendMessage("onboarding", { role: "assistant", content: "PM response." })
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+    appendMessage(featureKey("onboarding"), { role: "user", content: "first message" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "PM response." })
 
     // Phase is still product-spec-in-progress (no branches)
     mockPaginate.mockResolvedValueOnce([])
@@ -694,9 +695,9 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
   })
 
   it("confirmed design agent thread skips classifyIntent — goes straight to UX Designer", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
-    appendMessage("onboarding", { role: "user", content: "first design message" })
-    appendMessage("onboarding", { role: "assistant", content: "Design response." })
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    appendMessage(featureKey("onboarding"), { role: "user", content: "first design message" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Design response." })
 
     // No design draft on branch → auditPhaseCompletion skipped
     mockAnthropicCreate
@@ -726,15 +727,15 @@ describe("Scenario 6 — confirmedAgent sticky routing", () => {
 describe("Scenario 7 — Design agent caps history at 20 messages", () => {
   const THREAD = "workflow-s7"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("sends at most 21 messages to Anthropic (20 history + current) even when store has 40+", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Seed 40 alternating messages in the conversation store
     for (let i = 0; i < 40; i++) {
-      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+      appendMessage(featureKey("onboarding"), { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
     // No design draft on branch → auditPhaseCompletion skipped
@@ -768,14 +769,14 @@ describe("Scenario 7 — Design agent caps history at 20 messages", () => {
 describe("Scenario 8 — State query on long thread surfaces uncommitted-context note", () => {
   const THREAD = "workflow-s8"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("state response shows specific uncommitted decisions when thread has prior history", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     for (let i = 0; i < 10; i++) {
-      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+      appendMessage(featureKey("onboarding"), { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
@@ -794,10 +795,10 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
   })
 
   it("state response shows 'No open items' when all decisions are in the spec", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     for (let i = 0; i < 10; i++) {
-      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
+      appendMessage(featureKey("onboarding"), { role: i % 2 === 0 ? "user" : "assistant", content: `msg ${i}` })
     }
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
@@ -815,7 +816,7 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
   })
 
   it("state response shows 'No open items' when thread is short (fresh start)", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // "hi" matches CHECK_IN_RE — both isOffTopicForAgent and isSpecStateQuery are skipped.
     // Thread history is empty (length <= 2), so identifyUncommittedDecisions is also skipped.
@@ -842,11 +843,11 @@ describe("Scenario 8 — State query on long thread surfaces uncommitted-context
 describe("Scenario 9 — Design patch flow", () => {
   const THREAD = "workflow-s9"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("apply_design_spec_patch tool saves merged draft to GitHub", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Anthropic call sequence (short history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent        → false
@@ -893,11 +894,11 @@ describe("Scenario 9 — Design patch flow", () => {
 describe("Scenario 10 — PM patch flow", () => {
   const THREAD = "workflow-s10"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("apply_product_spec_patch tool merges patch into existing draft and saves to GitHub", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // PM Anthropic call sequence: classifyMessageScope → runAgent (tool_use) → runAgent (end_turn)
     // auditSpecDraft skips API call (empty productVision/architecture)
@@ -933,11 +934,11 @@ describe("Scenario 10 — PM patch flow", () => {
 describe("Scenario 11 — Architect patch flow", () => {
   const THREAD = "workflow-s11"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("apply_engineering_spec_patch tool merges patch into existing draft and saves to GitHub", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Architect Anthropic call sequence: isOffTopicForAgent → isSpecStateQuery → runAgent (tool_use) → runAgent (end_turn)
     // auditSpecDraft skips API call (empty productVision/architecture)
@@ -978,11 +979,11 @@ describe("Scenario 12 — State query preview freshness", () => {
   const DESIGN_DRAFT = "# Onboarding Design\n\n## Screens\nHome screen with prompt bar."
   const SAVED_HTML   = "<html>@keyframes x{} body{background-color:#000;} </html>"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("regenerates preview from committed spec when uncommitted decisions exist", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     seedHistory("onboarding", 10)
 
     // GitHub call order in state query path:
@@ -1020,7 +1021,7 @@ describe("Scenario 12 — State query preview freshness", () => {
   })
 
   it("serves saved GitHub preview without regenerating when all decisions are committed", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     seedHistory("onboarding", 10)
 
     // GitHub call order in state query path:
@@ -1059,7 +1060,7 @@ describe("Scenario 12 — State query preview freshness", () => {
   })
 
   it("state query completes with preview when uncommitted decisions exist", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     seedHistory("onboarding", 10)
 
     // GitHub: design draft on first read; brand/productVision/systemArchitecture reject
@@ -1104,13 +1105,13 @@ describe("Scenario 12 — State query preview freshness", () => {
 describe("Scenario 13 — Post-response uncommitted-decision detection (current turn only)", () => {
   const THREAD = "workflow-s13"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("no warning when current turn introduces no new decisions (preview regen)", async () => {
     // Seed history so fullHistoryDesign.length > 2 (guard passes) and extractLockedDecisions fires.
     seedHistory("onboarding", 3)
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Anthropic call sequence (short history → extractLockedDecisions fires at length ≥ 6; length=3 → skips):
     //   [0] isOffTopicForAgent       → false
@@ -1142,7 +1143,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
 
   it("appends warning when current turn introduces a new decision that wasn't saved", async () => {
     seedHistory("onboarding", 3)
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Same sequence as above but identifyUncommittedDecisions returns an uncommitted decision.
     // No design draft on branch → auditPhaseCompletion skipped
@@ -1169,7 +1170,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
 
   it("does not call identifyUncommittedDecisions when agent called a save tool", async () => {
     seedHistory("onboarding", 3)
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // apply_design_spec_patch calls save → didSave = true → no post-response audit call.
     // Call sequence (history=3, length < 6 → no extractLockedDecisions):
@@ -1205,7 +1206,7 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
 
   it("does not fire warning when agent response ends with 'Lock this in?' — agentStillSeeking guard", async () => {
     seedHistory("onboarding", 3)
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Agent recommends glow opacity and asks "Lock this in?" — no save, but confirmation is pending.
     // Call sequence (history=3, length < 6 → no extractLockedDecisions):
@@ -1246,11 +1247,11 @@ describe("Scenario 13 — Post-response uncommitted-decision detection (current 
 describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message", () => {
   const THREAD = "workflow-s14"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("shows spec-saved confirmation when end-turn Anthropic call fails after apply_design_spec_patch", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Anthropic call sequence (empty history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent  → false
@@ -1287,14 +1288,14 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
     expect(text).not.toContain("Something went wrong")
 
     // Message was stored in history so future turns have context
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const lastMsg = history[history.length - 1]
     expect(lastMsg.role).toBe("assistant")
     expect(lastMsg.content).toContain("Spec saved")
   })
 
   it("still propagates error to withThinking when runAgent fails before any save tool runs", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // runAgent fails on the first call (no tool was called, no spec was saved)
     // No design draft on branch → auditPhaseCompletion skipped
@@ -1332,13 +1333,13 @@ describe("Scenario 14 — Post-save end-turn error surfaces spec-saved message",
 describe("Scenario 15 — Audit fires on short-history threads; preview uses committed spec", () => {
   const THREAD = "workflow-s15"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("audit fires and flags uncommitted decision when in-memory history is empty (guard removed)", async () => {
     // No seedHistory — history length = 0. Old guard (fullHistoryDesign.length > 2) would
     // have blocked the audit. After removing the guard, it always runs on non-save turns.
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent          → false
@@ -1367,7 +1368,7 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
     // After the fix, the tool handler ignores this and passes context.currentDraft (empty
     // since no design spec exists on the branch) to generateDesignPreview. The html-renderer
     // Anthropic call must NOT contain the stale agent text.
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent       → false
@@ -1426,11 +1427,11 @@ describe("Scenario 15 — Audit fires on short-history threads; preview uses com
 describe("Scenario 17 — Render ambiguity audit no longer fires on spec save", () => {
   const THREAD = "workflow-s17"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("save does NOT return renderAmbiguities — ambiguities surfaced in action menu only", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent
@@ -1466,7 +1467,7 @@ describe("Scenario 17 — Render ambiguity audit no longer fires on spec save", 
   })
 
   it("save with no ambiguities produces no renderAmbiguities in tool result", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Call sequence (didSave=true → identifyUncommittedDecisions skipped):
     //   [0] isOffTopicForAgent
@@ -1501,11 +1502,11 @@ describe("Scenario 17 — Render ambiguity audit no longer fires on spec save", 
 describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-based on spec save", () => {
   const THREAD = "workflow-s16"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("cached HTML served directly when generate_design_preview called (no LLM renderer call)", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Return cached HTML for the preview file; reject everything else (product vision, brand, etc.)
     mockGetContent.mockImplementation(({ path }: { path?: string }) => {
@@ -1551,7 +1552,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
   })
 
   it("first preview (no cache) calls renderer and saves HTML to branch", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // default mockGetContent → "Not Found" for everything (set in beforeEach)
 
     // Call sequence:
@@ -1589,7 +1590,7 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
     // 1. Sonnet missed or paraphrased the patch text (wrong content in preview).
     // 2. Sonnet modified elements outside the patch scope (regressions on Auth Sheet, animations, etc.).
     // Now saveDesignDraft always does a full regeneration from the merged spec.
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     const EXISTING_SECTION = "## Existing Section\nContent."
     const THE_PATCH = "## Screens\nNew dark mode screen layout PATCH_MARKER"
@@ -1650,11 +1651,11 @@ describe("Scenario 16 — Deterministic preview: cache on pure-preview, patch-ba
 describe("Scenario 18 — Architect escalation round-trip from design agent", () => {
   const THREAD = "workflow-s18"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("Turn 1: design agent calls offer_architect_escalation → pending stored with targetAgent: architect", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Anthropic call sequence (empty history, no PM spec → no phase entry audit):
     //   [0] isOffTopicForAgent       → false
@@ -1682,7 +1683,7 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     await handleFeatureChannelMessage(params)
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("architect")
     expect(pending?.question).toContain("streaming responses")
@@ -1692,14 +1693,14 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
   })
 
   it("Turn 2: user says yes → architect agent runs with brief, then @mention posted for human review", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // Override env so architectUser is set to a known Slack ID
     process.env.SLACK_ARCHITECT_USER = "U_ARCHITECT"
-    appendMessage("onboarding", { role: "user", content: "how should we handle session carry-over?" })
-    appendMessage("onboarding", { role: "assistant", content: "I've flagged this for the architect — design is paused until they weigh in on the storage model." })
+    appendMessage(featureKey("onboarding"), { role: "user", content: "how should we handle session carry-over?" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "I've flagged this for the architect — design is paused until they weigh in on the storage model." })
 
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "architect",
       question: "Where is user state persisted between logged-out and logged-in sessions?",
       designContext: "Onboarding design in progress.",
@@ -1727,11 +1728,11 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
 
     // Pending cleared
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     // EscalationNotification set for architect reply
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notif = getEscalationNotification("onboarding")
+    const notif = getEscalationNotification(featureKey("onboarding"))
     expect(notif).not.toBeNull()
     expect(notif?.targetAgent).toBe("architect")
   })
@@ -1749,11 +1750,11 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
 describe("Scenario 20 — Always-on architect engineering spec completeness audit", () => {
   const THREAD = "workflow-s20"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("auditPhaseCompletion fires on every architect message when engineering draft exists", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Engineering spec draft exists on engineering branch — triggers auditPhaseCompletion
     const ENG_SPEC = "## API Design\nPOST /api/v1/onboarding — creates onboarding session.\n## Data Model\nOnboardingSession entity."
@@ -1796,7 +1797,7 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
   })
 
   it("auditPhaseCompletion is skipped when no engineering draft exists on branch", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Default mockGetContent rejects everything → no engineering draft found
     // Anthropic call sequence:
@@ -1834,11 +1835,11 @@ describe("Scenario 20 — Always-on architect engineering spec completeness audi
 describe("Scenario 19 — Always-on phase completion audit injection", () => {
   const THREAD = "workflow-s19"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("auditPhaseCompletion fires on every design agent message when design draft exists", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Design spec exists on design branch — triggers auditPhaseCompletion
     const DESIGN_SPEC = "## Screens\nChat Home: chips positioned horizontally.\n## Auth Sheet\nSSO buttons full-width."
@@ -1881,7 +1882,7 @@ describe("Scenario 19 — Always-on phase completion audit injection", () => {
   })
 
   it("auditPhaseCompletion is skipped when no design draft exists on branch", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Default mockGetContent rejects everything → no design draft found
     // Anthropic call sequence:
@@ -1932,11 +1933,11 @@ const S21_CANONICAL_DRAFT = readFileSync(join(S21_FIXTURE_DIR, "design-brand-sec
 describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => {
   const THREAD = "workflow-s21"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("blocks finalization when brand token drift detected — spec NOT saved to GitHub", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Design draft on branch has drifted tokens (--bg, --violet wrong vs BRAND.md).
     // BRAND.md is present on main — triggers hard gate in finalize_design_spec handler.
@@ -1984,7 +1985,7 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
   })
 
   it("allows finalization when no brand drift — spec saved to GitHub", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Design draft on branch has canonical tokens matching BRAND.md — no drift.
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
@@ -2046,11 +2047,11 @@ describe("Scenario 21 — Brand drift hard gate at finalize_design_spec", () => 
 describe("Scenario 22 — Action menu appended after design agent LLM response", () => {
   const THREAD = "workflow-s22"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("action menu with Brand Drift entries appears in final update when drift detected", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Drifted draft on branch + BRAND.md on main — mockImplementation handles multiple calls
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
@@ -2122,11 +2123,11 @@ describe("Scenario 22 — Action menu appended after design agent LLM response",
 describe("Scenario 23 — State path shows all 4 action menu categories", () => {
   const THREAD = "workflow-s23"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("state card includes OPEN ITEMS action menu with Brand Drift entries", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
@@ -2177,9 +2178,9 @@ describe("Scenario 23 — State path shows all 4 action menu categories", () => 
     // (→ readinessFindingsState). This test covers the remaining arrow-function paths
     // in stateActionMenu that the first Scenario 23 test cannot reach.
     const FEATURE = "billing"
-    clearHistory(FEATURE)
+    clearHistory(featureKey(FEATURE))
 
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     const BRAND_WITH_ANIM = [
       "## Color Palette",
@@ -2252,7 +2253,7 @@ describe("Scenario 23 — State path shows all 4 action menu categories", () => 
     expect(text).toContain("Design Issues")
     expect(text).toContain("Screen coverage incomplete")
 
-    clearHistory(FEATURE)
+    clearHistory(featureKey(FEATURE))
   })
 })
 
@@ -2264,11 +2265,11 @@ describe("Scenario 23 — State path shows all 4 action menu categories", () => 
 describe("Scenario 22 — Architect read_approved_specs tool", () => {
   const THREAD = "workflow-s22"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("read_approved_specs with empty featureNames returns early without GitHub read", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Architect Anthropic call sequence: isOffTopicForAgent → isSpecStateQuery → runAgent (tool_use with empty featureNames) → runAgent (end_turn)
     mockAnthropicCreate
@@ -2289,7 +2290,7 @@ describe("Scenario 22 — Architect read_approved_specs tool", () => {
   })
 
   it("read_approved_specs with featureNames reads specs from GitHub main", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     const DASHBOARD_SPEC = "# Dashboard Engineering Spec\n\n## Data Model\nUser sessions table."
     // GitHub: read_approved_specs will try to read specs/features/dashboard/dashboard.engineering.md on main
@@ -2325,11 +2326,11 @@ describe("Scenario 22 — Architect read_approved_specs tool", () => {
 describe("Scenario 22b — read_approved_specs: readFile throws — feature excluded silently", () => {
   const THREAD = "workflow-s22b"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("when readFile throws for a requested feature, that feature is excluded and agent continues", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // GitHub: all reads throw (spec not found on main)
     mockGetContent.mockRejectedValue(new Error("Not Found"))
@@ -2360,11 +2361,11 @@ describe("Scenario 22b — read_approved_specs: readFile throws — feature excl
 describe("Scenario 23 — Architect finalize_engineering_spec tool", () => {
   const THREAD = "workflow-s23"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("finalize_engineering_spec returns error when no draft exists", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // No draft on branch
     mockGetContent.mockRejectedValue(new Error("Not Found"))
@@ -2388,7 +2389,7 @@ describe("Scenario 23 — Architect finalize_engineering_spec tool", () => {
   })
 
   it("finalize_engineering_spec saves draft to main when no blocking questions", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     const DRAFT = "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.\n\n## Open Questions\n"
 
@@ -2431,11 +2432,11 @@ describe("Scenario 23 — Architect finalize_engineering_spec tool", () => {
 describe("Scenario 24 — Architect state query path", () => {
   const THREAD = "workflow-s24"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("state query with no engineering draft replies with 'no draft yet' message", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // No branch draft
     mockGetContent.mockRejectedValue(new Error("Not Found"))
@@ -2454,7 +2455,7 @@ describe("Scenario 24 — Architect state query path", () => {
   })
 
   it("state query with engineering draft returns structured summary", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     const DRAFT = `# Onboarding Engineering Spec
 
@@ -2491,11 +2492,11 @@ describe("Scenario 24 — Architect state query path", () => {
 describe("Scenario 25 — Architect off-topic redirect", () => {
   const THREAD = "workflow-s25"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("off-topic message redirects to main channel with concierge note", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "off-topic" }] })  // isOffTopicForAgent → true
@@ -2515,17 +2516,17 @@ describe("Scenario 25 — Architect off-topic redirect", () => {
 describe("Scenario 26 — Architect engineering spec approval", () => {
   const THREAD = "workflow-s26"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("user confirms engineering spec approval → spec saved and approved message shown", async () => {
-    setPendingApproval("onboarding", {
+    setPendingApproval(featureKey("onboarding"), {
       specType: "engineering",
       specContent: "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.",
       filePath: "specs/features/onboarding/onboarding.engineering.md",
       featureName: "onboarding",
     })
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     const params = makeParams(THREAD, "feature-onboarding", "confirmed")
     await handleFeatureChannelMessage(params)
@@ -2536,13 +2537,13 @@ describe("Scenario 26 — Architect engineering spec approval", () => {
   })
 
   it("user rejects engineering spec approval → pending cleared, falls through to agent", async () => {
-    setPendingApproval("onboarding", {
+    setPendingApproval(featureKey("onboarding"), {
       specType: "engineering",
       specContent: "# Onboarding Engineering Spec\n\n## Data Model\nUsers table.",
       filePath: "specs/features/onboarding/onboarding.engineering.md",
       featureName: "onboarding",
     })
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Not affirmative — falls through to full architect flow
     mockAnthropicCreate
@@ -2563,15 +2564,15 @@ describe("Scenario 26 — Architect engineering spec approval", () => {
 describe("Scenario 27 — Architect finalize with decision corrections", () => {
   const THREAD = "workflow-s27"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("finalize_engineering_spec applies decision corrections when audit finds mismatches", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Seed history with 2+ messages so auditSpecDecisions makes an API call
-    appendMessage("onboarding", { role: "user", content: "lock pagination at 50 items per page" })
-    appendMessage("onboarding", { role: "assistant", content: "Locked. 50 items per page." })
+    appendMessage(featureKey("onboarding"), { role: "user", content: "lock pagination at 50 items per page" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "Locked. 50 items per page." })
 
     const DRAFT = "# Onboarding Engineering Spec\n\n## API Design\nGET /api/v1/onboarding — 100 items per page.\n\n## Open Questions\n"
 
@@ -2607,7 +2608,7 @@ describe("Scenario 27 — Architect finalize with decision corrections", () => {
   })
 
   it("architect tool handler returns error for unknown tool name", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })    // isOffTopicForAgent
@@ -2636,16 +2637,16 @@ describe("Scenario 27 — Architect finalize with decision corrections", () => {
 describe("Scenario N1 — Non-affirmative during PM escalation → reminder, escalation holds", () => {
   const THREAD = "workflow-n1"
 
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
   afterEach(async () => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("user says 'no' → reminder posted, escalation NOT cleared, no agent call", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
@@ -2666,7 +2667,7 @@ describe("Scenario N1 — Non-affirmative during PM escalation → reminder, esc
     expect(reminder[0].text).toContain("Say *yes*")
 
     // Escalation still pending — not cleared
-    expect(getPendingEscalation("onboarding")).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
   })
 })
 
@@ -2678,16 +2679,16 @@ describe("Scenario N1 — Non-affirmative during PM escalation → reminder, esc
 describe("Scenario N2 — Non-affirmative during architect escalation → reminder, escalation holds", () => {
   const THREAD = "workflow-n2"
 
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
   afterEach(async () => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("user says 'no' to pending architect escalation → reminder posted, escalation NOT cleared", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "architect",
       question: "Where is user state persisted between sessions?",
       designContext: "Onboarding design in progress.",
@@ -2707,7 +2708,7 @@ describe("Scenario N2 — Non-affirmative during architect escalation → remind
     expect(reminder[0].text).toContain("Where is user state persisted")
 
     // Escalation still pending — not cleared
-    expect(getPendingEscalation("onboarding")).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
   })
 })
 
@@ -2720,8 +2721,8 @@ describe("Scenario N2 — Non-affirmative during architect escalation → remind
 describe("Scenario N3 — resolveAgent deterministically sets PM for new features", () => {
   const THREAD = "workflow-n3"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("new feature with no branches → resolveAgent returns pm, no classifyIntent call", async () => {
     // No confirmedAgent, no branches → resolveAgent returns "pm"
@@ -2734,7 +2735,7 @@ describe("Scenario N3 — resolveAgent deterministically sets PM for new feature
     await handleFeatureChannelMessage(params)
 
     // resolveAgent set pm — no classifyIntent needed
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
     const text = lastUpdateText(params.client)
     expect(text).toContain("product spec")
   })
@@ -2755,15 +2756,15 @@ describe("Scenario N3 — resolveAgent deterministically sets PM for new feature
 describe("Scenario N5 — PM history limit 40 messages", () => {
   const THREAD = "workflow-n5"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("sends at most 41 messages to Anthropic (40 history + current) even when store has 50+", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // Seed 50 alternating messages in the conversation store
     for (let i = 0; i < 50; i++) {
-      appendMessage("onboarding", { role: i % 2 === 0 ? "user" : "assistant", content: `pm-msg ${i}` })
+      appendMessage(featureKey("onboarding"), { role: i % 2 === 0 ? "user" : "assistant", content: `pm-msg ${i}` })
     }
 
     // Phase: still in progress (no branches → no phase switch)
@@ -2809,13 +2810,13 @@ describe("Scenario N5 — PM history limit 40 messages", () => {
 describe("Scenario N6 — Architect cache invalidation when engineering spec changes", () => {
   const THREAD = "workflow-n6"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("second message with different spec content invalidates arch-phase cache and re-audits", async () => {
     const FEATURE = "cache-inv-test"
-    clearHistory(FEATURE)
-    setConfirmedAgent(FEATURE, "architect")
+    clearHistory(featureKey(FEATURE))
+    setConfirmedAgent(featureKey(FEATURE), "architect")
 
     const ENG_SPEC_V1 = "## API Design\nPOST /api/v1/test v1-content."
     const ENG_SPEC_V2 = "## API Design\nPOST /api/v1/test v2-content-CHANGED."
@@ -2865,7 +2866,7 @@ describe("Scenario N6 — Architect cache invalidation when engineering spec cha
     // 5 total calls: isOffTopicForAgent + isSpecStateQuery + auditPhaseCompletion + runAgent + identifyUncommittedDecisions
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(5)
 
-    clearHistory(FEATURE)
+    clearHistory(featureKey(FEATURE))
   })
 })
 
@@ -2879,11 +2880,11 @@ describe("Scenario N6 — Architect cache invalidation when engineering spec cha
 describe("Scenario N7 — Preview generation failure does not crash the platform", () => {
   const THREAD = "workflow-n7"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("generateDesignPreview throws → spec saved, agent gets previewUrl saved_to_github, no crash", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Call sequence (0 history → no extractLockedDecisions, no auditPhaseCompletion):
     //   [0] isOffTopicForAgent  → false
@@ -2944,16 +2945,16 @@ describe("Scenario N8 — Mixed brand/animation/missing audits all appear in act
   const THREAD = "workflow-n8"
 
   beforeEach(() => {
-    clearHistory("billing-n8")
+    clearHistory(featureKey("billing-n8"))
     clearSummaryCache("billing-n8")
   })
   afterEach(() => {
-    clearHistory("billing-n8")
+    clearHistory(featureKey("billing-n8"))
     clearSummaryCache("billing-n8")
   })
 
   it("Brand Drift + animation drift + missing tokens all appear in LLM-path action menu", async () => {
-    setConfirmedAgent("billing-n8", "ux-design")
+    setConfirmedAgent(featureKey("billing-n8"), "ux-design")
 
     const BRAND = [
       "## Color Palette",
@@ -3039,20 +3040,20 @@ describe("Scenario N9 — Summarization warning fires exactly once per feature",
   const FEATURE = "sum-warn-test"
 
   beforeEach(() => {
-    clearHistory(FEATURE)
+    clearHistory(featureKey(FEATURE))
     clearSummaryCache(FEATURE)
   })
   afterEach(() => {
-    clearHistory(FEATURE)
+    clearHistory(featureKey(FEATURE))
     clearSummaryCache(FEATURE)
   })
 
   it("summarization warning is posted on first message that exceeds limit, not on second", async () => {
-    setConfirmedAgent(FEATURE, "ux-design")
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
 
     // Seed 25 messages (> DESIGN_HISTORY_LIMIT = 20) so getPriorContext summarises
     for (let i = 0; i < 25; i++) {
-      appendMessage(FEATURE, { role: i % 2 === 0 ? "user" : "assistant", content: `sum-msg ${i}` })
+      appendMessage(featureKey(FEATURE), { role: i % 2 === 0 ? "user" : "assistant", content: `sum-msg ${i}` })
     }
 
     // No design draft on branch → auditPhaseCompletion skipped
@@ -3111,11 +3112,11 @@ describe("Scenario N9 — Summarization warning fires exactly once per feature",
 describe("Scenario N10 — read_approved_specs partial failure: one feature fails, others succeed", () => {
   const THREAD = "workflow-n10"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("one spec fails, other specs load — agent gets partial results and continues", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     const GOOD_SPEC = "# Dashboard Engineering Spec\n\n## Data Model\nUser sessions table."
 
@@ -3165,14 +3166,14 @@ describe("Scenario N11 — Cache isolation between concurrent features", () => {
   const THREAD = "workflow-n11"
 
   beforeEach(() => {
-    clearHistory("cache-feat-a")
-    clearHistory("cache-feat-b")
+    clearHistory(featureKey("cache-feat-a"))
+    clearHistory(featureKey("cache-feat-b"))
     clearSummaryCache("cache-feat-a")
     clearSummaryCache("cache-feat-b")
   })
   afterEach(() => {
-    clearHistory("cache-feat-a")
-    clearHistory("cache-feat-b")
+    clearHistory(featureKey("cache-feat-a"))
+    clearHistory(featureKey("cache-feat-b"))
     clearSummaryCache("cache-feat-a")
     clearSummaryCache("cache-feat-b")
   })
@@ -3181,7 +3182,7 @@ describe("Scenario N11 — Cache isolation between concurrent features", () => {
     const SHARED_SPEC = "## Screens\nSame spec content across both features."
 
     // Feature A: turn 1 — populates cache for "cache-feat-a"
-    setConfirmedAgent("cache-feat-a", "ux-design")
+    setConfirmedAgent(featureKey("cache-feat-a"), "ux-design")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("cache-feat-a.design.md") && ref === "spec/cache-feat-a-design") {
         return Promise.resolve({ data: { content: Buffer.from(SHARED_SPEC).toString("base64"), type: "file" } })
@@ -3207,7 +3208,7 @@ describe("Scenario N11 — Cache isolation between concurrent features", () => {
     // Feature B: turn 1 — different featureName, same spec content
     // Cache key is `design-phase:cache-feat-b:${fingerprint}` → MISS (featureName is different)
     // → auditPhaseCompletion MUST fire for feature-B
-    setConfirmedAgent("cache-feat-b", "ux-design")
+    setConfirmedAgent(featureKey("cache-feat-b"), "ux-design")
     mockAnthropicCreate
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isOffTopicForAgent (B)
       .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }] })   // isSpecStateQuery (B)
@@ -3231,11 +3232,11 @@ describe("Scenario N11 — Cache isolation between concurrent features", () => {
 describe("Scenario N12 — Unknown design agent tool name handled gracefully", () => {
   const THREAD = "workflow-n12"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("unknown design tool returns error to agent, agent continues with end_turn — no crash", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // No design draft → auditPhaseCompletion skipped
     mockAnthropicCreate
@@ -3273,11 +3274,11 @@ describe("Scenario N12 — Unknown design agent tool name handled gracefully", (
 describe("Scenario N13 — PM agent does not gate on brand tokens (pre-design phase)", () => {
   const THREAD = "workflow-n13"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("PM finalize_product_spec completes without brand token checks", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // BRAND.md exists on main (would trigger drift checks if PM loaded it)
     mockGetContent.mockImplementation(({ path }: { path?: string }) => {
@@ -3333,10 +3334,10 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
   const THREAD = "workflow-n14"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
-  afterEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("action menu absent from response when offer_pm_escalation called this turn", async () => {
     // Anthropic call sequence:
@@ -3364,7 +3365,7 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
 
     // Escalation was stored
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
 
     // Action menu must NOT appear — no "OPEN ITEMS" in the response
     const text = lastUpdateText(params.client)
@@ -3385,11 +3386,11 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
 describe("Scenario N26 — classifier filters non-PM items from offer_pm_escalation question", () => {
   const THREAD = "workflow-n26"
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("stores only PM-scope gaps — design/brand items stripped from pending question", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Agent passes a mixed question: 2 PM gaps + 2 design issues
     const mixedQuestion = [
@@ -3424,7 +3425,7 @@ describe("Scenario N26 — classifier filters non-PM items from offer_pm_escalat
     await handleFeatureChannelMessage(params)
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
 
     // Only PM-scope items stored — design/brand items (3 and 4) are stripped
@@ -3448,19 +3449,19 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
   const THREAD = "workflow-n15"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "What happens to the guest session when the user signs up mid-conversation?",
       designContext: "Design in progress.",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("sends reminder message, does not call runAgent, does not clear pending escalation", async () => {
@@ -3480,7 +3481,7 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
 
     // Escalation still stored — not cleared
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
   })
 })
 
@@ -3496,18 +3497,18 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
   const THREAD = "workflow-n16"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "What happens to the guest session when the user signs up mid-conversation?",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("reply clears notification and resumes design agent with injected PM answer", async () => {
@@ -3527,7 +3528,7 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
 
     // Notification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
 
     // Design agent was called with the resume directive
     const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
@@ -3547,18 +3548,18 @@ describe("Scenario N17 — Escalation reply injected message contains question +
   const THREAD = "workflow-n17"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "What happens to the guest session when the user signs up mid-conversation?",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("design agent resumes with a clean continuation message after spec is updated", async () => {
@@ -3605,19 +3606,19 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
   const SPEC_B64 = Buffer.from(SPEC_CONTENT).toString("base64")
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "Should the in-conversation nudge show once per session or repeat after dismissal?",
       recommendations: "1. My recommendation: Show once per session — does not repeat after dismissal.\n→ Rationale: Repeating erodes trust.",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("writes patched spec to GitHub when product spec exists on main and Anthropic returns a valid patch", async () => {
@@ -3663,7 +3664,7 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
 
     // Escalation notification cleared — design resumed
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
   })
 })
 
@@ -3688,13 +3689,13 @@ describe("Scenario N19 — Design spec with only engineering open questions runs
   const THREAD = "workflow-n19"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("spec with [type: engineering] open question → agent runs, no premature escalation gate", async () => {
@@ -3728,7 +3729,7 @@ describe("Scenario N19 — Design spec with only engineering open questions runs
 
     // No pre-run gate should have fired — agent ran and responded.
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     const text = lastUpdateText(params.client)
     expect(text).toContain("Here is the design update.")
@@ -3745,13 +3746,13 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
   const THREAD = "workflow-n18"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("agent gives prose without calling offer_pm_escalation → platform sets pending escalation from product findings", async () => {
@@ -3795,7 +3796,7 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
 
     // Platform must have set pending escalation — agent skipped the tool
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
     expect(pending?.question).toContain("[PM-GAP]")
@@ -3821,12 +3822,12 @@ describe("Scenario N20 — Haiku classifier timeout surfaces as user-visible err
   const THREAD = "workflow-n20"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
   })
 
   it("isOffTopicForAgent timeout → user sees error message, not infinite 'thinking'", async () => {
@@ -3862,12 +3863,12 @@ describe("Scenario N21 — Design readiness audit criterion 10 fires when approv
   const THREAD = "workflow-n21"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
   })
 
   it("criterion 10 [type: product] finding appears in action menu when approvedProductSpec is passed", async () => {
@@ -3941,13 +3942,13 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
   const THREAD = "workflow-n22"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("agent prose 'say yes' + 'bring the PM' → pendingEscalation set, action menu absent", async () => {
@@ -3999,7 +4000,7 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
 
     // Platform must have set pending escalation from prose detection
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
     expect(pending?.question).toContain("SSO error path")
@@ -4029,13 +4030,13 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
   const THREAD = "workflow-n23"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("passive prose is replaced with assertive escalation text built from pendingEscalation.question", async () => {
@@ -4080,7 +4081,7 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
 
     // Platform must have stored pending escalation from the tool call
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.question).toContain("Session expiry")
 
@@ -4109,13 +4110,13 @@ describe("Scenario N25 — Haiku classifier catches PM gaps buried in flat prose
   const THREAD = "workflow-n25"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("flat prose PM gaps — classifier fires, pendingEscalation set, assertive text shown, action menu absent", async () => {
@@ -4150,7 +4151,7 @@ describe("Scenario N25 — Haiku classifier catches PM gaps buried in flat prose
 
     // Classifier must have fired — pendingEscalation set
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
 
@@ -4176,13 +4177,13 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
   const THREAD = "workflow-n24"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("agent 'want me to escalate to PM?' + numbered PM gaps → pendingEscalation set, assertive text shown, action menu absent", async () => {
@@ -4220,7 +4221,7 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
 
     // Fallback gate must have fired — pendingEscalation set with extracted PM questions
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
     expect(pending?.question).toContain("SSO failure path")
@@ -4250,13 +4251,13 @@ describe("Scenario N27 — Gate 3 strips non-PM items from agent prose before st
   const THREAD = "workflow-n27"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("Gate 3 filters design/brand items — only PM gaps stored in pending question", async () => {
@@ -4294,7 +4295,7 @@ describe("Scenario N27 — Gate 3 strips non-PM items from agent prose before st
     await handleFeatureChannelMessage(params)
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
 
     // PM-scope gaps stored
@@ -4328,13 +4329,13 @@ describe("Scenario N28 — Gate 2 rejects offer_pm_escalation when 0 PM gaps fou
   const THREAD = "workflow-n28"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("does not store pending escalation when classifier finds 0 PM gaps in tool question", async () => {
@@ -4375,7 +4376,7 @@ describe("Scenario N28 — Gate 2 rejects offer_pm_escalation when 0 PM gaps fou
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     // No pending escalation stored — brand conflicts are not PM-scope
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
   })
 })
 
@@ -4389,13 +4390,13 @@ describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in 
   const THREAD = "workflow-n29"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("does not store pending escalation when Gate 3 classifier finds 0 PM gaps", async () => {
@@ -4432,7 +4433,7 @@ describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in 
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     // No pending escalation — brand/design conflicts are not PM-scope
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
   })
 })
 
@@ -4450,13 +4451,13 @@ describe("Scenario N52 — Gate 4 skipped when Gate 3 already ran the classifier
   const THREAD = "workflow-n52"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("makes exactly 5 Anthropic calls — Gate 4 does not add a 6th when Gate 3 classified", async () => {
@@ -4496,7 +4497,7 @@ describe("Scenario N52 — Gate 4 skipped when Gate 3 already ran the classifier
 
     // No pending escalation — DESIGN-scope item suppressed correctly
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
   })
 })
 
@@ -4514,13 +4515,13 @@ describe("Scenario N31 — Gate 2 pre-seeds architect-scope filtered items into 
   const THREAD = "workflow-n31"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
     mockGetRef.mockReset()
     mockCreateRef.mockReset()
   })
@@ -4566,7 +4567,7 @@ describe("Scenario N31 — Gate 2 pre-seeds architect-scope filtered items into 
 
     // PM-scope gap stored in pendingEscalation
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending!.question).toContain("SSO")
 
@@ -4594,19 +4595,19 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
   const THREAD = "workflow-n32"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
-    clearEscalationNotification("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("user confirms yes → design agent runs with upstream constraint brief, notification set with originAgent:architect", async () => {
     // Pre-seed architect upstream escalation
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "design",
       question: "The modal sheet must support partial-height drag — current design specifies full-screen only, which the native nav stack cannot support.",
       designContext: "",
@@ -4635,10 +4636,10 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
 
     // Pending escalation cleared after @mention posted
     const { getPendingEscalation: getEsc, getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEsc("onboarding")).toBeNull()
+    expect(getEsc(featureKey("onboarding"))).toBeNull()
 
     // Escalation notification set with originAgent: "architect" so architect resumes on reply
-    const notification = getEscalationNotification("onboarding")
+    const notification = getEscalationNotification(featureKey("onboarding"))
     expect(notification).not.toBeNull()
     expect(notification!.targetAgent).toBe("design")
     expect(notification!.originAgent).toBe("architect")
@@ -4653,7 +4654,7 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
   it("designer reply → architect resumes with injected design decision, notification cleared", async () => {
     // Pre-seed escalation notification (architect-originated, awaiting designer reply)
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "design",
       question: "The modal sheet must support partial-height drag — current design specifies full-screen only.",
       recommendations: "1. My recommendation: Use a bottom sheet pattern limited to 60% height.\n→ Rationale: Native half-sheet fits nav stack constraints.",
@@ -4692,7 +4693,7 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
 
     // Escalation notification cleared after designer reply
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
 
     // Architect was called — the injected message contains the design decision
     const runAgentCall = mockAnthropicCreate.mock.calls.find((call: any) => {
@@ -4714,20 +4715,20 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
   const THREAD = "workflow-n33"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // Pre-seed pending escalation — user will confirm "yes" to trigger PM brief
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "Should the onboarding nudge be dismissable? If so, does it re-appear after session reset?",
       designContext: "The design spec currently shows a persistent nudge with no X button.",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc("onboarding")
-    clearEscalationNotification("onboarding")
+    clrEsc(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("structural gate: clarification-stall (0 'My recommendation:' lines) triggers enforcement re-run", async () => {
@@ -4761,11 +4762,11 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     expect(enforcementUpdate).toBeDefined()
 
     // pendingEscalation cleared
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     // Two-step: escalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification("onboarding")
+    const notification = getEscalationNotification(featureKey("onboarding"))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
     expect(notification?.recommendations).toContain("My recommendation:")
@@ -4786,10 +4787,10 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
   const THREAD = "workflow-n34"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "Should the onboarding nudge be dismissable?",
       recommendations: "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Forcing UI erodes trust.",
@@ -4797,9 +4798,9 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("mixed approval+request routes to PM, escalation notification updated not cleared", async () => {
@@ -4821,7 +4822,7 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
 
     // Notification must still be active — design did NOT resume
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification("onboarding")
+    const notification = getEscalationNotification(featureKey("onboarding"))
     expect(notification).not.toBeNull()
 
     // Recommendations updated to PM's latest response
@@ -4848,13 +4849,13 @@ describe("Scenario N36 — DESIGN: items from Gate 2 classifier returned to agen
   const THREAD = "workflow-n36"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("DESIGN: items returned to agent as self-resolution list — no pendingEscalation set", async () => {
@@ -4890,7 +4891,7 @@ describe("Scenario N36 — DESIGN: items from Gate 2 classifier returned to agen
 
     // No PM escalation stored — these were design decisions, not PM gaps
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     // Agent's final response is present (it resolved independently)
     const text = lastUpdateText(params.client)
@@ -4909,20 +4910,20 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
   const THREAD = "workflow-n35"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // Two-item brief — PM must produce 2 "My recommendation:" lines
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "1. When SSO fails for a returning user, should they remain logged out with an error, or enter a retry state?\n2. Define what the logged-out indicator must communicate to the user and the conditions under which it appears.",
       designContext: "",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc("onboarding")
-    clearEscalationNotification("onboarding")
+    clrEsc(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("1-of-2 partial answer triggers enforcement — final notification contains 2 recommendations", async () => {
@@ -4955,7 +4956,7 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
 
     // Two-step: escalationNotification IS set with both recommendations — awaiting human approval
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification("onboarding")
+    const notification = getEscalationNotification(featureKey("onboarding"))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
     // Final notification contains BOTH recommendations (enforcement run produced full 2-item answer)
@@ -4978,10 +4979,10 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
   const THREAD = "workflow-n37"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     // Simulate restart: confirmed agent is ABSENT (not in store)
     // but pendingEscalation was loaded from .conversation-state.json
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "1. Replace 'ambient awareness only' with a concrete measurable requirement.\n2. Specify the exact text the logged-out indicator should display.",
       designContext: "",
@@ -4989,10 +4990,10 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     // confirmedAgent is intentionally NOT set (simulates post-restart state)
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc("onboarding")
-    clearEscalationNotification("onboarding")
+    clrEsc(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("yes routes to PM escalation (not design agent) when confirmedAgent is absent but pendingEscalation exists", async () => {
@@ -5016,10 +5017,10 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
 
     // pendingEscalation cleared
     const { getPendingEscalation, getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     // Two-step: escalationNotification IS set — awaiting human approval
-    const notification = getEscalationNotification("onboarding")
+    const notification = getEscalationNotification(featureKey("onboarding"))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
     expect(notification?.recommendations).toContain("My recommendation:")
@@ -5035,22 +5036,22 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
   const THREAD = "workflow-n38"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     // pendingEscalation without productSpec — simulates state restored from disk without the field,
     // or set by the pre-run structural gate before the main-branch fallback was implemented.
-    setPendingEscalation("onboarding", {
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "1. What is the exact copy for the logged-out indicator?",
       designContext: "",
       // productSpec intentionally absent
     })
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc("onboarding")
-    clearEscalationNotification("onboarding")
+    clrEsc(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("PM agent receives approved product spec from main-branch fallback when productSpec absent from pendingEscalation", async () => {
@@ -5093,7 +5094,7 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
 
     // Two-step: escalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification("onboarding")
+    const notification = getEscalationNotification(featureKey("onboarding"))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
   })
@@ -5105,8 +5106,8 @@ describe("Scenario N39 — agent system prompts are passed as TextBlockParam[] a
   const THREAD = "workflow-n39"
 
   beforeEach(() => {
-    clearHistory("n39feature")
-    setConfirmedAgent("n39feature", "ux-design")
+    clearHistory(featureKey("n39feature"))
+    setConfirmedAgent(featureKey("n39feature"), "ux-design")
   })
 
   it("design agent Anthropic call receives system as TextBlockParam[] — at least one block has cache_control", async () => {
@@ -5158,19 +5159,19 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
   const THREAD = "workflow-n40"
 
   beforeEach(async () => {
-    clearHistory("n40feature")
-    setConfirmedAgent("n40feature", "ux-design")
+    clearHistory(featureKey("n40feature"))
+    setConfirmedAgent(featureKey("n40feature"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("n40feature", {
+    setEscalationNotification(featureKey("n40feature"), {
       targetAgent: "pm",
       question: "1. What is the exact copy for the logged-out indicator?",
       recommendations: "1. My recommendation: Use 'Not signed in'.\n→ Rationale: Standard phrasing.",
     })
   })
   afterEach(async () => {
-    clearHistory("n40feature")
+    clearHistory(featureKey("n40feature"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("n40feature")
+    clearEscalationNotification(featureKey("n40feature"))
   })
 
   it("non-affirmative message that causes PM to save spec → escalation cleared, design agent runs", async () => {
@@ -5207,7 +5208,7 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
 
     // Escalation notification must be cleared — not stuck in PM loop
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("n40feature")).toBeNull()
+    expect(getEscalationNotification(featureKey("n40feature"))).toBeNull()
 
     // Design agent must have been called — verified by checking the last update text
     const text = lastUpdateText(params.client)
@@ -5228,14 +5229,14 @@ describe("Scenario N41 — per-feature in-flight lock rejects concurrent message
   const THREAD = "workflow-n41"
 
   beforeEach(() => {
-    clearHistory("n41feature")
+    clearHistory(featureKey("n41feature"))
     // Pre-set confirmed agent to PM so we skip classifyIntent on the first message.
     // This makes the mock sequence deterministic: classifyMessageScope (1) + PM agent (2, blocks).
-    setConfirmedAgent("n41feature", "pm")
+    setConfirmedAgent(featureKey("n41feature"), "pm")
   })
 
   afterEach(() => {
-    clearHistory("n41feature")
+    clearHistory(featureKey("n41feature"))
   })
 
   it("second message for same feature while first is in-flight gets 'Still working' reply, no agent call", async () => {
@@ -5310,10 +5311,10 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
   const THREAD = "workflow-n43"
 
   beforeEach(async () => {
-    clearHistory("n43feature")
-    setConfirmedAgent("n43feature", "ux-design")
+    clearHistory(featureKey("n43feature"))
+    setConfirmedAgent(featureKey("n43feature"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("n43feature", {
+    setEscalationNotification(featureKey("n43feature"), {
       targetAgent: "pm",
       question: "1. Define what 'ambient awareness only' means operationally.",
       recommendations: "1. My recommendation: Non-clickable text only.",
@@ -5321,10 +5322,10 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
   })
 
   afterEach(async () => {
-    clearHistory("n43feature")
+    clearHistory(featureKey("n43feature"))
     const { clearEscalationNotification, clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("n43feature")
-    clearPendingEscalation("n43feature")
+    clearEscalationNotification(featureKey("n43feature"))
+    clearPendingEscalation(featureKey("n43feature"))
   })
 
   it("PM saves spec and calls offer_architect_escalation → architect escalation surfaced, design does NOT run", async () => {
@@ -5363,7 +5364,7 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
 
     // pendingEscalation must be set to architect
     const { getPendingEscalation: getPE } = await import("../../../runtime/conversation-store")
-    const pending = getPE("n43feature")
+    const pending = getPE(featureKey("n43feature"))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("architect")
 
@@ -5389,10 +5390,10 @@ describe("Scenario N44 — Architect escalation confirmation routes writeback to
   const DECISION = "1. My recommendation: 10MB hard limit — API returns 413 for larger payloads."
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "architect",
       question: QUESTION,
       recommendations: DECISION,
@@ -5400,9 +5401,9 @@ describe("Scenario N44 — Architect escalation confirmation routes writeback to
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("writes decision to engineering spec branch; does NOT write to product spec on main", async () => {
@@ -5452,10 +5453,10 @@ describe("Scenario N30 variant — isArchitectEscalation=true → product spec N
   const THREAD = "workflow-n30-arch"
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "architect",
       question: "What caching strategy should the auth token use?",
       recommendations: "1. My recommendation: 15-minute TTL with sliding window.",
@@ -5463,9 +5464,9 @@ describe("Scenario N30 variant — isArchitectEscalation=true → product spec N
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("does not write to product spec on main when targetAgent=architect", async () => {
@@ -5504,10 +5505,10 @@ describe("Scenario N44b — Arch upstream escalation confirmation writes to engi
   const PM_DECISION = "Yes — background sync is explicitly in scope per the approved product spec."
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: ARCH_QUESTION,
       recommendations: PM_DECISION,
@@ -5515,9 +5516,9 @@ describe("Scenario N44b — Arch upstream escalation confirmation writes to engi
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification("onboarding")
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("writes pre-engineering decision to engineering spec branch before resuming architect", async () => {
@@ -5558,11 +5559,11 @@ describe("Scenario N47 — [blocking: no] question blocks finalize_product_spec"
   const DRAFT_WITH_NON_BLOCKING = `# Onboarding Product Spec\n\n## Open Questions\n- [type: product] [blocking: no] Should we add a skip button to step 3?\n`
   const DRAFT_B64 = Buffer.from(DRAFT_WITH_NON_BLOCKING).toString("base64")
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("finalize_product_spec blocks when spec has a [blocking: no] question", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // GitHub: product spec branch has draft with [blocking: no] question
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
@@ -5600,11 +5601,11 @@ describe("Scenario N47 — [blocking: no] question blocks finalize_design_spec",
   const DRAFT = `# Onboarding Design Spec\n\n## Open Questions\n- [type: design] [blocking: no] Should the empty state show a subtle illustration?\n\n## Screens\nAuth screen.\n`
   const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("finalize_design_spec blocks when spec has a [blocking: no] question", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
       if (path?.includes("onboarding.design.md") && ref?.includes("design")) {
@@ -5640,11 +5641,11 @@ describe("Scenario N47 — [blocking: no] question blocks finalize_engineering_s
   const DRAFT = `# Onboarding Engineering Spec\n\n## Open Questions\n- [type: engineering] [blocking: no] Should we use Redis or Postgres for session caching?\n\n## API Contracts\nPOST /auth\n`
   const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("finalize_engineering_spec blocks when spec has a [blocking: no] question", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
       if (path?.includes("onboarding.engineering.md") && ref?.includes("engineering")) {
@@ -5697,11 +5698,11 @@ describe("Scenario N46 — finalize_engineering_spec blocked when Design Assumpt
   ].join("\n")
   const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("blocks finalize_engineering_spec when unconfirmed design assumptions remain", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
       if (path?.includes("onboarding.engineering.md") && ref?.includes("engineering")) {
@@ -5756,11 +5757,11 @@ describe("Scenario N48 — finalize_product_spec blocked when Design Notes is no
   ].join("\n")
   const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("blocks finalize_product_spec when ## Design Notes is non-empty", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
       if (path?.includes("onboarding.product.md") && ref?.includes("product")) {
@@ -5814,11 +5815,11 @@ describe("Scenario N49 — finalize_product_spec blocked by PM_DESIGN_READINESS_
   ].join("\n")
   const DRAFT_B64 = Buffer.from(DRAFT).toString("base64")
 
-  beforeEach(() => { clearHistory("onboarding") })
-  afterEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("blocks finalization when PM_DESIGN_READINESS_RUBRIC returns a FINDING", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
       if (path?.includes("onboarding.product.md") && ref?.includes("product")) {
@@ -5881,20 +5882,20 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
   const THREAD = "workflow-n50"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setPendingEscalation("onboarding", {
+    clearHistory(featureKey("onboarding"))
+    setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "1. What is the exact copy for the logged-out indicator?",
       designContext: "",
     })
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
   afterEach(async () => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
     const { clearEscalationNotification: clrNotif } = await import("../../../runtime/conversation-store")
-    clrEsc("onboarding")
-    clrNotif("onboarding")
+    clrEsc(featureKey("onboarding"))
+    clrNotif(featureKey("onboarding"))
   })
 
   it("Turn 2: PM brief contains only the design-agent-identified question — no audit inflation; design does not run yet", async () => {
@@ -5921,9 +5922,9 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     expect(briefText).toContain("What is the exact copy for the logged-out indicator?")
 
     // pendingEscalation cleared, escalationNotification set — awaiting approval
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
     const { getEscalationNotification: getNotif } = await import("../../../runtime/conversation-store")
-    const notif = getNotif("onboarding")
+    const notif = getNotif(featureKey("onboarding"))
     expect(notif).not.toBeNull()
     expect(notif?.targetAgent).toBe("pm")
 
@@ -5934,9 +5935,9 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
   it("Turn 3: human approves → spec patched, design resumes", async () => {
     // Set up Turn 3 state directly (Turn 2 was the PM round)
     const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
-    clrEsc("onboarding")
+    clrEsc(featureKey("onboarding"))
     const { setEscalationNotification: setNotif } = await import("../../../runtime/conversation-store")
-    setNotif("onboarding", {
+    setNotif(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "1. What is the exact copy for the logged-out indicator?",
       recommendations: "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.",
@@ -5968,7 +5969,7 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
 
     // EscalationNotification cleared
     const { getEscalationNotification: getNotif } = await import("../../../runtime/conversation-store")
-    expect(getNotif("onboarding")).toBeNull()
+    expect(getNotif(featureKey("onboarding"))).toBeNull()
 
     // Design ran
     const designCall = mockAnthropicCreate.mock.calls.find((c: any) => Array.isArray(c[0]?.system))
@@ -5994,11 +5995,11 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
 describe("Scenario N51 — PM spec sanitizer strips design-scope content before save", () => {
   const THREAD = "workflow-n51"
 
-  beforeEach(() => { clearHistory("n51feature") })
-  afterEach(() => { clearHistory("n51feature") })
+  beforeEach(() => { clearHistory(featureKey("n51feature")) })
+  afterEach(() => { clearHistory(featureKey("n51feature")) })
 
   it("save_product_spec_draft: ## Design Direction section stripped before GitHub save", async () => {
-    setConfirmedAgent("n51feature", "pm")
+    setConfirmedAgent(featureKey("n51feature"), "pm")
 
     const specWithDesignSection = [
       "## Problem",
@@ -6045,7 +6046,7 @@ describe("Scenario N51 — PM spec sanitizer strips design-scope content before 
   })
 
   it("apply_product_spec_patch: [type: engineering] open question stripped before GitHub save", async () => {
-    setConfirmedAgent("n51feature", "pm")
+    setConfirmedAgent(featureKey("n51feature"), "pm")
 
     // Existing draft has no open questions — patch introduces a cross-domain one
     mockGetContent.mockResolvedValue({
@@ -6101,11 +6102,11 @@ describe("Scenario N51 — PM spec sanitizer strips design-scope content before 
 describe("Scenario N53 — Multi-patch turn posts exactly one preview", () => {
   const THREAD = "workflow-n53"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("two apply_design_spec_patch calls in one turn produce exactly one preview upload", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Anthropic call sequence (0 history → no extractLockedDecisions; no design draft → auditPhaseCompletion skipped):
     //   [0] isOffTopicForAgent    → false
@@ -6166,19 +6167,19 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
   const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     mockAnthropicCreate.mockReset()
     mockGetContent.mockReset()
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
   })
 
   it("'fix all' with 1 brand drift item → loop runs → 'Fixed all 1 item' when post-pass brand clean", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // 4 reads in sequence: context load, pre-run audit, patcher merge-read, post-pass fresh.
     // Reads 1-3: DRAFT_WITH_BRAND_DRIFT (--violet wrong #8B7FE8 vs #7C6FCD from BRAND.md → 1 brand drift).
@@ -6249,7 +6250,7 @@ describe("Scenario N54 — fix-all completion loop: platform composes result, ne
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(7)
 
     // Original user message stored in history (not the enriched PLATFORM FIX-ALL version)
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const userTurn = history.find(m => m.role === "user")
     expect(userTurn?.content).toBe("fix all")
   })
@@ -6281,7 +6282,7 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
   ].join("\n")
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -6289,13 +6290,13 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("normal agent turn with patches → platform re-audits → continuation pass runs → clean action menu", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // First read (pre-run): original draft with issue
     // Second read (post-patch): patched draft that still has 1 remaining design item
@@ -6371,7 +6372,7 @@ describe("Scenario N55 — post-patch continuation loop: normal patch turn auto-
   })
 
   it("normal agent turn with patches — PM-GAP finding NOT fixed in continuation, surfaces via Gate 2 escalation", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
@@ -6437,7 +6438,7 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
   ].join("\n")
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -6445,13 +6446,13 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("architect escalation with remaining design items — platform status line IS shown", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
@@ -6506,7 +6507,7 @@ describe("Scenario N56 — platform status line: visible for arch escalation, su
   })
 
   it("PM escalation with remaining design items — platform status line is suppressed", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
@@ -6582,23 +6583,23 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
   ].join("\n")
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
     mockAnthropicCreate.mockReset()
     mockGetContent.mockReset()
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("implementation-only question → gate rejects, no pending escalation stored", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(async ({ path }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
@@ -6648,7 +6649,7 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
     })
 
     // Gate rejected — no pending escalation stored
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
     // Design items remain → platform status line still shows (no suppression without pending escalation)
     const text = lastUpdateText(client)
     expect(text).toContain("1 item to address before engineering handoff")
@@ -6676,19 +6677,19 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
   const DRAFT_BRAND_CLEAN = "## Brand\n\n- `--violet:` `#7C6FCD`\n\n## Screens\n### Home\nMobile: single-column centered layout. Desktop: fixed 600px container.\n"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     mockAnthropicCreate.mockReset()
     mockGetContent.mockReset()
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
   })
 
   it("'go ahead and fix all of these' → Haiku classifies FIX-ALL → loop runs → 'Fixed all 1 item'", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Reads 1-3: DRAFT_WITH_BRAND_DRIFT (--violet wrong → 1 brand drift).
     // Read 4+ (post-pass fresh): DRAFT_BRAND_CLEAN (correct --violet → brand clean → fixAllComplete).
@@ -6761,7 +6762,7 @@ describe("Scenario N58 — natural English fix intent: Haiku fallback triggers p
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(8)
 
     // Original user message stored in history (not the enriched PLATFORM FIX-ALL version)
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const userTurn = history.find(m => m.role === "user")
     expect(userTurn?.content).toBe("go ahead and fix all of these")
   })
@@ -6793,7 +6794,7 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
   const DRAFT_WITH_BRAND_DRIFT = "## Brand\n\n- `--violet:` `#8B7FE8`\n\n## Screens\n### Home\nContent.\n"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -6801,13 +6802,13 @@ describe("Scenario N59 — fix-all no-progress detection: loop breaks after pass
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("post-pass audit returns same count (brand drift persists) → breaks after 1 pass, reports 0 fixed", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // All reads return DRAFT_WITH_BRAND_DRIFT — brand drift never patched away.
     // BRAND.md mocked to return BRAND_MD_FIXALL for all reads.
@@ -6899,7 +6900,7 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
   const DRAFT_WITH_TWO_BRAND_DRIFTS = "## Brand\n\n- `--violet:` `#8B7FE8`\n- `--teal:` `#99DADA`\n\n## Screens\n### Home\nContent.\n"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -6907,13 +6908,13 @@ describe("Scenario N60 — fix-all regression guard: post-patch fresh count exce
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("post-pass returns 2 findings when pre-run had 1 → Fixed 0 (not -1), 2 items in menu", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Reads 1-3: DRAFT_WITH_BRAND_DRIFT (1 brand drift: --violet only).
     // Reads 4+: DRAFT_WITH_TWO_BRAND_DRIFTS (2 brand drifts: --violet AND --teal wrong).
@@ -6995,7 +6996,7 @@ describe("Scenario N61 — Post-patch spec health invariant fires on bloating pa
   const BLOATED_SPEC = SHORT_SPEC + "Duplicate content added by patch. ".repeat(200)
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -7004,14 +7005,14 @@ describe("Scenario N61 — Post-patch spec health invariant fires on bloating pa
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     delete process.env.MAX_ALLOWED_SPEC_GROWTH_RATIO
   })
 
   it("patch that bloats spec beyond growth ratio triggers health warning and exits early", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Before patch write: short spec. After patch write: bloated spec (simulates what was committed).
     // Flag-based (not readCount-based) because loadDesignAgentContext also reads the design spec
@@ -7094,7 +7095,7 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
     "# Onboarding Design Spec\n\n## Screens\nScreen A and Screen B consolidated.\n\n## Navigation\nTab bar.\n"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -7103,13 +7104,13 @@ describe("Scenario N62 — Fix-all routes structural conflict to rewrite_design_
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("structural conflict finding routes to rewrite_design_spec, not apply_design_spec_patch", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Before rewrite: return SPEC_WITH_DUPLICATE. After rewrite committed: return CONSOLIDATED_SPEC.
     // Flag-based (not readCount) — loadDesignAgentContext reads the spec before the agent runs.
@@ -7214,7 +7215,7 @@ describe("Scenario N63 — Health invariant fires when readiness count increases
   const SPEC_AFTER = "# Onboarding Design Spec\n\n## Screens\nScreen 1.\n\n## Screens\nScreen 1 (duplicate).\n"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -7222,13 +7223,13 @@ describe("Scenario N63 — Health invariant fires when readiness count increases
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("patch that increases readiness finding count triggers degraded warning and exits early", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     let patchWritten = false
     mockCreateOrUpdate.mockImplementation(async () => { patchWritten = true; return {} })
@@ -7309,7 +7310,7 @@ describe("Scenario N64 — Audit-stripping gate blocks renderAmbiguities from to
   ].join("\n")
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -7317,13 +7318,13 @@ describe("Scenario N64 — Audit-stripping gate blocks renderAmbiguities from to
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("tool response reaching the agent does not contain renderAmbiguities", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
       if (path === "specs/features/onboarding/onboarding.design.md") {
@@ -7412,7 +7413,7 @@ describe("Scenario N65 — Write gate strips spec-writing tools when fix intent 
   ].join("\n")
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -7420,13 +7421,13 @@ describe("Scenario N65 — Write gate strips spec-writing tools when fix intent 
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("non-fix message with draft and open items → agent has no spec-writing tools", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Mock GitHub: design draft exists on branch, everything else 404
     mockGetContent.mockImplementation(async ({ path, ref }: any) => {
@@ -7506,13 +7507,13 @@ describe("Scenario N66 — Persistent render ambiguity audit cache hit skips Hai
   const THREAD = "workflow-n66"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
   })
 
   it("GitHub-cached render ambiguity findings used when fingerprint matches — no auditSpecRenderAmbiguity call", async () => {
@@ -7590,7 +7591,7 @@ describe("Scenario N67 — Agent addressing overrides phase-based routing", () =
   const THREAD = "n67-agent-addressing"
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
     mockAnthropicCreate.mockReset()
@@ -7598,14 +7599,14 @@ describe("Scenario N67 — Agent addressing overrides phase-based routing", () =
   })
 
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
   })
 
   it("@design: prefix routes to design agent even when confirmedAgent is architect", async () => {
     // Start in architect phase
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // After @design override, the router will run the design agent path.
     // isOffTopicForAgent → false, isSpecStateQuery → false, then design agent runs
@@ -7629,7 +7630,7 @@ describe("Scenario N67 — Agent addressing overrides phase-based routing", () =
     })
 
     // confirmedAgent stays architect — @design: is a temporary override, not a phase transition
-    expect(getConfirmedAgent("onboarding")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
 
     // The design agent still ran (verified by the response containing design content)
     // and the message was stripped of the @design: prefix
@@ -7654,7 +7655,7 @@ describe("Scenario N71 — PM run_phase_completion_audit tool handler", () => {
   const PM_DRAFT = "# Product Spec\n\n## Acceptance Criteria\nAC#1: user can log in.\n"
 
   it("PM agent calls run_phase_completion_audit and gets rubric result", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.product.md") && ref === "spec/onboarding-product") {
         return Promise.resolve({ data: { content: Buffer.from(PM_DRAFT).toString("base64"), type: "file" } })
@@ -7694,7 +7695,7 @@ describe("Scenario N72 — PM offer_architect_escalation tool handler", () => {
   const THREAD = "workflow-n72"
 
   it("PM agent calls offer_architect_escalation — returns success", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
     mockGetContent.mockImplementation(() => Promise.reject(new Error("Not Found")))
 
     // PM path: [0] runAgent → tool_use, [1] runAgent → end_turn
@@ -7725,7 +7726,7 @@ describe("Scenario N73 — Architect save_engineering_spec_draft tool handler", 
   const ENG_DRAFT = "# Engineering Spec\n\n## Components\nAuth module.\n"
 
   it("architect saves draft — save_engineering_spec_draft handler called", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "main") {
         return Promise.resolve({ data: { content: Buffer.from("# Approved Design").toString("base64"), type: "file" } })
@@ -7769,7 +7770,7 @@ describe("Scenario N74 — Architect read_approved_specs tool handler", () => {
   const THREAD = "workflow-n74"
 
   it("read_approved_specs with empty featureNames returns note", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "main") {
         return Promise.resolve({ data: { content: Buffer.from("# Approved Design").toString("base64"), type: "file" } })
@@ -7808,7 +7809,7 @@ describe("Scenario N75 — Architect offer_upstream_revision to PM", () => {
   const THREAD = "workflow-n75"
 
   it("escalates to PM target and stores pending escalation", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "main") {
         return Promise.resolve({ data: { content: Buffer.from("# Approved Design").toString("base64"), type: "file" } })
@@ -7848,7 +7849,7 @@ describe("Scenario N76 — Architect finalize_engineering_spec blocked by design
   const ENG_WITH_ASSUMPTIONS = "# Engineering Spec\n\n## Components\nAuth.\n\n## Design Assumptions To Validate\n- Assumption 1: mobile bottom sheet is 90vh.\n"
 
   it("blocks finalization when unconfirmed design assumptions exist", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
         return Promise.resolve({ data: { content: Buffer.from(ENG_WITH_ASSUMPTIONS).toString("base64"), type: "file" } })
@@ -7893,7 +7894,7 @@ describe("Scenario N77 — Design fetch_url tool handler", () => {
   const THREAD = "workflow-n77"
 
   it("design agent calls fetch_url — error handled gracefully", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
         return Promise.resolve({ data: { content: Buffer.from("# Design Spec\n\n## Screens\nScreen A.\n").toString("base64"), type: "file" } })
@@ -7940,7 +7941,7 @@ describe("Scenario N78 — Design run_phase_completion_audit tool handler", () =
   const DESIGN_DRAFT = "# Design Spec\n\n## Screens\nScreen A.\n"
 
   it("design agent calls run_phase_completion_audit and gets result", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
         return Promise.resolve({ data: { content: Buffer.from(DESIGN_DRAFT).toString("base64"), type: "file" } })
@@ -7983,7 +7984,7 @@ describe("Scenario N79 — Platform finalization with structural findings delega
   const SPEC_WITH_DUPS = "# Design Spec\n\n## Screens\nScreen A.\n\n## Screens\nScreen B.\n"
 
   it("approval intent + structural findings → agent runs normally (no platform shortcut)", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
         return Promise.resolve({ data: { content: Buffer.from(SPEC_WITH_DUPS).toString("base64"), type: "file" } })
@@ -8026,7 +8027,7 @@ describe("Scenario N68 — auditSpecStructure deterministic floor in action menu
   const SPEC_WITH_DUPLICATE = "# Design Spec\n\n## Screens\nScreen A.\n\n## Screens\nScreen B.\n"
 
   it("[STRUCTURAL] findings appear in state query action menu", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
         return Promise.resolve({ data: { content: Buffer.from(SPEC_WITH_DUPLICATE).toString("base64"), type: "file" } })
@@ -8062,7 +8063,7 @@ describe("Scenario N69 — Health gate blocks save when structural findings incr
   const WORSE_SPEC = "# Design Spec\n\n## Screens\nScreen A.\n\n## Screens\nScreen B.\n"
 
   it("saveDesignDraft blocks when new content has more structural findings", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // Existing spec is clean (0 structural findings)
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
@@ -8111,7 +8112,7 @@ describe("Scenario N70 — Platform-enforced finalization bypasses agent", () =>
   const CLEAN_SPEC = "# Design Spec\n\n## Screens\nScreen A: layout.\n\n## User Flows\nUS-1: user opens app → Screen A.\n"
 
   it("approval intent + 0 structural findings → platform calls finalize directly (no runAgent)", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.design.md") && ref === "spec/onboarding-design") {
         return Promise.resolve({ data: { content: Buffer.from(CLEAN_SPEC).toString("base64"), type: "file" } })
@@ -8145,10 +8146,10 @@ describe("Scenario N70 — Platform-enforced finalization bypasses agent", () =>
 describe("Scenario N71 — Extracted design tool handler wiring through message.ts", () => {
   const THREAD = "workflow-n71"
 
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("save_design_spec_draft via extracted handler saves to GitHub and generates preview", async () => {
-    setConfirmedAgent("onboarding", "ux-design")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
     // Call sequence (0 history → no extractLockedDecisions):
     //   [0] isOffTopicForAgent  → false
@@ -8180,35 +8181,35 @@ describe("Scenario N71 — Extracted design tool handler wiring through message.
 })
 
 describe("Scenario N73 — Phase transition clears conversation history", () => {
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("setConfirmedAgent clears history when agent changes (phase transition)", () => {
     // Seed history and agent for "onboarding"
-    appendMessage("onboarding", { role: "user", content: "design discussion" })
-    appendMessage("onboarding", { role: "assistant", content: "design response" })
-    setConfirmedAgent("onboarding", "ux-design")
-    expect(getHistory("onboarding")).toHaveLength(2)
+    appendMessage(featureKey("onboarding"), { role: "user", content: "design discussion" })
+    appendMessage(featureKey("onboarding"), { role: "assistant", content: "design response" })
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    expect(getHistory(featureKey("onboarding"))).toHaveLength(2)
 
     // Phase transition: design → architect
-    setConfirmedAgent("onboarding", "architect")
-    expect(getHistory("onboarding")).toHaveLength(0)
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    expect(getHistory(featureKey("onboarding"))).toHaveLength(0)
   })
 
   it("setConfirmedAgent does NOT clear history when agent is the same (no transition)", () => {
-    appendMessage("onboarding", { role: "user", content: "arch discussion" })
-    setConfirmedAgent("onboarding", "architect")
-    setConfirmedAgent("onboarding", "architect") // same agent — no transition
-    expect(getHistory("onboarding")).toHaveLength(1)
+    appendMessage(featureKey("onboarding"), { role: "user", content: "arch discussion" })
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect") // same agent — no transition
+    expect(getHistory(featureKey("onboarding"))).toHaveLength(1)
   })
 })
 
 describe("Scenario N72 — Architect orientation gate suppresses notices for first-time userId", () => {
   const THREAD = "workflow-n72"
 
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("first message from a userId suppresses audit notices; second message includes them", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     // Mock: engineering draft exists so readiness audit fires
     mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
       if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
@@ -8240,10 +8241,10 @@ describe("Scenario N72 — Architect orientation gate suppresses notices for fir
 describe("Scenario N81 — Orientation response trailing question stripped by platform gate", () => {
   const THREAD = "workflow-n81"
 
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("trailing question in orientation response is replaced with architect's next step", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     mockGetContent.mockRejectedValue(new Error("Not Found"))
     mockPaginate.mockResolvedValue([])
 
@@ -8274,10 +8275,10 @@ describe("Scenario N81 — Orientation response trailing question stripped by pl
 describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUBRIC, not PM_RUBRIC", () => {
   const THREAD = "workflow-n80"
 
-  beforeEach(() => { clearHistory("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("PM spec with sparse data requirements but complete error paths and no open questions → gate does NOT fire", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     // Mark user as oriented so pre-run gate is not bypassed
     const { handleFeatureChannelMessage } = await import("../../../interfaces/slack/handlers/message")
 
@@ -8342,7 +8343,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
     await handleFeatureChannelMessage(params2)
 
     // Architect ran — gate did NOT fire (no pendingEscalation set)
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
 
     // Verify the agent actually ran (last mock was the agent response)
     const updateCalls = (params2.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
@@ -8351,7 +8352,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
   })
 
   it("PM spec with missing error path → architect runs with finding in context (no gate, no block)", async () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // PM spec: MISSING error path for sign-in story
     // Non-Goals included so deterministic audit doesn't flag the section as missing.
@@ -8441,7 +8442,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 
     // Architect ran (not blocked pre-run) but post-run gate auto-escalated to PM
     // because PM gaps were in context and agent didn't call offer_upstream_revision(pm)
-    const esc = getPendingEscalation("onboarding")
+    const esc = getPendingEscalation(featureKey("onboarding"))
     expect(esc).not.toBeNull()
     expect(esc?.targetAgent).toBe("pm")
 
@@ -8487,11 +8488,11 @@ describe("Scenario N81 — Architect auto-continue message does not allow re-ori
 describe("Scenario N83 — Universal hedge detection gate fires for PM and Design", () => {
   const THREAD = "workflow-n83"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("PM hedge gate strips trailing questions and appends assertive close", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // PM path: classifyMessageScope → runAgent
     mockAnthropicCreate
@@ -8546,12 +8547,12 @@ describe("Scenario N83 — Universal hedge detection gate fires for PM and Desig
 describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", () => {
   const THREAD = "workflow-n84"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("confirmedAgent=pm but feature in engineering phase → routes to architect", async () => {
     // Stale state: confirmedAgent was set to PM (e.g. by a slash command test)
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // GitHub state: product + design specs approved on main, engineering branch exists
     // resolveAgent() reads branches AND main-branch files to determine phase
@@ -8580,11 +8581,11 @@ describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", (
     await handleFeatureChannelMessage(params)
 
     // confirmedAgent must have been corrected to architect
-    expect(getConfirmedAgent("onboarding")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
   })
 
   it("confirmedAgent=pm but feature in design phase → routes to designer", async () => {
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // GitHub state: product spec approved on main, no design on main yet
     mockPaginate.mockResolvedValueOnce([
@@ -8609,7 +8610,7 @@ describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", (
     await handleFeatureChannelMessage(params)
 
     // confirmedAgent must have been corrected to ux-design
-    expect(getConfirmedAgent("onboarding")).toBe("ux-design")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("ux-design")
   })
 })
 
@@ -8618,8 +8619,8 @@ describe("Scenario N84 — Stale confirmedAgent corrected by phase detection", (
 describe("Scenario N85 — Engineering finalization blocked by upstream PM spec findings", () => {
   const THREAD = "workflow-n85"
 
-  beforeEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
-  afterEach(() => { clearHistory("onboarding"); clearSummaryCache("onboarding") })
+  beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
   it("finalize_engineering_spec returns error when PM spec has deterministic findings", async () => {
     // The PM spec has vague language that auditPmSpec catches
@@ -8718,19 +8719,19 @@ describe("Scenario N39 — Re-audit after design→PM escalation reply re-escala
   ].join("\n")
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "AC#1 uses vague language: seamless",
       recommendations: "My recommendation: replace seamless with 200ms cross-fade.",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
-    clearEscalationNotification("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("patched spec with remaining findings triggers new pending escalation", async () => {
@@ -8761,14 +8762,14 @@ describe("Scenario N39 — Re-audit after design→PM escalation reply re-escala
     await handleFeatureChannelMessage(params)
 
     // Re-audit should have found remaining findings → new pending escalation
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
     expect(pending!.question).toContain("PRODUCT MANAGER")
 
     // Escalation notification should be cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
 
     // Design agent should NOT have been called — no "UX Designer is thinking" message
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
@@ -8796,10 +8797,10 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
   ].join("\n")
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "AC#1 uses vague error behavior",
       recommendations: "My recommendation: define error UI as inline toast with specific copy.",
@@ -8807,9 +8808,9 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
-    clearEscalationNotification("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("patched spec with remaining findings triggers new pending escalation", async () => {
@@ -8841,13 +8842,13 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
     await handleFeatureChannelMessage(params)
 
     // Re-audit should have found remaining findings → new pending escalation
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
     // Escalation notification should be cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification("onboarding")).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
 
     // Architect should NOT have resumed
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
@@ -8876,19 +8877,19 @@ describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", 
   ].join("\n")
 
   beforeEach(async () => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification("onboarding", {
+    setEscalationNotification(featureKey("onboarding"), {
       targetAgent: "pm",
       question: "AC#1 uses vague language",
       recommendations: "My recommendation: replace seamless with 200ms cross-fade.",
     })
   })
   afterEach(async () => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
-    clearEscalationNotification("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
   })
 
   it("PM saves to branch → platform applies to main → re-audit finds remaining gaps → re-escalates", async () => {
@@ -8935,7 +8936,7 @@ describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", 
     expect(mainWriteCall).toBeDefined()
 
     // Re-audit should find remaining findings → new pending escalation
-    const pending = getPendingEscalation("onboarding")
+    const pending = getPendingEscalation(featureKey("onboarding"))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
@@ -8956,13 +8957,13 @@ describe("Scenario N42 — /pm during pending escalation shows hold message", ()
   const THREAD = "workflow-n42"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
-    setPendingEscalation("onboarding", { targetAgent: "design", question: "Color palette unspecified", designContext: "" })
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "design", question: "Color palette unspecified", designContext: "" })
   })
   afterEach(() => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("@pm: message blocked by universal guard — hold message mentions Designer, no Anthropic calls", async () => {
@@ -8991,13 +8992,13 @@ describe("Scenario N43 — /design during pending escalation shows hold message 
   const THREAD = "workflow-n43"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
-    setPendingEscalation("onboarding", { targetAgent: "pm", question: "AC#1 uses vague language", designContext: "" })
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", question: "AC#1 uses vague language", designContext: "" })
   })
   afterEach(() => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("@design: message blocked by universal guard — hold message mentions PM", async () => {
@@ -9026,13 +9027,13 @@ describe("Scenario N44 — /pm in design-phase runs PM read-only, no branch writ
   const THREAD = "workflow-n44"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "ux-design")
-    clearPendingEscalation("onboarding")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    clearPendingEscalation(featureKey("onboarding"))
   })
   afterEach(() => {
-    clearHistory("onboarding")
-    clearPendingEscalation("onboarding")
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("PM runs via slash override in design phase — Anthropic called, no file writes", async () => {
@@ -9098,15 +9099,15 @@ describe("Scenario N48 — Design runs with upstream PM findings as informationa
   ].join("\n")
 
   beforeEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    setConfirmedAgent("onboarding", "ux-design")
-    clearPendingEscalation("onboarding")
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    clearPendingEscalation(featureKey("onboarding"))
   })
   afterEach(() => {
-    clearHistory("onboarding")
+    clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    clearPendingEscalation("onboarding")
+    clearPendingEscalation(featureKey("onboarding"))
   })
 
   it("PM spec has vague language — design agent runs, no blocking escalation set", async () => {
@@ -9145,7 +9146,7 @@ describe("Scenario N48 — Design runs with upstream PM findings as informationa
     expect(text).toContain("onboarding flow design")
 
     // No blocking escalation set — upstream findings are informational only
-    expect(getPendingEscalation("onboarding")).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
   })
 })
 
@@ -9192,10 +9193,10 @@ describe("Scenario N52 — Slash override /pm in architect-phase injects phase c
   const THREAD = "workflow-n52"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
   })
-  afterEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("/pm in architect-phase: user message includes PLATFORM CONTEXT with phase and spec link", async () => {
     mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
@@ -9229,10 +9230,10 @@ describe("Scenario N53 — Slash override follow-ups stay with the overridden ag
   const THREAD = "workflow-n53"
 
   beforeEach(() => {
-    clearHistory("onboarding")
-    setConfirmedAgent("onboarding", "architect")
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
   })
-  afterEach(() => { clearHistory("onboarding") })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
 
   it("follow-up without @prefix stays with PM, read-only", async () => {
     mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))

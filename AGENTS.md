@@ -4,6 +4,8 @@ Every agent in this system has a clearly defined role, a phase it owns, a human 
 
 **Addressing agents:** Slash commands (`/pm`, `/design`, `/architect`) provide direct agent access from any supported channel. In feature channels, they override phase-based routing. In the general channel, they route to the agent in product-level mode (vision, brand, architecture — each within its domain boundary). The text prefix (`@pm:`, `@design:`, `@architect:`) also works in feature channels for in-thread addressing.
 
+**Canonical agent registry:** The single source of truth for the agent roster is `runtime/routing/agent-registry.ts` (`AGENT_REGISTRY`). It carries each agent's id, display name, description, concierge phase copy, and the GitHub-derived phases it owns. `agents/registry.ts` derives the `ACTIVE_AGENTS` view consumed by the concierge prompt from this registry, so adding a new agent (Coder, Reviewer, …) is one entry — no duplication.
+
 ---
 
 ## Concierge agent

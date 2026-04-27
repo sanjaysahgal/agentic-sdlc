@@ -46,6 +46,7 @@ import {
 } from "../../runtime/conversation-store"
 import { handleFeatureChannelMessage, getChannelState } from "../../interfaces/slack/handlers/message"
 import { clearSummaryCache } from "../../runtime/conversation-summarizer"
+import { featureKey, threadKey } from "../../runtime/routing/types"
 
 disableFilePersistence()
 
@@ -80,8 +81,8 @@ function makeParams(threadTs: string, channelName: string, userMessage: string) 
 
 describe("Cross-Context E2E: actions in one context must not affect another", () => {
   beforeEach(() => {
-    clearHistory("onboarding")
-    clearHistory("auth")
+    clearHistory(featureKey("onboarding"))
+    clearHistory(featureKey("auth"))
     clearSummaryCache("onboarding")
     clearSummaryCache("auth")
     vi.clearAllMocks()
@@ -93,7 +94,7 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
 
   it("slash command override in feature channel does not persist — next message routes to phase agent", async () => {
     // Set up: onboarding is in PM phase
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // Step 1: @design: temporary override (simulates slash command converting to @prefix)
     mockAnthropicCreate
@@ -105,7 +106,7 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
     await handleFeatureChannelMessage(makeParams("ctx-1a", "feature-onboarding", "@design: show me the screens"))
 
     // confirmedAgent must still be PM — @design: was temporary
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
 
     // Step 2: Normal message — should route to PM (the phase agent), not design
     mockAnthropicCreate
@@ -114,15 +115,15 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
     await handleFeatureChannelMessage(makeParams("ctx-1b", "feature-onboarding", "what about the error path?"))
 
     // Still PM
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
   })
 
   // ─── Test 2: Multi-feature isolation
 
   it("setting confirmedAgent for feature A does not affect feature B routing", async () => {
     // Set up two features
-    setConfirmedAgent("onboarding", "pm")
-    setConfirmedAgent("auth", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+    setConfirmedAgent(featureKey("auth"), "architect")
 
     // Send message to onboarding
     mockAnthropicCreate
@@ -131,34 +132,34 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
     await handleFeatureChannelMessage(makeParams("ctx-2a", "feature-onboarding", "how is the spec?"))
 
     // Onboarding is PM, auth is still architect
-    expect(getConfirmedAgent("onboarding")).toBe("pm")
-    expect(getConfirmedAgent("auth")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("pm")
+    expect(getConfirmedAgent(featureKey("auth"))).toBe("architect")
   })
 
   // ─── Test 3: Thread agent isolation from features
 
   it("setThreadAgent for general channel does not affect feature confirmedAgent", () => {
-    setConfirmedAgent("onboarding", "architect")
+    setConfirmedAgent(featureKey("onboarding"), "architect")
 
     // Simulate slash command setting thread agent in general channel
-    setThreadAgent("general-thread-456", "pm")
+    setThreadAgent(threadKey("general-thread-456"), "pm")
 
     // Feature agent unchanged
-    expect(getConfirmedAgent("onboarding")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
 
     // Thread agent set
-    expect(getThreadAgent("general-thread-456")).toBe("pm")
+    expect(getThreadAgent(threadKey("general-thread-456"))).toBe("pm")
 
     // Feature history separate from thread history
-    expect(getHistory("onboarding")).toHaveLength(0)
-    expect(getHistory("general:general-thread-456")).toHaveLength(0)
+    expect(getHistory(featureKey("onboarding"))).toHaveLength(0)
+    expect(getHistory(featureKey("general:general-thread-456"))).toHaveLength(0)
   })
 
   // ─── Test 4: History isolation across features
 
   it("messages in feature A do not appear in feature B history", async () => {
-    setConfirmedAgent("onboarding", "pm")
-    setConfirmedAgent("auth", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+    setConfirmedAgent(featureKey("auth"), "pm")
 
     // Send to onboarding
     mockAnthropicCreate
@@ -167,8 +168,8 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
     await handleFeatureChannelMessage(makeParams("ctx-4a", "feature-onboarding", "onboarding question"))
 
     // Onboarding has history, auth does not
-    expect(getHistory("onboarding").length).toBeGreaterThan(0)
-    expect(getHistory("auth")).toHaveLength(0)
+    expect(getHistory(featureKey("onboarding")).length).toBeGreaterThan(0)
+    expect(getHistory(featureKey("auth"))).toHaveLength(0)
   })
 
   // ─── Test 5: Phase correction after stale state
@@ -178,7 +179,7 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
     const DESIGN_SPEC = Buffer.from("# Design Spec").toString("base64")
 
     // Stale state: confirmedAgent=pm but feature is in engineering phase
-    setConfirmedAgent("onboarding", "pm")
+    setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // Mock GitHub: product + design specs on main, engineering branch exists
     mockPaginate.mockResolvedValueOnce([
@@ -204,6 +205,6 @@ describe("Cross-Context E2E: actions in one context must not affect another", ()
     await handleFeatureChannelMessage(makeParams("ctx-5", "feature-onboarding", "what's the data model?"))
 
     // resolveAgent corrected pm → architect
-    expect(getConfirmedAgent("onboarding")).toBe("architect")
+    expect(getConfirmedAgent(featureKey("onboarding"))).toBe("architect")
   })
 })

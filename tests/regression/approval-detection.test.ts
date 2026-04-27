@@ -111,6 +111,7 @@ vi.mock("@octokit/rest", () => ({
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import { clearHistory, setConfirmedAgent, getHistory, disableFilePersistence } from "../../../runtime/conversation-store"
+import { featureKey } from "../../runtime/routing/types"
 disableFilePersistence()
 
 const originalEnv = process.env
@@ -132,12 +133,12 @@ beforeEach(() => {
   mockOctokitGetContent.mockRejectedValue(new Error("Not Found"))
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 const makeParams = (userMessage: string) => ({
@@ -170,7 +171,7 @@ describe("bug #6 — premature spec approval: text-only agent responses must nev
         content: [{ type: "text", text: "I recommend option A for the data model. Here's why..." }],
       }) // runAgent — text-only, no tool calls
 
-    setConfirmedAgent("onboarding", "pm" as any)
+    setConfirmedAgent(featureKey("onboarding"), "pm" as any)
     await handleFeatureChannelMessage(makeParams("lets lock option A"))
 
     // Text-only response → no save of any kind
@@ -187,7 +188,7 @@ describe("bug #6 — premature spec approval: text-only agent responses must nev
       .mockResolvedValueOnce({ content: [{ type: "text", text: "I recommend dark mode as the default. Want me to lock this in?" }] }) // runAgent — text-only
     mockOctokitCreateOrUpdate.mockResolvedValue({})
 
-    setConfirmedAgent("onboarding", "ux-design" as any)
+    setConfirmedAgent(featureKey("onboarding"), "ux-design" as any)
 
     await handleFeatureChannelMessage(makeParams("approved"))
     // Text response — no save triggered

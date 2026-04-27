@@ -35,6 +35,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import { handleFeatureChannelMessage } from "../../../interfaces/slack/handlers/message"
 import { clearHistory, setConfirmedAgent, getHistory, disableFilePersistence } from "../../../runtime/conversation-store"
+import { featureKey } from "../../runtime/routing/types"
 disableFilePersistence()
 
 const originalEnv = process.env
@@ -58,12 +59,12 @@ beforeEach(() => {
   // Default: context docs empty
   mockOctokitGetRef.mockResolvedValue({ data: { object: { sha: "abc123" } } })
   mockOctokitCreateRef.mockResolvedValue({})
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 afterEach(() => {
   process.env = originalEnv
-  clearHistory("onboarding")
+  clearHistory(featureKey("onboarding"))
 })
 
 const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
@@ -89,7 +90,7 @@ const makeParams = (overrides: Partial<{ userMessage: string }> = {}) => ({
 
 // Helper: set the confirmed agent for the test thread
 async function withConfirmedAgent(agent: string, fn: () => Promise<void>) {
-  setConfirmedAgent("onboarding", agent as any)
+  setConfirmedAgent(featureKey("onboarding"), agent as any)
   await fn()
 }
 
@@ -168,7 +169,7 @@ describe("blocking gate — PM agent", () => {
       await handleFeatureChannelMessage(makeParams())
     })
 
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const lastAssistant = history.filter(m => m.role === "assistant").at(-1)
     expect(lastAssistant?.content).toContain("Approval blocked")
     expect(lastAssistant?.content).toContain("Who is the primary user")
@@ -276,7 +277,7 @@ describe("gap detection", () => {
 
     // The gap question must be in history so the agent knows what a short reply
     // like "Deliberate extension" refers to on the next turn
-    const history = getHistory("onboarding")
+    const history = getHistory(featureKey("onboarding"))
     const assistantMessages = history.filter(m => m.role === "assistant")
     expect(assistantMessages.length).toBeGreaterThan(0)
     const allAssistantContent = assistantMessages.map(m => m.content).join("\n")

@@ -10,6 +10,12 @@
 
 import fs from "fs"
 import path from "path"
+import {
+  type FeatureKey,
+  type ThreadKey,
+  featureKeyToString,
+  threadKeyToString,
+} from "./routing/types"
 
 export type Message = {
   role: "user" | "assistant"
@@ -239,8 +245,8 @@ if (escalationNotifications.size > 0) {
   console.log(`[STORE] startup: restored ${escalationNotifications.size} escalation notification(s): [${[...escalationNotifications.keys()].join(", ")}]`)
 }
 
-export function getHistory(featureName: string): Message[] {
-  return store.get(featureName) ?? []
+export function getHistory(key: FeatureKey): Message[] {
+  return store.get(featureKeyToString(key)) ?? []
 }
 
 // Returns pre-migration legacy messages (threadTs-keyed entries consolidated on startup).
@@ -257,145 +263,157 @@ export function clearLegacyMessages(): void {
   persistConversationHistory()
 }
 
-export function appendMessage(threadTs: string, message: Message): void {
-  const history = store.get(threadTs) ?? []
+export function appendMessage(key: FeatureKey, message: Message): void {
+  const flat = featureKeyToString(key)
+  const history = store.get(flat) ?? []
   history.push(message)
-  store.set(threadTs, history)
+  store.set(flat, history)
   persistConversationHistory()
 }
 
-export function clearHistory(threadTs: string): void {
-  store.delete(threadTs)
-  confirmedAgents.delete(threadTs)
-  pendingEscalations.delete(threadTs)
-  pendingApprovals.delete(threadTs)
-  pendingDecisionReviews.delete(threadTs)
+export function clearHistory(key: FeatureKey): void {
+  const flat = featureKeyToString(key)
+  store.delete(flat)
+  confirmedAgents.delete(flat)
+  pendingEscalations.delete(flat)
+  pendingApprovals.delete(flat)
+  pendingDecisionReviews.delete(flat)
   persistConfirmedAgents()
   persistConversationHistory()
   persistConversationState()
 }
 
 // Once a user confirms an agent for a thread, store it so we skip confirmation on follow-ups
-export function getConfirmedAgent(threadTs: string): string | null {
-  return confirmedAgents.get(threadTs) ?? null
+export function getConfirmedAgent(key: FeatureKey): string | null {
+  return confirmedAgents.get(featureKeyToString(key)) ?? null
 }
 
-export function setConfirmedAgent(threadTs: string, agent: string): void {
-  const previous = confirmedAgents.get(threadTs)
+export function setConfirmedAgent(key: FeatureKey, agent: string): void {
+  const flat = featureKeyToString(key)
+  const previous = confirmedAgents.get(flat)
   // Phase transition: when the confirmed agent CHANGES (not first set), clear conversation
   // history for this feature. The incoming agent has all approved specs from GitHub in its
   // system prompt — raw prior-phase conversation is noise that causes hallucination.
   // Platform-level mechanism: applies to all current and future agents automatically.
   if (previous && previous !== agent) {
-    const existingHistory = store.get(threadTs)
+    const existingHistory = store.get(flat)
     if (existingHistory && existingHistory.length > 0) {
-      console.log(`[STORE] phase-transition: ${previous} → ${agent} for feature=${threadTs} — clearing ${existingHistory.length} messages`)
-      store.set(threadTs, [])
+      console.log(`[STORE] phase-transition: ${previous} → ${agent} for feature=${flat} — clearing ${existingHistory.length} messages`)
+      store.set(flat, [])
       persistConversationHistory()
     }
   }
-  confirmedAgents.set(threadTs, agent)
+  confirmedAgents.set(flat, agent)
   persistConfirmedAgents()
 }
 
-export function clearConfirmedAgent(featureName: string): void {
-  confirmedAgents.delete(featureName)
+export function clearConfirmedAgent(key: FeatureKey): void {
+  confirmedAgents.delete(featureKeyToString(key))
 }
 
 // Thread agent — tracks which agent owns a general channel thread (persisted across restarts).
 // Set when a slash command starts a thread; used by app.ts to route follow-up messages.
-export function getThreadAgent(threadTs: string): string | null {
-  return threadAgents.get(threadTs) ?? null
+export function getThreadAgent(key: ThreadKey): string | null {
+  return threadAgents.get(threadKeyToString(key)) ?? null
 }
 
-export function setThreadAgent(threadTs: string, agent: string): void {
-  threadAgents.set(threadTs, agent)
+export function setThreadAgent(key: ThreadKey, agent: string): void {
+  const flat = threadKeyToString(key)
+  threadAgents.set(flat, agent)
   persistConversationState()
-  console.log(`[STORE] setThreadAgent: ${agent} for general:${threadTs}`)
+  console.log(`[STORE] setThreadAgent: ${agent} for general:${flat}`)
 }
 
 // Oriented users — tracks which users have been oriented in each feature (persisted across restarts).
 // Prevents re-orientation after bot restart, which was causing returning users to see welcome messages.
 // TRIGGER-JUSTIFIED: isUserOriented is a persistence accessor (reads from persisted Set), not a classifier.
 // It runs on every message to check orientation state — not trigger-dependent.
-export function isUserOriented(featureName: string, userId: string): boolean {
-  return orientedUsers.has(`${featureName}:${userId}`)
+export function isUserOriented(key: FeatureKey, userId: string): boolean {
+  return orientedUsers.has(`${featureKeyToString(key)}:${userId}`)
 }
 
-export function markUserOriented(featureName: string, userId: string): void {
-  const key = `${featureName}:${userId}`
-  if (!orientedUsers.has(key)) {
-    orientedUsers.add(key)
+export function markUserOriented(key: FeatureKey, userId: string): void {
+  const flatKey = `${featureKeyToString(key)}:${userId}`
+  if (!orientedUsers.has(flatKey)) {
+    orientedUsers.add(flatKey)
     persistConversationState()
-    console.log(`[STORE] markUserOriented: ${key}`)
+    console.log(`[STORE] markUserOriented: ${flatKey}`)
   }
 }
 
 // Pending escalation — set when an agent offers to pull another agent into the thread.
 // Cleared when the user confirms (escalation runs) or declines (normal routing resumes).
-export function getPendingEscalation(threadTs: string): PendingEscalation | null {
-  return pendingEscalations.get(threadTs) ?? null
+export function getPendingEscalation(key: FeatureKey): PendingEscalation | null {
+  return pendingEscalations.get(featureKeyToString(key)) ?? null
 }
 
-export function setPendingEscalation(threadTs: string, escalation: PendingEscalation): void {
+export function setPendingEscalation(key: FeatureKey, escalation: PendingEscalation): void {
   // Normalize inline numbered items (e.g. "1. gap one 2. gap two") to newline-separated
   // so Slack renders each gap on its own line instead of running them together
   const normalizedQuestion = escalation.question.replace(/(?<=[^\n])(\s+)(\d+\.\s)/g, "\n$2")
-  console.log(`[STORE] setPendingEscalation: feature=${threadTs} targetAgent=${escalation.targetAgent}`)
-  pendingEscalations.set(threadTs, { ...escalation, question: normalizedQuestion, timestamp: Date.now() })
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] setPendingEscalation: feature=${flat} targetAgent=${escalation.targetAgent}`)
+  pendingEscalations.set(flat, { ...escalation, question: normalizedQuestion, timestamp: Date.now() })
   persistConversationState()
 }
 
-export function clearPendingEscalation(threadTs: string): void {
-  console.log(`[STORE] clearPendingEscalation: feature=${threadTs}`)
-  pendingEscalations.delete(threadTs)
+export function clearPendingEscalation(key: FeatureKey): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] clearPendingEscalation: feature=${flat}`)
+  pendingEscalations.delete(flat)
   persistConversationState()
 }
 
-export function getPendingApproval(threadTs: string): PendingApproval | null {
-  return pendingApprovals.get(threadTs) ?? null
+export function getPendingApproval(key: FeatureKey): PendingApproval | null {
+  return pendingApprovals.get(featureKeyToString(key)) ?? null
 }
 
-export function setPendingApproval(threadTs: string, approval: PendingApproval): void {
-  console.log(`[STORE] setPendingApproval: feature=${threadTs} specType=${approval.specType}`)
-  pendingApprovals.set(threadTs, { ...approval, timestamp: Date.now() })
+export function setPendingApproval(key: FeatureKey, approval: PendingApproval): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] setPendingApproval: feature=${flat} specType=${approval.specType}`)
+  pendingApprovals.set(flat, { ...approval, timestamp: Date.now() })
   persistConversationState()
 }
 
-export function clearPendingApproval(threadTs: string): void {
-  console.log(`[STORE] clearPendingApproval: feature=${threadTs}`)
-  pendingApprovals.delete(threadTs)
+export function clearPendingApproval(key: FeatureKey): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] clearPendingApproval: feature=${flat}`)
+  pendingApprovals.delete(flat)
   persistConversationState()
 }
 
-export function getPendingDecisionReview(threadTs: string): PendingDecisionReview | null {
-  return pendingDecisionReviews.get(threadTs) ?? null
+export function getPendingDecisionReview(key: FeatureKey): PendingDecisionReview | null {
+  return pendingDecisionReviews.get(featureKeyToString(key)) ?? null
 }
 
-export function setPendingDecisionReview(threadTs: string, review: PendingDecisionReview): void {
-  console.log(`[STORE] setPendingDecisionReview: feature=${threadTs} resolvedQuestions=${review.resolvedQuestions.length}`)
-  pendingDecisionReviews.set(threadTs, { ...review, timestamp: Date.now() })
+export function setPendingDecisionReview(key: FeatureKey, review: PendingDecisionReview): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] setPendingDecisionReview: feature=${flat} resolvedQuestions=${review.resolvedQuestions.length}`)
+  pendingDecisionReviews.set(flat, { ...review, timestamp: Date.now() })
   persistConversationState()
 }
 
-export function clearPendingDecisionReview(threadTs: string): void {
-  console.log(`[STORE] clearPendingDecisionReview: feature=${threadTs}`)
-  pendingDecisionReviews.delete(threadTs)
+export function clearPendingDecisionReview(key: FeatureKey): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] clearPendingDecisionReview: feature=${flat}`)
+  pendingDecisionReviews.delete(flat)
   persistConversationState()
 }
 
-export function getEscalationNotification(featureName: string): EscalationNotification | null {
-  return escalationNotifications.get(featureName) ?? null
+export function getEscalationNotification(key: FeatureKey): EscalationNotification | null {
+  return escalationNotifications.get(featureKeyToString(key)) ?? null
 }
 
-export function setEscalationNotification(featureName: string, notification: EscalationNotification): void {
-  console.log(`[STORE] setEscalationNotification: feature=${featureName} targetAgent=${notification.targetAgent}`)
-  escalationNotifications.set(featureName, notification)
+export function setEscalationNotification(key: FeatureKey, notification: EscalationNotification): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] setEscalationNotification: feature=${flat} targetAgent=${notification.targetAgent}`)
+  escalationNotifications.set(flat, notification)
   persistConversationState()
 }
 
-export function clearEscalationNotification(featureName: string): void {
-  console.log(`[STORE] clearEscalationNotification: feature=${featureName}`)
-  escalationNotifications.delete(featureName)
+export function clearEscalationNotification(key: FeatureKey): void {
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] clearEscalationNotification: feature=${flat}`)
+  escalationNotifications.delete(flat)
   persistConversationState()
 }
