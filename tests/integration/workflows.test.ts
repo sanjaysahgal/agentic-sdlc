@@ -8945,3 +8945,239 @@ describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", 
     expect(designThinking).toBeUndefined()
   })
 })
+
+// ─── Scenario N42: /pm during pending escalation → universal hold message ──────
+//
+// When a pending escalation exists (any target), slash command overrides like @pm:
+// are blocked by the universal pre-routing guard. The guard fires BEFORE any agent
+// branch — no Anthropic calls should happen.
+
+describe("Scenario N42 — /pm during pending escalation shows hold message", () => {
+  const THREAD = "workflow-n42"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+    setPendingEscalation("onboarding", { targetAgent: "design", question: "Color palette unspecified", designContext: "" })
+  })
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("@pm: message blocked by universal guard — hold message mentions Designer, no Anthropic calls", async () => {
+    const params = makeParams(THREAD, "feature-onboarding", "@pm: hi")
+    await handleFeatureChannelMessage(params)
+
+    // Hold message posted via postMessage (not update)
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const holdMsg = postCalls.find((c: any) => c[0]?.text?.includes("Designer"))
+    expect(holdMsg).toBeDefined()
+    expect(holdMsg![0].text).toContain("Designer")
+    // Should NOT mention PM — the pending escalation targets design
+    expect(holdMsg![0].text).not.toMatch(/\bPM\b/)
+
+    // No Anthropic calls — guard returns before any agent runs
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Scenario N43: /design during pending escalation → hold message with correct label ──
+//
+// Same guard as N42 but with a different pending escalation target (pm).
+// Verifies the hold message names the correct agent ("PM", not "Designer").
+
+describe("Scenario N43 — /design during pending escalation shows hold message with PM label", () => {
+  const THREAD = "workflow-n43"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+    setPendingEscalation("onboarding", { targetAgent: "pm", question: "AC#1 uses vague language", designContext: "" })
+  })
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("@design: message blocked by universal guard — hold message mentions PM", async () => {
+    const params = makeParams(THREAD, "feature-onboarding", "@design: what about the UI?")
+    await handleFeatureChannelMessage(params)
+
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const holdMsg = postCalls.find((c: any) => c[0]?.text?.includes("PM"))
+    expect(holdMsg).toBeDefined()
+    expect(holdMsg![0].text).toContain("PM")
+    // Should NOT mention Designer — the pending escalation targets pm
+    expect(holdMsg![0].text).not.toMatch(/\bDesigner\b/)
+
+    // No Anthropic calls
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Scenario N44: /pm in design-phase → PM runs read-only, no branch created ──
+//
+// When the feature is in design phase and the user addresses the PM via @pm:,
+// the PM agent runs but in read-only mode (no tools). This means no
+// createOrUpdateFileContents calls — the PM can answer questions but not write specs.
+
+describe("Scenario N44 — /pm in design-phase runs PM read-only, no branch write", () => {
+  const THREAD = "workflow-n44"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "ux-design")
+    clearPendingEscalation("onboarding")
+  })
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearPendingEscalation("onboarding")
+  })
+
+  it("PM runs via slash override in design phase — Anthropic called, no file writes", async () => {
+    // resolveAgent needs GitHub state: design-in-progress phase
+    // (product spec branch on main, design branch exists)
+    mockPaginate.mockResolvedValueOnce([
+      { name: "spec/onboarding-product" },
+      { name: "spec/onboarding-design" },
+    ])
+
+    // All getContent calls return 404 — PM has no spec to read in read-only mode
+    mockGetContent.mockImplementation(async () => {
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // PM agent run: runAgent returns text (no tool_use since read-only has no tools)
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "The onboarding feature helps new users get started quickly." }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 50, output_tokens: 30 },
+      })
+
+    const params = makeParams(THREAD, "feature-onboarding", "@pm: what is this feature about?")
+    await handleFeatureChannelMessage(params)
+
+    // PM ran — at least one Anthropic call
+    expect(mockAnthropicCreate).toHaveBeenCalled()
+
+    // No file writes — read-only mode means no createOrUpdateFileContents
+    expect(mockCreateOrUpdate).not.toHaveBeenCalled()
+
+    // Response contains PM's answer
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("onboarding feature")
+  })
+})
+
+// ─── Scenario N48: Design/architect run normally with retroactive upstream findings ──
+//
+// When the upstream PM spec has deterministic audit findings (e.g. vague language),
+// the design agent still runs — findings are injected as informational context only.
+// No pendingEscalation is set by the upstream audit alone (blocking gates apply
+// at finalization time per Principle 14).
+
+describe("Scenario N48 — Design runs with upstream PM findings as informational context only", () => {
+  const THREAD = "workflow-n48"
+
+  const PM_SPEC_WITH_VAGUE = [
+    "# Onboarding Product Spec",
+    "",
+    "## Problem",
+    "Help users onboard.",
+    "",
+    "## Acceptance Criteria",
+    "- AC#1: The onboarding should feel seamless and intuitive",
+    "",
+    "## Non-Goals",
+    "- Desktop-only optimization is out of scope for v1",
+    "",
+    "## Open Questions",
+    "(none)",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    clearPhaseAuditCaches()
+    setConfirmedAgent("onboarding", "ux-design")
+    clearPendingEscalation("onboarding")
+  })
+  afterEach(() => {
+    clearHistory("onboarding")
+    clearPhaseAuditCaches()
+    clearPendingEscalation("onboarding")
+  })
+
+  it("PM spec has vague language — design agent runs, no blocking escalation set", async () => {
+    // resolveAgent: design-in-progress phase
+    mockPaginate.mockResolvedValueOnce([
+      { name: "spec/onboarding-product" },
+      { name: "spec/onboarding-design" },
+    ])
+
+    // GitHub mocks: PM spec on main has vague language, no design draft on branch
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && (!ref || ref === "main")) {
+        return { data: { content: Buffer.from(PM_SPEC_WITH_VAGUE).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    // Anthropic call sequence for design agent path:
+    // [0] isOffTopicForAgent → false
+    // [1] isSpecStateQuery → false
+    // [2] auditPhaseCompletion (upstream PM enrichment) → PASS (deterministic still catches vague)
+    // [3] runAgent (design) → response
+    // [4] identifyUncommittedDecisions (post-run) → none
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "false" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "PASS" }], stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "Welcome! Let me start with the onboarding flow design." }], stop_reason: "end_turn", usage: { input_tokens: 50, output_tokens: 20 } })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "none" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 5 } })
+
+    const params = makeParams(THREAD, "feature-onboarding", "let's start designing the onboarding")
+    await handleFeatureChannelMessage(params)
+
+    // Design agent ran and responded
+    const text = lastUpdateText(params.client)
+    expect(text).toContain("onboarding flow design")
+
+    // No blocking escalation set — upstream findings are informational only
+    expect(getPendingEscalation("onboarding")).toBeNull()
+  })
+})
+
+// ─── Structural invariant: UNIVERSAL PRE-ROUTING GUARDS marker precedes all agent branches ──
+//
+// The universal guard block must appear BEFORE any `if (confirmedAgent ===` branch.
+// If someone adds a new agent branch above the guard, this test catches the regression.
+
+describe("Structural invariant — UNIVERSAL PRE-ROUTING GUARDS precedes all confirmedAgent branches", () => {
+  it("guard marker line number is less than all confirmedAgent === line numbers", () => {
+    const source = readFileSync(
+      join(__dirname, "../../interfaces/slack/handlers/message.ts"),
+      "utf-8"
+    )
+    const lines = source.split("\n")
+
+    // Find the UNIVERSAL PRE-ROUTING GUARDS marker
+    const guardLineIndex = lines.findIndex(l => l.includes("UNIVERSAL PRE-ROUTING GUARDS"))
+    expect(guardLineIndex).toBeGreaterThan(-1)
+
+    // Find all `if (confirmedAgent ===` lines (agent routing branches)
+    const agentBranchIndices: number[] = []
+    lines.forEach((line, idx) => {
+      if (/if\s*\(\s*confirmedAgent\s*===/.test(line)) {
+        agentBranchIndices.push(idx)
+      }
+    })
+    expect(agentBranchIndices.length).toBeGreaterThan(0)
+
+    // Every agent branch must come AFTER the guard
+    for (const branchIdx of agentBranchIndices) {
+      expect(branchIdx).toBeGreaterThan(guardLineIndex)
+    }
+  })
+})

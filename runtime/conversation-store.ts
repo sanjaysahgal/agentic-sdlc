@@ -22,6 +22,7 @@ export type PendingEscalation = {
   designContext: string   // current design draft — gives them instant context
   productSpec?: string    // approved product spec — so PM agent has full context without re-fetching
   engineeringContext?: string  // current engineering spec draft — gives designer/PM context from architect
+  timestamp?: number      // when this escalation was set (for TTL cleanup)
 }
 
 // Escalation notification — set after the PM/Architect/Designer @mention is posted.
@@ -44,6 +45,7 @@ export type PendingApproval = {
   specContent: string
   filePath: string
   featureName: string
+  timestamp?: number      // when this approval was offered (for TTL cleanup)
 }
 
 // Pending decision review — set when the architect resolves open questions in a spec save.
@@ -54,6 +56,7 @@ export type PendingDecisionReview = {
   filePath: string
   featureName: string
   resolvedQuestions: string[]
+  timestamp?: number      // when this review was offered (for TTL cleanup)
 }
 
 const store = new Map<string, Message[]>()
@@ -201,9 +204,34 @@ migrateThreadTsKeys()
 
 // Escalation state is persisted to disk and survives restarts intentionally.
 // The user's pending "yes" confirmation should still work after a bot restart.
-// Previously these were cleared on startup, but that caused escalation loops:
-// user says "yes" → bot restarted → escalation gone → message routes to agent
-// → agent re-discovers the same gap → re-escalates → user says "yes" again → loop.
+// However, state older than 24h is stale — the user's context is lost and holding
+// the feature in a dead loop is worse than a clean slate.
+const PENDING_STATE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+const startupNow = Date.now()
+
+function clearStaleEntries<T extends { timestamp?: number }>(map: Map<string, T>, label: string): void {
+  for (const [key, value] of map.entries()) {
+    if (!value.timestamp || (startupNow - value.timestamp > PENDING_STATE_TTL_MS)) {
+      const ageMinutes = value.timestamp ? Math.round((startupNow - value.timestamp) / 1000 / 60) : "unknown"
+      console.log(`[STORE] startup: clearing stale ${label} for ${key} (age: ${ageMinutes} min)`)
+      map.delete(key)
+    }
+  }
+}
+
+clearStaleEntries(pendingEscalations, "pendingEscalation")
+clearStaleEntries(pendingApprovals, "pendingApproval")
+clearStaleEntries(pendingDecisionReviews, "pendingDecisionReview")
+// escalationNotifications don't have timestamps — clear all on restart
+// (the agent response was captured but the human may not remember the context)
+if (escalationNotifications.size > 0) {
+  console.log(`[STORE] startup: clearing ${escalationNotifications.size} stale escalation notification(s)`)
+  escalationNotifications.clear()
+}
+if (pendingEscalations.size > 0 || pendingApprovals.size > 0 || pendingDecisionReviews.size > 0) {
+  persistConversationState()
+}
+
 if (pendingEscalations.size > 0) {
   console.log(`[STORE] startup: restored ${pendingEscalations.size} pending escalation(s): [${[...pendingEscalations.keys()].join(", ")}]`)
 }
@@ -314,7 +342,7 @@ export function setPendingEscalation(threadTs: string, escalation: PendingEscala
   // so Slack renders each gap on its own line instead of running them together
   const normalizedQuestion = escalation.question.replace(/(?<=[^\n])(\s+)(\d+\.\s)/g, "\n$2")
   console.log(`[STORE] setPendingEscalation: feature=${threadTs} targetAgent=${escalation.targetAgent}`)
-  pendingEscalations.set(threadTs, { ...escalation, question: normalizedQuestion })
+  pendingEscalations.set(threadTs, { ...escalation, question: normalizedQuestion, timestamp: Date.now() })
   persistConversationState()
 }
 
@@ -330,7 +358,7 @@ export function getPendingApproval(threadTs: string): PendingApproval | null {
 
 export function setPendingApproval(threadTs: string, approval: PendingApproval): void {
   console.log(`[STORE] setPendingApproval: feature=${threadTs} specType=${approval.specType}`)
-  pendingApprovals.set(threadTs, approval)
+  pendingApprovals.set(threadTs, { ...approval, timestamp: Date.now() })
   persistConversationState()
 }
 
@@ -346,7 +374,7 @@ export function getPendingDecisionReview(threadTs: string): PendingDecisionRevie
 
 export function setPendingDecisionReview(threadTs: string, review: PendingDecisionReview): void {
   console.log(`[STORE] setPendingDecisionReview: feature=${threadTs} resolvedQuestions=${review.resolvedQuestions.length}`)
-  pendingDecisionReviews.set(threadTs, review)
+  pendingDecisionReviews.set(threadTs, { ...review, timestamp: Date.now() })
   persistConversationState()
 }
 

@@ -63,7 +63,7 @@ Manual testing (April 23-25) revealed 5 structural gaps in the escalation flow. 
 
 **The 5 gaps:**
 
-1. ~~**No pre-work gate**~~ ✅ DONE (2026-04-25) — `checkUpstreamReadiness` wired as pre-run gate in both design and architect paths. Design: checks PM spec. Architect: PM-first ordering (PM spec → design spec). Gate fires before agent runs, strips tools, sets pending escalation. 3 integration tests (N38, N39, N40).
+1. ~~**No pre-work gate**~~ ✅ REVISED (2026-04-26) — Pre-run `checkUpstreamReadiness` gate was rolled back. It conflated "strip tools during active escalation" (already handled by universal escalation hold) with "block agent on retroactive audit findings" (too aggressive, false positives). The Archon promise is fulfilled by: always-on informational injection (Principle 7) + post-run escalation gates (Principle 8) + finalization hard gate (Principle 14). Universal pre-routing guard now blocks ALL agents during pending escalation (no slash override bypass). `verifyEscalationResolution` re-audit after writebacks remains.
 2. ~~**No batch escalation**~~ ✅ DONE (2026-04-25) — `escalation-orchestrator.ts`: `groupFindingsByCategory()` batches all deterministic findings by criterion, `buildCategorizedEscalationBrief()` produces structured brief with category counts and recommendations.
 3. ~~**No PM-first ordering**~~ ✅ DONE (2026-04-25) — `checkUpstreamReadiness("architect", ...)` checks PM spec first; only checks design spec if PM is clean. PM-first ordering enforced deterministically.
 4. ~~**No design spec writeback**~~ ✅ DONE (2026-04-25) — `patchDesignSpecWithRecommendations` wired in architect→design escalation confirmation path. Dual-spec writeback: engineering spec + upstream design spec.
@@ -76,6 +76,8 @@ Manual testing (April 23-25) revealed 5 structural gaps in the escalation flow. 
 - Human reviews category-level recommendations, confirms once per escalation brief ✅
 - Deterministic auditor re-runs to verify resolution; remaining items trigger new brief ✅
 - This has been the desired flow since day 1 — every fix must align with it ✅
+
+**Additional hardening (2026-04-26):** Universal pre-routing guard (blocks all agents/overrides during escalation), writeback failure compensation (state not cleared on GitHub failure), state TTL (24h, timestamps), pending approval re-fetch (stale content detection), design orientation mode (Principle 15 parity), structural invariant test (guard precedes all agent branches).
 
 **Remaining:** Manual verification of end-to-end flow in live Slack testing.
 

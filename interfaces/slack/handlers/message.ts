@@ -372,10 +372,16 @@ export async function handleFeatureChannelMessage(params: {
   // runs correctly without requiring a new message from the user.
   if (!confirmedAgent && isAffirmative(rawUserMessage) && getPendingEscalation(featureName)) {
     const recovered = getPendingEscalation(featureName)!
-    const recoveredAgent: string = recovered.targetAgent === "design" ? "architect" : "ux-design"
-    confirmedAgent = recoveredAgent
-    setConfirmedAgent(featureName, recoveredAgent)
-    console.log(`[ROUTER] escalation-state-recovered: restored confirmedAgent=${recoveredAgent} from persisted pendingEscalation targetAgent=${recovered.targetAgent} for feature=${featureName}`)
+    const validTargets = ["pm", "architect", "design"]
+    if (!validTargets.includes(recovered.targetAgent)) {
+      console.log(`[ROUTER] escalation-state-recovered: INVALID targetAgent="${recovered.targetAgent}" — clearing stale escalation for ${featureName}`)
+      clearPendingEscalation(featureName)
+    } else {
+      const recoveredAgent: string = recovered.targetAgent === "design" ? "architect" : "ux-design"
+      confirmedAgent = recoveredAgent
+      setConfirmedAgent(featureName, recoveredAgent)
+      console.log(`[ROUTER] escalation-state-recovered: restored confirmedAgent=${recoveredAgent} from persisted pendingEscalation targetAgent=${recovered.targetAgent} for feature=${featureName}`)
+    }
   } else if (!getPendingEscalation(featureName) && !getPendingApproval(featureName)) {
     // No active escalation or approval — resolve from GitHub phase (single source of truth).
     // Skip during active escalation/approval flows to avoid overriding mid-flow state.
@@ -406,6 +412,7 @@ export async function handleFeatureChannelMessage(params: {
   console.log(`[ROUTER] handleFeatureChannelMessage: feature=${featureName} confirmedAgent=${confirmedAgent ?? "(none)"} msg="${userMessage.slice(0, 100)}"`)
 
   // ─── UNIVERSAL PRE-ROUTING GUARDS ──────────────────────────────────────────
+  // DESIGN-REVIEWED: Single guard layer scales to N agents — one code path, not per-agent checks.
   // Run on EVERY message regardless of which agent is confirmed.
   // Slash command overrides cannot bypass these.
 
@@ -771,9 +778,19 @@ ${brief}`
 
     // resolveAgent() already verified ux-design is the correct agent for the current phase.
     // No phase-advance checks needed — stale state was corrected at the top.
+    // DESIGN-REVIEWED: Parity with architect orientation — same pattern, no new context injection.
+    // Orientation enforcement (Principle 15 parity with architect): first message from a userId
+    // runs readOnly — designer orients without gap dump.
+    const designIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureName, userId) : false
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
-      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update, readOnly: slashOverrideReadOnly })
+      await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update, readOnly: designIsOrientation || slashOverrideReadOnly })
     }})
+    if (designIsOrientation) {
+      console.log(`[ROUTER] branch=confirmed-design-auto-continue feature=${featureName} — orientation done, running full-context turn`)
+      await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
+        await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage: "You already oriented the user in your previous message. Do NOT welcome them again or repeat orientation. Go straight to: review the spec chain, surface brand drift and design gaps, and present your design proposal.", userImages: [], client, update })
+      }})
+    }
     return
   }
 
@@ -1060,6 +1077,14 @@ async function runPmAgent(params: {
   if (pendingApproval && pendingApproval.specType === "product") {
     console.log(`[ROUTER] runPmAgent: pending product approval found for feature=${featureName}`)
     if (isAffirmative(userMessage)) {
+      // Re-fetch spec from branch to detect stale cached content
+      const freshContent = await readFile(pendingApproval.filePath, `spec/${featureName}-product`).catch(() => null)
+      if (freshContent && freshContent !== pendingApproval.specContent) {
+        console.log(`[ROUTER] runPmAgent: spec content changed since approval was offered — warning user`)
+        clearPendingApproval(featureName)
+        await update("The spec has been modified since the approval was offered. Please review the current version and say *approve* again when ready.")
+        return
+      }
       clearPendingApproval(featureName)
       await update("_Saving the final product spec..._")
       await saveApprovedSpec({ featureName, filePath: pendingApproval.filePath, content: pendingApproval.specContent })
@@ -1194,6 +1219,14 @@ async function runDesignAgent(params: {
   if (pendingDesignApproval && pendingDesignApproval.specType === "design") {
     console.log(`[ROUTER] runDesignAgent: pending design approval found for feature=${featureName}`)
     if (isAffirmative(userMessage)) {
+      // Re-fetch spec from branch to detect stale cached content
+      const freshDesign = await readFile(pendingDesignApproval.filePath, `spec/${featureName}-design`).catch(() => null)
+      if (freshDesign && freshDesign !== pendingDesignApproval.specContent) {
+        console.log(`[ROUTER] runDesignAgent: spec content changed since approval was offered — warning user`)
+        clearPendingApproval(featureName)
+        await update("The design spec has been modified since the approval was offered. Please review the current version and say *approve* again when ready.")
+        return
+      }
       clearPendingApproval(featureName)
       await update("_Saving the final design spec..._")
       await saveApprovedDesignSpec({ featureName, filePath: pendingDesignApproval.filePath, content: pendingDesignApproval.specContent })
@@ -2477,6 +2510,14 @@ async function runArchitectAgent(params: {
   const pendingEngineeringApproval = getPendingApproval(featureName)
   if (pendingEngineeringApproval && pendingEngineeringApproval.specType === "engineering") {
     if (isAffirmative(userMessage)) {
+      // Re-fetch spec from branch to detect stale cached content
+      const freshEng = await readFile(pendingEngineeringApproval.filePath, `spec/${featureName}-engineering`).catch(() => null)
+      if (freshEng && freshEng !== pendingEngineeringApproval.specContent) {
+        console.log(`[ROUTER] runArchitectAgent: spec content changed since approval was offered — warning user`)
+        clearPendingApproval(featureName)
+        await update("The engineering spec has been modified since the approval was offered. Please review the current version and say *approve* again when ready.")
+        return
+      }
       clearPendingApproval(featureName)
       await update("_Saving the final engineering spec..._")
       await saveApprovedEngineeringSpec({ featureName, filePath: pendingEngineeringApproval.filePath, content: pendingEngineeringApproval.specContent })

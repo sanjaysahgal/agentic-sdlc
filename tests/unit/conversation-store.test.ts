@@ -108,7 +108,9 @@ describe("conversation-store", () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
     const escalation = { targetAgent: "pm" as const, question: "Should social login be supported?", designContext: "## Screens\n..." }
     setPendingEscalation("thread-1", escalation)
-    expect(getPendingEscalation("thread-1")).toEqual(escalation)
+    const stored = getPendingEscalation("thread-1")
+    expect(stored).toMatchObject(escalation)
+    expect(stored?.timestamp).toBeTypeOf("number")
   })
 
   it("setPendingEscalation stores productSpec when provided and retrieves it", async () => {
@@ -187,7 +189,7 @@ describe("conversation-store", () => {
     // are restored so the user can still confirm them after a restart.
     const savedState = {
       pendingEscalations: {
-        "onboarding": { targetAgent: "pm", question: "What is the session expiry?", designContext: "" }
+        "onboarding": { targetAgent: "pm", question: "What is the session expiry?", designContext: "", timestamp: Date.now() }
       },
       pendingApprovals: {},
       escalationNotifications: {},
@@ -214,7 +216,9 @@ describe("conversation-store", () => {
     const { getPendingApproval, setPendingApproval } = await import("../../runtime/conversation-store")
     const approval = { specType: "product" as const, specContent: "# Spec", filePath: "path.md", featureName: "onboarding" }
     setPendingApproval("thread-1", approval)
-    expect(getPendingApproval("thread-1")).toEqual(approval)
+    const stored = getPendingApproval("thread-1")
+    expect(stored).toMatchObject(approval)
+    expect(stored?.timestamp).toBeTypeOf("number")
   })
 
   it("setPendingApproval calls fs.writeFileSync to persist state to disk", async () => {
@@ -250,7 +254,9 @@ describe("conversation-store", () => {
     const { getPendingDecisionReview, setPendingDecisionReview } = await import("../../runtime/conversation-store")
     const review = { specContent: "# Spec", filePath: "path.md", featureName: "onboarding", resolvedQuestions: ["What DB?"] }
     setPendingDecisionReview("thread-1", review)
-    expect(getPendingDecisionReview("thread-1")).toEqual(review)
+    const stored = getPendingDecisionReview("thread-1")
+    expect(stored).toMatchObject(review)
+    expect(stored?.timestamp).toBeTypeOf("number")
   })
 
   it("clearPendingDecisionReview removes the review", async () => {
@@ -297,10 +303,12 @@ describe("conversation-store", () => {
   })
 
   it("disableFilePersistence clears all in-memory state loaded from disk on module import", async () => {
-    // Simulate production state on disk with all three map types populated
+    // Simulate production state on disk with all three map types populated.
+    // Timestamps must be recent (within 24h) to survive TTL cleanup on startup.
+    // escalationNotifications are cleared on startup unconditionally — they don't survive restart.
     const savedState = {
-      pendingEscalations: { "onboarding": { targetAgent: "pm", question: "Q", designContext: "" } },
-      pendingApprovals: { "onboarding": { specType: "product", specContent: "...", filePath: "x", featureName: "onboarding" } },
+      pendingEscalations: { "onboarding": { targetAgent: "pm", question: "Q", designContext: "", timestamp: Date.now() } },
+      pendingApprovals: { "onboarding": { specType: "product", specContent: "...", filePath: "x", featureName: "onboarding", timestamp: Date.now() } },
       escalationNotifications: { "onboarding": { targetAgent: "pm", question: "Q" } },
     }
     fsMocks.readFileSync
@@ -310,11 +318,11 @@ describe("conversation-store", () => {
 
     const { disableFilePersistence, getPendingEscalation, getPendingApproval, getEscalationNotification, getHistory } = await import("../../runtime/conversation-store")
 
-    // Before disableFilePersistence: disk state is in memory.
-    // All state survives startup — escalations, approvals, notifications all restored.
-    expect(getPendingEscalation("onboarding")).not.toBeNull()  // restored on startup
-    expect(getPendingApproval("onboarding")?.specType).toBe("product")
-    expect(getEscalationNotification("onboarding")).not.toBeNull()  // restored on startup
+    // Before disableFilePersistence: timestamped state survives startup.
+    // escalationNotifications are cleared on startup (no timestamp support).
+    expect(getPendingEscalation("onboarding")).not.toBeNull()  // restored (within 24h TTL)
+    expect(getPendingApproval("onboarding")?.specType).toBe("product")  // restored (within 24h TTL)
+    expect(getEscalationNotification("onboarding")).toBeNull()  // cleared on startup (always)
 
     // After disableFilePersistence: all state is wiped — tests start clean
     disableFilePersistence()
