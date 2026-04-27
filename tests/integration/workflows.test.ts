@@ -9219,3 +9219,48 @@ describe("Scenario N52 — Slash override /pm in architect-phase injects phase c
     expect(userMsg?.content).toContain("approved")
   })
 })
+
+// ─── Scenario N53: Slash override thread persistence — follow-ups stay with overridden agent ──
+//
+// When /pm runs in architect-phase, follow-up messages in the same thread
+// stay with PM (read-only) instead of snapping back to the architect.
+
+describe("Scenario N53 — Slash override follow-ups stay with the overridden agent in the same thread", () => {
+  const THREAD = "workflow-n53"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+  })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("follow-up without @prefix stays with PM, read-only", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // Turn 1: /pm override — sets thread agent
+    mockAnthropicCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "Product spec is approved. How can I help?" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 15 },
+    })
+    const params1 = makeParams(THREAD, "feature-onboarding", "@pm: hi")
+    await handleFeatureChannelMessage(params1)
+
+    // Turn 2: follow-up without @prefix — should stay with PM
+    mockAnthropicCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "The onboarding feature covers SSO auth, session management, and conversation carry-over." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 80, output_tokens: 30 },
+    })
+    const params2 = makeParams(THREAD, "feature-onboarding", "summarize the feature for me")
+    await handleFeatureChannelMessage(params2)
+
+    // PM ran on follow-up (not architect) — check the log-level confirmedAgent
+    // The response should be from PM, not architect
+    const lastText = lastUpdateText(params2.client)
+    expect(lastText).toContain("SSO auth")
+
+    // No createOrUpdateFileContents — PM is read-only on follow-up too
+    expect(mockCreateOrUpdate).not.toHaveBeenCalled()
+  })
+})
