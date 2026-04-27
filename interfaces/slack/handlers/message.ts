@@ -446,12 +446,33 @@ export async function handleFeatureChannelMessage(params: {
   // If addressed agent ≠ phase agent AND there's active downstream work, run read-only.
   // Exception: completed features (all specs on main, no active branches) get full tools.
   let slashOverrideReadOnly = false
+  let slashOverrideContext = ""
   if (agentAddressMatch) {
     const phaseAgent = getConfirmedAgent(featureName)
     if (phaseAgent && phaseAgent !== confirmedAgent) {
       slashOverrideReadOnly = true
       console.log(`[ROUTER] universal-guard: slash override ${confirmedAgent} in ${phaseAgent}-phase → read-only`)
+
+      // Build phase-aware context so the agent knows it's a consultant, not the primary agent.
+      const phaseLabels: Record<string, string> = { pm: "product spec", "ux-design": "design", architect: "engineering" }
+      const agentLabels: Record<string, string> = { pm: "PM", "ux-design": "Designer", architect: "Architect" }
+      const currentPhaseLabel = phaseLabels[phaseAgent] ?? phaseAgent
+      const { githubOwner, githubRepo, paths: wsPaths } = loadWorkspaceConfig()
+      const specPath = `${wsPaths.featuresRoot}/${featureName}/${featureName}.product.md`
+      const specUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${specPath}`
+      const designSpecUrl = `https://github.com/${githubOwner}/${githubRepo}/blob/main/${wsPaths.featuresRoot}/${featureName}/${featureName}.design.md`
+
+      if (confirmedAgent === "pm") {
+        slashOverrideContext = `\n\n[PLATFORM CONTEXT: You are running as a read-only consultant via /pm slash command. The feature "${featureName}" is currently in ${currentPhaseLabel} phase (the ${agentLabels[phaseAgent] ?? phaseAgent} is the active agent). Your product spec is already approved on main: ${specUrl}. You cannot edit the spec in this mode. Tell the user: (1) what phase the feature is in, (2) that the product spec is approved with a link, (3) offer to discuss any aspect or flag if they want to make changes.]`
+      } else if (confirmedAgent === "ux-design") {
+        slashOverrideContext = `\n\n[PLATFORM CONTEXT: You are running as a read-only consultant via /design slash command. The feature "${featureName}" is currently in ${currentPhaseLabel} phase (the ${agentLabels[phaseAgent] ?? phaseAgent} is the active agent). Your design spec is approved on main: ${designSpecUrl}. You cannot edit the spec in this mode. Tell the user: (1) what phase the feature is in, (2) that the design spec is approved with a link, (3) offer to discuss any aspect or flag if they want to make changes.]`
+      } else if (confirmedAgent === "architect") {
+        slashOverrideContext = `\n\n[PLATFORM CONTEXT: You are running as a read-only consultant via /architect slash command. The feature "${featureName}" is currently in ${currentPhaseLabel} phase. Engineering has not started yet. You cannot edit any specs in this mode. Tell the user: (1) what phase the feature is in, (2) that engineering hasn't started, (3) offer to discuss architecture questions.]`
+      }
     }
+  }
+  if (slashOverrideContext) {
+    userMessage = userMessage + slashOverrideContext
   }
   // ─── END UNIVERSAL PRE-ROUTING GUARDS ──────────────────────────────────────
 

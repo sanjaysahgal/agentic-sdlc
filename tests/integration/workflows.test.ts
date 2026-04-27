@@ -9181,3 +9181,41 @@ describe("Structural invariant — UNIVERSAL PRE-ROUTING GUARDS precedes all con
     }
   })
 })
+
+// ─── Scenario N52: Slash override injects phase-aware context ────────────────
+//
+// When /pm runs in architect-phase, the PM agent receives PLATFORM CONTEXT
+// telling it the feature is in engineering phase, the PM spec is approved,
+// and it's read-only. The agent's response should reflect this context.
+
+describe("Scenario N52 — Slash override /pm in architect-phase injects phase context", () => {
+  const THREAD = "workflow-n52"
+
+  beforeEach(() => {
+    clearHistory("onboarding")
+    setConfirmedAgent("onboarding", "architect")
+  })
+  afterEach(() => { clearHistory("onboarding") })
+
+  it("/pm in architect-phase: user message includes PLATFORM CONTEXT with phase and spec link", async () => {
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    // PM agent runs read-only — one Anthropic call
+    mockAnthropicCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "The onboarding product spec is approved. Here's the link." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 100, output_tokens: 20 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "@pm: hi")
+    await handleFeatureChannelMessage(params)
+
+    // The Anthropic call should have received PLATFORM CONTEXT in the user message
+    const apiCall = mockAnthropicCreate.mock.calls[0]
+    const messages = apiCall?.[0]?.messages as Array<{ role: string; content: string }>
+    const userMsg = messages?.find(m => m.role === "user")
+    expect(userMsg?.content).toContain("PLATFORM CONTEXT")
+    expect(userMsg?.content).toContain("read-only")
+    expect(userMsg?.content).toContain("approved")
+  })
+})
