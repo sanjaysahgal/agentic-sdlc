@@ -1,5 +1,7 @@
 # archcon — Platform Architecture
 
+> **Routing in flux (2026-04-27):** Routing logic is being refactored into a pure state machine per Path B. The canonical spec for routing decisions is `docs/ROUTING_STATE_MACHINE.md`; the migration plan is `~/.claude/plans/elegant-percolating-newell.md`; the BACKLOG entry is "Routing state machine refactor — system-level architecture (Path B)". Sections of this document describing today's interleaved routing in `interfaces/slack/handlers/message.ts` will be replaced when Phase 6 of the refactor lands. Until then, both this doc and the spec are correct: this doc describes today's implementation; the spec describes the target.
+
 ## Platform Identity
 
 **archcon** is a licensed, multi-tenant SDLC platform. It is not a tool built for one team — it is a platform that other teams license and deploy to automate their entire software development lifecycle, from the first product conversation to production deployment.

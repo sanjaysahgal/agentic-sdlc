@@ -27,6 +27,37 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Routing state machine refactor — system-level architecture (Path B) (2026-04-27)
+
+**Priority: P0 — BLOCKS everything below this line. Last holistic plan across all system capabilities to date.**
+
+The routing logic in `interfaces/slack/handlers/message.ts` (3000+ lines) and `interfaces/slack/handlers/general.ts` is interleaved guards and per-agent branches with no single document or function describing the full system. Every prior "holistic" fix (escalation lifecycle, universal pre-routing guards, slash override read-only/thread persistence, state lifecycle hardening) was holistic to its topic, never to the system. Result: intersection bugs keep surfacing in manual testing — most recently `pendingEscalation` from a prior session blocking `/pm` invocation when the user is explicitly addressing the held agent, with the hold message showing the wrong phase label.
+
+The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-tenant Archon. Continuing to patch interleaved code will not get us there.
+
+**The refactor:** routing decisions for both feature channels AND the general/concierge channel become pure functions whose behavior is defined by a single spec document and verified by exhaustive matrix tests. Two pure routers (`routeFeatureMessage`, `routeGeneralMessage`), one shared dispatcher (`executeDecision`), one agent registry, one spec doc. Effects are data not closures. State machine enforces 20 invariants including slash-as-confirmation, registry-derived hold labels, bounded post-agent re-evaluate, multi-turn `pendingDecisionReview`, and tenant isolation at the type level.
+
+**7-phase migration (durable, no big-bang):**
+
+- Phase 0 (~2d): Land `docs/ROUTING_STATE_MACHINE.md` describing today's behavior including bugs. Add `scripts/count-spec-cells.ts`, `scripts/generate-shadow-corpus.ts`. Update this BACKLOG.
+- Phase 1 (~2d): `runtime/routing/types.ts` (branded `TenantId`/`FeatureKey`/`ThreadKey`, `RoutingInput`, `RoutingDecision`, `StateEffect`, `PostEffect`) + `runtime/routing/agent-registry.ts`. Mechanical codemod through ~150 conversation-store call sites.
+- Phase 2 (~4d): `routeFeatureMessage`, `routeGeneralMessage`, `executeDecision`, matrix test, dispatch test, `tests/invariants/test-migration-audit.md`.
+- Phase 3 (~5d): Dual-run shadow mode behind `dryRun: true`; nightly GitHub Action drives synthesized corpus through every spec row. Coverage gate: zero divergences in corpus + 48h prod + 3 nights green.
+- Phase 4 (~1d deploy + 7d burn-in): Cutover with `ROUTING_V2=1` kill-switch.
+- Phase 5 (~3d): Fix the warts (slash-as-confirmation, hold-message label, `targetAgent` validation, `originAgent` required, `productSpec` typed) as deliberate spec edits + matrix row diffs. One-time `scripts/migrate-routing-state-v2.ts` for stale on-disk records.
+- Phase 6 (~2d): Delete old code; apply test-migration-audit. `message.ts` < 800 lines; `general.ts` < 300 lines.
+- Phase 7 (~1d each, when ready): Add Coder/Reviewer as proof-of-scaling.
+
+**Total:** 12–18 working days, 8 PRs, 1.5–2× buffer for discovery.
+
+**Plan file:** `~/.claude/plans/elegant-percolating-newell.md`
+
+**Blocks:** all items below this line (post-completion iteration, deterministic audits for product-level docs, product-level doc editing, branch hygiene cleanup, agent persona names) plus future agent additions (Coder, Reviewer). The refactor is the path through.
+
+**The bugs surfaced in manual testing on 2026-04-27** (slash-as-confirmation, hold-message label) are NOT patched in-place — they are encoded into the Phase 0 spec as today's behavior, then fixed as deliberate spec edits in Phase 5. This is the user's explicit choice (durable over fast).
+
+---
+
 ### Deterministic audits for product-level docs — consistent advice across invocations (2026-04-24)
 
 **Priority: after onboarding end-to-end pipeline is deployed.**
