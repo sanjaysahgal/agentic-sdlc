@@ -106,6 +106,15 @@ describe("shadow-coverage-report — correlator", () => {
       expect(r.convergences).toBe(1)
     })
 
+    it("hold-pending-escalation → show-hold-message (universal-guard hold path; emitted by Phase 3 Stage 3 to enable pairing)", () => {
+      const r = correlateLines([
+        proposal("onboarding", "T1", "show-hold-message", "pm"),
+        branch("hold-pending-escalation", { feature: "onboarding", targetAgent: "pm" }),
+      ])
+      expect(r.divergences).toEqual([])
+      expect(r.convergences).toBe(1)
+    })
+
     it("escalation-auto-close is skipped (post-agent path; no single-decision v2 equivalent)", () => {
       const r = correlateLines([
         proposal("onboarding", "T1", "run-agent", "pm"),
@@ -209,16 +218,20 @@ describe("shadow-coverage-report — correlator", () => {
       expect(r.divergences).toEqual([])
     })
 
-    it("branch line without feature= field still pairs with the most recent proposal in the same file", () => {
+    it("branch line without feature= field is unpaired (post-Phase-3 contract: every branch log must carry feature=)", () => {
+      // Earlier versions of the correlator fell back to "most recent proposal
+      // in the same file" for branches without feature=, but that double-paired
+      // proposals (once via fallback, once via queue) and inflated the
+      // convergence count. Phase 3 Stage 3 added feature= to all branch logs;
+      // the correlator now treats missing feature= as a logging contract
+      // violation surfaced as "unpaired branches" — never silently rescued.
       const r = correlateLines([
         proposal("onboarding", "T1", "run-escalation-confirmed", "pm"),
-        // arch-upstream-escalation-confirmed has target= but not feature= today.
         branch("arch-upstream-escalation-confirmed", { target: "pm" }),
       ])
-      // This was the old code's previous behavior — still convergent if we
-      // accept the file-scope fallback pairing. The proposal kind/agent matches.
       expect(r.divergences).toEqual([])
-      expect(r.convergences).toBe(1)
+      expect(r.convergences).toBe(0)
+      expect(r.unpaired).toBe(1)
     })
   })
 })

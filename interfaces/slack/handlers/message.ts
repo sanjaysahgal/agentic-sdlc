@@ -458,6 +458,7 @@ export async function handleFeatureChannelMessage(params: {
     const originPhase = universalPending.targetAgent === "design"
       ? "Engineering" : "Design"
     console.log(`[ROUTER] universal-guard: pending escalation hold — targetAgent=${universalPending.targetAgent}`)
+    console.log(`[ROUTER] branch=hold-pending-escalation feature=${featureName} targetAgent=${universalPending.targetAgent}`)
     await client.chat.postMessage({
       channel: channelId, thread_ts: threadTs,
       text: `${originPhase} is paused — the ${holderName} needs to resolve a constraint:\n\n*"${universalPending.question}"*\n\nSay *yes* to bring the ${holderName} into this thread.`,
@@ -518,7 +519,7 @@ export async function handleFeatureChannelMessage(params: {
     // run the PM agent with the blocking question as its opening brief.
     const pendingEscalation = getPendingEscalation(featureKey(featureName))
     if (pendingEscalation && isAffirmative(userMessage)) {
-      console.log(`[ROUTER] branch=pending-escalation-confirmed targetAgent=${pendingEscalation.targetAgent} question="${pendingEscalation.question.slice(0, 100)}"`)
+      console.log(`[ROUTER] branch=pending-escalation-confirmed feature=${featureName} targetAgent=${pendingEscalation.targetAgent} question="${pendingEscalation.question.slice(0, 100)}"`)
 
       // Do NOT clear yet — clear only after @mention is successfully posted.
       // Clearing early means a network failure or agent refusal permanently loses the escalation,
@@ -857,7 +858,7 @@ ${brief}`
     const archPendingEscalation = getPendingEscalation(featureKey(featureName))
     if (archPendingEscalation && isAffirmative(userMessage)) {
       const target = archPendingEscalation.targetAgent  // "pm" or "design"
-      console.log(`[ROUTER] branch=arch-upstream-escalation-confirmed target=${target}`)
+      console.log(`[ROUTER] branch=arch-upstream-escalation-confirmed feature=${featureName} target=${target}`)
       const { roles } = loadWorkspaceConfig()
       const isDesignTarget = target === "design"
       const mention = isDesignTarget
@@ -927,7 +928,7 @@ ${archPendingEscalation.question}`
         // Human continues the conversation with the Designer or PM — keep notification active.
         // readOnly: true — the PM/Designer can discuss and recommend but cannot patch specs,
         // escalate, or offer to finalize. This is an escalation response, not a full agent session.
-        console.log(`[ROUTER] branch=arch-upstream-continuation target=${archNotifTarget} msg="${userMessage.slice(0, 80)}"`)
+        console.log(`[ROUTER] branch=arch-upstream-continuation feature=${featureName} target=${archNotifTarget} msg="${userMessage.slice(0, 80)}"`)
         let updatedRecommendations = ""
         await withThinking({ client, channelId, threadTs, agent: archNotifAgentLabel, run: async (update) => {
           const capturingUpdate = async (text: string) => { updatedRecommendations = text; await update(text) }
@@ -945,7 +946,7 @@ ${archPendingEscalation.question}`
       }
 
       // Standalone confirmation — resume architect with injected revision.
-      console.log(`[ROUTER] branch=arch-upstream-revision-reply target=${archNotifTarget}`)
+      console.log(`[ROUTER] branch=arch-upstream-revision-reply feature=${featureName} target=${archNotifTarget}`)
       // Write the decision to BOTH the engineering spec AND the upstream spec.
       // Engineering spec: records the decision so the architect has it.
       // Upstream spec (product or design): applies the PM/designer's recommendation

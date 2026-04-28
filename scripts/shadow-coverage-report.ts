@@ -203,6 +203,12 @@ function branchToV2Kind(b: BranchLine): ExpectedShape | "skip" {
       }
     case "arch-upstream-revision-reply":
       return { kind: "resume-after-escalation", agent: "architect" }
+    case "hold-pending-escalation":
+      // Universal-guard hold path. The branch log was added in Phase 3 Stage 3
+      // so the correlator can pair the proposal with this exit (previously the
+      // hold path returned without any branch log, leaving proposals to mis-pair
+      // with later turns' branches).
+      return { kind: "show-hold-message", agent: canonicalize(b.targetAgent) }
     case "escalation-auto-close":
     case "escalation-auto-close-arch":
       // Post-agent dispatcher path; v2 expresses this as a re-evaluate
@@ -257,8 +263,6 @@ function correlate(entries: LogEntry[]): {
   )
 
   const pending = new Map<string, ProposalLine[]>()  // "feature|thread" → queue
-  const recentByFeature = new Map<string, ProposalLine>()
-  const recentByFile = new Map<string, ProposalLine>()
   const divergences: Divergence[] = []
   let proposals = 0
   let branches = 0
@@ -274,19 +278,18 @@ function correlate(entries: LogEntry[]): {
       const q = pending.get(k) ?? []
       q.push(entry)
       pending.set(k, q)
-      recentByFeature.set(entry.feature, entry)
-      recentByFile.set(entry.file, entry)
       continue
     }
     branches += 1
     const expected = branchToV2Kind(entry)
     if (expected === "skip") { skipped += 1; continue }
 
-    // Pair: prefer same feature; if branch has no feature, fall back to most
-    // recent proposal in the same log file.
+    // Queue-based pairing: shift the oldest proposal for this branch's
+    // (feature, thread). Branches without a feature= field are unpaired —
+    // every branch log in the codebase carries feature= per the post-Phase-3
+    // logging contract; missing it surfaces as unpaired so we notice.
     let proposal: ProposalLine | undefined
     if (entry.feature) {
-      // Try any thread queue under this feature.
       for (const [k, q] of pending) {
         if (k.startsWith(entry.feature + "|") && q.length > 0) {
           proposal = q.shift()
@@ -294,9 +297,6 @@ function correlate(entries: LogEntry[]): {
           break
         }
       }
-    }
-    if (!proposal) {
-      proposal = recentByFile.get(entry.file)
     }
     if (!proposal) { unpaired += 1; continue }
 

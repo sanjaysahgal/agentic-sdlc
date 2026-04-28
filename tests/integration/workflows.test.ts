@@ -9355,3 +9355,65 @@ describe("Scenario N73 — Routing V2 shadow mode emits [ROUTING-V2-PROPOSED] lo
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario N74: Branch logs carry feature= and the hold-message path emits one ──
+//
+// Phase 3 Stage 3 — correlator pairing fix. Two production-code changes need
+// integration coverage:
+//   (1) the universal-guard "pending escalation hold" path now emits a
+//       [ROUTER] branch=hold-pending-escalation log line so the offline
+//       correlator (scripts/shadow-coverage-report.ts) can pair the v2
+//       proposal with the old code's exit. Previously the hold path returned
+//       silently, leaving proposals to mis-pair with the next turn's branch.
+//   (2) the pending-escalation-confirmed branch log (and the three
+//       arch-upstream-* sibling logs) now carry feature=<name> so the
+//       correlator's queue-based pairing always finds them. Previously these
+//       logs lacked feature= and forced a fragile recentByFile fallback.
+//
+// This scenario verifies (1) directly — when a pendingEscalation exists and a
+// non-affirmative user message arrives, the hold path fires and the branch
+// log appears with feature= and targetAgent=. (2) is verified by N50's
+// existing escalation flow plus the correlator unit tests.
+
+describe("Scenario N74 — Universal-guard hold emits a branch=hold-pending-escalation log with feature= and targetAgent=", () => {
+  const THREAD = "workflow-n74"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+    setPendingEscalation(featureKey("onboarding"), {
+      targetAgent: "pm",
+      question: "AC#5 uses vague language: 'soon'",
+      designContext: "design draft fixture",
+    })
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
+  })
+
+  it("non-affirmative message during pending escalation → hold message + [ROUTER] branch=hold-pending-escalation feature=onboarding targetAgent=pm", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+
+    const params = makeParams(THREAD, "feature-onboarding", "tell me more")
+    await handleFeatureChannelMessage(params)
+
+    const branchLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[ROUTER] branch="))
+
+    const holdLine = branchLines.find((line) => line.includes("branch=hold-pending-escalation"))
+    expect(holdLine).toBeDefined()
+    expect(holdLine).toContain("feature=onboarding")
+    expect(holdLine).toContain("targetAgent=pm")
+
+    // Production behavior unchanged — hold message still posts to Slack, no agent runs.
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+
+    logSpy.mockRestore()
+  })
+})
