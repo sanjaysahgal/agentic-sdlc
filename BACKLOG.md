@@ -64,21 +64,28 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 
 The architect's always-on `archReadinessNotice` runs `auditPhaseCompletion(buildEngineeringSpecRubric)` against the engineering spec content only — it checks engineering completeness, NOT the full upstream chain (PM spec, Design spec). The upstream-spec audits (`auditPmSpec`, `auditDesignSpec`) only fire at `handleFinalizeEngineeringSpec` time. So when the architect says "Nothing blocking — you can review and approve when ready," it can be silently incorrect: the engineering spec is internally complete, but the upstream chain has unresolved findings that will block finalization.
 
-**Validated by manual test 2026-04-27:**
-1. Architect's auditPmSpec produced 4 findings against the approved product spec; PM escalation queued, recommendations sitting in `escalationNotifications.onboarding` (verified via .conversation-state.json)
-2. Design audit produced 26 findings against the approved design spec
-3. User typed `/architect hi`
-4. Architect responded: *"onboarding engineering spec — in progress. ✅ Nothing blocking — you can review and approve when ready. Reply approved when you're done and I'll hand off to the engineering agents."*
-5. **That's manifestly wrong.** Two upstream agents have unresolved audit findings. Saying yes to "approved" would hit `handleFinalizeEngineeringSpec`, run the upstream audits, and block — but only after the user trusted "Nothing blocking."
+**Validated by manual test 2026-04-27 — TWO turns, SAME state, DIFFERENT answers (this is the worst part):**
 
-This is a direct violation of **Principle 14** (deterministic audits are retroactive — approved specs aren't exempt; messaging must reflect current state) AND **Principle 15** (cross-agent parity — if finalize hard-gates on upstream, the always-on readiness check must soft-gate on the same).
+Setup state (verified via .conversation-state.json + audit logs): architect's auditPmSpec produced 4 findings against the approved product spec; PM escalation queued, recommendations sitting in `escalationNotifications.onboarding`. Design audit produced 26 findings against the approved design spec. Architect's own engineering-readiness audit catches additional design-side gaps (form-factor coverage) bringing the design count to 41 from architect's perspective.
 
-**Required (two-layer fix):**
+**Turn A — `/architect hi`:**
+> "onboarding engineering spec — in progress. ✅ Nothing blocking — you can review and approve when ready. Reply approved when you're done and I'll hand off to the engineering agents."
+
+**Turn B — `/architect Hi, I want to work on this feature`:**
+> "Architect. 2 items to address before implementation handoff. Good to have you back. … I'm looking at **4 PM-scope gaps** and **41 design-scope gaps** that need resolution before this spec can be handed off to engineering agents. That's not a blocker I can route around — those gaps will produce untestable or ambiguous implementation targets. Here's my escalation plan: Step 1 — PM gaps first. Step 2 — Design gaps second. Step 3 — One engineering gap. Say yes and I'll bring in the PM agent now."
+
+**Same architect, same state, two different answers.** The architect's readiness assessment is **non-deterministic** — it depends on how the user phrased their greeting. Direct **Principle 11** violation (all audits must be deterministic — same input, same output, always). Plus the original Principle 14 violation (Turn A doesn't check upstream at all). Plus Principle 15 violation (Turn B does the right thing; Turn A doesn't — analogous-path parity broken even within the same agent).
+
+Trust-erosion happens the moment the user notices the inconsistency. The BACKLOG fix isn't just "always check upstream" — it's "**architect surfaces the same deterministic readiness state on EVERY turn, regardless of greeting style or agent interpretation.**" The check is structural, not LLM-interpretive.
+
+**Required (three-layer fix):**
 
 **(a) Cheap layer — surface active escalations in `archReadinessNotice`.** The state is already persisted in `escalationNotifications.<featureName>`. Read it and report:
 > "Engineering spec is internally complete. But PM is engaged on N audit findings (see thread above) and Design has M unresolved audit findings. Resolve those before approving."
 
 **(b) Durable layer — run the same upstream audits the finalize handler runs**, in the always-on readiness check. `archReadinessNotice` should call `auditPmSpec(approvedProductSpec)` and `auditDesignSpec(approvedDesignSpec)`. If either returns N>0 findings, surface them. This catches the case where audits were added/strengthened AFTER spec approval — without this, an old approved spec sits in "looks ready" state forever even when it would fail finalize.
+
+**(c) Determinism + labeling — each agent's readiness output must surface the same numbers regardless of message content, AND must label which audit produced each count.** Manual test 2026-04-27 surfaced two related issues: (1) the architect saying "Nothing blocking" on one turn and "41 design gaps" on another with same state — message phrasing changed agent output (Principle 11 violation); (2) the architect's "41 design gaps" includes design's own 26 + 15 architect-only findings, but doesn't label the split — user is confused why design's count differs. Fix: readiness messaging in every agent labels source audit per count. Example: *"Design has 26 design-completeness findings (designer's audit) PLUS 15 engineering-readiness findings I catch as architect — total 41. Resolve the 26 in /design first, then I'll surface the remaining 15 if any persist."* Same labeling requirement applies to designer (when reporting upstream PM findings) and architect (when reporting both upstream layers).
 
 **Implementation:**
 - `archReadinessNotice` builder gets the same `approvedProductSpec` and `approvedDesignSpec` params the finalize handler uses
