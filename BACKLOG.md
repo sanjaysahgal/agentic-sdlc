@@ -64,17 +64,27 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 
 When an agent is invoked via slash override (`/design`, `/architect`, `/pm`) on a feature whose owning spec is approved AND in a downstream phase, the agent runs in read-only-consultant mode (I5). The orientation block correctly states "I'm in read-only mode here" (validated by manual test 2026-04-27, both PM and Designer produced this organically). **But the always-on action menu fires regardless of mode and ends with "Say fix 1 2 3 (or fix all) to apply"** — a write-mode affordance that contradicts read-only posture and asks the user to invoke spec-patching tools on an approved spec.
 
-**Required:**
-- Action menu rendering (in `runDesignAgent` / `runArchitectAgent` / `runPmAgent`) MUST honor `readOnly` flag passed by the handler
-- When `readOnly === true`:
-  - Findings are still surfaced (Principle 7 — always-on audits stay on)
-  - "Say fix N (or fix all) to apply" prompt is replaced with "Want me to draft tightenings for specific items? Each draft will require your explicit approval before patching to main."
-  - User selecting items → agent drafts per-item recommendations following the same "Pending your approval — say yes to apply" pattern PM uses for escalation flows
-  - Each tightening, when approved, writes to the affected spec via the existing patch-on-approval infrastructure
-- Platform-enforced via a structural gate in the action-menu builder: `readOnly === true && menu.text.includes("apply")` → re-render with the read-only template
+**Required (three distinct fixes, all under I23):**
+
+**(a) Pre-banner phrasing in read-only mode.** The current "<N> items to address before engineering handoff" pre-banner fires on every turn with prescriptive language ("to address", "engineering handoff") that frames read-only conversation as a forced workflow gate. In `readOnly === true`, replace with non-prescriptive summary phrasing: "<N> open audit findings on the approved spec — summary below; ask anything to discuss."
+
+**(b) Action-menu firing cadence in read-only mode.** Today the action menu re-renders the full N-item list on every turn — even on simple discussion questions like "how many screens?". First mention is informative; repeated is noise (scrollback exists). In `readOnly === true`, fire the action menu once per session (first slash-override invocation OR first time the user types something requiring it) and suppress on subsequent turns. Keep a one-line breadcrumb instead: "(N audit findings — say `show issues` to re-list)."
+
+**(c) Action-menu content in read-only mode.** Today's "Say fix 1 2 3 (or fix all) to apply" is a write-mode affordance that contradicts read-only posture and asks the user to invoke spec-patching tools on an approved spec. In `readOnly === true`, replace with: "Want me to draft tightenings for specific items? Each draft will require your explicit approval before patching to main." User selecting items → agent drafts per-item recommendations following the same "Pending your approval — say yes to apply" pattern PM uses for escalation flows. Each tightening, when approved, writes to the affected spec via the existing patch-on-approval infrastructure.
+
+**Platform-enforced via three structural gates in the action-menu builder:**
+- (a) `readOnly === true && banner.text.includes("to address before")` → re-render with summary-only template
+- (b) `readOnly === true && actionMenuEmittedThisSession === true` → skip render, emit breadcrumb instead
+- (c) `readOnly === true && menu.text.includes("apply")` → re-render with read-only Pending-Your-Approval template
 
 **Validated by manual test:**
-- 2026-04-27 user typed `/design hi` in `#feature-onboarding` (engineering phase, design spec approved). Designer correctly orientated as read-only but then dumped 26 findings ending in "Say fix 1 2 3 (or fix all) to apply." Same shape would surface for `/architect` if engineering spec finalization audited. PM in this scenario doesn't have the issue today because PM's escalation flow already uses per-item Pending-Your-Approval — applying that pattern to Designer/Architect is the unification.
+- 2026-04-27 user typed `/design hi`, `i have a few questions on the design of this feature`, and `how many screens does this feature have?` in `#feature-onboarding` (engineering phase, design spec approved). On every turn:
+  - Orientation block fired correctly (read-only acknowledged)
+  - Substantive Q&A worked (e.g. "17 screens" answered well)
+  - But pre-banner ("26 items to address before engineering handoff.") repeated each turn
+  - Action menu re-rendered all 26 findings each turn
+  - "Say fix N to apply" appeared each turn
+- Same shape would surface for `/architect` if engineering spec finalization audited. PM in this scenario doesn't have the issue today because PM's escalation flow already uses per-item Pending-Your-Approval — applying that pattern to Designer/Architect is the unification.
 
 **Related:** I21 (orientation-on-resume) — orientation already works; I23 is the "everything after the orientation" half. Together they make the slash-override-on-approved-spec flow coherent.
 
