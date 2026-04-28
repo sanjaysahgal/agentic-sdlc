@@ -68,13 +68,15 @@ The architect's always-on `archReadinessNotice` runs `auditPhaseCompletion(build
 
 Setup state (verified via .conversation-state.json + audit logs): architect's auditPmSpec produced 4 findings against the approved product spec; PM escalation queued, recommendations sitting in `escalationNotifications.onboarding`. Design audit produced 26 findings against the approved design spec. Architect's own engineering-readiness audit catches additional design-side gaps (form-factor coverage) bringing the design count to 41 from architect's perspective.
 
-**Turn A — `/architect hi`:**
+**Turn A — `/architect hi` (entry E4 — slash command):**
 > "onboarding engineering spec — in progress. ✅ Nothing blocking — you can review and approve when ready. Reply approved when you're done and I'll hand off to the engineering agents."
 
-**Turn B — `/architect Hi, I want to work on this feature`:**
+**Turn B — `Hi, I want to work on this feature` (entry E1 — direct message in #feature-onboarding, NO slash):**
 > "Architect. 2 items to address before implementation handoff. Good to have you back. … I'm looking at **4 PM-scope gaps** and **41 design-scope gaps** that need resolution before this spec can be handed off to engineering agents. That's not a blocker I can route around — those gaps will produce untestable or ambiguous implementation targets. Here's my escalation plan: Step 1 — PM gaps first. Step 2 — Design gaps second. Step 3 — One engineering gap. Say yes and I'll bring in the PM agent now."
 
-**Same architect, same state, two different answers.** The architect's readiness assessment is **non-deterministic** — it depends on how the user phrased their greeting. Direct **Principle 11** violation (all audits must be deterministic — same input, same output, always). Plus the original Principle 14 violation (Turn A doesn't check upstream at all). Plus Principle 15 violation (Turn B does the right thing; Turn A doesn't — analogous-path parity broken even within the same agent).
+**Different entry points (E4 slash vs E1 direct), but identical resolved routing — both produce `kind=run-agent agent=architect mode=primary`** because architect IS the canonical agent for engineering-in-progress. Same agent, same mode, same state. **Different responses.** The architect's readiness assessment is **non-deterministic in the agent's internal response logic** — readiness state is decided by the LLM reading the user message, not by structural code. Direct **Principle 11** violation. Plus the original **Principle 14** violation (Turn A doesn't surface upstream chain at all). Plus **Principle 15** violation (Turn B does the right thing; Turn A doesn't — analogous-path parity broken within the same agent).
+
+**Implication for the fix:** the readiness state must be **assembled before the agent runs** and passed in as a structured directive ("your response MUST report exactly this state, verbatim"), so the LLM can't accidentally minimize it based on user phrasing. Same enforcement pattern as `enforceOpinionatedRecommendations` in `runtime/spec-auditor.ts` — platform decides what's surfaced, prompt rules don't.
 
 Trust-erosion happens the moment the user notices the inconsistency. The BACKLOG fix isn't just "always check upstream" — it's "**architect surfaces the same deterministic readiness state on EVERY turn, regardless of greeting style or agent interpretation.**" The check is structural, not LLM-interpretive.
 
