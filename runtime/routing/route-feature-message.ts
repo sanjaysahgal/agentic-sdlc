@@ -4,13 +4,15 @@
 // RoutingDecision. No I/O. No side effects. Same input → same output, always.
 //
 // Behavior is byte-equivalent to today's code in interfaces/slack/handlers/message.ts,
-// **including the known bugs** (FLAG-A: slash-as-confirmation not firing; FLAG-B:
-// corrupt targetAgent silently routes; FLAG-C: hold-message label hardcoded). Phase 5
-// fixes each bug as a deliberate spec edit + matrix row diff + new test.
+// **including the still-encoded bugs** (FLAG-B: corrupt targetAgent silently routes;
+// FLAG-C: hold-message label hardcoded). FLAG-A (slash-as-confirmation) is fixed under
+// I1 — a slash addressing the held target now resumes the escalation rather than
+// showing the hold. Phase 5 of the refactor fixes each remaining FLAG as a deliberate
+// spec edit + matrix row diff + new test.
 //
 // Decision order (mirrors message.ts and §11 of the spec):
 //   1. pendingDecisionReview  (I3 — multi-turn precedence)
-//   2. pendingEscalation      (I9 — exclusive; FLAG-A means hold beats slash override)
+//   2. pendingEscalation      (I9 — exclusive; I1 — slash addressing held target = confirmation)
 //   3. escalationNotification (reply continuation OR resume-after-escalation)
 //   4. pendingApproval        (only when affirmative or non-affirmative)
 //   5. complete phase         (read-only or routing-note)
@@ -114,10 +116,10 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
     return { kind: "show-decision-review-prompt", cursor: 0, preEffects: empty, postEffects: [] }
   }
 
-  // 2 — pendingEscalation: exclusive (I9). FLAG-A: today's behavior treats `@pm:`
-  // (E5) with target=pm the same as a direct E1 — both produce show-hold-message
-  // rather than run-escalation-confirmed. Phase 5 (I1) flips this to slash-as-
-  // confirmation; until then the matrix encodes the bug.
+  // 2 — pendingEscalation: exclusive (I9). I1 — a slash command (E2–E7) addressing
+  // the held targetAgent counts as confirmation, equivalent to "yes". The slash
+  // addressing IS the confirmation signal; the message body becomes input to the
+  // resumed agent. Non-matching slashes still show the hold (I9 exclusivity).
   if (state.pendingEscalation) {
     const targetCanon = canonicalize(state.pendingEscalation.targetAgent)
     if (!targetCanon) {
@@ -125,7 +127,8 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
       // (I2) makes this a clean invalid-state with cleanup.
       return { kind: "invalid-state", reason: `corrupt-targetAgent:${state.pendingEscalation.targetAgent}`, preEffects: empty, postEffects: [] }
     }
-    if (isAffirmative(userMsg)) {
+    const slashConfirms = addressed !== undefined && addressed === targetCanon
+    if (slashConfirms || isAffirmative(userMsg)) {
       // Origin agent today is the confirmedAgent — usually the agent that proposed the escalation.
       const origin = state.confirmedAgent ?? originFromPhase(phase) ?? "ux-design"
       return {

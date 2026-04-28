@@ -126,8 +126,7 @@ Invariant **I3** enforces precedence: while `pendingDecisionReview` is set, only
 
 ## 7. Invariants (master list)
 
-1. **I1 — Slash-as-confirmation.** A slash command (E2–E7) addressing the agent currently held by `pendingEscalation.targetAgent` counts as confirmation, equivalent to "yes".
-   - **Today's behavior (FLAG-A):** today's code evaluates the universal-guard `pendingEscalation` hold BEFORE the slash override. Result: `@pm:` while `pendingEscalation.targetAgent === "pm"` shows the hold message instead of running the escalation. **Encoded as `show-hold-message` rows in the matrix below; rewritten in Phase 5.**
+1. **I1 — Slash-as-confirmation.** A slash command (E2–E7) addressing the agent currently held by `pendingEscalation.targetAgent` counts as confirmation, equivalent to "yes". The slash addressing IS the confirmation signal; the message body becomes input to the resumed agent. Non-matching slashes (addressing an agent other than the held target) still show the hold message — I9 exclusivity governs, so only the matching slash breaks the hold. Implemented in `route-feature-message.ts` by checking `addressed === targetCanon` alongside `isAffirmative(userMsg)` inside the `pendingEscalation` guard.
 2. **I2 — Closed `targetAgent`.** `pendingEscalation.targetAgent ∈ AgentRegistry.ids`. Anything else → `invalid-state` decision with `cleanupEffects`.
    - **Today's behavior (FLAG-B):** corrupt values silently route to the wrong agent or crash. **Encoded as undefined behavior; defined in Phase 5.**
 3. **I3 — Decision review precedence (multi-turn).** While `pendingDecisionReview` is set, the only reachable decisions are `show-decision-review-prompt`, `confirm-decision-review-item`, `complete-decision-review`, `reject-decision-review-fall-through`.
@@ -185,9 +184,12 @@ State columns are abbreviated. `—` means the state is null/unset. State combin
 | E1    | ux-design      | —                 | —                      | —               | "where are we"           | run-agent(ux-design, primary)                                         | —   |
 | E1    | ux-design      | target=pm         | —                      | —               | "tell me more"           | show-hold-message(reason=esc, heldAgent=pm)                           | I7, I9 |
 | E1    | ux-design      | target=pm         | —                      | —               | "yes"                    | run-escalation-confirmed(origin=ux-design, target=pm)                 | I9  |
-| E5    | ux-design      | target=pm         | —                      | —               | "@pm: actually..."       | show-hold-message(reason=esc, heldAgent=pm) **[FLAG-A — fixed Phase 5: run-escalation-confirmed]** | I1, FLAG-A |
+| E2    | ux-design      | target=pm         | —                      | —               | "/pm tightenings"        | run-escalation-confirmed(origin=ux-design, target=pm)                 | I1  |
+| E5    | ux-design      | target=pm         | —                      | —               | "@pm: actually..."       | run-escalation-confirmed(origin=ux-design, target=pm)                 | I1  |
 | E1    | ux-design      | target=architect  | —                      | —               | "tell me more"           | show-hold-message(reason=esc, heldAgent=architect)                    | I7, I9 |
 | E1    | ux-design      | target=architect  | —                      | —               | "yes"                    | run-escalation-confirmed(origin=ux-design, target=architect)          | I9  |
+| E4    | ux-design      | target=architect  | —                      | —               | "/architect ok"          | run-escalation-confirmed(origin=ux-design, target=architect)          | I1  |
+| E7    | ux-design      | target=architect  | —                      | —               | "@architect: ok"         | run-escalation-confirmed(origin=ux-design, target=architect)          | I1  |
 | E1    | ux-design      | target=corrupt    | —                      | —               | any                      | undefined behavior **[FLAG-B — fixed Phase 5: invalid-state]**        | I2, FLAG-B |
 | E1    | ux-design      | —                 | target=pm, origin=design | —             | "approved for #4..." (non-standalone) | run-escalation-continuation(target=pm)                  | —   |
 | E1    | ux-design      | —                 | target=pm, origin=design | —             | "yes" (standalone)       | resume-after-escalation(origin=ux-design) + writeback                 | —   |
@@ -213,7 +215,10 @@ State columns are abbreviated. `—` means the state is null/unset. State combin
 | E1    | architect      | target=pm         | —                      | —               | —                     | "tell me more"         | show-hold-message(reason=esc, heldAgent=pm)               | I7, I9 |
 | E1    | architect      | target=pm         | —                      | —               | —                     | "yes"                  | run-escalation-confirmed(origin=architect, target=pm)     | I9  |
 | E1    | architect      | target=design     | —                      | —               | —                     | "yes"                  | run-escalation-confirmed(origin=architect, target=ux-design) | I9 |
-| E5    | architect      | target=pm         | —                      | —               | —                     | "@pm: actually..."     | show-hold-message **[FLAG-A — fixed Phase 5]**            | I1, FLAG-A |
+| E2    | architect      | target=pm         | —                      | —               | —                     | "/pm tightenings"      | run-escalation-confirmed(origin=architect, target=pm)     | I1  |
+| E5    | architect      | target=pm         | —                      | —               | —                     | "@pm: actually..."     | run-escalation-confirmed(origin=architect, target=pm)     | I1  |
+| E3    | architect      | target=design     | —                      | —               | —                     | "/design tightenings"  | run-escalation-confirmed(origin=architect, target=ux-design) | I1 |
+| E6    | architect      | target=design     | —                      | —               | —                     | "@design: actually..." | run-escalation-confirmed(origin=architect, target=ux-design) | I1 |
 | E1    | architect      | —                 | target=pm, origin=architect | —          | —                     | "yes" (standalone)     | resume-after-escalation(origin=architect) + writeback     | —   |
 | E1    | architect      | —                 | —                      | set (engineering) | —                   | "yes"                  | approve-spec(engineering)                                 | I10 |
 | E1    | architect      | —                 | —                      | —               | set                   | (any except affirm/decline) | show-decision-review-prompt(items[cursor])           | I3  |
@@ -302,7 +307,7 @@ Two decisions are equivalent if their `kind`, agent (if any), and `preEffects` (
 
 | ID      | Description                                                                                              | Where in matrix       | Phase 5 fix                        |
 |---------|----------------------------------------------------------------------------------------------------------|-----------------------|------------------------------------|
-| FLAG-A  | `@pm:` while `pendingEscalation.targetAgent === "pm"` shows hold message instead of running confirmation | §8.3, §8.5            | I1 — slash-as-confirmation          |
+| FLAG-A ✅ | `@pm:` while `pendingEscalation.targetAgent === "pm"` showed hold message instead of running confirmation. **Fixed Phase 5 (2026-04-27):** I1 honored in `route-feature-message.ts` — `addressed === targetCanon` inside the `pendingEscalation` guard treats the slash as confirmation. §8.3/§8.5 rows for E2/E5 (target=pm), E4/E7 (target=architect, design phase), and E3/E6 (target=design, engineering phase) emit `run-escalation-confirmed`. | §8.3, §8.5 | I1 — slash-as-confirmation (DONE) |
 | FLAG-B  | Corrupt `targetAgent` value silently routes to wrong agent or crashes                                    | §8.3                  | I2 — invalid-state with cleanup     |
 | FLAG-C  | Hold message hardcodes "Design is paused" regardless of actual paused phase                              | All hold-message rows | I7 — registry-derived label         |
 | FLAG-D  | `EscalationNotification.originAgent` is optional; missing values can route to wrong agent on resume      | §8.3, §8.5            | I8 — required at type level         |
