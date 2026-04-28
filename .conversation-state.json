@@ -2,20 +2,15 @@
   "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
-  "escalationNotifications": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. [PM] AC uses vague language: \"clear\" — two implementers would interpret this differently. — Replace \"clear\" with a concrete, measurable criterion.\n2. [PM] AC uses vague language: \"clear\" — two implementers would interpret this differently. — Replace \"clear\" with a concrete, measurable criterion.\n3. [PM] AC uses undefined timing: \"after inactivity\" without a numeric value in seconds or minutes. — Replace \"after inactivity\" with a specific duration (e.g. \"within 200ms\", \"after 60 seconds of inactivity\").\n4. [PM] AC uses undefined timing: \"immediately\" without a numeric value in seconds or minutes. — Replace \"immediately\" with a specific duration (e.g. \"within 200ms\", \"after 60 seconds of inactivity\").",
-      "recommendations": "The escalation doesn't include which AC numbers these appear in, but I know this spec well enough to identify exactly what's being flagged. Here are my recommendations:\n\n---\n\n**1.** The \"clear\" in AC 12 — \"Both warnings and the in-conversation nudge include a clear call-to-action to sign up or sign in.\"\n\nMy recommendation: Replace \"clear\" with \"a labeled button or tappable link with text that explicitly states the action (e.g., sign up or sign in) — no icon-only affordances, no ambiguous labels.\"\n→ Rationale: \"Clear\" is not testable; a concrete description of what qualifies eliminates interpreter variance and gives QA a pass/fail criterion.\n→ Note: Pending your approval — say yes to apply to the product spec\n\n---\n\n**2.** The \"clear\" in AC 13 — \"if conversation carry-over fails, an inline message appears confirming successful sign-in and explaining that the previous conversation could not be recovered.\"\n\nMy recommendation: Replace \"explaining\" with \"containing a human-readable explanation that names the specific failure condition (carry-over failed) and states that no further recovery action is available.\"\n→ Rationale: \"Clear\" and \"explaining\" without a content definition leave copy decisions undefined at the product layer — the designer needs to know what the message must communicate, not just that it must communicate something.\n→ Note: Pending your approval — say yes to apply to the product spec\n\n---\n\n**3.** The \"after inactivity\" in AC 22 — the retry affordance for failed auth state resolution.\n\nMy recommendation: Replace \"after inactivity\" with \"persists until the user dismisses it, taps retry, or navigates away\" — there is no inactivity timer on this affordance; it is persistent until a user action resolves it. AC 22 already states this correctly. Flag this as a false positive — no spec change needed.\n→ Rationale: Reading AC 22 in full, the affordance lifecycle is already explicitly defined by user actions, not a timer. The audit flag was likely triggered by pattern-matching on the word \"inactivity\" elsewhere in the spec.\n→ Note: No change required — confirm and I'll note the resolution.\n\n---\n\n**4.** The \"immediately\" in AC 4 — \"The logged-out indicator disappears upon valid authentication token receipt, before conversation history loads.\"\n\nMy recommendation: Replace \"immediately\" with \"within one render cycle of valid authentication token receipt on the client — no perceptible delay, target ≤100ms from token receipt to indicator removal.\"\n→ Rationale: \"Immediately\" is unverifiable in a test; ≤100ms is a concrete, measurable threshold that aligns with standard perceived-instantaneous UX benchmarks and gives engineering a performance target.\n→ Note: Pending your approval — say yes to apply to the product spec\n\n---\n\nSay *yes* to apply these to the product spec and continue design, or reply to adjust any recommendation.",
-      "originAgent": "design"
-    }
-  },
+  "escalationNotifications": {},
   "threadAgents": {
     "1777052952.437459": "architect",
     "1777053753.153509": "ux-design",
     "1777309053.464879": "pm",
     "1777320202.055749": "ux-design",
-    "1777334167.015779": "pm"
+    "1777334167.015779": "pm",
+    "1777344339.872729": "ux-design",
+    "1777344717.129509": "pm"
   },
   "orientedUsers": [
     "onboarding:U0AMFLP4S9G"
