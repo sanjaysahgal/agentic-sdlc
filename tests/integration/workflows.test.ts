@@ -9417,3 +9417,48 @@ describe("Scenario N74 — Universal-guard hold emits a branch=hold-pending-esca
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario N75: Standard design path emits branch=confirmed-design with feature= ──
+//
+// Phase 3 Stage 3 follow-up. The design path previously emitted a branch log
+// only on the auto-continue (post-orientation) sub-path; the standard turn
+// produced no branch= log, leaving the offline correlator unable to pair a v2
+// proposal of run-agent(ux-design, ...) with the old code's actual exit.
+// Manual test 2026-04-27 (/design hi in engineering-phase channel) surfaced
+// this gap. Fix: emit [ROUTER] branch=confirmed-design feature=<x> [(read-only
+// slash override)] at the standard design entry point, mirroring confirmed-pm.
+
+describe("Scenario N75 — Standard design path emits branch=confirmed-design log with feature= and read-only marker", () => {
+  const THREAD = "workflow-n75"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+  })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
+
+  it("/design slash override on architect-phase feature → branch=confirmed-design feature=onboarding (read-only slash override)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    // resolveAgent reads branches via paginate; return architect phase (no design draft branch)
+    mockPaginate.mockResolvedValue([])
+    mockAnthropicCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "Hey! Quick orientation: design spec is approved, I'm in read-only." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 30, output_tokens: 12 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "@design: hi")
+    await handleFeatureChannelMessage(params)
+
+    const branchLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[ROUTER] branch="))
+
+    const designLine = branchLines.find((line) => line.includes("branch=confirmed-design") && !line.includes("auto-continue"))
+    expect(designLine).toBeDefined()
+    expect(designLine).toContain("feature=onboarding")
+
+    logSpy.mockRestore()
+  })
+})

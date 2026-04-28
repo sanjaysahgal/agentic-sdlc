@@ -654,7 +654,7 @@ ${brief}`
       const notifAgentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
 
       if (!isStandaloneConfirmation(userMessage)) {
-        console.log(`[ROUTER] branch=escalation-continuation targetAgent=${escalationNotification.targetAgent} msg="${userMessage.slice(0, 80)}"`)
+        console.log(`[ROUTER] branch=escalation-continuation feature=${featureName} targetAgent=${escalationNotification.targetAgent} msg="${userMessage.slice(0, 80)}"`)
         let updatedRecommendations = ""
         const continuationToolCalls: ToolCallRecord[] = []
         await withThinking({ client, channelId, threadTs, agent: notifAgentLabel, run: async (update) => {
@@ -673,7 +673,7 @@ ${brief}`
         const PM_SAVE_TOOLS = ["save_product_spec_draft", "apply_product_spec_patch", "finalize_product_spec"]
         const pmDidSave = !isArchitectEscalation && continuationToolCalls.some(t => PM_SAVE_TOOLS.includes(t.name))
         if (pmDidSave) {
-          console.log(`[ROUTER] branch=escalation-auto-close — PM saved spec this turn`)
+          console.log(`[ROUTER] branch=escalation-auto-close feature=${featureName} — PM saved spec this turn`)
 
           // Apply PM's branch changes to main — approved specs live on main.
           const pmBranch = `spec/${featureName}-product`
@@ -726,7 +726,7 @@ ${brief}`
           if (archEscalationCall) {
             const archQuestion = archEscalationCall.input.question as string
             setPendingEscalation(featureKey(featureName), { targetAgent: "architect", question: archQuestion, designContext: "" })
-            console.log(`[ROUTER] branch=escalation-auto-close-arch — PM flagged architecture gap: "${archQuestion.slice(0, 80)}"`)
+            console.log(`[ROUTER] branch=escalation-auto-close-arch feature=${featureName} — PM flagged architecture gap: "${archQuestion.slice(0, 80)}"`)
             await client.chat.postMessage({
               channel: channelId,
               thread_ts: threadTs,
@@ -760,7 +760,7 @@ ${brief}`
       const respondingRole = (isArchitectEscalation && roles.architectUser && userId === roles.architectUser)
         ? "Architect"
         : "PM"
-      console.log(`[ROUTER] branch=escalation-reply targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
+      console.log(`[ROUTER] branch=escalation-reply feature=${featureName} targetAgent=${escalationNotification.targetAgent} respondingRole=${respondingRole} userId=${userId ?? "(none)"}`)
 
       // Write confirmed recommendations back to the appropriate spec:
       // - PM escalation → product spec (auditor won't re-discover same gaps)
@@ -840,6 +840,7 @@ ${brief}`
     // Orientation enforcement (Principle 15 parity with architect): first message from a userId
     // runs readOnly — designer orients without gap dump.
     const designIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureKey(featureName), userId) : false
+    console.log(`[ROUTER] branch=confirmed-design feature=${featureName}${slashOverrideReadOnly ? " (read-only slash override)" : ""}`)
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update, readOnly: designIsOrientation || slashOverrideReadOnly })
     }})

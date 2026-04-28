@@ -58,6 +58,28 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 
 ---
 
+### I23 — Action-menu posture-coherence in slash-override read-only mode (2026-04-27)
+
+**Priority: P0 — surfaced during Phase 3 manual testing. Same flavor as I7-extended/I21/I22. Lands as part of Phase 5 wart fixes.**
+
+When an agent is invoked via slash override (`/design`, `/architect`, `/pm`) on a feature whose owning spec is approved AND in a downstream phase, the agent runs in read-only-consultant mode (I5). The orientation block correctly states "I'm in read-only mode here" (validated by manual test 2026-04-27, both PM and Designer produced this organically). **But the always-on action menu fires regardless of mode and ends with "Say fix 1 2 3 (or fix all) to apply"** — a write-mode affordance that contradicts read-only posture and asks the user to invoke spec-patching tools on an approved spec.
+
+**Required:**
+- Action menu rendering (in `runDesignAgent` / `runArchitectAgent` / `runPmAgent`) MUST honor `readOnly` flag passed by the handler
+- When `readOnly === true`:
+  - Findings are still surfaced (Principle 7 — always-on audits stay on)
+  - "Say fix N (or fix all) to apply" prompt is replaced with "Want me to draft tightenings for specific items? Each draft will require your explicit approval before patching to main."
+  - User selecting items → agent drafts per-item recommendations following the same "Pending your approval — say yes to apply" pattern PM uses for escalation flows
+  - Each tightening, when approved, writes to the affected spec via the existing patch-on-approval infrastructure
+- Platform-enforced via a structural gate in the action-menu builder: `readOnly === true && menu.text.includes("apply")` → re-render with the read-only template
+
+**Validated by manual test:**
+- 2026-04-27 user typed `/design hi` in `#feature-onboarding` (engineering phase, design spec approved). Designer correctly orientated as read-only but then dumped 26 findings ending in "Say fix 1 2 3 (or fix all) to apply." Same shape would surface for `/architect` if engineering spec finalization audited. PM in this scenario doesn't have the issue today because PM's escalation flow already uses per-item Pending-Your-Approval — applying that pattern to Designer/Architect is the unification.
+
+**Related:** I21 (orientation-on-resume) — orientation already works; I23 is the "everything after the orientation" half. Together they make the slash-override-on-approved-spec flow coherent.
+
+---
+
 ### Audit-exception markers — durable false-positive resolution for upstream-spec audits (2026-04-27)
 
 **Priority: P1 — unblocks the dismiss-escalation flow's long-term coherence. Lands after Phase 5 of the routing refactor.**

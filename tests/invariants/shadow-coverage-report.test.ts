@@ -57,6 +57,23 @@ describe("shadow-coverage-report — correlator", () => {
       expect(r.convergences).toBe(1)
     })
 
+    it("confirmed-design (standard path) → run-agent(ux-design, primary)", () => {
+      const r = correlateLines([
+        proposal("onboarding", "T1", "run-agent", "ux-design"),
+        branch("confirmed-design", { feature: "onboarding" }),
+      ])
+      expect(r.convergences).toBe(1)
+    })
+
+    it("confirmed-design (read-only slash override) → run-agent(ux-design, read-only-consultant)", () => {
+      const r = correlateLines([
+        proposal("onboarding", "T1", "run-agent", "ux-design", "read-only-consultant"),
+        "2026-04-27T13:00:01 [ROUTER] branch=confirmed-design feature=onboarding (read-only slash override)",
+      ])
+      expect(r.convergences).toBe(1)
+      expect(r.divergences).toEqual([])
+    })
+
     it("pending-escalation-confirmed targetAgent=design → run-escalation-confirmed(target=ux-design)", () => {
       // The old code uses the legacy "design" alias; the correlator canonicalizes to "ux-design".
       const r = correlateLines([

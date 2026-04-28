@@ -165,6 +165,10 @@ function branchToV2Kind(b: BranchLine): ExpectedShape | "skip" {
     case "confirmed-architect":
     case "confirmed-architect-auto-continue":
       return { kind: "run-agent", agent: "architect", mode: "primary" }
+    case "confirmed-design": {
+      const readonly = /\(read-only slash override\)/.test(b.raw)
+      return { kind: "run-agent", agent: "ux-design", mode: readonly ? "read-only-consultant" : "primary" }
+    }
     case "confirmed-design-auto-continue":
       return { kind: "run-agent", agent: "ux-design", mode: "primary" }
     case "new-thread-design":
