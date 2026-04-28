@@ -44,7 +44,7 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 - ~~Phase 2 (~4d): `routeFeatureMessage`, `routeGeneralMessage`, `executeDecision`, matrix test, dispatch test, `tests/invariants/test-migration-audit.md`.~~ ✅ DONE (2026-04-27) — pure routers + dispatcher + spec-parser shipped; `tests/invariants/routing-matrix.test.ts` parameterized over 49 spec rows (all green); `tests/invariants/routing-dispatch.test.ts` covers I16 + I17; `tests/invariants/test-migration-audit.md` classifies 130 workflows describes (~85 KEEP / ~14 REPLACE / ~6 split / 0 DELETE). Production path unchanged.
 - ~~Phase 3 (~5d): Dual-run shadow mode behind `dryRun: true`; nightly GitHub Action drives synthesized corpus through every spec row. Coverage gate: zero divergences in corpus + 48h prod + 3 nights green.~~ ✅ STAGE 1 + STAGE 2 DONE (2026-04-27). **Stage 1:** `scripts/generate-shadow-corpus.ts` (54 fixtures), `scripts/shadow-coverage-driver.ts` (`npm run shadow:coverage`), `scripts/shadow-coverage-report.ts` (`npm run shadow:report`), nightly GH Action `.github/workflows/shadow-coverage.yml`. **Stage 2:** `runtime/routing/shadow.ts` wired into both Slack handlers; `[ROUTING-V2-PROPOSED]` log emits on every message. Scenario N73 verifies the log shape and that production behavior is unchanged. **Gates remaining:** (b) zero divergences over 48h prod traffic — accumulates after deploy; (c) nightly action green for 3 consecutive nights — accumulates after merge.
 - Phase 4 (~1d deploy + 7d burn-in): Cutover with `ROUTING_V2=1` kill-switch.
-- Phase 5 (~3d): Fix the warts (slash-as-confirmation, hold-message label, `targetAgent` validation, `originAgent` required, `productSpec` typed) as deliberate spec edits + matrix row diffs. One-time `scripts/migrate-routing-state-v2.ts` for stale on-disk records.
+- Phase 5 (~4d): Fix the warts as deliberate spec edits + matrix row diffs. **I1** slash-as-confirmation; **I7-extended** hold-message template (not just label) + posture-coherent phrasing (no "bring the PM into this thread" personification when the human user IS the PM stakeholder); **I2** corrupt `targetAgent` → invalid-state; **I8** `originAgent` required at type level; **FLAG-5** `pendingEscalation.productSpec` typed required; **I21** orientation-on-resume for PM/Designer/Architect when escalation-engaged (state-of-world → trigger → items → recommendations, first-person agent voice, platform-enforced via structural gate); **I22** new `dismiss-escalation-fall-through` decision (Haiku-classified intent, resumes downstream without writeback, audit re-fires next cycle). One-time `scripts/migrate-routing-state-v2.ts` for stale on-disk records.
 - Phase 6 (~2d): Delete old code; apply test-migration-audit. `message.ts` < 800 lines; `general.ts` < 300 lines.
 - Phase 7 (~1d each, when ready): Add Coder/Reviewer as proof-of-scaling.
 
@@ -55,6 +55,27 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 **Blocks:** all items below this line (post-completion iteration, deterministic audits for product-level docs, product-level doc editing, branch hygiene cleanup, agent persona names) plus future agent additions (Coder, Reviewer). The refactor is the path through.
 
 **The bugs surfaced in manual testing on 2026-04-27** (slash-as-confirmation, hold-message label) are NOT patched in-place — they are encoded into the Phase 0 spec as today's behavior, then fixed as deliberate spec edits in Phase 5. This is the user's explicit choice (durable over fast).
+
+---
+
+### Audit-exception markers — durable false-positive resolution for upstream-spec audits (2026-04-27)
+
+**Priority: P1 — unblocks the dismiss-escalation flow's long-term coherence. Lands after Phase 5 of the routing refactor.**
+
+The deterministic upstream-spec audits (`auditPmSpec`, `auditDesignSpec`, `auditEngineeringSpec`) run on every spec save (Principle 14). When they flag a finding the upstream agent correctly identifies as a false positive (pattern-match elsewhere triggered the flag, the affordance lifecycle is already explicitly defined, etc.), there's no mechanism today to record that determination. On next downstream finalize, the deterministic audit re-fires the same finding (same input, same output by Principle 11) — user enters a loop.
+
+**The fix:** spec-level audit-exception markers. PM/Designer/Architect can propose markers like `<!-- audit-exception: "after inactivity" / reviewed 2026-04-27 / persistent affordance lifecycle defined by user actions, not timer-based -->` that, when approved by the human, write back to the spec on main alongside any patches. The deterministic auditor's pattern matchers check for these markers and exclude annotated AC sections from re-flagging. The spec stays the source of truth; markers are reviewable in git history; no new state file.
+
+**Required:**
+- Marker syntax + parser in `spec-utils.ts` (extracts `<!-- audit-exception: ... -->` blocks and their scope)
+- `auditPmSpec` / `auditDesignSpec` / `auditEngineeringSpec` updated to honor exception markers (skip annotated lines; log the skip with marker rationale for audit trail)
+- PM/Designer/Architect agent system prompts updated: when proposing a "no change required — false positive" recommendation, also propose the corresponding audit-exception marker with the rationale
+- `patchProductSpecWithRecommendations` / equivalents extended to write markers alongside content patches
+- Test: same spec saved twice, marker added between saves, audit produces fewer findings on second run (deterministic, marker-respecting)
+
+**Why this matters:** without it, the I22 dismiss-escalation flow is a partial fix — user can dismiss but the audit will re-pester them every downstream finalize. The marker mechanism is the durable resolution path for false positives.
+
+**Blocks:** the routing refactor's "once and for all" promise on the escalation lifecycle. The routing layer is structurally complete after Phase 6, but false-positive loops remain a UX issue without this.
 
 ---
 
