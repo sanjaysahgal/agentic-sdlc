@@ -3,12 +3,17 @@
 // Takes a FeatureRoutingInput (built by snapshot.ts) and returns exactly one
 // RoutingDecision. No I/O. No side effects. Same input → same output, always.
 //
-// Behavior is byte-equivalent to today's code in interfaces/slack/handlers/message.ts,
-// **including the still-encoded bugs** (FLAG-B: corrupt targetAgent silently routes;
-// FLAG-C: hold-message label hardcoded). FLAG-A (slash-as-confirmation) is fixed under
-// I1 — a slash addressing the held target now resumes the escalation rather than
-// showing the hold. Phase 5 of the refactor fixes each remaining FLAG as a deliberate
-// spec edit + matrix row diff + new test.
+// Behavior is byte-equivalent to today's code in interfaces/slack/handlers/message.ts
+// for the cases that still ship to production. Phase 5 is fixing each spec FLAG as a
+// deliberate spec edit + matrix row diff + new test:
+//   - FLAG-A (slash-as-confirmation): fixed under I1 — a slash addressing the held
+//     target resumes the escalation rather than showing the hold.
+//   - FLAG-B (corrupt targetAgent): fixed under I2 — the runtime check below emits
+//     `invalid-state` with cleanup; on-disk legacy values are scrubbed by
+//     `scripts/migrate-routing-state-v2.ts` before cutover.
+//   - FLAG-C (hold-message label hardcoded): fixed under I7-extended — the renderer
+//     in `hold-message-renderer.ts` derives every label from the agent registry.
+// Remaining FLAGs (D, E) are queued for Phase 5 / I8 + FLAG-5.
 //
 // Decision order (mirrors message.ts and §11 of the spec):
 //   1. pendingDecisionReview  (I3 — multi-turn precedence)
@@ -68,9 +73,12 @@ const ENTRY_TO_ADDRESSED: Partial<Record<FeatureEntry, AgentId>> = {
   E7: "architect",
 }
 
-// PendingEscalation.targetAgent uses the legacy "design" alias (FLAG-D). The router
-// canonicalizes to AgentId here so downstream effects (set-escalation-notification,
-// hold-message labels) reference the registry-correct id.
+// PendingEscalation.targetAgent uses the legacy "design" alias (queued for I8 to
+// close at the type level). The router canonicalizes to AgentId here so downstream
+// effects (set-escalation-notification, hold-message labels) reference the
+// registry-correct id. Anything that isn't an AgentId (and isn't the legacy alias)
+// returns null — the caller emits `invalid-state` per I2. On-disk records carrying
+// such corrupt values are scrubbed by `scripts/migrate-routing-state-v2.ts`.
 function canonicalize(target: string): AgentId | null {
   if (target === "design") return "ux-design"
   return isAgentId(target) ? (target as AgentId) : null
@@ -123,8 +131,11 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
   if (state.pendingEscalation) {
     const targetCanon = canonicalize(state.pendingEscalation.targetAgent)
     if (!targetCanon) {
-      // FLAG-B: today's behavior is undefined when targetAgent is corrupt. Phase 5
-      // (I2) makes this a clean invalid-state with cleanup.
+      // I2 — corrupt targetAgent. Production handlers used to crash or silently
+      // mis-route; the v2 router emits invalid-state and the dispatcher cleans
+      // up the bad on-disk record. The migration script scrubs pre-existing
+      // bad values at startup so this branch is a structural belt-and-suspenders
+      // for state written after migration runs.
       return { kind: "invalid-state", reason: `corrupt-targetAgent:${state.pendingEscalation.targetAgent}`, preEffects: empty, postEffects: [] }
     }
     const slashConfirms = addressed !== undefined && addressed === targetCanon
