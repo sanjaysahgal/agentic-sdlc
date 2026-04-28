@@ -172,16 +172,47 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
   // 3 — escalationNotification: reply from the @mentioned agent. A standalone
   // confirmation resumes the origin agent (with writeback as a postEffect); any
   // other message routes back to the target agent for continued conversation.
+  // I2 + I8 — both targetAgent and originAgent must canonicalize to a valid
+  // AgentId; anything else is invalid-state with cleanup. The pre-Phase-5
+  // fallbacks (`?? "pm"` for target, `=== "architect" ? "architect" : "ux-design"`
+  // for origin) silently routed corrupt or missing values to a default agent —
+  // FLAG-D in the spec. The disk-side counterpart is the migration script,
+  // which scrubs entries with missing/corrupt origin or target.
   if (state.escalationNotification) {
-    const targetCanon = canonicalize(state.escalationNotification.targetAgent) ?? "pm"
+    const targetCanon = canonicalize(state.escalationNotification.targetAgent)
+    if (!targetCanon) {
+      return {
+        kind: "invalid-state",
+        reason: `corrupt-targetAgent:${state.escalationNotification.targetAgent}`,
+        preEffects: [{ kind: "clear-escalation-notification", key }],
+        postEffects: [],
+      }
+    }
+    const originRaw = state.escalationNotification.originAgent
+    if (!originRaw) {
+      return {
+        kind: "invalid-state",
+        reason: "missing-originAgent",
+        preEffects: [{ kind: "clear-escalation-notification", key }],
+        postEffects: [],
+      }
+    }
+    const originCanon = canonicalize(originRaw)
+    if (!originCanon) {
+      return {
+        kind: "invalid-state",
+        reason: `corrupt-originAgent:${originRaw}`,
+        preEffects: [{ kind: "clear-escalation-notification", key }],
+        postEffects: [],
+      }
+    }
     if (isAffirmative(userMsg)) {
-      const origin: AgentId = state.escalationNotification.originAgent === "architect" ? "architect" : "ux-design"
       return {
         kind: "resume-after-escalation",
-        originAgent: origin,
+        originAgent: originCanon,
         preEffects: [{ kind: "clear-escalation-notification", key }],
         postEffects: [
-          { kind: "writeback-to-main", specType: origin === "architect" ? "engineering" : "design", content: "" },
+          { kind: "writeback-to-main", specType: originCanon === "architect" ? "engineering" : "design", content: "" },
         ],
       }
     }

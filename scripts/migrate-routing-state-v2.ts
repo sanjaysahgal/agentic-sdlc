@@ -25,7 +25,7 @@ import { isAgentId } from "../runtime/routing/agent-registry"
 const STATE_FILE = path.resolve(__dirname, "..", ".conversation-state.json")
 const LEGACY_TARGET_ALIASES = new Set(["design"])
 
-export type OnDiskEntry = { targetAgent?: unknown; [k: string]: unknown }
+export type OnDiskEntry = { targetAgent?: unknown; originAgent?: unknown; [k: string]: unknown }
 export type RoutingStateOnDisk = {
   pendingEscalations?:      Record<string, OnDiskEntry>
   escalationNotifications?: Record<string, OnDiskEntry>
@@ -74,7 +74,7 @@ export function migrateRoutingState(input: RoutingStateOnDisk): MigrationResult 
   if (input.escalationNotifications) {
     const next: Record<string, OnDiskEntry> = {}
     for (const [key, value] of Object.entries(input.escalationNotifications)) {
-      const reason = validationReason(value?.targetAgent)
+      const reason = notificationValidationReason(value)
       if (reason) {
         report.droppedEscalationNotifications.push({ key, reason })
         report.changed = true
@@ -88,11 +88,33 @@ export function migrateRoutingState(input: RoutingStateOnDisk): MigrationResult 
   return { cleaned, report }
 }
 
+// pendingEscalations only carry targetAgent — origin is implicit from the
+// confirmedAgent at the time of confirmation. Validation is targetAgent-only.
 function validationReason(targetAgent: unknown): string | null {
-  if (typeof targetAgent !== "string") return `missing-or-non-string targetAgent (got ${typeof targetAgent})`
-  if (LEGACY_TARGET_ALIASES.has(targetAgent)) return null  // canonicalized at read time
-  if (isAgentId(targetAgent)) return null
-  return `corrupt targetAgent value: "${targetAgent}"`
+  return validateAgentField("targetAgent", targetAgent)
+}
+
+// escalationNotifications carry both targetAgent (the @mentioned upstream
+// agent) AND originAgent (the downstream agent to resume after the reply).
+// I8 (Phase 5, 2026-04-28) made originAgent required: pre-Phase-5 records
+// could omit it and the router silently fell back to ux-design — FLAG-D.
+// After I8, missing/corrupt origin is a structural error and the record is
+// dropped here so the runtime invalid-state path doesn't fire on every
+// message after cutover.
+function notificationValidationReason(entry: OnDiskEntry | undefined): string | null {
+  if (!entry || typeof entry !== "object") return "entry is missing or non-object"
+  const targetReason = validateAgentField("targetAgent", entry.targetAgent)
+  if (targetReason) return targetReason
+  const originReason = validateAgentField("originAgent", entry.originAgent)
+  if (originReason) return originReason
+  return null
+}
+
+function validateAgentField(field: string, value: unknown): string | null {
+  if (typeof value !== "string") return `missing-or-non-string ${field} (got ${typeof value})`
+  if (LEGACY_TARGET_ALIASES.has(value)) return null  // canonicalized at read time
+  if (isAgentId(value)) return null
+  return `corrupt ${field} value: "${value}"`
 }
 
 // ── CLI wrapper ───────────────────────────────────────────────────────────────

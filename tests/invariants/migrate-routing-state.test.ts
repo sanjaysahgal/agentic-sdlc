@@ -88,17 +88,82 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
       }
     })
 
-    it("applies the same rules to escalationNotifications", () => {
+    it("applies the same targetAgent rules to escalationNotifications", () => {
       const input = fixture({
         escalationNotifications: {
-          "valid":   { targetAgent: "pm", question: "Q" },
-          "corrupt": { targetAgent: "wat", question: "Q" },
+          "valid":   { targetAgent: "pm", originAgent: "ux-design", question: "Q" },
+          "corrupt": { targetAgent: "wat", originAgent: "ux-design", question: "Q" },
         },
       })
       const { cleaned, report } = migrateRoutingState(input)
       expect(report.changed).toBe(true)
       expect(Object.keys(cleaned.escalationNotifications!)).toEqual(["valid"])
       expect(report.droppedEscalationNotifications.map((d) => d.key)).toEqual(["corrupt"])
+    })
+  })
+
+  describe("I8 — escalationNotification.originAgent required", () => {
+    it("drops entries with missing originAgent (FLAG-D pre-Phase-5 silently routed to ux-design)", () => {
+      const input = fixture({
+        escalationNotifications: {
+          "withOrigin":    { targetAgent: "pm", originAgent: "architect", question: "Q" },
+          "missingOrigin": { targetAgent: "pm", question: "Q" } as any,
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(true)
+      expect(Object.keys(cleaned.escalationNotifications!)).toEqual(["withOrigin"])
+      expect(report.droppedEscalationNotifications[0].key).toBe("missingOrigin")
+      expect(report.droppedEscalationNotifications[0].reason).toMatch(/missing-or-non-string originAgent/)
+    })
+
+    it("drops entries with corrupt originAgent (typo, removed agent, garbage)", () => {
+      const input = fixture({
+        escalationNotifications: {
+          "valid":         { targetAgent: "pm", originAgent: "ux-design", question: "Q" },
+          "typoOrigin":    { targetAgent: "pm", originAgent: "uxdesign",   question: "Q" },
+          "removedOrigin": { targetAgent: "pm", originAgent: "old-name",   question: "Q" },
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(true)
+      expect(Object.keys(cleaned.escalationNotifications!)).toEqual(["valid"])
+      for (const drop of report.droppedEscalationNotifications) {
+        expect(drop.reason).toMatch(/corrupt originAgent/)
+      }
+    })
+
+    it("preserves the legacy 'design' alias as a valid originAgent (pre-Phase-5 records carry it)", () => {
+      const input = fixture({
+        escalationNotifications: {
+          "legacy": { targetAgent: "pm", originAgent: "design", question: "Q" },
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(false)
+      expect(cleaned.escalationNotifications!["legacy"]).toBeDefined()
+    })
+
+    it("targetAgent corruption takes precedence over originAgent corruption (single-reason drop)", () => {
+      const input = fixture({
+        escalationNotifications: {
+          "bothCorrupt": { targetAgent: "wat", originAgent: "also-wat", question: "Q" } as any,
+        },
+      })
+      const { report } = migrateRoutingState(input)
+      expect(report.droppedEscalationNotifications).toHaveLength(1)
+      expect(report.droppedEscalationNotifications[0].reason).toMatch(/corrupt targetAgent/)
+    })
+
+    it("pendingEscalations are unaffected by originAgent rules (they don't carry an origin field)", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "noOrigin": { targetAgent: "pm", question: "Q", designContext: "" },
+        },
+      })
+      const { report } = migrateRoutingState(input)
+      expect(report.changed).toBe(false)
+      expect(report.droppedPendingEscalations).toEqual([])
     })
   })
 
