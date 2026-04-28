@@ -146,7 +146,16 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
         postEffects: [],
       }
     }
-    return { kind: "show-hold-message", heldAgent: targetCanon, reason: "escalation", preEffects: empty, postEffects: [] }
+    return {
+      kind: "show-hold-message",
+      heldAgent: targetCanon,
+      reason: "escalation",
+      featureName: key.feature as unknown as string,
+      downstreamPhase: phase,
+      blockingQuestion: state.pendingEscalation.question,
+      preEffects: empty,
+      postEffects: [],
+    }
   }
 
   // 3 — escalationNotification: reply from the @mentioned agent. A standalone

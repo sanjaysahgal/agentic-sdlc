@@ -234,7 +234,7 @@ export type RoutingDecision = DecisionBase & (
   | { kind: "confirm-decision-review-item";         cursor: number }
   | { kind: "complete-decision-review" }
   | { kind: "reject-decision-review-fall-through" }
-  | { kind: "show-hold-message";                    heldAgent: AgentId; reason: "escalation" }
+  | { kind: "show-hold-message";                    heldAgent: AgentId; reason: "escalation"; featureName: string; downstreamPhase: FeaturePhase; blockingQuestion: string }
   | { kind: "show-orientation";                     agent: AgentId }
   | { kind: "show-routing-note";                    text: string }
   | { kind: "show-escalation-offer-prompt" }

@@ -8,7 +8,7 @@
 // Adding a new agent (Coder, Reviewer, …) is one entry here. Phase 2's pure
 // router and Phase 5's invariant checks both read from this list.
 
-import type { AgentId, FeaturePhase } from "./types"
+import type { AgentId, FeaturePhase, SpecType } from "./types"
 
 export type AgentEntry = {
   // Canonical id used in routing decisions, persisted state, and tool calls.
@@ -16,6 +16,18 @@ export type AgentEntry = {
 
   // Human-readable display name shown in Slack messages and the concierge prompt.
   readonly displayName: string
+
+  // Compact role label used inline in platform-rendered Slack messages
+  // (e.g. hold-message template: "Reply yes to have the <shortName> draft
+  // tightenings"). Distinct from displayName, which is the formal agent name.
+  // Phase 5 / I7-extended: registry-derived label replaces hardcoded "PM" /
+  // "Designer" / "Architect" strings scattered through production handlers.
+  readonly shortName: string
+
+  // The spec type this agent owns end-to-end. Used by the I7 hold-message
+  // renderer to name the upstream spec the held escalation is blocked on,
+  // and by the I10 spec-owner gate. Concierge has no owned spec.
+  readonly ownsSpec: SpecType | null
 
   // One-sentence description shown in the concierge prompt.
   readonly description: string
@@ -36,6 +48,8 @@ export const AGENT_REGISTRY: readonly AgentEntry[] = [
   {
     id: "pm",
     displayName: "Product Manager (pm agent)",
+    shortName: "PM",
+    ownsSpec: "product",
     description: "Shapes feature ideas into solid, approved product specs through conversation.",
     phaseCopy: "Phase 1 — active in every #feature-* channel until the product spec is approved",
     phases: ["product-spec-in-progress"],
@@ -43,6 +57,8 @@ export const AGENT_REGISTRY: readonly AgentEntry[] = [
   {
     id: "ux-design",
     displayName: "UX Design agent",
+    shortName: "Designer",
+    ownsSpec: "design",
     description: "Shapes the approved product spec into a design spec: screens, flows, states, and component decisions.",
     phaseCopy: "Phase 2 — active in every #feature-* channel after the product spec is approved",
     phases: ["product-spec-approved-awaiting-design", "design-in-progress"],
@@ -50,6 +66,8 @@ export const AGENT_REGISTRY: readonly AgentEntry[] = [
   {
     id: "architect",
     displayName: "Architect",
+    shortName: "Architect",
+    ownsSpec: "engineering",
     description: "Translates the approved design spec into a precise engineering plan: data model, API contracts, component breakdown, non-functional requirements.",
     phaseCopy: "Phase 3 — active in every #feature-* channel after the design spec is approved",
     phases: ["design-approved-awaiting-engineering", "engineering-in-progress"],
@@ -57,6 +75,8 @@ export const AGENT_REGISTRY: readonly AgentEntry[] = [
   {
     id: "concierge",
     displayName: "Concierge",
+    shortName: "Concierge",
+    ownsSpec: null,
     description: "The front door for the whole system — orients anyone arriving, explains the system, and points them to the right next step.",
     phaseCopy: "Always available in the main workspace channel",
     phases: [],
