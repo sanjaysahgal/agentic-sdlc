@@ -58,6 +58,41 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 
 ---
 
+### Architect readiness messaging must reflect full upstream chain state — P14/P15 enforcement gap (2026-04-27)
+
+**Priority: P0 — load-bearing trust violation surfaced during Phase 3 manual testing. Lands as part of Phase 5 wart fixes (separate from routing invariants but same flavor of "system says X, but X isn't true").**
+
+The architect's always-on `archReadinessNotice` runs `auditPhaseCompletion(buildEngineeringSpecRubric)` against the engineering spec content only — it checks engineering completeness, NOT the full upstream chain (PM spec, Design spec). The upstream-spec audits (`auditPmSpec`, `auditDesignSpec`) only fire at `handleFinalizeEngineeringSpec` time. So when the architect says "Nothing blocking — you can review and approve when ready," it can be silently incorrect: the engineering spec is internally complete, but the upstream chain has unresolved findings that will block finalization.
+
+**Validated by manual test 2026-04-27:**
+1. Architect's auditPmSpec produced 4 findings against the approved product spec; PM escalation queued, recommendations sitting in `escalationNotifications.onboarding` (verified via .conversation-state.json)
+2. Design audit produced 26 findings against the approved design spec
+3. User typed `/architect hi`
+4. Architect responded: *"onboarding engineering spec — in progress. ✅ Nothing blocking — you can review and approve when ready. Reply approved when you're done and I'll hand off to the engineering agents."*
+5. **That's manifestly wrong.** Two upstream agents have unresolved audit findings. Saying yes to "approved" would hit `handleFinalizeEngineeringSpec`, run the upstream audits, and block — but only after the user trusted "Nothing blocking."
+
+This is a direct violation of **Principle 14** (deterministic audits are retroactive — approved specs aren't exempt; messaging must reflect current state) AND **Principle 15** (cross-agent parity — if finalize hard-gates on upstream, the always-on readiness check must soft-gate on the same).
+
+**Required (two-layer fix):**
+
+**(a) Cheap layer — surface active escalations in `archReadinessNotice`.** The state is already persisted in `escalationNotifications.<featureName>`. Read it and report:
+> "Engineering spec is internally complete. But PM is engaged on N audit findings (see thread above) and Design has M unresolved audit findings. Resolve those before approving."
+
+**(b) Durable layer — run the same upstream audits the finalize handler runs**, in the always-on readiness check. `archReadinessNotice` should call `auditPmSpec(approvedProductSpec)` and `auditDesignSpec(approvedDesignSpec)`. If either returns N>0 findings, surface them. This catches the case where audits were added/strengthened AFTER spec approval — without this, an old approved spec sits in "looks ready" state forever even when it would fail finalize.
+
+**Implementation:**
+- `archReadinessNotice` builder gets the same `approvedProductSpec` and `approvedDesignSpec` params the finalize handler uses
+- Combine: own-spec readiness (today) + upstream-pm-clean + upstream-design-clean + active-escalations + active-decision-reviews
+- Output template: `"<own-spec status>. <upstream-status>. <next-step>"` — never just one of those.
+
+**Cross-agent parity (P15):**
+- Same fix applies to **designer's `designReadinessNotice`** — should run `auditPmSpec` against approved product spec; if findings, surface them. ("Design spec is internally complete. But PM has N unresolved findings from an earlier audit — resolve those before finalizing.")
+- PM doesn't have an upstream spec, so no equivalent gap there.
+
+**Validation post-fix:** rerun the manual test scenario above; architect's response should change from "Nothing blocking" to "Engineering complete, but PM has 4 findings + Design has 26 — resolve those first."
+
+---
+
 ### I23 — Action-menu posture-coherence in slash-override read-only mode (2026-04-27)
 
 **Priority: P0 — surfaced during Phase 3 manual testing. Same flavor as I7-extended/I21/I22. Lands as part of Phase 5 wart fixes.**
