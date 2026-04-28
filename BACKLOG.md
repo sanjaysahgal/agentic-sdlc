@@ -102,6 +102,26 @@ Trust-erosion happens the moment the user notices the inconsistency. The BACKLOG
 
 ---
 
+### Architect prose-vs-state mismatch — agent verbally promises one escalation, platform queues another (2026-04-27)
+
+**Priority: P0 — surfaced during manual test session immediately after the architect-readiness gap. Same Phase 5 timing.**
+
+The architect's `auto-trigger` gate (Principle 8 enforcement, post-run) queues `pendingEscalation.targetAgent` based on which gaps are present in context. Manual test 2026-04-27 exposed a new failure mode: the architect's PROSE response can name a different target agent than the platform's queued state.
+
+**Validated by manual test:**
+- Architect's prose: *"My plan: 1. Escalate all 41 design gaps to the Design agent now. 2. Once design resolves them, finalize the full engineering spec... Say yes and I'll bring in the Design agent now."*
+- Platform queued state (verified via .conversation-state.json): `pendingEscalation.onboarding.targetAgent = "pm"` (auto-triggered post-run because PM gaps were in context)
+- When user typed `yes`, the universal-guard fires `run-escalation-confirmed` and **PM runs**, NOT Design. Direct contradiction between architect's commitment and platform action.
+
+**Required:**
+- The architect's prose must be DRIVEN BY the queued state, not independent agent interpretation. If `pendingEscalation.targetAgent === "pm"`, prose says *"Say yes to bring in PM"*; if `"design"`, prose says *"bring in Design"*. Platform-enforced via a structural gate that re-runs the agent with an enforcement directive if the prose's targetAgent doesn't match `pendingEscalation.targetAgent`.
+- Better: agent must EXPLICITLY call `offer_upstream_revision(targetAgent)` with the agent it intends to escalate to. The auto-trigger gate is a fallback when agent didn't call; if it fires, prose alignment is checked structurally.
+- **PM-first ordering enforcement at the conversational layer** (NOT just at finalize-time). When PM has unresolved findings, the architect must NEVER offer Design escalation in prose — it must offer PM escalation first. Today this is enforced at `handleFinalizeEngineeringSpec` only; the conversational offer can still skip PM. **Existing BACKLOG entry "Integrated escalation lifecycle redesign" claims PM-first ordering is DONE (2026-04-25) but the manual test demonstrated it's only DONE at finalize-time, not at the conversational layer.** Both layers must enforce.
+
+**Related:** the BACKLOG entry "Architect readiness messaging must reflect full upstream chain state" (added today) covers the readiness REPORTING side; this entry covers the ESCALATION OFFER side. Same root cause — agent prose doesn't reflect queued/measured state — but distinct manifestations.
+
+---
+
 ### I23 — Action-menu posture-coherence in slash-override read-only mode (2026-04-27)
 
 **Priority: P0 — surfaced during Phase 3 manual testing. Same flavor as I7-extended/I21/I22. Lands as part of Phase 5 wart fixes.**
