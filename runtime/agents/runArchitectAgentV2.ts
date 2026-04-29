@@ -84,11 +84,41 @@ export type ArchitectIntent = {
 }
 
 // Per-feature state flags read from the conversation-store before the runner
-// is invoked. Passed as data so the classifier stays pure.
+// is invoked. Passed as data so the classifier stays pure. Optional context
+// payloads carry the data needed by approval-confirm and decision-review-
+// confirm renderers; populated by the caller (production wiring or test
+// fixture) when the corresponding flag is true.
 export type ArchitectStateFlags = {
   readonly hasPendingApproval:        boolean
   readonly hasPendingDecisionReview:  boolean
   readonly readOnly:                  boolean   // escalation-reply context
+
+  // When hasPendingApproval is true, the cached spec content + path the
+  // user originally approved. The orchestrator re-fetches the current
+  // draft from the branch to detect stale cached content (per legacy
+  // line 2643). If current !== cached → stale-spec-error branch.
+  //
+  // DESIGN-REVIEWED: optional context payloads on the state struct per
+  // Principle 12. (1) Scales to 1000s of features per tenant because each
+  // pending state is keyed by FeatureKey in conversation-store; the
+  // payload carries only the cached cell, not the whole feature graph.
+  // (2) Owned by conversation-store's pendingApprovals / pendingDecision-
+  // Reviews maps; the runner reads the cell, doesn't store it. (3)
+  // Cross-cutting: every V2 runner with pending-state branches uses this
+  // same shape (PM has pendingApproval, designer has pendingApproval,
+  // architect has both); Block M1's scaffold reuses the type.
+  readonly pendingApprovalContext?: {
+    readonly filePath:    string
+    readonly specContent: string
+  }
+
+  // When hasPendingDecisionReview is true, the resolved-questions content
+  // the architect held for human confirmation (per legacy line 2616).
+  // V2 saves this as a draft (not approved) on user affirmation.
+  readonly pendingDecisionReviewContext?: {
+    readonly filePath:    string
+    readonly specContent: string
+  }
 }
 
 // ── Branch classifier (pure) ──────────────────────────────────────────────────
@@ -192,16 +222,89 @@ export function renderStateQueryFastPath(params: {
 // at the AGENT_RUNNER_REWRITE_MAP row that owns its V2 implementation.
 // Subsequent commits replace these stubs with full implementations + tests.
 
-export function renderApprovalConfirm(): RenderedResponse {
-  throw new Error("[V2-NOT-IMPLEMENTED] renderApprovalConfirm — see AGENT_RUNNER_REWRITE_MAP.md row #3 (architect)")
+// Renderer for the approval-confirm branch (legacy line 2660, rewrite-map
+// row #3). Pure renderer of the post-approval handoff prose. The orchestrator
+// is responsible for the staleness check (re-fetching current draft and
+// comparing to params.specContent) before invoking this — staleness flips
+// the dispatch to renderStaleSpecError instead.
+export function renderApprovalConfirm(params: {
+  report:           ReadinessReport
+  userMessage:      string
+  featureName:      string
+  filePath:         string
+  specContent:      string
+  mainChannelName:  string
+}): RenderedResponse {
+  const text = [
+    `The *${params.featureName}* engineering spec is saved and approved. :white_check_mark:`,
+    ``,
+    `*What happens next:*`,
+    `The engineer agents will use this spec to implement the feature — data model, APIs, and UI components.`,
+    ``,
+    `To confirm the approved state or check where any feature stands, go to *#${params.mainChannelName}* and ask.`,
+  ].join("\n")
+  return {
+    text,
+    stateMutations: [
+      { kind: "clear-pending-approval" },
+      { kind: "save-approved-engineering-spec", filePath: params.filePath, content: params.specContent },
+      { kind: "append-message", role: "user",      content: params.userMessage },
+      { kind: "append-message", role: "assistant", content: text },
+    ],
+  }
 }
 
-export function renderDecisionReviewConfirm(): RenderedResponse {
-  throw new Error("[V2-NOT-IMPLEMENTED] renderDecisionReviewConfirm — see AGENT_RUNNER_REWRITE_MAP.md row #1 (architect)")
+// Renderer for the decision-review-confirm branch (legacy line 2628,
+// rewrite-map row #1). Pure renderer of the "draft saved" confirmation.
+// V2 saves the held content as a DRAFT (not approved) on user affirmation —
+// matching legacy behavior; subsequent approval flow will go through
+// approval-confirm.
+export function renderDecisionReviewConfirm(params: {
+  report:        ReadinessReport
+  userMessage:   string
+  featureName:   string
+  filePath:      string
+  specContent:   string
+  githubOwner:   string
+  githubRepo:    string
+}): RenderedResponse {
+  const branchName = `spec/${params.featureName}-engineering`
+  const url = `https://github.com/${params.githubOwner}/${params.githubRepo}/blob/${branchName}/${params.filePath}`
+  const text = `Decisions confirmed — engineering spec draft saved.\n\n${url}`
+  return {
+    text,
+    stateMutations: [
+      { kind: "clear-pending-decision-review" },
+      { kind: "save-draft-engineering-spec", filePath: params.filePath, content: params.specContent },
+      { kind: "append-message", role: "user",      content: params.userMessage },
+      { kind: "append-message", role: "assistant", content: text },
+    ],
+  }
 }
 
-export function renderStaleSpecError(): RenderedResponse {
-  throw new Error("[V2-NOT-IMPLEMENTED] renderStaleSpecError — see AGENT_RUNNER_REWRITE_MAP.md row #2 (architect)")
+// Renderer for the stale-spec-error branch (legacy line 2647, rewrite-map
+// row #2). Triggered as an orchestrator-side runtime adjustment when the
+// current draft on the branch differs from the cached pendingApproval
+// content. V2 surfaces the readiness summary alongside the warning so the
+// user sees both the staleness signal AND the current state.
+export function renderStaleSpecError(params: {
+  report:      ReadinessReport
+  userMessage: string
+}): RenderedResponse {
+  const text = [
+    `The engineering spec has been modified since the approval was offered. Please review the current version and say *approve* again when ready.`,
+    ``,
+    `Current state:`,
+    params.report.summary,
+  ].join("\n")
+  return {
+    text,
+    stateMutations: [
+      { kind: "clear-pending-approval" },
+      { kind: "append-message", role: "user",      content: params.userMessage },
+      { kind: "append-message", role: "assistant", content: text },
+    ],
+  }
 }
 
 // Renderer for the off-topic redirect. Pure: takes the report, the user
@@ -272,6 +375,20 @@ export type RunArchV2Deps = {
   // workspace-derived constants and follows this same deps-injection
   // pattern; Block M1's scaffold script generates it.
   readonly mainChannelName:   string
+  readonly githubOwner:       string
+  readonly githubRepo:        string
+  // Re-fetches the current spec draft from GitHub. Used by the
+  // approval-confirm branch to detect stale cached content (legacy
+  // line 2643). Returns null if the file isn't found.
+  //
+  // DESIGN-REVIEWED: I/O via dependency injection per Principle 12.
+  // (1) Scales because each call is per-feature-per-turn (no global
+  // state, no batching constraint). (2) Owned by github-client.ts in
+  // production; tests inject stubs. (3) Cross-cutting: every V2 runner
+  // that needs spec re-fetch (approval-confirm staleness check, future
+  // re-audit-on-resume flows) accepts this same dep shape; PM and
+  // designer V2 runners will follow the same pattern.
+  readonly fetchCurrentDraft: (filePath: string, branchName: string) => Promise<string | null>
   // Optional: structured logging hook (for shadow-mode dual-run + observability)
   readonly log?:              (line: string) => void
 }
@@ -297,21 +414,65 @@ export async function runArchitectAgentV2(params: RunArchV2Params): Promise<void
 
   log(`[V2-ARCHITECT] feature=${params.featureName} branch=${branch} aggregate=${report.aggregate} totalFindings=${report.totalFindingCount}`)
 
-  // 3. Dispatch to the renderer.
+  // 3. Dispatch to the renderer. For approval-confirm, the orchestrator
+  //    performs an I/O staleness check (re-fetch current draft, compare
+  //    to cached) and flips the dispatch to stale-spec-error if the
+  //    cached content is no longer current. This keeps the renderers
+  //    pure (no I/O) while preserving the legacy line 2643 behavior.
   let rendered: RenderedResponse
   switch (branch) {
     case "state-query-fast-path":
       rendered = renderStateQueryFastPath({ report, userMessage: params.userMessage })
       break
-    case "approval-confirm":
-      rendered = renderApprovalConfirm()
+
+    case "approval-confirm": {
+      const ctx = params.state.pendingApprovalContext
+      if (!ctx) {
+        throw new Error("[V2-ARCHITECT] approval-confirm classified but pendingApprovalContext missing")
+      }
+      const branchName  = `spec/${params.featureName}-engineering`
+      const freshDraft  = await params.deps.fetchCurrentDraft(ctx.filePath, branchName)
+      const isStale     = freshDraft !== null && freshDraft !== ctx.specContent
+      if (isStale) {
+        rendered = renderStaleSpecError({ report, userMessage: params.userMessage })
+        log(`[V2-ARCHITECT] feature=${params.featureName} branch=stale-spec-error (was approval-confirm; staleness detected)`)
+      } else {
+        rendered = renderApprovalConfirm({
+          report,
+          userMessage:     params.userMessage,
+          featureName:     params.featureName,
+          filePath:        ctx.filePath,
+          specContent:     ctx.specContent,
+          mainChannelName: params.deps.mainChannelName,
+        })
+      }
       break
-    case "decision-review-confirm":
-      rendered = renderDecisionReviewConfirm()
+    }
+
+    case "decision-review-confirm": {
+      const ctx = params.state.pendingDecisionReviewContext
+      if (!ctx) {
+        throw new Error("[V2-ARCHITECT] decision-review-confirm classified but pendingDecisionReviewContext missing")
+      }
+      rendered = renderDecisionReviewConfirm({
+        report,
+        userMessage:  params.userMessage,
+        featureName:  params.featureName,
+        filePath:     ctx.filePath,
+        specContent:  ctx.specContent,
+        githubOwner:  params.deps.githubOwner,
+        githubRepo:   params.deps.githubRepo,
+      })
       break
+    }
+
     case "stale-spec-error":
-      rendered = renderStaleSpecError()
-      break
+      // Reachable only if the classifier directly returned this kind, which
+      // it currently doesn't — staleness is detected in the approval-confirm
+      // case above. Kept here for completeness; throws to make a future
+      // direct-dispatch attempt visible.
+      throw new Error("[V2-ARCHITECT] stale-spec-error must be reached via approval-confirm staleness flip, not direct classification")
+
     case "off-topic-redirect":
       rendered = renderOffTopicRedirect({
         report,

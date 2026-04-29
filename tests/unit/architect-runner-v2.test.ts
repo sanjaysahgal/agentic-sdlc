@@ -12,6 +12,9 @@ import {
   classifyArchitectBranch,
   renderStateQueryFastPath,
   renderOffTopicRedirect,
+  renderApprovalConfirm,
+  renderDecisionReviewConfirm,
+  renderStaleSpecError,
   runArchitectAgentV2,
   type ArchitectClassifierInput,
   type ArchitectIntent,
@@ -60,6 +63,30 @@ function classifierInput(over: Partial<ArchitectClassifierInput> = {}): Architec
     state:  state(),
     ...over,
   }
+}
+
+// Module-scoped makeDeps so multiple describe blocks can use it. Returns the
+// deps object plus closure-captured arrays the test can assert against.
+function makeDeps(reportIn: ReadinessReportInput, fetchOverride?: (path: string, branch: string) => Promise<string | null>): {
+  deps:               RunArchV2Deps
+  appliedMutations:   StateMutation[]
+  emittedTexts:       string[]
+  logLines:           string[]
+} {
+  const appliedMutations: StateMutation[] = []
+  const emittedTexts:     string[]        = []
+  const logLines:         string[]        = []
+  const deps: RunArchV2Deps = {
+    loadReport:         async () => reportIn,
+    applyStateMutation: async (m) => { appliedMutations.push(m) },
+    emit:               async (t) => { emittedTexts.push(t) },
+    mainChannelName:    "test-main-channel",
+    githubOwner:        "test-owner",
+    githubRepo:         "test-repo",
+    fetchCurrentDraft:  fetchOverride ?? (async () => null),
+    log:                (l) => { logLines.push(l) },
+  }
+  return { deps, appliedMutations, emittedTexts, logLines }
 }
 
 // ── Classifier tests (pure function, every branch enumerated) ─────────────────
@@ -285,25 +312,6 @@ describe("renderOffTopicRedirect — surfaces redirect AND current readiness", (
 // ── Runner orchestration tests (deps-injected, full dispatch verified) ────────
 
 describe("runArchitectAgentV2 — orchestration", () => {
-  function makeDeps(reportIn: ReadinessReportInput): {
-    deps:               RunArchV2Deps
-    appliedMutations:   StateMutation[]
-    emittedTexts:       string[]
-    logLines:           string[]
-  } {
-    const appliedMutations: StateMutation[] = []
-    const emittedTexts:     string[]        = []
-    const logLines:         string[]        = []
-    const deps: RunArchV2Deps = {
-      loadReport:         async () => reportIn,
-      applyStateMutation: async (m) => { appliedMutations.push(m) },
-      emit:               async (t) => { emittedTexts.push(t) },
-      mainChannelName:    "test-main-channel",
-      log:                (l) => { logLines.push(l) },
-    }
-    return { deps, appliedMutations, emittedTexts, logLines }
-  }
-
   it("state-query branch: report built, summary emitted, history appended", async () => {
     const reportIn = reportInput({
       upstreamAudits: [{ auditingAgent: "architect", specType: "product", findingCount: 3 }],
@@ -367,18 +375,17 @@ describe("runArchitectAgentV2 — orchestration", () => {
   it("remaining stub branches still throw with NOT-IMPLEMENTED + map row pointer", async () => {
     // Verifies the stubs are wired correctly into the dispatch. The error
     // message must reference the AGENT_RUNNER_REWRITE_MAP row so failures
-    // surface where the V2 implementation owes work. As branches are
-    // implemented commit-by-commit, this test will eventually require
-    // inputs that genuinely have no implementation — currently
-    // approval-confirm is one such branch.
+    // surface where the V2 implementation owes work. Currently
+    // escalation-engaged + normal-agent-turn are the remaining stubs;
+    // this test uses readOnly=true to hit escalation-engaged.
     const { deps } = makeDeps(reportInput())
 
     await expect(
       runArchitectAgentV2({
-        userMessage: "yes",
+        userMessage: "any",
         featureName: "demo-feature",
-        intent:      intent({ isAffirmative: true }),
-        state:       state({ hasPendingApproval: true }),
+        intent:      intent(),
+        state:       state({ readOnly: true }),
         deps,
       })
     ).rejects.toThrow(/V2-NOT-IMPLEMENTED.*AGENT_RUNNER_REWRITE_MAP/)
@@ -389,10 +396,10 @@ describe("runArchitectAgentV2 — orchestration", () => {
 
     await expect(
       runArchitectAgentV2({
-        userMessage: "yes",
+        userMessage: "any",
         featureName: "demo-feature",
-        intent:      intent({ isAffirmative: true }),
-        state:       state({ hasPendingApproval: true }),
+        intent:      intent(),
+        state:       state({ readOnly: true }),
         deps,
       })
     ).rejects.toThrow()
@@ -454,5 +461,229 @@ describe("V2 architect runner — determinism (Principle 11)", () => {
     expect(a.emitted).toEqual(b.emitted)
     expect(b.emitted).toEqual(c.emitted)
     expect(a.mutations).toEqual(b.mutations)
+  })
+})
+
+// ── Approval-confirm renderer tests ───────────────────────────────────────────
+
+describe("renderApprovalConfirm — post-approval handoff to engineering agents", () => {
+  it("emits the canonical approval message naming the feature + main channel", () => {
+    const r = buildReadinessReport(reportInput())
+    const out = renderApprovalConfirm({
+      report: r, userMessage: "approved", featureName: "test-feature",
+      filePath: "specs/features/test-feature/test-feature.engineering.md",
+      specContent: "# eng spec", mainChannelName: "general",
+    })
+    expect(out.text).toContain("*test-feature* engineering spec is saved and approved")
+    expect(out.text).toContain(":white_check_mark:")
+    expect(out.text).toContain("*#general*")
+    expect(out.text).toContain("engineer agents")
+  })
+
+  it("emits state mutations: clear-pending-approval + save-approved + history (in order)", () => {
+    const r = buildReadinessReport(reportInput())
+    const out = renderApprovalConfirm({
+      report: r, userMessage: "yes", featureName: "test-feature",
+      filePath: "specs/features/test-feature/test-feature.engineering.md",
+      specContent: "# eng spec content", mainChannelName: "general",
+    })
+    expect(out.stateMutations).toEqual([
+      { kind: "clear-pending-approval" },
+      {
+        kind: "save-approved-engineering-spec",
+        filePath: "specs/features/test-feature/test-feature.engineering.md",
+        content: "# eng spec content",
+      },
+      { kind: "append-message", role: "user", content: "yes" },
+      { kind: "append-message", role: "assistant", content: out.text },
+    ])
+  })
+
+  it("zero LLM calls — pure renderer (synchronous return)", () => {
+    const result = renderApprovalConfirm({
+      report: buildReadinessReport(reportInput()), userMessage: "yes",
+      featureName: "f", filePath: "p", specContent: "c", mainChannelName: "general",
+    })
+    expect(result).not.toBeInstanceOf(Promise)
+  })
+})
+
+// ── Decision-review-confirm renderer tests ────────────────────────────────────
+
+describe("renderDecisionReviewConfirm — held content saved as draft", () => {
+  it("emits canonical confirmation + GitHub URL", () => {
+    const r = buildReadinessReport(reportInput())
+    const out = renderDecisionReviewConfirm({
+      report: r, userMessage: "yes", featureName: "test-feature",
+      filePath: "specs/features/test-feature/test-feature.engineering.md",
+      specContent: "# eng spec", githubOwner: "o", githubRepo: "r",
+    })
+    expect(out.text).toContain("Decisions confirmed")
+    expect(out.text).toContain("engineering spec draft saved")
+    expect(out.text).toContain("https://github.com/o/r/blob/spec/test-feature-engineering/specs/features/test-feature/test-feature.engineering.md")
+  })
+
+  it("emits state mutations: clear-pending-decision-review + save-DRAFT (not approved) + history", () => {
+    const r = buildReadinessReport(reportInput())
+    const out = renderDecisionReviewConfirm({
+      report: r, userMessage: "yes", featureName: "f",
+      filePath: "f.md", specContent: "content",
+      githubOwner: "o", githubRepo: "r",
+    })
+    expect(out.stateMutations).toEqual([
+      { kind: "clear-pending-decision-review" },
+      { kind: "save-draft-engineering-spec", filePath: "f.md", content: "content" },
+      { kind: "append-message", role: "user", content: "yes" },
+      { kind: "append-message", role: "assistant", content: out.text },
+    ])
+  })
+})
+
+// ── Stale-spec-error renderer tests ───────────────────────────────────────────
+
+describe("renderStaleSpecError — readiness-aware staleness warning", () => {
+  it("emits the canonical 'spec was modified' warning", () => {
+    const r = buildReadinessReport(reportInput())
+    const out = renderStaleSpecError({ report: r, userMessage: "yes" })
+    expect(out.text).toContain("The engineering spec has been modified since the approval was offered")
+    expect(out.text).toContain("*approve* again when ready")
+  })
+
+  it("surfaces the report.summary alongside the warning (readiness-aware upgrade)", () => {
+    const r = buildReadinessReport(reportInput({
+      upstreamAudits: [{ auditingAgent: "architect", specType: "product", findingCount: 7 }],
+    }))
+    const out = renderStaleSpecError({ report: r, userMessage: "yes" })
+    expect(out.text).toContain(r.summary)
+    expect(out.text).toContain("7 product findings")
+  })
+
+  it("emits state mutations: clear-pending-approval + history", () => {
+    const r = buildReadinessReport(reportInput())
+    const out = renderStaleSpecError({ report: r, userMessage: "yes" })
+    expect(out.stateMutations).toEqual([
+      { kind: "clear-pending-approval" },
+      { kind: "append-message", role: "user", content: "yes" },
+      { kind: "append-message", role: "assistant", content: out.text },
+    ])
+  })
+})
+
+// ── Orchestrator E2E tests for the new branches ───────────────────────────────
+
+describe("runArchitectAgentV2 orchestrator — approval / decision-review / stale-spec", () => {
+  it("approval-confirm + fresh draft → renders approval handoff and saves approved", async () => {
+    const reportIn = reportInput()
+    const { deps, emittedTexts, appliedMutations, logLines } = (() => {
+      const m: StateMutation[] = []
+      const t: string[] = []
+      const l: string[] = []
+      const d: RunArchV2Deps = {
+        loadReport: async () => reportIn,
+        applyStateMutation: async (x) => { m.push(x) },
+        emit: async (s) => { t.push(s) },
+        mainChannelName: "general",
+        githubOwner: "o", githubRepo: "r",
+        fetchCurrentDraft: async () => "# cached spec content",  // fresh: matches cached
+        log: (s) => { l.push(s) },
+      }
+      return { deps: d, appliedMutations: m, emittedTexts: t, logLines: l }
+    })()
+
+    await runArchitectAgentV2({
+      userMessage: "yes", featureName: "test-feature",
+      intent: intent({ isAffirmative: true }),
+      state: state({
+        hasPendingApproval: true,
+        pendingApprovalContext: { filePath: "p.md", specContent: "# cached spec content" },
+      }),
+      deps,
+    })
+
+    expect(emittedTexts).toHaveLength(1)
+    expect(emittedTexts[0]).toContain("approved")
+    expect(appliedMutations.find((m) => m.kind === "save-approved-engineering-spec")).toBeDefined()
+    expect(appliedMutations.find((m) => m.kind === "clear-pending-approval")).toBeDefined()
+    expect(logLines.some((l) => l.includes("branch=approval-confirm"))).toBe(true)
+  })
+
+  it("approval-confirm + STALE draft → orchestrator flips to stale-spec-error renderer, NO save", async () => {
+    const reportIn = reportInput()
+    const { deps, emittedTexts, appliedMutations, logLines } = (() => {
+      const m: StateMutation[] = []
+      const t: string[] = []
+      const l: string[] = []
+      const d: RunArchV2Deps = {
+        loadReport: async () => reportIn,
+        applyStateMutation: async (x) => { m.push(x) },
+        emit: async (s) => { t.push(s) },
+        mainChannelName: "general",
+        githubOwner: "o", githubRepo: "r",
+        fetchCurrentDraft: async () => "# DIFFERENT content",  // stale: differs from cached
+        log: (s) => { l.push(s) },
+      }
+      return { deps: d, appliedMutations: m, emittedTexts: t, logLines: l }
+    })()
+
+    await runArchitectAgentV2({
+      userMessage: "yes", featureName: "test-feature",
+      intent: intent({ isAffirmative: true }),
+      state: state({
+        hasPendingApproval: true,
+        pendingApprovalContext: { filePath: "p.md", specContent: "# cached spec content" },
+      }),
+      deps,
+    })
+
+    expect(emittedTexts).toHaveLength(1)
+    expect(emittedTexts[0]).toContain("modified since the approval was offered")
+    expect(appliedMutations.find((m) => m.kind === "save-approved-engineering-spec")).toBeUndefined()
+    expect(appliedMutations.find((m) => m.kind === "clear-pending-approval")).toBeDefined()
+    expect(logLines.some((l) => l.includes("branch=stale-spec-error"))).toBe(true)
+  })
+
+  it("decision-review-confirm → renders draft-saved + clears pending-decision-review", async () => {
+    const reportIn = reportInput()
+    const { deps, emittedTexts, appliedMutations, logLines } = makeDeps(reportIn)
+
+    await runArchitectAgentV2({
+      userMessage: "yes", featureName: "test-feature",
+      intent: intent({ isAffirmative: true }),
+      state: state({
+        hasPendingDecisionReview: true,
+        pendingDecisionReviewContext: { filePath: "p.md", specContent: "# resolved content" },
+      }),
+      deps,
+    })
+
+    expect(emittedTexts).toHaveLength(1)
+    expect(emittedTexts[0]).toContain("Decisions confirmed")
+    expect(appliedMutations.find((m) => m.kind === "save-draft-engineering-spec")).toBeDefined()
+    expect(appliedMutations.find((m) => m.kind === "clear-pending-decision-review")).toBeDefined()
+    expect(logLines.some((l) => l.includes("branch=decision-review-confirm"))).toBe(true)
+  })
+
+  it("approval-confirm without pendingApprovalContext throws (defensive guard)", async () => {
+    const { deps } = makeDeps(reportInput())
+    await expect(
+      runArchitectAgentV2({
+        userMessage: "yes", featureName: "test",
+        intent: intent({ isAffirmative: true }),
+        state: state({ hasPendingApproval: true }),  // ctx missing
+        deps,
+      })
+    ).rejects.toThrow(/pendingApprovalContext missing/)
+  })
+
+  it("decision-review-confirm without pendingDecisionReviewContext throws (defensive guard)", async () => {
+    const { deps } = makeDeps(reportInput())
+    await expect(
+      runArchitectAgentV2({
+        userMessage: "yes", featureName: "test",
+        intent: intent({ isAffirmative: true }),
+        state: state({ hasPendingDecisionReview: true }),  // ctx missing
+        deps,
+      })
+    ).rejects.toThrow(/pendingDecisionReviewContext missing/)
   })
 })
