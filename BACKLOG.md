@@ -104,7 +104,9 @@ Trust-erosion happens the moment the user notices the inconsistency. The BACKLOG
 
 ---
 
-### Architect prose-vs-state mismatch — agent verbally promises one escalation, platform queues another (2026-04-27)
+### ✅ Architect prose-vs-state mismatch — agent verbally promises one escalation, platform queues another (2026-04-27, FIXED 2026-04-28)
+
+**Status: FIXED (2026-04-28)** — two bugs were preventing the existing platform-built CTA override from firing on auto-trigger paths. Bug 1: `escalationBeforeRunArch` was captured POST-run at line 3114 with confusing naming, so `escalationJustOfferedArch` evaluated to `false` whenever auto-trigger queued a target post-run (the canonical case from the manual test). Snapshot is now taken BEFORE `runAgent` and the override correctly fires on auto-trigger paths, replacing the agent's prose with a platform-built CTA derived from `pendingEscalation.targetAgent` — not from agent prose. Bug 2 (PM-first conversational enforcement): the tool handler accepted `offer_upstream_revision(target=design)` even when PM gaps existed, allowing the architect to violate PM-first ordering at the conversational layer. Added a post-run override that detects this case and re-queues with `target=pm` plus the PM gap text. New scenario N87/N88 in `tests/integration/workflows.test.ts` exercises the auto-trigger override end-to-end (agent prose says "Design", platform queues PM, final posted message contains "bring in the PM agent" and never "bring in the Design agent"). Cross-agent parity: the design agent's analogous override at line 1889 had the same shape correctly wired pre-Phase-5; the architect path was the outlier.
 
 **Priority: P0 — surfaced during manual test session immediately after the architect-readiness gap. Same Phase 5 timing.**
 

@@ -9477,6 +9477,96 @@ describe("Scenario N75 — Standard design path emits branch=confirmed-design lo
 // reaches the agent's prompt verbatim — the LLM cannot minimize the report
 // because the directive specifies the exact counts to surface.
 
+// ─── Scenario N88: Architect prose-vs-state mismatch — assertive override ───
+//
+// Closes BACKLOG: "Architect prose-vs-state mismatch — agent verbally promises
+// one escalation, platform queues another." Manual test 2026-04-27 found the
+// architect's prose said "Say yes to bring in the Design agent" while the
+// platform queued pendingEscalation.targetAgent="pm" via auto-trigger. When
+// the user said yes, PM ran — direct contradiction.
+//
+// Root cause: line 3114 captured `escalationBeforeRunArch` POST-run with
+// confused naming, so `escalationJustOfferedArch` evaluated to false on the
+// auto-trigger path (where pending IS set post-run). The assertive override
+// at line 3120 — which builds the CTA from the QUEUED targetAgent, not agent
+// prose — never fired.
+//
+// Fix: snapshot pendingEscalation BEFORE runAgent; compute "just offered"
+// correctly; override now fires on auto-trigger paths and replaces the
+// agent's prose with a PM CTA matching the queued target.
+
+describe("Scenario N88 — Architect prose-vs-state mismatch: assertive override fires on auto-trigger path", () => {
+  const THREAD = "workflow-n88"
+
+  // PM spec on main with vague AC → deterministic auditPmSpec finds gaps.
+  // Triggers auto-trigger to queue target=pm post-run.
+  const PM_SPEC_DIRTY = `# Onboarding
+## User Stories
+1. User signs up via SSO
+
+## Edge Cases
+- SSO fails → user sees inline error
+
+## Acceptance Criteria
+1. AC#1: User onboarding should feel smooth
+
+## Non-Goals
+- Admin dashboard out of scope
+
+## Open Questions
+(none)`
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPhaseAuditCaches()
+    clearPendingEscalation(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+  })
+
+  it("auto-trigger queues PM, agent prose names Design → final response is PM CTA built from queued state", async () => {
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md") && ref === "main") {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_DIRTY).toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n(none)").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    // Anthropic: classifiers + audits + agent response (which deliberately names Design, not PM).
+    // The agent's response promises Design escalation while PM gaps exist —
+    // exactly the manual-test regression case.
+    mockAnthropicCreate
+      .mockResolvedValue({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I see PM gaps and Design gaps. My plan: 1. Escalate the design gaps to the Design agent now. Say yes and I'll bring in the Design agent now." }],
+      })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi, where are we?"), userId: "U_N88" }
+    await handleFeatureChannelMessage(params)
+
+    // Auto-trigger queued target=pm because PM gaps exist + agent didn't call offer_upstream_revision(pm)
+    const pending = getPendingEscalation(featureKey("onboarding"))
+    expect(pending, "expected auto-trigger to queue PM").not.toBeNull()
+    expect(pending!.targetAgent).toBe("pm")
+
+    // The post-run override should have replaced the agent's "Design" prose
+    // with a platform-built PM CTA derived from the queued targetAgent.
+    const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
+    const finalPostedText = (updateCalls.at(-1)?.[0] as any)?.text as string | undefined
+    expect(finalPostedText, "expected final posted text to be present").toBeDefined()
+    expect(finalPostedText).toMatch(/bring in the PM agent/)
+    expect(finalPostedText).not.toMatch(/bring in the Design agent/)
+    expect(finalPostedText).toMatch(/Upstream PM gaps/)
+  })
+})
+
 describe("Scenario N87 — Architect-readiness directive injected on every non-readOnly turn", () => {
   const THREAD = "workflow-n87"
 

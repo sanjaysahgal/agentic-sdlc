@@ -2958,6 +2958,16 @@ async function runArchitectAgent(params: {
   const toolCallsOutArch: ToolCallRecord[] = []
   const archToolState: ArchitectToolState = { escalationFired: false, pendingDecisionReview: null }
 
+  // Snapshot escalation state BEFORE the agent runs. Used post-run by the
+  // assertive-language override (line ~3110) to detect "escalation was just
+  // queued this turn" — either by an explicit offer_upstream_revision tool
+  // call OR by the auto-trigger gate fired post-run on PM/design gaps.
+  // Pre-Phase-5 the snapshot was taken POST-run with confusing naming, so
+  // the override didn't fire on auto-trigger paths and the agent's prose
+  // (which can name the wrong target agent) reached the user verbatim. This
+  // was the root cause of BACKLOG: "Architect prose-vs-state mismatch".
+  const escalationBeforeRunArchSnapshot = !!getPendingEscalation(featureKey(featureName))
+
   // When called via escalation (readOnly=true), pass EMPTY history. The escalation brief
   // contains everything the architect needs. Prior-phase conversation history causes hallucination.
   // Same pattern as PM agent's readOnly gate (line 897).
@@ -3024,11 +3034,30 @@ async function runArchitectAgent(params: {
   // architect did NOT call offer_upstream_revision, auto-trigger escalation.
   // PM-first ordering: if BOTH PM and design gaps exist, only escalate PM.
   // Design gaps wait until PM gaps are resolved.
+  const pmGapsInNotice = upstreamNoticeArch.includes("APPROVED PM SPEC")
+  const designGapsInNotice = upstreamNoticeArch.includes("APPROVED DESIGN SPEC")
+  const archCalledDesignEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "design")
+
+  // PM-first conversational enforcement (BACKLOG: "Architect prose-vs-state
+  // mismatch"): if the architect explicitly called offer_upstream_revision
+  // (target=design) while PM gaps exist, the tool handler queued design but
+  // PM-first ordering says PM must close first. Override: clear the design
+  // queue and re-queue with PM. The post-run assertive override above will
+  // then build the CTA from the corrected (PM) target. This closes the
+  // conversational-layer gap that the existing finalize-time gate alone left
+  // open.
+  if (!readOnly && pmGapsInNotice && archCalledDesignEscalation) {
+    const pmGapRegex = /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
+    const pmGapText = upstreamNoticeArch.match(pmGapRegex)?.[1]?.trim()
+    if (pmGapText) {
+      console.log(`[ESCALATION-GATE] architect post-run: PM-first override — agent called offer_upstream_revision(design) but PM gaps must close first. Re-queuing target=pm.`)
+      clearPendingEscalation(featureKey(featureName))
+      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+    }
+  }
+
   if (!readOnly && !getPendingEscalation(featureKey(featureName))) {
     const archCalledPmEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "pm")
-    const archCalledDesignEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "design")
-    const pmGapsInNotice = upstreamNoticeArch.includes("APPROVED PM SPEC")
-    const designGapsInNotice = upstreamNoticeArch.includes("APPROVED DESIGN SPEC")
 
     if (pmGapsInNotice && !archCalledPmEscalation) {
       // PM gaps take priority — escalate PM first, design waits
@@ -3036,7 +3065,7 @@ async function runArchitectAgent(params: {
       const pmGapText = upstreamNoticeArch.match(pmGapRegex)?.[1]?.trim()
       if (pmGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: PM gaps in context but agent did not call offer_upstream_revision(pm) — auto-triggering`)
-        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: pmGapText, designContext: "" })
+        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       }
     } else if (designGapsInNotice && !archCalledDesignEscalation) {
       // No PM gaps (or already escalated) — now check design gaps
@@ -3110,17 +3139,21 @@ ${response}`
   // ─── POST-RUN: Escalation assertive language override (Principle 10) ───────
   // Same pattern as design agent: if escalation was offered (agent called
   // offer_upstream_revision or auto-gate fired), replace agent prose with
-  // structured CTA. Passive framing ("should we ask PM?") → assertive CTA.
-  const escalationBeforeRunArch = !!getPendingEscalation(featureKey(featureName))
-  const escalationJustOfferedArch = !escalationBeforeRunArch || toolCallsOutArch.some(t => t.name === "offer_upstream_revision")
+  // structured CTA built from the QUEUED targetAgent — not from agent prose
+  // (which can name the wrong target). This is the platform-enforced
+  // prose-state alignment described in BACKLOG: "Architect prose-vs-state
+  // mismatch — agent verbally promises one escalation, platform queues
+  // another." Same root cause as the architect-readiness gap (agent prose
+  // doesn't reflect platform-measured state).
+  const escalationAfterRunArch = getPendingEscalation(featureKey(featureName))
+  const escalationJustOfferedArch =
+    (!escalationBeforeRunArchSnapshot && !!escalationAfterRunArch) ||
+    toolCallsOutArch.some((t) => t.name === "offer_upstream_revision")
   let finalArchResponse = response
-  if (escalationJustOfferedArch && getPendingEscalation(featureKey(featureName)) && !readOnly) {
-    const pending = getPendingEscalation(featureKey(featureName))
-    if (pending) {
-      const escLabel = pending.targetAgent === "pm" ? "PM" : "Design"
-      finalArchResponse = `${pending.question}\n\nUpstream ${escLabel} gaps must be resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
-      console.log(`[ESCALATION] architect assertive override applied for ${featureName}`)
-    }
+  if (escalationJustOfferedArch && escalationAfterRunArch && !readOnly) {
+    const escLabel = escalationAfterRunArch.targetAgent === "pm" ? "PM" : "Design"
+    finalArchResponse = `${escalationAfterRunArch.question}\n\nUpstream ${escLabel} gaps must be resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
+    console.log(`[ESCALATION] architect assertive override applied for ${featureName} (queued target=${escalationAfterRunArch.targetAgent})`)
   }
   // ─── END ESCALATION ASSERTIVE OVERRIDE ─────────────────────────────────────
 
