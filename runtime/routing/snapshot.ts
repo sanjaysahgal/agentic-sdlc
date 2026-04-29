@@ -214,11 +214,22 @@ function normalizePendingEscalation(v: string | undefined): PendingEscalation | 
   if (isUnset(v)) return null
   const m = v!.match(/target=([a-z-]+)/i)
   if (!m) return null
-  // The `target=corrupt` row is intentional FLAG-B fixture data — preserved verbatim.
+  const targetRaw = m[1] as PendingEscalation["targetAgent"]
+  // FLAG-5 fixture: by default, pm-target escalations carry an approved product
+  // spec (matches production — the audit captures it when the gate fires). Spec
+  // rows that need to exercise the missing-productSpec branch carry a literal
+  // "(no productSpec)" qualifier in the cell, parsed here. Non-pm targets
+  // never carry productSpec — it's irrelevant to design/architect briefs.
+  const omitProductSpec = /\(no productSpec\)/i.test(v!)
+  const productSpec = targetRaw === "pm" && !omitProductSpec
+    ? "fixture: approved product spec"
+    : undefined
+  // The `target=corrupt` row is intentional fixture data for the I2 invalid-state branch — preserved verbatim.
   return {
-    targetAgent:   m[1] as PendingEscalation["targetAgent"],
+    targetAgent:   targetRaw,
     question:      "fixture: blocking question",
     designContext: "fixture: design draft",
+    ...(productSpec !== undefined ? { productSpec } : {}),
   }
 }
 

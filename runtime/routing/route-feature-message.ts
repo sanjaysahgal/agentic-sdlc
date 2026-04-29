@@ -138,6 +138,21 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
       // for state written after migration runs.
       return { kind: "invalid-state", reason: `corrupt-targetAgent:${state.pendingEscalation.targetAgent}`, preEffects: empty, postEffects: [] }
     }
+    // FLAG-5 — when the held target is pm, the brief MUST include the approved
+    // product spec content. Pre-Phase-5 the field was optional and consumers
+    // read it unchecked; missing it produced a brief with `undefined` spliced
+    // into the prompt. Boundary check: if pm + empty productSpec, emit
+    // invalid-state with cleanup so the bad record is evicted and the next
+    // audit re-captures it cleanly. The migration script handles pre-existing
+    // on-disk records.
+    if (targetCanon === "pm" && !state.pendingEscalation.productSpec) {
+      return {
+        kind: "invalid-state",
+        reason: "missing-productSpec",
+        preEffects: [{ kind: "clear-pending-escalation", key }],
+        postEffects: [],
+      }
+    }
     const slashConfirms = addressed !== undefined && addressed === targetCanon
     if (slashConfirms || isAffirmative(userMsg)) {
       // Origin agent today is the confirmedAgent — usually the agent that proposed the escalation.

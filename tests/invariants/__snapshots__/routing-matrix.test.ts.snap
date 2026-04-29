@@ -2,7 +2,7 @@
 
 exports[`Routing state machine matrix — spec / router correspondence > row count snapshot (I14 — drift fails CI) 1`] = `
 {
-  "feature": 50,
+  "feature": 52,
   "general": 8,
   "postAgent": 7,
 }

@@ -29,7 +29,7 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
     it("preserves entries whose targetAgent is a valid AgentId", () => {
       const input = fixture({
         pendingEscalations: {
-          "onboarding": { targetAgent: "pm", question: "Q", designContext: "" },
+          "onboarding": { targetAgent: "pm", productSpec: "approved", question: "Q", designContext: "" },
           "checkout":   { targetAgent: "architect", question: "Q", designContext: "" },
           "search":     { targetAgent: "ux-design", question: "Q", designContext: "" },
         },
@@ -41,6 +41,7 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
     })
 
     it("preserves entries with the legacy 'design' alias (canonicalized at read time, not migration time)", () => {
+      // "design" is a non-pm target — productSpec is not required.
       const input = fixture({
         pendingEscalations: {
           "onboarding": { targetAgent: "design", question: "Q", designContext: "" },
@@ -55,7 +56,7 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
     it("drops entries with corrupt targetAgent (typo, removed agent, garbage)", () => {
       const input = fixture({
         pendingEscalations: {
-          "valid":   { targetAgent: "pm", question: "Q", designContext: "" },
+          "valid":   { targetAgent: "pm", productSpec: "approved", question: "Q", designContext: "" },
           "typo":    { targetAgent: "pmm", question: "Q", designContext: "" },
           "removed": { targetAgent: "old-agent-name", question: "Q", designContext: "" },
           "garbage": { targetAgent: "🚀", question: "Q", designContext: "" },
@@ -158,7 +159,7 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
     it("pendingEscalations are unaffected by originAgent rules (they don't carry an origin field)", () => {
       const input = fixture({
         pendingEscalations: {
-          "noOrigin": { targetAgent: "pm", question: "Q", designContext: "" },
+          "noOrigin": { targetAgent: "pm", productSpec: "approved spec", question: "Q", designContext: "" },
         },
       })
       const { report } = migrateRoutingState(input)
@@ -167,11 +168,85 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
     })
   })
 
+  describe("FLAG-5 — pendingEscalation.productSpec required when target=pm", () => {
+    it("preserves pm-target entries that carry a non-empty productSpec", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "withSpec": { targetAgent: "pm", productSpec: "## AC\n1. SSO sign-in.", question: "Q", designContext: "" },
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(false)
+      expect(cleaned.pendingEscalations!["withSpec"]).toBeDefined()
+    })
+
+    it("drops pm-target entries with missing productSpec", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "missingSpec": { targetAgent: "pm", question: "Q", designContext: "" } as any,
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(true)
+      expect(cleaned.pendingEscalations).toEqual({})
+      expect(report.droppedPendingEscalations[0].reason).toMatch(/missing-or-empty productSpec for target=pm \(FLAG-5\)/)
+    })
+
+    it("drops pm-target entries with empty-string productSpec", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "emptySpec":      { targetAgent: "pm", productSpec: "",     question: "Q", designContext: "" },
+          "whitespaceSpec": { targetAgent: "pm", productSpec: "   ", question: "Q", designContext: "" },
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(true)
+      expect(cleaned.pendingEscalations).toEqual({})
+      expect(report.droppedPendingEscalations.map((d) => d.key).sort()).toEqual(["emptySpec", "whitespaceSpec"])
+    })
+
+    it("drops pm-target entries with non-string productSpec", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "nullSpec": { targetAgent: "pm", productSpec: null,            question: "Q", designContext: "" } as any,
+          "objSpec":  { targetAgent: "pm", productSpec: { content: "x" }, question: "Q", designContext: "" } as any,
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(true)
+      expect(cleaned.pendingEscalations).toEqual({})
+    })
+
+    it("does NOT enforce productSpec on non-pm targets (architect / design / ux-design)", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "architectNoSpec": { targetAgent: "architect", question: "Q", designContext: "draft" },
+          "designNoSpec":    { targetAgent: "design",    question: "Q", designContext: "draft" },
+          "uxDesignNoSpec":  { targetAgent: "ux-design", question: "Q", designContext: "draft" },
+        },
+      })
+      const { cleaned, report } = migrateRoutingState(input)
+      expect(report.changed).toBe(false)
+      expect(Object.keys(cleaned.pendingEscalations!).sort()).toEqual(["architectNoSpec", "designNoSpec", "uxDesignNoSpec"])
+    })
+
+    it("targetAgent corruption takes precedence over FLAG-5 (single-reason drop)", () => {
+      const input = fixture({
+        pendingEscalations: {
+          "corruptAndNoSpec": { targetAgent: "wat", question: "Q", designContext: "" } as any,
+        },
+      })
+      const { report } = migrateRoutingState(input)
+      expect(report.droppedPendingEscalations).toHaveLength(1)
+      expect(report.droppedPendingEscalations[0].reason).toMatch(/corrupt targetAgent/)
+    })
+  })
+
   describe("idempotency", () => {
     it("re-running on already-clean state reports no changes", () => {
       const input = fixture({
         pendingEscalations: {
-          "onboarding": { targetAgent: "pm", question: "Q", designContext: "" },
+          "onboarding": { targetAgent: "pm", productSpec: "approved", question: "Q", designContext: "" },
         },
       })
       const first  = migrateRoutingState(input)
@@ -184,7 +259,7 @@ describe("migrateRoutingState — Phase 5 / I2", () => {
     it("re-running after a cleanup converges (no infinite drift)", () => {
       const input = fixture({
         pendingEscalations: {
-          "valid":   { targetAgent: "pm", question: "Q", designContext: "" },
+          "valid":   { targetAgent: "pm", productSpec: "approved", question: "Q", designContext: "" },
           "corrupt": { targetAgent: "wat", question: "Q", designContext: "" },
         },
       })

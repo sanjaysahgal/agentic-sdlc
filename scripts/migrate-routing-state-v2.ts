@@ -25,7 +25,7 @@ import { isAgentId } from "../runtime/routing/agent-registry"
 const STATE_FILE = path.resolve(__dirname, "..", ".conversation-state.json")
 const LEGACY_TARGET_ALIASES = new Set(["design"])
 
-export type OnDiskEntry = { targetAgent?: unknown; originAgent?: unknown; [k: string]: unknown }
+export type OnDiskEntry = { targetAgent?: unknown; originAgent?: unknown; productSpec?: unknown; [k: string]: unknown }
 export type RoutingStateOnDisk = {
   pendingEscalations?:      Record<string, OnDiskEntry>
   escalationNotifications?: Record<string, OnDiskEntry>
@@ -60,7 +60,7 @@ export function migrateRoutingState(input: RoutingStateOnDisk): MigrationResult 
   if (input.pendingEscalations) {
     const next: Record<string, OnDiskEntry> = {}
     for (const [key, value] of Object.entries(input.pendingEscalations)) {
-      const reason = validationReason(value?.targetAgent)
+      const reason = pendingEscalationValidationReason(value)
       if (reason) {
         report.droppedPendingEscalations.push({ key, reason })
         report.changed = true
@@ -89,9 +89,25 @@ export function migrateRoutingState(input: RoutingStateOnDisk): MigrationResult 
 }
 
 // pendingEscalations only carry targetAgent — origin is implicit from the
-// confirmedAgent at the time of confirmation. Validation is targetAgent-only.
-function validationReason(targetAgent: unknown): string | null {
-  return validateAgentField("targetAgent", targetAgent)
+// confirmedAgent at the time of confirmation. Validation is:
+//  - targetAgent must be a known AgentId or the legacy "design" alias
+//  - FLAG-5 (Phase 5, 2026-04-28): when targetAgent is "pm", productSpec
+//    MUST be a non-empty string. The PM brief splices it into the prompt;
+//    pre-Phase-5 records that omitted it produced briefs with "undefined"
+//    inline. Non-pm targets are exempt — productSpec is irrelevant to
+//    design/architect briefs.
+function pendingEscalationValidationReason(entry: OnDiskEntry | undefined): string | null {
+  if (!entry || typeof entry !== "object") return "entry is missing or non-object"
+  const targetReason = validateAgentField("targetAgent", entry.targetAgent)
+  if (targetReason) return targetReason
+  if (entry.targetAgent === "pm" && !isNonEmptyString(entry.productSpec)) {
+    return "missing-or-empty productSpec for target=pm (FLAG-5)"
+  }
+  return null
+}
+
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0
 }
 
 // escalationNotifications carry both targetAgent (the @mentioned upstream
