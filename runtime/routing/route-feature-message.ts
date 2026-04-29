@@ -138,6 +138,25 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
       // for state written after migration runs.
       return { kind: "invalid-state", reason: `corrupt-targetAgent:${state.pendingEscalation.targetAgent}`, preEffects: empty, postEffects: [] }
     }
+    // I22 — dismiss-escalation-fall-through. The dispatcher pre-classifies
+    // user prose via Haiku (`classifyDismissIntent` in dismiss-classifier.ts)
+    // and propagates the result through `intent.dismissIntent`. When set, the
+    // router treats the message as a clean abandonment of the escalation: drop
+    // the queued state without writeback and let the downstream agent resume.
+    // The deterministic upstream-spec audit (Principle 11) re-fires on the
+    // next downstream finalize attempt — the user has agency to dismiss but
+    // the system surfaces the same gaps next cycle until they're patched or
+    // marked as audit-exceptions (separate backlog item).
+    if (input.intent.kind === "slack-message" && input.intent.dismissIntent === true) {
+      const origin = state.confirmedAgent ?? originFromPhase(phase) ?? null
+      return {
+        kind: "dismiss-escalation-fall-through",
+        originAgent: origin,
+        reason: "user-dismissed",
+        preEffects: [{ kind: "clear-pending-escalation", key }],
+        postEffects: [],
+      }
+    }
     // FLAG-5 — when the held target is pm, the brief MUST include the approved
     // product spec content. Pre-Phase-5 the field was optional and consumers
     // read it unchecked; missing it produced a brief with `undefined` spliced
@@ -217,6 +236,20 @@ export function routeFeatureMessage(input: FeatureRoutingInput): RoutingDecision
       return {
         kind: "invalid-state",
         reason: `corrupt-originAgent:${originRaw}`,
+        preEffects: [{ kind: "clear-escalation-notification", key }],
+        postEffects: [],
+      }
+    }
+    // I22 — dismiss during the notification window. Symmetric to the
+    // pendingEscalation block above: the user can abandon at this stage too
+    // (the @mention has been posted but the user decides the upstream spec
+    // is fine after all). Origin agent resumes downstream WITHOUT writeback;
+    // the deterministic audit re-fires on next finalize.
+    if (input.intent.kind === "slack-message" && input.intent.dismissIntent === true) {
+      return {
+        kind: "dismiss-escalation-fall-through",
+        originAgent: originCanon,
+        reason: "user-dismissed",
         preEffects: [{ kind: "clear-escalation-notification", key }],
         postEffects: [],
       }

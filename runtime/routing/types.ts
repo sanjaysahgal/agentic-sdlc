@@ -151,7 +151,7 @@ export type GeneralEntry = "G1" | "G2" | "G3" | "G4" | "G5"
 export type RoutingDepth = 0 | 1
 
 export type RoutingIntent =
-  | { kind: "slack-message"; rawText: string; userId: UserId }
+  | { kind: "slack-message"; rawText: string; userId: UserId; dismissIntent?: boolean }
   | { kind: "post-agent"; trigger: PostAgentTrigger }
 
 export type PostAgentTrigger =
@@ -235,6 +235,7 @@ export type RoutingDecision = DecisionBase & (
   | { kind: "complete-decision-review" }
   | { kind: "reject-decision-review-fall-through" }
   | { kind: "show-hold-message";                    heldAgent: AgentId; reason: "escalation"; featureName: string; downstreamPhase: FeaturePhase; blockingQuestion: string }
+  | { kind: "dismiss-escalation-fall-through";      originAgent: AgentId | null; reason: "user-dismissed" }
   | { kind: "show-orientation";                     agent: AgentId }
   | { kind: "show-routing-note";                    text: string }
   | { kind: "show-escalation-offer-prompt" }

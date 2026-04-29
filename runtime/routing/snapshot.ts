@@ -153,13 +153,23 @@ export function buildFeatureRoutingInputFromRow(row: SpecRow): FeatureRoutingInp
     history:                [] as Message[],
   }
 
+  // I22 — spec rows can carry the `(dismiss)` qualifier on userMsg to signal
+  // that the dispatcher's pre-classifier (`classifyDismissIntent` in
+  // dismiss-classifier.ts) returned DISMISS for that text. Production
+  // dispatchers run the real Haiku classifier; matrix tests propagate the
+  // pre-classified flag directly via this fixture flag so the router's
+  // deterministic branch on `intent.dismissIntent` is exercised end-to-end
+  // without an LLM call. We read from rawLine because spec-parser's
+  // stripQuotes drops content after the closing quote of the userMsg cell.
+  const dismissIntent = /\(dismiss\)/i.test(row.rawLine)
+
   return {
     channel: "feature",
     key:     PLACEHOLDER_KEY,
     entry:   (row.entry ?? "E1") as FeatureEntry,
     phase:   row.phase,
     state,
-    intent:  { kind: "slack-message", rawText: rawTextFromCell(row.userMsg), userId: toUserId("U_TEST") },
+    intent:  { kind: "slack-message", rawText: rawTextFromCell(row.userMsg), userId: toUserId("U_TEST"), dismissIntent },
     depth:   0,
   }
 }
@@ -176,7 +186,9 @@ function rawTextFromCell(userMsg: string | undefined): string {
   if (/^\(any except affirm\/decline\)$/i.test(t))     return "tell me more"
   if (/^any\s*\(new thread\)$/i.test(t))               return "hi"
   if (/^any$/i.test(t))                                return "any input"
-  return userMsg
+  // Strip the I22 `(dismiss)` qualifier from rawText — production receives
+  // the raw user prose without the fixture annotation.
+  return userMsg.replace(/\s*\(dismiss\)\s*/i, "")
 }
 
 export function buildGeneralRoutingInputFromRow(row: SpecRow): GeneralRoutingInput {
