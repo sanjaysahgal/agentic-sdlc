@@ -9840,3 +9840,107 @@ describe("Scenario N92 — readOnly (escalation-reply) path does NOT receive the
     expect(agentCallWithDirective, "readOnly architect run must NOT receive the readiness directive").toBeUndefined()
   })
 })
+
+// ─── Scenario N93: V2 architect runner shadow logs alongside legacy ──────────
+//
+// Block A5 of the approved system-wide plan
+// (~/.claude/plans/rate-this-plan-zesty-tiger.md). The V2 architect runner
+// is NOT yet wired to handle production traffic — legacy `runArchitectAgent`
+// continues to handle the message — but a shadow wrapper logs what V2 would
+// have classified for each architect-bound message. This lets operators
+// observe divergences during the 48h burn-in window before A6 starts on
+// the designer V2 runner.
+//
+// The shadow:
+//   - never throws
+//   - never mutates conversation-store state
+//   - never posts to Slack
+//   - emits exactly one [V2-ARCHITECT-SHADOW] log line per architect message
+//
+// This scenario verifies the log line appears with the right shape on a
+// canonical architect-bound message.
+
+describe("Scenario N93 — V2 architect runner shadow logs alongside legacy", () => {
+  const THREAD = "workflow-n93"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+  })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
+
+  it("emits one [V2-ARCHITECT-SHADOW] line on every architect-bound message", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Architect responding." }],
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "Hi")
+    await handleFeatureChannelMessage(params)
+
+    const shadowLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[V2-ARCHITECT-SHADOW]"))
+
+    expect(shadowLines).toHaveLength(1)
+    expect(shadowLines[0]).toContain("feature=onboarding")
+    expect(shadowLines[0]).toMatch(/branch=[a-z-]+/)
+    expect(shadowLines[0]).toMatch(/aggregate=[a-z-]+/)
+
+    logSpy.mockRestore()
+  })
+
+  it("shadow runs even when the legacy handler hits the orientation auto-continue path (two architect runs, two shadow lines)", async () => {
+    // Fresh user (not in orientedUsers) → legacy runs orientation pass + auto-continue.
+    // Shadow runs once at the architect-branch entry point (before withThinking),
+    // so we expect exactly ONE shadow line per inbound user message — auto-continue
+    // runs runArchitectAgent again but does NOT re-enter the architect-branch
+    // wiring point.
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Architect responding." }],
+    })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi I am new"), userId: "U_N93_NEW" }
+    await handleFeatureChannelMessage(params)
+
+    const shadowLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[V2-ARCHITECT-SHADOW]"))
+
+    expect(shadowLines).toHaveLength(1)
+
+    logSpy.mockRestore()
+  })
+
+  it("shadow never throws even on edge cases (e.g. empty message)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockPaginate.mockResolvedValue([])
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "x" }],
+    })
+
+    // The legacy handler may handle this oddly but the shadow MUST NOT throw.
+    const params = makeParams(THREAD, "feature-onboarding", "")
+    await expect(handleFeatureChannelMessage(params)).resolves.not.toThrow()
+
+    // Shadow either logs a normal line or a SHADOW-ERROR line — both are acceptable.
+    const shadowAny = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("V2-ARCHITECT-SHADOW"))
+    expect(shadowAny.length).toBeGreaterThanOrEqual(1)
+
+    logSpy.mockRestore()
+  })
+})

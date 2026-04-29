@@ -127,6 +127,42 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-4 — V2 architect runner shadow log (Block A5 burn-in gate)
+
+**Why this can't be automated:** integration tests verify the shadow log appears with the right shape; only real Slack traffic over 48h verifies the V2 classifier's branch decisions match what legacy actually does on the diversity of real user messages. Divergences detected here gate Block A6 (designer V2 runner).
+
+**Last verified:** ⏳ pending — first manual run after `v2-architect-shadow` codeMarker landed.
+
+**Pre-flight (every manual run):**
+1. Restart the bot.
+2. Verify the `[BOOT]` line shows `codeMarker=v2-architect-shadow` AND `commit=<HEAD-sha>`.
+
+**Setup:** any feature in engineering phase. Architect is the canonical agent.
+
+**Actions:**
+1. Send `/architect hi` in `#feature-<name>`.
+2. Send a substantive message: `Hi, I want to work on this feature`.
+3. Send a check-in: `where are we`.
+
+**Expected outcome:**
+- Legacy architect responds normally to each message (V2 doesn't intercept; production behavior unchanged).
+- For each message, exactly one `[V2-ARCHITECT-SHADOW]` line appears in `logs/bot-YYYY-MM-DD.log` BEFORE the legacy architect's response logs.
+- Each shadow line includes `feature=<name>`, `branch=<kind>`, `aggregate=<state>`, `total=<n>`.
+
+**Branch expectations for the canonical messages:**
+- `/architect hi` (slash, "hi" alone matches CHECK_IN_RE) → shadow `branch=state-query-fast-path`.
+- `Hi, I want to work on this feature` (substantive, not a check-in) → shadow `branch=normal-agent-turn`.
+- `where are we` (substantive, not CHECK_IN_RE — note: shadow degrades to false on isStateQuery in this minimal A5) → shadow `branch=normal-agent-turn`. *(A future A5 expansion adds isStateQuery LLM-classification to shadow; until then, shadow may classify state-queries as normal-agent-turn — acceptable observation gap.)*
+
+**Failure signatures:**
+- **No `[V2-ARCHITECT-SHADOW]` line** → wiring bug in `interfaces/slack/handlers/message.ts` architect branch entry. Check the import + call site.
+- **Shadow line includes `[V2-ARCHITECT-SHADOW-ERROR]`** → internal shadow failure; check the error reason field. Should NEVER block the legacy handler from running.
+- **Shadow `branch=` doesn't match the legacy actual response shape** → V2 classifier diverges from legacy intent classification; document the divergence and investigate before A6.
+
+**Burn-in clock:** Block A5 gates A6 on 48h of zero-divergence shadow logs. Operator monitors the log accumulation; flags any unexpected branch shifts (e.g. shadow says `state-query-fast-path` but legacy responded with a full LLM turn).
+
+---
+
 ## Maintenance
 
 - When you add a fix to a path covered above, update the scenario's "Last verified" line.

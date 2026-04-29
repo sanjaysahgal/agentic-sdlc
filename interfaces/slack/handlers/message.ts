@@ -30,6 +30,7 @@ import { featureKey, threadKey, type AgentId } from "../../../runtime/routing/ty
 import { logShadowProposalForFeature } from "../../../runtime/routing/shadow"
 import { buildReadinessReport } from "../../../runtime/readiness-builder"
 import { parseQuestionItems } from "../../../runtime/routing/hold-message-renderer"
+import { shadowArchitectV2 } from "../../../runtime/agents/shadow"
 
 // Used by the readiness directive to surface the active escalation's item count
 // derived from `pendingEscalation.question` / `escalationNotification.question`
@@ -1060,6 +1061,38 @@ ${archPendingEscalation.question}`
     // runs readOnly — architect orients without spec content, can't dump gaps.
     // The orientation key is also computed inside runArchitectAgent for notice suppression.
     const archIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureKey(featureName), userId) : false
+
+    // Block A5 — V2 architect runner shadow mode (per ~/.claude/plans/rate-this-plan-zesty-tiger.md).
+    // DESIGN-REVIEWED: shadow invocation per Principle 12 — (1) scales because shadow is fire-and-forget
+    // O(1) classifier work that never calls the LLM or fetches specs in this minimal phase; (2) owned by
+    // runtime/agents/shadow.ts exclusively, this site is just the call point; (3) cross-cutting V2-runner
+    // observation pattern that designer + PM shadows in A6/A7 will reuse via the same call shape.
+    // Subsequent A5 commits expand shadow to log proposed deterministic text + LLM-call shape; this
+    // initial commit logs only the classifier's branch decision so divergences from legacy can be
+    // observed in the 48h burn-in window before A6 starts.
+    shadowArchitectV2({
+      featureName: getFeatureName(channelName),
+      userMessage,
+      intent: {
+        isAffirmative: isAffirmative(userMessage),
+        isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
+        isStateQuery:  false, // LLM-classified inside legacy; shadow stays cheap and degrades to false
+        isOffTopic:    false, // same as above
+      },
+      state: {
+        hasPendingApproval:       !!getPendingApproval(featureKey(featureName)),
+        hasPendingDecisionReview: !!getPendingDecisionReview(featureKey(featureName)),
+        readOnly:                 archIsOrientation || slashOverrideReadOnly,
+      },
+      reportInput: {
+        callingAgent:     "architect",
+        featureName:      getFeatureName(channelName),
+        ownSpec:          { specType: "engineering", status: "missing", findingCount: 0 }, // stub; cheap shadow
+        upstreamAudits:   [],
+        activeEscalation: null,
+      },
+    })
+
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation || slashOverrideReadOnly })
     }})
