@@ -131,7 +131,9 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 **Why this can't be automated:** integration tests verify the shadow log appears with the right shape; only real Slack traffic over 48h verifies the V2 classifier's branch decisions match what legacy actually does on the diversity of real user messages. Divergences detected here gate Block A6 (designer V2 runner).
 
-**Last verified:** ⏳ pending — first manual run after `v2-architect-shadow` codeMarker landed.
+**Last verified:** ✅ verified — first manual run on commit `5caf671` (codeMarker `v2-architect-shadow`). Shadow correctly fired on the two architect-runner-bound messages (`/architect hi` → `branch=state-query-fast-path`, `Hi, I want to work on this feature` → `branch=normal-agent-turn`) and correctly stayed silent on a third turn that hit the universal-guard hold-pending-escalation path BEFORE reaching the architect branch — this is correct behavior (V2 architect runner wouldn't run there either; the v2 routing layer's `show-hold-message` handles it, already shipped via Phase 5 / I7-extended). 48h zero-divergence burn-in clock started 2026-04-29 13:11.
+
+**Scope clarification:** MT-4 verifies the V2 architect runner shadow fires when the architect runner is invoked. Messages that hit the universal-guard (hold-pending-escalation, escalation-confirmed, etc.) short-circuit before the architect-branch wiring point — shadow correctly does NOT fire on those. The v2 routing shadow (`runtime/routing/shadow.ts`, Phase 3) covers those paths.
 
 **Pre-flight (every manual run):**
 1. Restart the bot.
