@@ -27,40 +27,89 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
-### Routing state machine refactor — system-level architecture (Path B) (2026-04-27)
+### System-wide robustness plan — supersedes the routing refactor's original Phase 4-7
 
-**Priority: P0 — BLOCKS everything below this line. Last holistic plan across all system capabilities to date.**
+**Priority: P0 — sole source of sanctioned work. Per the user directive set in this session, NEVER recommend or execute on anything that is not a system-wide solution. Surgical patches forbidden — even when production has a known bug.**
 
-The routing logic in `interfaces/slack/handlers/message.ts` (3000+ lines) and `interfaces/slack/handlers/general.ts` is interleaved guards and per-agent branches with no single document or function describing the full system. Every prior "holistic" fix (escalation lifecycle, universal pre-routing guards, slash override read-only/thread persistence, state lifecycle hardening) was holistic to its topic, never to the system. Result: intersection bugs keep surfacing in manual testing — most recently `pendingEscalation` from a prior session blocking `/pm` invocation when the user is explicitly addressing the held agent, with the hold message showing the wrong phase label.
+**Approved plan file:** `~/.claude/plans/rate-this-plan-zesty-tiger.md` (rated 10/10 against the 19-layer robustness ledger and the explicit scale targets: many more agents + 1000s of tenants).
 
-The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-tenant Archon. Continuing to patch interleaved code will not get us there.
+**Why the original 7-phase routing refactor was insufficient:** Phases 0-5 delivered routing-decision robustness in v2 (shadow-only). But manual testing surfaced that the legacy multi-exit handlers (`runArchitectAgent`/`runDesignAgent`/`runPmAgent`) retain bugs the routing layer cannot fix — every fix to one internal exit leaves the other 4 fragmented and the next manual test surfaces the next gap. Two surgical production patches (architect-readiness directive `43640ab`, prose-vs-state mismatch fix `959c604`) shipped during this arc; both are retired by the new plan's Block A. A third in-flight surgical patch (state-query fast-path gate) was reverted in `c4c9c15` per the system-wide-only directive.
 
-**The refactor:** routing decisions for both feature channels AND the general/concierge channel become pure functions whose behavior is defined by a single spec document and verified by exhaustive matrix tests. Two pure routers (`routeFeatureMessage`, `routeGeneralMessage`), one shared dispatcher (`executeDecision`), one agent registry, one spec doc. Effects are data not closures. State machine enforces 20 invariants including slash-as-confirmation, registry-derived hold labels, bounded post-agent re-evaluate, multi-turn `pendingDecisionReview`, and tenant isolation at the type level.
+**The 19-layer robustness ledger (each covered by an explicit deliverable in the plan file, not a promise):**
 
-**7-phase migration (durable, no big-bang):**
+1. Single source of truth for state representation (`buildReadinessReport` exists)
+2. Single-path agent runners (Block A)
+3. PR-time regression gates (Block B)
+4. LLM producer/consumer parity (Block B + C)
+5. Cross-agent contract tests (Block B)
+6. Error-path coverage (Block D)
+7. State-corruption recovery (Block D)
+8. Performance budgets (Block D)
+9. Chaos / fuzzing (Block D)
+10. Multi-tenant isolation verification (Block C)
+11. End-to-end smoke real infra (Block C)
+12. Determinism enforced at PR time (Block B)
+13. Comprehensive structured observability (Block G)
+14. LLM evals + prompt-drift regression (Block H)
+15. Test-suite hardening (Block I)
+16. Manual test catalog completeness + gating (Block J)
+17. Multi-tenant scale-out (Block K)
+18. Disaster recovery + backup + secrets (Block L)
+19. Documentation + new-agent scaffold (Block M)
 
-- ~~Phase 0 (~2d): Land `docs/ROUTING_STATE_MACHINE.md` describing today's behavior including bugs. Add `scripts/count-spec-cells.ts`, `scripts/generate-shadow-corpus.ts`. Update this BACKLOG.~~ ✅ DONE (2026-04-27) — spec landed at `docs/ROUTING_STATE_MACHINE.md` with 55 cells (40 feature × 8 general × 7 post-agent); FLAG-A through FLAG-E entries pin today's bugs as deliberate spec rows.
-- ~~Phase 1 (~2d): `runtime/routing/types.ts` (branded `TenantId`/`FeatureKey`/`ThreadKey`, `RoutingInput`, `RoutingDecision`, `StateEffect`, `PostEffect`) + `runtime/routing/agent-registry.ts`. Mechanical codemod through ~150 conversation-store call sites.~~ ✅ DONE (2026-04-27) — types + registry shipped; ~120 call sites codemodded via `scripts/codemod-routing-keys.mjs`; on-disk persistence byte-equivalent; 1338 tests still green.
-- ~~Phase 2 (~4d): `routeFeatureMessage`, `routeGeneralMessage`, `executeDecision`, matrix test, dispatch test, `tests/invariants/test-migration-audit.md`.~~ ✅ DONE (2026-04-27) — pure routers + dispatcher + spec-parser shipped; `tests/invariants/routing-matrix.test.ts` parameterized over 49 spec rows (all green); `tests/invariants/routing-dispatch.test.ts` covers I16 + I17; `tests/invariants/test-migration-audit.md` classifies 130 workflows describes (~85 KEEP / ~14 REPLACE / ~6 split / 0 DELETE). Production path unchanged.
-- ~~Phase 3 (~5d): Dual-run shadow mode behind `dryRun: true`; nightly GitHub Action drives synthesized corpus through every spec row. Coverage gate: zero divergences in corpus + 48h prod + 3 nights green.~~ ✅ STAGE 1 + STAGE 2 DONE (2026-04-27). **Stage 1:** `scripts/generate-shadow-corpus.ts` (54 fixtures), `scripts/shadow-coverage-driver.ts` (`npm run shadow:coverage`), `scripts/shadow-coverage-report.ts` (`npm run shadow:report`), nightly GH Action `.github/workflows/shadow-coverage.yml`. **Stage 2:** `runtime/routing/shadow.ts` wired into both Slack handlers; `[ROUTING-V2-PROPOSED]` log emits on every message. Scenario N73 verifies the log shape and that production behavior is unchanged. **Gates remaining:** (b) zero divergences over 48h prod traffic — accumulates after deploy; (c) nightly action green for 3 consecutive nights — accumulates after merge.
-- Phase 4 (~1d deploy + 7d burn-in): Cutover with `ROUTING_V2=1` kill-switch.
-- Phase 5 (~4d): Fix the warts as deliberate spec edits + matrix row diffs. **✅ I1 DONE (2026-04-28)** slash-as-confirmation — `addressed === targetCanon` inside `pendingEscalation` guard in `route-feature-message.ts` resumes the escalation; spec §8.3/§8.5 carries 6 new rows (E2/E5 target=pm in design + engineering, E4/E7 target=architect in design, E3/E6 target=design in engineering); §12 FLAG-A row marked fixed; matrix snapshot 40 → 46. **✅ I7-extended DONE (2026-04-28)** hold-message template + posture-coherent phrasing — `runtime/routing/hold-message-renderer.ts` builds the registry-derived template; `AgentEntry` extended with `shortName` + `ownsSpec`; `show-hold-message` decision carries `featureName`/`downstreamPhase`/`blockingQuestion`; FLAG-C fixed in §12; 18 renderer tests cover every (heldAgent × downstreamPhase) variant + pluralization + posture (no "is paused", no "bring the PM into this thread"). **✅ I2 DONE (2026-04-28)** corrupt `targetAgent` → `invalid-state` — `scripts/migrate-routing-state-v2.ts` scrubs pre-existing on-disk records (dry-run by default, `--write` to persist; idempotent); v2 router's `canonicalize()` returns null for non-`AgentId` non-alias values and caller emits `invalid-state`; FLAG-B fixed in §12; 9 migration tests cover preserve/drop/idempotency/pass-through. Type-level closure deferred to I8. **✅ I8 DONE (2026-04-28)** `originAgent` required — migration script extended to drop `escalationNotification` records with missing or corrupt `originAgent`; v2 router emits `invalid-state(reason=missing-originAgent)` / `invalid-state(reason=corrupt-originAgent:<value>)` with `clear-escalation-notification` cleanup; pre-Phase-5 silent fallback (`originAgent === "architect" ? "architect" : "ux-design"`) removed; FLAG-D fixed in §12; 4 new spec rows (§8.3, §8.5 missing-origin + corrupt-origin); matrix snapshot 46 → 50; +5 migration test cases. Persisted-shape narrowing deferred to Phase 6. **✅ I21 DONE (2026-04-28)** orientation-on-resume — `runtime/orientation-enforcer.ts` exports `detectOrientationBlock(response, ctx)` (pure structural detector — counts presence of 7 required elements, never matches bad text per Principle 8a), `buildOrientationOverride(ctx, check)` (override directive listing every missing element + voice rules), and `enforceOrientationOnResume(runFn, ctx, opts)` (bounded retry orchestrator, default `maxRetries: 1`). 25 tests cover happy path (all 3 agent triplets), every missing-element variant individually, override-directive content, retry behavior (0 / 1 / 3 retries; never-compliant), and determinism. Production wiring (PM/Designer/Architect agent runners call `enforceOrientationOnResume` around escalation-engaged invocations) lands at Phase 4 cutover. **✅ FLAG-5 DONE (2026-04-28)** `pendingEscalation.productSpec` typed required when target=pm — v2 router emits `invalid-state(reason=missing-productSpec)` with `clear-pending-escalation` cleanup whenever a pm-target escalation lacks a non-empty `productSpec`; `scripts/migrate-routing-state-v2.ts` extended to scrub pre-existing pm-target records missing the field; non-pm targets exempt; FLAG-E fixed in §12; 2 new spec rows (§8.3 + §8.5 target=pm-no-productSpec); matrix snapshot 50 → 52; +6 migration test cases (preserve / drop missing / drop empty / drop non-string / non-pm exempt / target-corruption precedence). Type-level closure (discriminated `PendingEscalation` union) deferred to Phase 6. **✅ I22 DONE (2026-04-28)** `dismiss-escalation-fall-through` decision — `runtime/routing/dismiss-classifier.ts` is a Haiku free-text classifier (`claude-haiku-4-5-20251001`, conservative bias, 16-token output) returning `DISMISS` / `NOT-DISMISS`. Dispatcher pre-classifies user prose and propagates the boolean via `RoutingIntent.dismissIntent` so the router stays pure (Principle 12). v2 router branches deterministically on the flag: `dismissIntent + pendingEscalation` → `dismiss-escalation-fall-through` with `clear-pending-escalation`; `dismissIntent + escalationNotification` → same with `clear-escalation-notification`. Origin agent resumes WITHOUT writeback; deterministic upstream-spec audit re-fires next cycle (Principle 11). 12 classifier tests cover consumer (mocked Anthropic, 7 cases including conservative bias on unrecognized output, non-text content, empty input, model selection) + producer-prompt structure (gated tokens present, ≥5 dismiss positives, ambiguous-but-not-dismiss negatives, conservative-rule prose, audit-context naming). 3 new spec rows (§8.3 pendingEscalation dismiss, §8.3 escalationNotification dismiss, §8.5 pendingEscalation dismiss); matrix snapshot 52 → 55; FLAG-5 line item now also flagged for the matching audit-exception backlog item. Phase 5 routing-refactor sub-items now **7 of 7 complete**. Production wiring lands at Phase 4 cutover. One-time `scripts/migrate-routing-state-v2.ts` for stale on-disk records (already extended through I8 + FLAG-5).
-- Phase 6 (~2d): Delete old code; apply test-migration-audit. `message.ts` < 800 lines; `general.ts` < 300 lines.
-- Phase 7 (~1d each, when ready): Add Coder/Reviewer as proof-of-scaling.
+**Phase status (legacy framing — historical reference; superseded by Blocks A-M):**
+- ~~Phase 0~~ ✅ DONE (2026-04-27) — `docs/ROUTING_STATE_MACHINE.md` with FLAG-A through FLAG-E entries.
+- ~~Phase 1~~ ✅ DONE (2026-04-27) — types + registry + codemod through ~120 call sites.
+- ~~Phase 2~~ ✅ DONE (2026-04-27) — pure routers + dispatcher + 49-row matrix tests.
+- ~~Phase 3~~ ✅ STAGE 1 + STAGE 2 DONE (2026-04-27) — shadow mode dual-run, `[ROUTING-V2-PROPOSED]` log emits on every message.
+- ~~Phase 5~~ ✅ DONE (2026-04-28) — 7 of 7 v2-spec-edit sub-items: I1 (slash-as-confirmation), I7-extended (hold-message template), I2 (corrupt targetAgent), I8 (originAgent required), I21 (orientation-on-resume primitive), FLAG-5 (productSpec required), I22 (dismiss-escalation classifier). All in v2 layer; none production-wired.
+- Phase 4 (cutover) → now scoped as **Block E** in approved plan, gated by Blocks A–D + G–M complete.
+- Phase 6 (cleanup) → now scoped as **Block F1**.
+- Phase 7 (Coder/Reviewer) → now scoped as **Block F2/F3**, built on Block M1 scaffold.
 
-**Total:** 12–18 working days, 8 PRs, 1.5–2× buffer for discovery.
+**Active blocks (read the plan file for full deliverable detail):**
+- **Block A** — Single-path agent runners (architect → designer → PM, sequential; A1 spike → A2 map → A3 fast-path decision → A4-A7 sequential rewrites). 17d.
+- **Block B** — Structural CI gates (response-path coverage, cross-agent contracts, producer/consumer parity, determinism, cutover gate). 8d parallel after A1.
+- **Block C** — Production verification (multi-tenant, pre-cutover migration smoke, nightly E2E real-infra smoke, real-fixture producer tests, MANUAL_TESTS catalog). 8d parallel.
+- **Block D** — Operational robustness (error paths, state-corruption recovery, performance budgets, chaos/fuzzing). 6d parallel after A2.
+- **Block G** — Structured observability (log-coverage gate, request-id tracing, metrics, alert hooks, retention/redaction). 5d parallel after A2.
+- **Block H** — LLM evals + prompt-drift regression (canonical dataset, eval runner, PR-time gate, model-upgrade evals, A/B harness). 7d parallel.
+- **Block I** — Test-suite hardening (mutation testing, coverage thresholds, regression catalog, property-based tests). 5d parallel.
+- **Block J** — Manual test catalog completeness + gating hooks (per-agent per-behavior MT-N entries, MT-staleness hook, CODE_MARKER bump enforcement). 3d parallel.
+- **Block K** — Multi-tenant scale-out (storage abstraction + durable backend, row-level tenant isolation, onboarding script, 1000-tenant load test, per-tenant cost monitoring, rate limiting). 10d (storage migration is long pole).
+- **Block L** — Disaster recovery + backup + secrets (backup, DR runbook, secrets gate, admin audit log, offboarding). 5d parallel.
+- **Block M** — Documentation + new-agent scaffold (scaffold script, ADRs, operator runbook, customer onboarding doc, contribution guide). 4d parallel.
+- **Block E** — Cutover, gated by all blocks above DONE (pre-cutover smoke → `ROUTING_V2=1` → 7-day burn-in). 8d.
+- **Block F** — Cleanup + new agents (delete legacy handlers; Coder/Reviewer built on Block M scaffold). 2d + 1-2d each.
 
-**Plan file:** `~/.claude/plans/elegant-percolating-newell.md`
+**Total critical path: ~7 weeks elapsed.** Parallel blocks total ~50 person-days running during the architect-rewrite + storage-migration window.
 
-**Blocks:** all items below this line (post-completion iteration, deterministic audits for product-level docs, product-level doc editing, branch hygiene cleanup, agent persona names) plus future agent additions (Coder, Reviewer). The refactor is the path through.
+**Verification checkpoints (manual + automated, per the plan):**
+1. After A1 spike — gate works against current code.
+2. After each A4-A7 shadow verification (architect, designer, PM) — V2 runner zero-divergences vs legacy on 48h prod traffic.
+3. After H eval baseline — regression detector live.
+4. After K4 load test — 1000-tenant scale claim verified.
+5. After E3 burn-in — full MT regression sweep + 7-day green smoke.
 
-**The bugs surfaced in manual testing on 2026-04-27** (slash-as-confirmation, hold-message label) are NOT patched in-place — they are encoded into the Phase 0 spec as today's behavior, then fixed as deliberate spec edits in Phase 5. This is the user's explicit choice (durable over fast).
+**The bugs surfaced in manual testing across this multi-day arc** (slash-as-confirmation, hold-message label, architect-readiness Principle-11 violation, prose-vs-state mismatch, state-query fast-path bypass) are RETIRED by Block A. The state-query fast-path bypass is structurally impossible in V2 because every response path goes through `buildReadinessReport()`.
 
 ---
 
-### ✅ Architect readiness messaging must reflect full upstream chain state — P14/P15 enforcement gap (2026-04-27, FIXED 2026-04-28)
+### ⚠️ SUPERSEDED — Surgical production patches retired by Block A of the system-wide plan
 
-**Status: FIXED (2026-04-28)** — `runtime/readiness-builder.ts` produces a deterministic structural directive that the architect (and designer) receives unconditionally on every non-readOnly turn. Same state ⇒ same numbers, regardless of user phrasing or orientation status (Principle 11). Cross-agent parity (Principle 15): same builder is wired into both architect and designer paths. 30 builder tests cover every state combo (ready / dirty-own / dirty-upstream / escalation-active / ready-pending-approval), label correctness, pluralization, and the canonical regression case from the manual test on 2026-04-27. Production wiring: `interfaces/slack/handlers/message.ts` adds `readinessCountsCache` (parallel to `phaseEntryAuditCache`) holding the structured count payload; `archReadinessDirective` and `designReadinessDirective` are appended to the agent context unconditionally so the agent can never minimize the readiness numbers based on user phrasing. Suppressed only on `readOnly` invocations (escalation-reply context where the brief carries readiness already). Validation post-fix: re-run the manual test 2026-04-27 — both Turn A (`/architect hi`) and Turn B (`Hi, I want to work on this feature`) now receive the same directive, so the agent's response can no longer say "Nothing blocking" when upstream gaps + active escalation exist.
+The three entries below are surgical patches that shipped during the wart-fix arc. Each is retired by Block A (single-path V2 agent runners) of the approved system-wide plan. They remain in the legacy code but are unreachable post-Block-E cutover. **Per the user directive, no further surgical patches in this scope ship. The bugs persist in production until V2 lands; the durable answer is the V2 rewrite, not more patches.**
+
+- **Architect-readiness directive (`43640ab`)** — patched the LLM-agent path of `runArchitectAgent` to inject a `[PLATFORM READINESS DIRECTIVE]` block. Manual testing confirmed the patch is bypassed by the state-query fast-path at line 2682 (one of the architect's 5 internal exits the directive doesn't cover). Block A's V2 architect runner has one entry, one exit; every response goes through `buildReadinessReport()` so the directive is universal by construction.
+- **Prose-vs-state mismatch (`959c604`)** — patched the architect's post-run override to use the queued `pendingEscalation.targetAgent` for CTA text, plus a PM-first conversational override that re-queues from design to PM when PM gaps exist. Block A's V2 architect runner has the same logic structurally, not as a post-run override on a multi-exit handler.
+- **State-query fast-path gate (in-flight, reverted in `c4c9c15`)** — would have patched the architect's check-in fast-path to fall through to LLM agent when upstream has gaps. Reverted because Block A retires the fast-path concept; the V2 deterministic state-query branch calls `buildReadinessReport()` directly and renders user-facing summary from the report.
+
+**Below this divider: the historical entries kept for context only. Do not re-prioritize them.**
+
+---
+
+### ✅ Architect readiness messaging must reflect full upstream chain state — P14/P15 enforcement gap (HISTORICAL — superseded by Block A)
+
+**Status: surgical fix shipped (`43640ab`); retired by Block A. Manual test confirmed the surgical fix is bypassed by the state-query fast-path. Durable answer is the V2 rewrite.** Original `Status: FIXED (2026-04-28)` claim was incorrect — `runtime/readiness-builder.ts` produces the directive correctly, but production paths bypass it. Builder remains useful — Block A's V2 runners consume it as the single source of truth.
 
 **Priority: P0 — load-bearing trust violation surfaced during Phase 3 manual testing. Landed as part of Phase 5 wart fixes (separate from routing invariants but same flavor of "system says X, but X isn't true").**
 
@@ -104,9 +153,9 @@ Trust-erosion happens the moment the user notices the inconsistency. The BACKLOG
 
 ---
 
-### ✅ Architect prose-vs-state mismatch — agent verbally promises one escalation, platform queues another (2026-04-27, FIXED 2026-04-28)
+### ✅ Architect prose-vs-state mismatch — agent verbally promises one escalation, platform queues another (HISTORICAL — superseded by Block A)
 
-**Status: FIXED (2026-04-28)** — two bugs were preventing the existing platform-built CTA override from firing on auto-trigger paths. Bug 1: `escalationBeforeRunArch` was captured POST-run at line 3114 with confusing naming, so `escalationJustOfferedArch` evaluated to `false` whenever auto-trigger queued a target post-run (the canonical case from the manual test). Snapshot is now taken BEFORE `runAgent` and the override correctly fires on auto-trigger paths, replacing the agent's prose with a platform-built CTA derived from `pendingEscalation.targetAgent` — not from agent prose. Bug 2 (PM-first conversational enforcement): the tool handler accepted `offer_upstream_revision(target=design)` even when PM gaps existed, allowing the architect to violate PM-first ordering at the conversational layer. Added a post-run override that detects this case and re-queues with `target=pm` plus the PM gap text. New scenario N87/N88 in `tests/integration/workflows.test.ts` exercises the auto-trigger override end-to-end (agent prose says "Design", platform queues PM, final posted message contains "bring in the PM agent" and never "bring in the Design agent"). Cross-agent parity: the design agent's analogous override at line 1889 had the same shape correctly wired pre-Phase-5; the architect path was the outlier.
+**Status: surgical fix shipped (`959c604`); retired by Block A. Block A's V2 architect runner has the same logic structurally (queued targetAgent → CTA text), not as a post-run override on a multi-exit handler.**
 
 **Priority: P0 — surfaced during manual test session immediately after the architect-readiness gap. Same Phase 5 timing.**
 
@@ -126,7 +175,9 @@ The architect's `auto-trigger` gate (Principle 8 enforcement, post-run) queues `
 
 ---
 
-### I23 — Action-menu posture-coherence in slash-override read-only mode (2026-04-27)
+### I23 — Action-menu posture-coherence in slash-override read-only mode (HISTORICAL — subsumed by Block A)
+
+**Status: subsumed by Block A.** I23's three fixes (pre-banner phrasing, action-menu firing cadence, action-menu content) are concerns of the legacy multi-exit handler's post-run notice assembly. Block A's V2 single-path runners build user-facing summaries directly from `buildReadinessReport()`'s `aggregate` state, with read-only-mode behavior expressed in the renderer rather than as post-run patches. The original I23 description below remains as the requirements input for Block A's renderer; do not implement I23 as a separate fix.
 
 **Priority: P0 — surfaced during Phase 3 manual testing. Same flavor as I7-extended/I21/I22. Lands as part of Phase 5 wart fixes.**
 
