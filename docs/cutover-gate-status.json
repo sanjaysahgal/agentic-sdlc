@@ -25,7 +25,7 @@
     { "id": "D1", "title": "Error-path coverage (GitHub 502, Slack rate-limit, Anthropic 529, GitHub 401)", "block": "D", "gates_block_e": true, "status": "done"    },
     { "id": "D2", "title": "State-corruption recovery (partial write, restart race, unknown fields)",      "block": "D", "gates_block_e": true, "status": "done"    },
     { "id": "D3", "title": "Per-turn performance budget (synthetic + production)",                         "block": "D", "gates_block_e": true, "status": "done"    },
-    { "id": "D4", "title": "Chaos / fuzzing (message ordering, mid-turn restart, concurrent spec edits)", "block": "D", "gates_block_e": true, "status": "pending" },
+    { "id": "D4", "title": "Chaos / fuzzing (message ordering, mid-turn restart, concurrent spec edits)", "block": "D", "gates_block_e": true, "status": "done"    },
 
     { "id": "G1", "title": "Log-coverage gate (every state mutation has structured log line)",            "block": "G", "gates_block_e": true, "status": "pending" },
     { "id": "G2", "title": "Request-id tracing across multi-step turn",                                   "block": "G", "gates_block_e": true, "status": "pending" },
