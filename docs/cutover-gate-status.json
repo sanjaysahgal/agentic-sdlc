@@ -41,7 +41,7 @@
 
     { "id": "I1", "title": "Mutation testing (Stryker or equivalent, periodic)",                          "block": "I", "gates_block_e": true, "status": "pending" },
     { "id": "I2", "title": "Coverage thresholds enforced at PR time",                                     "block": "I", "gates_block_e": true, "status": "done"    },
-    { "id": "I3", "title": "Regression catalog (one test file per historical bug)",                       "block": "I", "gates_block_e": true, "status": "pending" },
+    { "id": "I3", "title": "Regression catalog (one test file per historical bug)",                       "block": "I", "gates_block_e": true, "status": "done"    },
     { "id": "I4", "title": "Property-based tests for pure modules (fast-check)",                          "block": "I", "gates_block_e": true, "status": "done"    },
 
     { "id": "J1", "title": "Per-agent per-behavior MT-N entries in MANUAL_TESTS.md",                      "block": "J", "gates_block_e": true, "status": "pending" },
