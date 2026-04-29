@@ -123,11 +123,15 @@ upstream spec, so `buildReadinessReport()` is called with `upstreamAudits:
 (rare for PM — only happens if the architect or designer escalated to PM
 during their phase), or `ready-pending-approval`.**
 
-| # | Legacy line | Behavior | V2 strategy |
-|---|---|---|---|
-| 1 | 1168 | Stale-spec error after `pendingApproval` was offered | Same shape as architect #2 / designer #1. Warning includes current readiness summary (PM's own product-spec audit findings if any). |
-| 2 | 1182 | `pendingApproval` confirm → product spec approved, handoff to designer | V2 emits via `renderApprovalHandoff(report)`. Hands off to designer (next phase per agent-registry). |
-| 3 | 1283 | Main response post-LLM-run | Already after the LLM run; would naturally be readiness-aware in V2 because V2's PM runner calls `buildReadinessReport()` upfront and injects the directive. The A1 spike flagged this as not-aware because the legacy PM handler doesn't call `buildReadinessReport()` at all. V2 fixes this structurally. |
+**STATUS: 6 of 6 branches implemented in `runtime/agents/runPmAgentV2.ts` (Block A7 — all PM branches complete).** PM differs from designer in: callingAgent is `"pm"`, ownSpec specType `"product"`, upstreamAudits always `[]` (PM is head of chain), save mutation kind is `save-approved-product-spec`, approval-confirm handoff names "UX designer" as next-phase agent (resolved via `agent-registry.ts`), off-topic redirect identifies as "Product Manager". **Cross-agent parity (Principle 15):** legacy PM had no off-topic-redirect or state-query-fast-path branches; V2 adds them so the same single-path discipline + same bug-class retirement (state-query fast-path) holds for PM as for the other two agents. V2 is NOT yet wired into the dispatcher — production traffic continues through legacy `runPmAgent`. Subsequent commit wires PM shadow-mode dual-run; Block E cuts over.
+
+| # | Legacy line | Behavior | V2 strategy | Status |
+|---|---|---|---|---|
+| 1 | 1230 | Stale-spec error after `pendingApproval` was offered | Same shape as architect #2 / designer #1. Warning includes current readiness summary (PM's own product-spec audit findings if any). | DONE — `renderStaleSpecError` |
+| 2 | 1244 | `pendingApproval` confirm → product spec approved, handoff to designer | V2 emits via `renderApprovalConfirm`; handoff text names "UX designer" as the next-phase agent (resolved from `agent-registry.ts`'s phase ownership; not hardcoded). | DONE — `renderApprovalConfirm` |
+| 3 | 1345 | Main response post-LLM-run | Already after the LLM run; readiness-aware in V2 because V2's PM runner calls `buildReadinessReport()` upfront and injects the directive into `renderNormalAgentTurn`. The A1 spike flagged this as not-aware because the legacy PM handler doesn't call `buildReadinessReport()` at all. V2 fixes this structurally. | DONE — `renderNormalAgentTurn` |
+| Added by V2 | (n/a) | Off-topic redirect | Added per Principle 15 cross-agent parity — legacy PM had no off-topic branch; V2 adds one to retire the same bug class for PM as for architect/designer. Identifies as "Product Manager"; surfaces `report.summary` alongside the redirect. | DONE — `renderOffTopicRedirect` |
+| Added by V2 | (n/a) | State-query fast-path | Added per Principle 15 — legacy PM routed all check-ins through the LLM. V2 fast-path emits `report.summary` directly (single source of truth, retires the same class of bug as architect/designer state-query fast-paths). | DONE — `renderStateQueryFastPath` |
 
 ## Cross-cutting: escalation-engaged readOnly path
 
