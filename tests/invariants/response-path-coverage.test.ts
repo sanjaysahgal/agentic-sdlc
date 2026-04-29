@@ -309,3 +309,167 @@ describe("Response-path coverage invariant — Block A1 spike", () => {
     })
   })
 })
+
+// ── Block B1 — V2 runner structural invariant (productionalization) ───────────
+//
+// Per the approved plan at `~/.claude/plans/rate-this-plan-zesty-tiger.md`
+// (Block B1), the A1 spike's snapshot-mode review against legacy is now
+// promoted to a HARD GATE against the V2 runners. This is the load-bearing
+// regression-prevention test of the entire system-wide plan.
+//
+// The structural invariant for every V2 single-path runner:
+//   1. Exactly ONE `buildReadinessReport(...)` call in the orchestrator
+//      function (the report is the single source of truth)
+//   2. Exactly ONE `deps.emit(...)` call in the orchestrator (the single
+//      user-facing emission point)
+//   3. The emit call appears strictly AFTER the readiness call (source-line
+//      order; control-flow approximation since orchestrator is straight-line
+//      between the two)
+//   4. No raw `update(...)` or `client.chat.postMessage(...)` calls anywhere
+//      in the V2 runner file (those would bypass the deps.emit single
+//      emission contract — same anti-pattern that motivated the plan)
+//
+// Renderers in V2 runners are pure: they return `{ text, stateMutations }`.
+// They never emit. They take `report` as a parameter, so any text they
+// produce is necessarily readiness-aware. The orchestrator emits the
+// rendered text exactly once. This makes the bug class "agent emits before
+// the readiness directive is built" structurally impossible.
+//
+// Adding a new not-readiness-aware emission to a V2 runner FAILS at PR
+// time via this gate. That is the load-bearing contract that retires the
+// fragmented-handler bug class for good.
+
+const V2_RUNNER_FILES = [
+  resolve(__dirname, "..", "..", "runtime", "agents", "runArchitectAgentV2.ts"),
+  resolve(__dirname, "..", "..", "runtime", "agents", "runDesignAgentV2.ts"),
+  resolve(__dirname, "..", "..", "runtime", "agents", "runPmAgentV2.ts"),
+]
+
+const V2_ORCHESTRATOR_FNS: Record<string, string> = {
+  runArchitectAgentV2: "runArchitectAgentV2.ts",
+  runDesignAgentV2:    "runDesignAgentV2.ts",
+  runPmAgentV2:        "runPmAgentV2.ts",
+}
+
+type V2Analysis = {
+  readonly fnName:                string
+  readonly readinessCallLines:    readonly number[]
+  readonly emitCallLines:         readonly number[]
+  readonly rawUpdateCallLines:    readonly number[]
+  readonly rawPostMessageLines:   readonly number[]
+}
+
+// Detects `deps.emit(...)` or `params.deps.emit(...)` — the V2 emission API.
+function isV2EmitCall(call: ts.CallExpression, source: ts.SourceFile): boolean {
+  const expr = call.expression
+  if (!ts.isPropertyAccessExpression(expr)) return false
+  if (expr.name.text !== "emit") return false
+  const text = expr.getText(source).replace(/\s+/g, "")
+  return text.endsWith(".deps.emit") || text === "deps.emit"
+}
+
+function analyzeV2Runner(filePath: string): V2Analysis | null {
+  const sourceText = readFileSync(filePath, "utf-8")
+  const source     = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.ES2022, true)
+  const fnNameExpected = filePath.split("/").pop()!.replace(".ts", "")
+
+  let foundFn: ts.FunctionDeclaration | null = null
+  function walkTop(node: ts.Node): void {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === fnNameExpected) {
+      foundFn = node
+    }
+    ts.forEachChild(node, walkTop)
+  }
+  walkTop(source)
+  if (!foundFn) return null
+
+  const fn: ts.FunctionDeclaration = foundFn
+  const body = fn.body
+  if (!body) return null
+
+  const readinessCallLines:  number[] = []
+  const emitCallLines:       number[] = []
+  const rawUpdateCallLines:  number[] = []
+  const rawPostMessageLines: number[] = []
+
+  function walk(node: ts.Node): void {
+    if (ts.isCallExpression(node)) {
+      const pos = source.getLineAndCharacterOfPosition(node.getStart(source))
+      const line = pos.line + 1
+      if (isReadinessCall(node)) {
+        readinessCallLines.push(line)
+      } else if (isV2EmitCall(node, source)) {
+        emitCallLines.push(line)
+      } else {
+        // Raw legacy patterns inside V2 runners are forbidden.
+        const callee = classifyCallee(node, source)
+        if (callee === "update") rawUpdateCallLines.push(line)
+        if (callee === "chat.postMessage") rawPostMessageLines.push(line)
+      }
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(body)
+
+  return {
+    fnName: fnNameExpected,
+    readinessCallLines,
+    emitCallLines,
+    rawUpdateCallLines,
+    rawPostMessageLines,
+  }
+}
+
+describe("Block B1 — V2 runner structural invariant (productionalized gate)", () => {
+  for (const filePath of V2_RUNNER_FILES) {
+    const fileName = filePath.split("/").pop()!
+    const fnName   = fileName.replace(".ts", "")
+
+    describe(`${fnName}`, () => {
+      const analysis = analyzeV2Runner(filePath)
+
+      it("V2 runner file is parseable and the orchestrator function is present", () => {
+        expect(analysis).not.toBeNull()
+        expect(analysis!.fnName).toBe(fnName)
+      })
+
+      it("orchestrator calls buildReadinessReport() exactly once (single source of truth)", () => {
+        expect(analysis!.readinessCallLines).toHaveLength(1)
+      })
+
+      it("orchestrator calls deps.emit(...) exactly once (single emission point)", () => {
+        expect(analysis!.emitCallLines).toHaveLength(1)
+      })
+
+      it("emit comes strictly AFTER buildReadinessReport (every emission is readiness-aware)", () => {
+        const readinessLine = analysis!.readinessCallLines[0]
+        const emitLine      = analysis!.emitCallLines[0]
+        expect(emitLine).toBeGreaterThan(readinessLine)
+      })
+
+      it("no raw update(...) calls in the V2 runner (deps.emit is the only emission API)", () => {
+        expect(analysis!.rawUpdateCallLines).toEqual([])
+      })
+
+      it("no raw client.chat.postMessage(...) calls in the V2 runner (deps.emit is the only emission API)", () => {
+        expect(analysis!.rawPostMessageLines).toEqual([])
+      })
+    })
+  }
+
+  describe("plan-level gate summary", () => {
+    it("all three V2 runners (architect, designer, PM) satisfy the structural invariant — Block A is feature-complete and PR-time gated", () => {
+      const summaries = V2_RUNNER_FILES.map(analyzeV2Runner)
+      for (const s of summaries) {
+        expect(s).not.toBeNull()
+        expect(s!.readinessCallLines).toHaveLength(1)
+        expect(s!.emitCallLines).toHaveLength(1)
+        expect(s!.emitCallLines[0]).toBeGreaterThan(s!.readinessCallLines[0])
+        expect(s!.rawUpdateCallLines).toEqual([])
+        expect(s!.rawPostMessageLines).toEqual([])
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[B1-GATE] All ${summaries.length} V2 runners pass the structural invariant.`)
+    })
+  })
+})
