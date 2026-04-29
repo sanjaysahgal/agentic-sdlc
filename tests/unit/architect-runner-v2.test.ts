@@ -11,6 +11,7 @@ import { describe, it, expect, vi } from "vitest"
 import {
   classifyArchitectBranch,
   renderStateQueryFastPath,
+  renderOffTopicRedirect,
   runArchitectAgentV2,
   type ArchitectClassifierInput,
   type ArchitectIntent,
@@ -221,6 +222,66 @@ describe("renderStateQueryFastPath — the branch that retires the manual-test r
   })
 })
 
+// ── Off-topic redirect tests ──────────────────────────────────────────────────
+
+describe("renderOffTopicRedirect — surfaces redirect AND current readiness", () => {
+  it("includes the main-channel name + concierge phrasing", () => {
+    const report = buildReadinessReport(reportInput())
+    const rendered = renderOffTopicRedirect({
+      report,
+      userMessage:     "what's for lunch",
+      mainChannelName: "general",
+    })
+    expect(rendered.text).toContain("*#general*")
+    expect(rendered.text).toContain("concierge has the full picture")
+  })
+
+  it("surfaces the report.summary alongside the redirect (the readiness-aware upgrade over legacy)", () => {
+    const report = buildReadinessReport(reportInput({
+      upstreamAudits: [{ auditingAgent: "architect", specType: "product", findingCount: 3 }],
+    }))
+    const rendered = renderOffTopicRedirect({
+      report,
+      userMessage:     "what's for lunch",
+      mainChannelName: "general",
+    })
+    expect(rendered.text).toContain(report.summary)
+    expect(rendered.text).toContain("3 product findings")
+  })
+
+  it("identifies as Architect (so the user knows what this channel is for)", () => {
+    const report = buildReadinessReport(reportInput())
+    const rendered = renderOffTopicRedirect({
+      report,
+      userMessage:     "what's for lunch",
+      mainChannelName: "general",
+    })
+    expect(rendered.text).toContain("I'm the Architect")
+  })
+
+  it("appends user + assistant messages to history (no spec writes)", () => {
+    const report = buildReadinessReport(reportInput())
+    const rendered = renderOffTopicRedirect({
+      report,
+      userMessage:     "what's for lunch",
+      mainChannelName: "general",
+    })
+    expect(rendered.stateMutations).toHaveLength(2)
+    expect(rendered.stateMutations[0]).toEqual({ kind: "append-message", role: "user", content: "what's for lunch" })
+    expect(rendered.stateMutations[1].kind).toBe("append-message")
+  })
+
+  it("zero LLM calls — pure renderer (synchronous return)", () => {
+    const report = buildReadinessReport(reportInput())
+    const result = renderOffTopicRedirect({
+      report,
+      userMessage:     "what's for lunch",
+      mainChannelName: "general",
+    })
+    expect(result).not.toBeInstanceOf(Promise)
+  })
+})
+
 // ── Runner orchestration tests (deps-injected, full dispatch verified) ────────
 
 describe("runArchitectAgentV2 — orchestration", () => {
@@ -237,6 +298,7 @@ describe("runArchitectAgentV2 — orchestration", () => {
       loadReport:         async () => reportIn,
       applyStateMutation: async (m) => { appliedMutations.push(m) },
       emit:               async (t) => { emittedTexts.push(t) },
+      mainChannelName:    "test-main-channel",
       log:                (l) => { logLines.push(l) },
     }
     return { deps, appliedMutations, emittedTexts, logLines }
@@ -264,6 +326,29 @@ describe("runArchitectAgentV2 — orchestration", () => {
     expect(logLines.some((l) => l.includes("[V2-ARCHITECT]") && l.includes("branch=state-query-fast-path"))).toBe(true)
   })
 
+  it("off-topic branch: full E2E through the runner emits the redirect with readiness summary inline", async () => {
+    const reportIn = reportInput({
+      upstreamAudits: [{ auditingAgent: "architect", specType: "product", findingCount: 5 }],
+    })
+    const { deps, emittedTexts, appliedMutations, logLines } = makeDeps(reportIn)
+
+    await runArchitectAgentV2({
+      userMessage: "what's for lunch",
+      featureName: "demo-feature",
+      intent:      intent({ isOffTopic: true }),
+      state:       state(),
+      deps,
+    })
+
+    expect(emittedTexts).toHaveLength(1)
+    expect(emittedTexts[0]).toContain("test-main-channel")
+    expect(emittedTexts[0]).toContain("5 product findings")
+    expect(emittedTexts[0]).toContain("I'm the Architect")
+    expect(appliedMutations).toHaveLength(2)
+    expect(appliedMutations[0]).toEqual({ kind: "append-message", role: "user", content: "what's for lunch" })
+    expect(logLines.some((l) => l.includes("branch=off-topic-redirect"))).toBe(true)
+  })
+
   it("classifier diagnostic log records the branch + aggregate", async () => {
     const { deps, logLines } = makeDeps(reportInput())
 
@@ -279,18 +364,21 @@ describe("runArchitectAgentV2 — orchestration", () => {
     expect(logLines.some((l) => l.includes("totalFindings=0"))).toBe(true)
   })
 
-  it("stub branches throw with NOT-IMPLEMENTED + map row pointer (assert subsequent commits implement them)", async () => {
+  it("remaining stub branches still throw with NOT-IMPLEMENTED + map row pointer", async () => {
     // Verifies the stubs are wired correctly into the dispatch. The error
     // message must reference the AGENT_RUNNER_REWRITE_MAP row so failures
-    // surface where the V2 implementation owes work.
+    // surface where the V2 implementation owes work. As branches are
+    // implemented commit-by-commit, this test will eventually require
+    // inputs that genuinely have no implementation — currently
+    // approval-confirm is one such branch.
     const { deps } = makeDeps(reportInput())
 
     await expect(
       runArchitectAgentV2({
-        userMessage: "any text",
+        userMessage: "yes",
         featureName: "demo-feature",
-        intent:      intent({ isOffTopic: true }),
-        state:       state(),
+        intent:      intent({ isAffirmative: true }),
+        state:       state({ hasPendingApproval: true }),
         deps,
       })
     ).rejects.toThrow(/V2-NOT-IMPLEMENTED.*AGENT_RUNNER_REWRITE_MAP/)
@@ -301,10 +389,10 @@ describe("runArchitectAgentV2 — orchestration", () => {
 
     await expect(
       runArchitectAgentV2({
-        userMessage: "any text",
+        userMessage: "yes",
         featureName: "demo-feature",
-        intent:      intent({ isOffTopic: true }),
-        state:       state(),
+        intent:      intent({ isAffirmative: true }),
+        state:       state({ hasPendingApproval: true }),
         deps,
       })
     ).rejects.toThrow()

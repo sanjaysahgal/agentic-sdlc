@@ -204,8 +204,34 @@ export function renderStaleSpecError(): RenderedResponse {
   throw new Error("[V2-NOT-IMPLEMENTED] renderStaleSpecError — see AGENT_RUNNER_REWRITE_MAP.md row #2 (architect)")
 }
 
-export function renderOffTopicRedirect(): RenderedResponse {
-  throw new Error("[V2-NOT-IMPLEMENTED] renderOffTopicRedirect — see AGENT_RUNNER_REWRITE_MAP.md row #4 (architect)")
+// Renderer for the off-topic redirect. Pure: takes the report, the user
+// message, and the workspace's main-channel name (for the concierge
+// redirect target). Per AGENT_RUNNER_REWRITE_MAP row #4 (architect), the
+// V2 redirect surfaces BOTH the routing hint AND the current readiness
+// state — so the user sees what the architect is set up for plus where
+// to go for cross-feature status. This is the readiness-aware upgrade
+// over the legacy line 2677 redirect, which only contained the routing
+// hint.
+export function renderOffTopicRedirect(params: {
+  report:           ReadinessReport
+  userMessage:      string
+  mainChannelName:  string
+}): RenderedResponse {
+  const text = [
+    `For status and progress updates across all features, ask in *#${params.mainChannelName}* — the concierge has the full picture.`,
+    ``,
+    `For *this* feature specifically:`,
+    params.report.summary,
+    ``,
+    `I'm the Architect — I'm here when you're ready to work on data models, APIs, or engineering decisions.`,
+  ].join("\n")
+  return {
+    text,
+    stateMutations: [
+      { kind: "append-message", role: "user",      content: params.userMessage },
+      { kind: "append-message", role: "assistant", content: text },
+    ],
+  }
 }
 
 export function renderEscalationEngaged(): RenderedResponse {
@@ -231,6 +257,21 @@ export type RunArchV2Deps = {
   readonly applyStateMutation: (m: StateMutation) => Promise<void>
   // Slack emission (single call site per turn)
   readonly emit:              (text: string) => Promise<void>
+  // Workspace-derived constants (loaded from WorkspaceConfig at runner
+  // construction; passed through here so the runner stays generic and
+  // doesn't import workspace-config directly — keeps the runner pure-
+  // testable and tenant-agnostic per CLAUDE.md Principle 2 + 3).
+  //
+  // DESIGN-REVIEWED: workspace-config injection is the right place per
+  // Principle 12. (1) Scales to 1000s of tenants because each tenant has
+  // its own WorkspaceConfig and the runner reads through deps — no
+  // module-level workspace coupling. (2) Owned by the runner-construction
+  // call site (Block E cutover wiring), which already loads
+  // WorkspaceConfig once per tenant. (3) Cross-cutting: every V2 runner
+  // (architect, designer, PM, future Coder/Reviewer) needs the same
+  // workspace-derived constants and follows this same deps-injection
+  // pattern; Block M1's scaffold script generates it.
+  readonly mainChannelName:   string
   // Optional: structured logging hook (for shadow-mode dual-run + observability)
   readonly log?:              (line: string) => void
 }
@@ -272,7 +313,11 @@ export async function runArchitectAgentV2(params: RunArchV2Params): Promise<void
       rendered = renderStaleSpecError()
       break
     case "off-topic-redirect":
-      rendered = renderOffTopicRedirect()
+      rendered = renderOffTopicRedirect({
+        report,
+        userMessage:     params.userMessage,
+        mainChannelName: params.deps.mainChannelName,
+      })
       break
     case "escalation-engaged":
       rendered = renderEscalationEngaged()
