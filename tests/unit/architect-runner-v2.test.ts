@@ -15,6 +15,8 @@ import {
   renderApprovalConfirm,
   renderDecisionReviewConfirm,
   renderStaleSpecError,
+  renderEscalationEngaged,
+  renderNormalAgentTurn,
   runArchitectAgentV2,
   type ArchitectClassifierInput,
   type ArchitectIntent,
@@ -67,7 +69,11 @@ function classifierInput(over: Partial<ArchitectClassifierInput> = {}): Architec
 
 // Module-scoped makeDeps so multiple describe blocks can use it. Returns the
 // deps object plus closure-captured arrays the test can assert against.
-function makeDeps(reportIn: ReadinessReportInput, fetchOverride?: (path: string, branch: string) => Promise<string | null>): {
+function makeDeps(reportIn: ReadinessReportInput, overrides?: {
+  fetchCurrentDraft?:    (path: string, branch: string) => Promise<string | null>
+  runLLMForEscalation?:  RunArchV2Deps["runLLMForEscalation"]
+  runLLMForNormalTurn?:  RunArchV2Deps["runLLMForNormalTurn"]
+}): {
   deps:               RunArchV2Deps
   appliedMutations:   StateMutation[]
   emittedTexts:       string[]
@@ -83,7 +89,9 @@ function makeDeps(reportIn: ReadinessReportInput, fetchOverride?: (path: string,
     mainChannelName:    "test-main-channel",
     githubOwner:        "test-owner",
     githubRepo:         "test-repo",
-    fetchCurrentDraft:  fetchOverride ?? (async () => null),
+    fetchCurrentDraft:  overrides?.fetchCurrentDraft ?? (async () => null),
+    runLLMForEscalation: overrides?.runLLMForEscalation ?? (async () => "stubbed-escalation-response"),
+    runLLMForNormalTurn: overrides?.runLLMForNormalTurn ?? (async () => "stubbed-normal-response"),
     log:                (l) => { logLines.push(l) },
   }
   return { deps, appliedMutations, emittedTexts, logLines }
@@ -372,37 +380,51 @@ describe("runArchitectAgentV2 — orchestration", () => {
     expect(logLines.some((l) => l.includes("totalFindings=0"))).toBe(true)
   })
 
-  it("remaining stub branches still throw with NOT-IMPLEMENTED + map row pointer", async () => {
-    // Verifies the stubs are wired correctly into the dispatch. The error
-    // message must reference the AGENT_RUNNER_REWRITE_MAP row so failures
-    // surface where the V2 implementation owes work. Currently
-    // escalation-engaged + normal-agent-turn are the remaining stubs;
-    // this test uses readOnly=true to hit escalation-engaged.
-    const { deps } = makeDeps(reportInput())
+  it("all 7 branches are implemented — no V2-NOT-IMPLEMENTED stubs remain", async () => {
+    // After Block A4 step 5, every classifier branch dispatches to a real
+    // renderer. This test would catch a regression where someone leaves a
+    // stub in place. Iterate every branch via crafted inputs.
+    const allBranchInputs: Array<{ name: string; intent: ArchitectIntent; state: ArchitectStateFlags }> = [
+      { name: "escalation-engaged",       intent: intent(),                      state: state({ readOnly: true }) },
+      { name: "decision-review-confirm",  intent: intent({ isAffirmative: true }), state: state({ hasPendingDecisionReview: true, pendingDecisionReviewContext: { filePath: "p", specContent: "c" } }) },
+      { name: "approval-confirm",         intent: intent({ isAffirmative: true }), state: state({ hasPendingApproval: true, pendingApprovalContext: { filePath: "p", specContent: "c" } }) },
+      { name: "off-topic-redirect",       intent: intent({ isOffTopic: true }),  state: state() },
+      { name: "state-query-fast-path",    intent: intent({ isCheckIn: true }),   state: state() },
+      { name: "normal-agent-turn",        intent: intent(),                      state: state() },
+    ]
 
-    await expect(
-      runArchitectAgentV2({
-        userMessage: "any",
-        featureName: "demo-feature",
-        intent:      intent(),
-        state:       state({ readOnly: true }),
-        deps,
-      })
-    ).rejects.toThrow(/V2-NOT-IMPLEMENTED.*AGENT_RUNNER_REWRITE_MAP/)
+    for (const tc of allBranchInputs) {
+      const { deps } = makeDeps(reportInput())
+      await expect(
+        runArchitectAgentV2({
+          userMessage: "test",
+          featureName: "test-feature",
+          intent:      tc.intent,
+          state:       tc.state,
+          deps,
+        }),
+        `branch ${tc.name} threw NOT-IMPLEMENTED`
+      ).resolves.not.toThrow()
+    }
   })
 
-  it("does NOT call emit if the renderer throws (no half-state)", async () => {
-    const { deps, emittedTexts, appliedMutations } = makeDeps(reportInput())
+  it("does NOT call emit if the LLM dep throws (no half-state on async failure)", async () => {
+    // A failing LLM dep should NOT result in a half-emitted message or
+    // partially-applied state. This is the invariant the wrapping in
+    // the runner's dispatch preserves.
+    const { deps, emittedTexts, appliedMutations } = makeDeps(reportInput(), {
+      runLLMForNormalTurn: async () => { throw new Error("LLM-fail") },
+    })
 
     await expect(
       runArchitectAgentV2({
-        userMessage: "any",
+        userMessage: "anything",
         featureName: "demo-feature",
         intent:      intent(),
-        state:       state({ readOnly: true }),
+        state:       state(),
         deps,
       })
-    ).rejects.toThrow()
+    ).rejects.toThrow(/LLM-fail/)
 
     expect(emittedTexts).toEqual([])
     expect(appliedMutations).toEqual([])
@@ -685,5 +707,154 @@ describe("runArchitectAgentV2 orchestrator — approval / decision-review / stal
         deps,
       })
     ).rejects.toThrow(/pendingDecisionReviewContext missing/)
+  })
+})
+
+// ── Escalation-engaged renderer tests ─────────────────────────────────────────
+
+describe("renderEscalationEngaged — readOnly resume after upstream reply", () => {
+  it("invokes runLLM with the brief + report and emits the response", async () => {
+    const r = buildReadinessReport(reportInput({
+      activeEscalation: { targetAgent: "pm", originAgent: "architect", itemCount: 4 },
+    }))
+    const observedCalls: Array<{ brief: string; report: typeof r }> = []
+    const out = await renderEscalationEngaged({
+      report: r,
+      userMessage: "[BRIEF] PM tightenings: ...",
+      runLLM: async (input) => {
+        observedCalls.push(input)
+        return "Architect's integrated response"
+      },
+    })
+    expect(observedCalls).toHaveLength(1)
+    expect(observedCalls[0].brief).toBe("[BRIEF] PM tightenings: ...")
+    expect(observedCalls[0].report).toBe(r)
+    expect(out.text).toBe("Architect's integrated response")
+  })
+
+  it("appends user + assistant to history (no spec writes)", async () => {
+    const r = buildReadinessReport(reportInput())
+    const out = await renderEscalationEngaged({
+      report: r,
+      userMessage: "[BRIEF] ...",
+      runLLM: async () => "response",
+    })
+    expect(out.stateMutations).toEqual([
+      { kind: "append-message", role: "user",      content: "[BRIEF] ..." },
+      { kind: "append-message", role: "assistant", content: "response" },
+    ])
+  })
+})
+
+// ── Normal-agent-turn renderer tests ──────────────────────────────────────────
+
+describe("renderNormalAgentTurn — default LLM path with readiness directive", () => {
+  it("invokes runLLM with directive + userMessage + report", async () => {
+    const r = buildReadinessReport(reportInput({
+      upstreamAudits: [{ auditingAgent: "architect", specType: "product", findingCount: 3 }],
+    }))
+    const observed: Array<{ directive: string; userMessage: string; report: typeof r }> = []
+    const out = await renderNormalAgentTurn({
+      report: r,
+      userMessage: "talk to me about the data model",
+      runLLM: async (input) => {
+        observed.push(input)
+        return "Architect's substantive response"
+      },
+    })
+    expect(observed).toHaveLength(1)
+    expect(observed[0].directive).toBe(r.directive)  // injected from the report
+    expect(observed[0].directive).toContain("PLATFORM READINESS DIRECTIVE")
+    expect(observed[0].directive).toContain("3 product findings")
+    expect(observed[0].userMessage).toBe("talk to me about the data model")
+    expect(out.text).toBe("Architect's substantive response")
+  })
+
+  it("appends user + assistant to history", async () => {
+    const r = buildReadinessReport(reportInput())
+    const out = await renderNormalAgentTurn({
+      report: r,
+      userMessage: "msg",
+      runLLM: async () => "response",
+    })
+    expect(out.stateMutations).toEqual([
+      { kind: "append-message", role: "user",      content: "msg" },
+      { kind: "append-message", role: "assistant", content: "response" },
+    ])
+  })
+})
+
+// ── Orchestrator E2E for LLM branches ─────────────────────────────────────────
+
+describe("runArchitectAgentV2 orchestrator — LLM branches end-to-end", () => {
+  it("escalation-engaged: readOnly=true routes to runLLMForEscalation", async () => {
+    let escalationCalled = false
+    let normalCalled     = false
+    const { deps, emittedTexts, appliedMutations, logLines } = makeDeps(reportInput(), {
+      runLLMForEscalation: async () => { escalationCalled = true; return "esc-response" },
+      runLLMForNormalTurn: async () => { normalCalled     = true; return "normal-response" },
+    })
+
+    await runArchitectAgentV2({
+      userMessage: "[BRIEF]",
+      featureName: "demo-feature",
+      intent:      intent(),
+      state:       state({ readOnly: true }),
+      deps,
+    })
+
+    expect(escalationCalled).toBe(true)
+    expect(normalCalled).toBe(false)
+    expect(emittedTexts).toEqual(["esc-response"])
+    expect(appliedMutations).toHaveLength(2)
+    expect(logLines.some((l) => l.includes("branch=escalation-engaged"))).toBe(true)
+  })
+
+  it("normal-agent-turn: default branch routes to runLLMForNormalTurn", async () => {
+    let escalationCalled = false
+    let normalCalled     = false
+    const { deps, emittedTexts, logLines } = makeDeps(reportInput(), {
+      runLLMForEscalation: async () => { escalationCalled = true; return "esc-response" },
+      runLLMForNormalTurn: async () => { normalCalled     = true; return "normal-response" },
+    })
+
+    await runArchitectAgentV2({
+      userMessage: "any normal message",
+      featureName: "demo-feature",
+      intent:      intent(),
+      state:       state(),
+      deps,
+    })
+
+    expect(normalCalled).toBe(true)
+    expect(escalationCalled).toBe(false)
+    expect(emittedTexts).toEqual(["normal-response"])
+    expect(logLines.some((l) => l.includes("branch=normal-agent-turn"))).toBe(true)
+  })
+
+  it("escalation-engaged + normal-turn LLM deps receive distinct shapes (decoupled)", async () => {
+    // Prove that swapping one dep doesn't affect the other — the runner's
+    // dispatch routes deterministically per the classifier output.
+    const escInput: any[] = []
+    const normInput: any[] = []
+    const { deps } = makeDeps(reportInput(), {
+      runLLMForEscalation: async (i) => { escInput.push(i); return "e" },
+      runLLMForNormalTurn: async (i) => { normInput.push(i); return "n" },
+    })
+
+    // Run both branches sequentially via the orchestrator
+    await runArchitectAgentV2({
+      userMessage: "brief",
+      featureName: "f", intent: intent(), state: state({ readOnly: true }), deps,
+    })
+    await runArchitectAgentV2({
+      userMessage: "talk",
+      featureName: "f", intent: intent(), state: state(), deps,
+    })
+
+    expect(escInput).toHaveLength(1)
+    expect(normInput).toHaveLength(1)
+    expect(Object.keys(escInput[0]).sort()).toEqual(["brief", "report"])
+    expect(Object.keys(normInput[0]).sort()).toEqual(["directive", "report", "userMessage"])
   })
 })

@@ -337,12 +337,65 @@ export function renderOffTopicRedirect(params: {
   }
 }
 
-export function renderEscalationEngaged(): RenderedResponse {
-  throw new Error("[V2-NOT-IMPLEMENTED] renderEscalationEngaged — escalation-reply readOnly path; see AGENT_RUNNER_REWRITE_MAP.md cross-cutting section")
+// Renderer for the escalation-engaged branch (legacy readOnly path,
+// rewrite-map cross-cutting section). The architect resumes after an
+// upstream agent (PM or designer) has replied to its escalation
+// (escalationNotification is set). The dispatcher passes a self-
+// contained brief in `params.userMessage` (the PM/designer's reply +
+// the original escalation context); the architect's job is to integrate
+// it and propose next steps.
+//
+// Structural enforcer composition (orientation, prose-state, etc.) is
+// the production-wiring concern: Block E injects enforcer-wrapped
+// runFns into `deps.runLLMForEscalation`. The runner just invokes the
+// dep and surfaces the response. This keeps the runner testable in
+// isolation (mocked LLM dep) and lets A5 / Block E swap in real
+// enforcers without changing the runner's code.
+export async function renderEscalationEngaged(params: {
+  report:      ReadinessReport
+  userMessage: string
+  runLLM:      (input: { brief: string; report: ReadinessReport }) => Promise<string>
+}): Promise<RenderedResponse> {
+  const text = await params.runLLM({ brief: params.userMessage, report: params.report })
+  return {
+    text,
+    stateMutations: [
+      { kind: "append-message", role: "user",      content: params.userMessage },
+      { kind: "append-message", role: "assistant", content: text },
+    ],
+  }
 }
 
-export function renderNormalAgentTurn(): Promise<RenderedResponse> {
-  throw new Error("[V2-NOT-IMPLEMENTED] renderNormalAgentTurn — main LLM path with readiness directive; see AGENT_RUNNER_REWRITE_MAP.md cross-cutting post-run gates section")
+// Renderer for the normal-agent-turn branch (legacy main LLM path,
+// lines 3224 / 3236 / 3238). Default branch: full LLM run with the
+// readiness directive injected. Like escalation-engaged, structural
+// enforcer composition (hedge / prose-state / action-claims /
+// escalation-directive-contract) is the production-wiring concern;
+// `deps.runLLMForNormalTurn` receives an enforcer-wrapped runFn.
+//
+// V2's normal-agent-turn replaces the legacy post-run-override pattern
+// (which mutated the agent's prose AFTER the LLM call to align it with
+// platform-queued state — the failed prose-vs-state mismatch fix in
+// commit 959c604). In V2, the directive is INJECTED into the prompt
+// upfront so the LLM produces compliant prose; the structural enforcer
+// (when wired via deps in Block E) verifies and re-runs if needed.
+export async function renderNormalAgentTurn(params: {
+  report:      ReadinessReport
+  userMessage: string
+  runLLM:      (input: { directive: string; userMessage: string; report: ReadinessReport }) => Promise<string>
+}): Promise<RenderedResponse> {
+  const text = await params.runLLM({
+    directive:   params.report.directive,
+    userMessage: params.userMessage,
+    report:      params.report,
+  })
+  return {
+    text,
+    stateMutations: [
+      { kind: "append-message", role: "user",      content: params.userMessage },
+      { kind: "append-message", role: "assistant", content: text },
+    ],
+  }
 }
 
 // ── Main runner orchestration ─────────────────────────────────────────────────
@@ -389,6 +442,35 @@ export type RunArchV2Deps = {
   // re-audit-on-resume flows) accepts this same dep shape; PM and
   // designer V2 runners will follow the same pattern.
   readonly fetchCurrentDraft: (filePath: string, branchName: string) => Promise<string | null>
+
+  // LLM invocation for the escalation-engaged branch (readOnly resume after
+  // upstream agent's reply). Production wiring (Block E) injects an
+  // enforcer-wrapped runFn here — the orientation enforcer wraps the model
+  // call with bounded retry on missing orientation block. Shadow mode
+  // (A5) injects a no-op stub. Tests inject a deterministic mock.
+  //
+  // DESIGN-REVIEWED: LLM dep injection per Principle 12. (1) Scales because
+  // each call is per-feature-per-turn; the wrapper enforcers add bounded
+  // overhead (max-retries=1 default). (2) Owned by Block E wiring code,
+  // which composes the enforcer chain once per call. (3) Cross-cutting:
+  // every V2 runner with an LLM branch follows this same dep shape;
+  // PM and designer V2 will inject their own runLLMFor* functions.
+  readonly runLLMForEscalation: (input: {
+    brief:  string
+    report: ReadinessReport
+  }) => Promise<string>
+
+  // LLM invocation for the normal-agent-turn branch. Receives the readiness
+  // directive (built by buildReadinessReport, included in the report) plus
+  // the user message. Production wiring composes hedge / prose-state /
+  // action-claims / escalation-directive-contract enforcers around the
+  // raw model call.
+  readonly runLLMForNormalTurn: (input: {
+    directive:   string
+    userMessage: string
+    report:      ReadinessReport
+  }) => Promise<string>
+
   // Optional: structured logging hook (for shadow-mode dual-run + observability)
   readonly log?:              (line: string) => void
 }
@@ -481,10 +563,18 @@ export async function runArchitectAgentV2(params: RunArchV2Params): Promise<void
       })
       break
     case "escalation-engaged":
-      rendered = renderEscalationEngaged()
+      rendered = await renderEscalationEngaged({
+        report,
+        userMessage: params.userMessage,
+        runLLM:      params.deps.runLLMForEscalation,
+      })
       break
     case "normal-agent-turn":
-      rendered = await renderNormalAgentTurn()
+      rendered = await renderNormalAgentTurn({
+        report,
+        userMessage: params.userMessage,
+        runLLM:      params.deps.runLLMForNormalTurn,
+      })
       break
   }
 

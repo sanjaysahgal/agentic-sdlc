@@ -78,6 +78,8 @@ Source range: `interfaces/slack/handlers/message.ts:2596–~3245`.
 Five not-readiness-aware emissions found by A1 spike. Each row is a V2
 requirement.
 
+**STATUS: 7 of 7 branches implemented in `runtime/agents/runArchitectAgentV2.ts` (Block A4 step 5 — all stubs gone).** State-write branches (rows #1–#3) are pure renderers + orchestrator-side staleness check. State-query (row #5) emits `report.summary` directly. Off-topic (row #4) interleaves redirect with summary. Cross-cutting LLM branches (escalation-engaged + normal-agent-turn) call `deps.runLLMForEscalation` / `deps.runLLMForNormalTurn`; production wiring (Block E) injects enforcer-wrapped runFns. V2 is NOT yet wired into the dispatcher — production traffic continues through legacy `runArchitectAgent`. Block A5 wires shadow-mode dual-run; Block E cuts over.
+
 | # | Legacy line | Behavior | V2 strategy |
 |---|---|---|---|
 | 1 | 2628 | `pendingDecisionReview` confirm → spec saved, confirmation message posted | V2 emits via main path. The runner detects `state.pendingDecisionReview && isAffirmative(msg)`, performs the writeback, then calls `buildReadinessReport()` (the spec just changed; report reflects new state), renders an aggregate-aware confirmation including any newly-surfaced upstream findings if the post-save audit reveals them. Response is readiness-aware by construction. |
