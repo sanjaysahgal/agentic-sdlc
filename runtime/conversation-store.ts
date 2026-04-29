@@ -144,26 +144,96 @@ function persistConversationHistory(): void {
   }
 }
 
-function loadConversationState(): void {
+// Block D2 — exported for state-corruption recovery testing.
+// Pure parse/populate function (no file I/O); takes a raw JSON string,
+// returns a typed result. Malformed JSON, partial writes, and unknown
+// fields are all handled forward-compatibly: unknown fields are silently
+// ignored, parse errors return an empty result. The file-IO wrapper
+// `loadConversationState()` calls this with the contents of the on-disk
+// state file at startup. State-corruption recovery contract is asserted
+// in `tests/integration/state-corruption.test.ts`.
+export type ConversationStateLoadResult = {
+  readonly pendingEscalations:      ReadonlyArray<readonly [string, PendingEscalation]>
+  readonly pendingApprovals:        ReadonlyArray<readonly [string, PendingApproval]>
+  readonly pendingDecisionReviews:  ReadonlyArray<readonly [string, PendingDecisionReview]>
+  readonly escalationNotifications: ReadonlyArray<readonly [string, EscalationNotification]>
+  readonly threadAgents:            ReadonlyArray<readonly [string, string]>
+  readonly orientedUsers:           ReadonlyArray<string>
+  readonly parseError?:             string  // present when JSON.parse threw; empty result returned
+}
+
+const EMPTY_LOAD_RESULT: ConversationStateLoadResult = {
+  pendingEscalations:      [],
+  pendingApprovals:        [],
+  pendingDecisionReviews:  [],
+  escalationNotifications: [],
+  threadAgents:            [],
+  orientedUsers:           [],
+}
+
+export function parseConversationState(raw: string): ConversationStateLoadResult {
+  let parsed: unknown
   try {
-    const raw = fs.readFileSync(CONVERSATION_STATE_FILE, "utf-8")
-    const parsed = JSON.parse(raw) as {
-      pendingEscalations?: Record<string, PendingEscalation>
-      pendingApprovals?: Record<string, PendingApproval>
-      pendingDecisionReviews?: Record<string, PendingDecisionReview>
-      escalationNotifications?: Record<string, EscalationNotification>
-      threadAgents?: Record<string, string>
-      orientedUsers?: string[]
-    }
-    for (const [k, v] of Object.entries(parsed.pendingEscalations ?? {})) pendingEscalations.set(k, v)
-    for (const [k, v] of Object.entries(parsed.pendingApprovals ?? {})) pendingApprovals.set(k, v)
-    for (const [k, v] of Object.entries(parsed.pendingDecisionReviews ?? {})) pendingDecisionReviews.set(k, v)
-    for (const [k, v] of Object.entries(parsed.escalationNotifications ?? {})) escalationNotifications.set(k, v)
-    for (const [k, v] of Object.entries(parsed.threadAgents ?? {})) threadAgents.set(k, v)
-    for (const key of (parsed.orientedUsers ?? [])) orientedUsers.add(key)
+    parsed = JSON.parse(raw)
+  } catch (e) {
+    // Partial write recovery: a SIGTERM mid-write can leave a half-written
+    // JSON file. Return empty so the bot starts fresh rather than crashing
+    // in a loop. The on-disk file gets overwritten on the next persist.
+    return { ...EMPTY_LOAD_RESULT, parseError: String(e) }
+  }
+
+  // Defensive: if the parsed value is not an object, treat as empty.
+  // Forward-compat: unknown top-level fields are silently ignored
+  // (we read only the fields we know about).
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return EMPTY_LOAD_RESULT
+  }
+  const obj = parsed as {
+    pendingEscalations?:      Record<string, PendingEscalation>
+    pendingApprovals?:        Record<string, PendingApproval>
+    pendingDecisionReviews?:  Record<string, PendingDecisionReview>
+    escalationNotifications?: Record<string, EscalationNotification>
+    threadAgents?:            Record<string, string>
+    orientedUsers?:           string[]
+  }
+
+  // Defensive coercion: each section is treated as empty if absent or
+  // malformed (e.g. someone hand-edited the file). Keeps load()
+  // monotonic — partial corruption of one section doesn't drop others.
+  const safeEntries = <T>(v: unknown): Array<[string, T]> => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return []
+    return Object.entries(v as Record<string, T>)
+  }
+  const safeArray = <T>(v: unknown): T[] => Array.isArray(v) ? v as T[] : []
+
+  return {
+    pendingEscalations:      safeEntries<PendingEscalation>(obj.pendingEscalations),
+    pendingApprovals:        safeEntries<PendingApproval>(obj.pendingApprovals),
+    pendingDecisionReviews:  safeEntries<PendingDecisionReview>(obj.pendingDecisionReviews),
+    escalationNotifications: safeEntries<EscalationNotification>(obj.escalationNotifications),
+    threadAgents:            safeEntries<string>(obj.threadAgents),
+    orientedUsers:           safeArray<string>(obj.orientedUsers),
+  }
+}
+
+function loadConversationState(): void {
+  let raw: string
+  try {
+    raw = fs.readFileSync(CONVERSATION_STATE_FILE, "utf-8")
   } catch {
     // File doesn't exist yet — start fresh
+    return
   }
+  const result = parseConversationState(raw)
+  if (result.parseError) {
+    console.log(`[STORE] loadConversationState: parse error — starting fresh: ${result.parseError.slice(0, 200)}`)
+  }
+  for (const [k, v] of result.pendingEscalations)      pendingEscalations.set(k, v)
+  for (const [k, v] of result.pendingApprovals)        pendingApprovals.set(k, v)
+  for (const [k, v] of result.pendingDecisionReviews)  pendingDecisionReviews.set(k, v)
+  for (const [k, v] of result.escalationNotifications) escalationNotifications.set(k, v)
+  for (const [k, v] of result.threadAgents)            threadAgents.set(k, v)
+  for (const key of result.orientedUsers)              orientedUsers.add(key)
 }
 
 // Disable file persistence for integration tests — prevents test cleanup from wiping production state files.
