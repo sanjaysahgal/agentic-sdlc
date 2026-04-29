@@ -2681,36 +2681,7 @@ async function runArchitectAgent(params: {
     // "Where are we" overview — fast path, no context load or Sonnet call needed.
     const isStateQuery = isCheckInArch || await isSpecStateQuery(userMessage)
     if (isStateQuery) {
-      // Upstream-aware gate (2026-04-29): the fast path's "Nothing blocking"
-      // summary is built from the engineering draft alone and ignores upstream
-      // PM/Design gaps + active escalations. That made the manual-test
-      // 2026-04-27 regression possible — same state, different turn, same
-      // wrong "Nothing blocking" answer. If upstream has gaps OR an
-      // escalation is active, fall through to the LLM-agent path which
-      // injects the [READINESS] directive (Principle 11). Cheap: only the
-      // deterministic auditors run here, no LLM call.
-      const { paths } = loadWorkspaceConfig()
-      const pmSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
-      const designSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.design.md`
-      const [pmSpecForGate, designSpecForGate] = await Promise.all([
-        readFile(pmSpecPath, "main").catch(() => null),
-        readFile(designSpecPath, "main").catch(() => null),
-      ])
-      const pmFindingsForGate = pmSpecForGate ? auditPmSpec(pmSpecForGate).findings : []
-      const designFindingsForGate = designSpecForGate ? auditDesignSpec(designSpecForGate, { targetFormFactors: [] }).findings : []
-      const pendingEscForGate  = getPendingEscalation(featureKey(featureName))
-      const escNotifForGate    = getEscalationNotification(featureKey(featureName))
-      const upstreamHasGaps =
-        pmFindingsForGate.length > 0 ||
-        designFindingsForGate.length > 0 ||
-        pendingEscForGate !== null ||
-        escNotifForGate !== null
-      console.log(`[STATE-QUERY] architect feature=${featureName} pm=${pmFindingsForGate.length} design=${designFindingsForGate.length} esc=${pendingEscForGate?.targetAgent ?? escNotifForGate?.targetAgent ?? "none"} fastPath=${!upstreamHasGaps}`)
-      if (upstreamHasGaps) {
-        // Don't return — fall through. The LLM-agent path below will run
-        // with the readiness directive injected, producing an honest summary.
-      } else {
-      const { githubOwner, githubRepo } = loadWorkspaceConfig()
+      const { paths, githubOwner, githubRepo } = loadWorkspaceConfig()
       const branchName = `spec/${featureName}-engineering`
       const engineeringDraftPath = `${paths.featuresRoot}/${featureName}/${featureName}.engineering.md`
       const engineeringDraft = await readFile(engineeringDraftPath, branchName)
@@ -2759,7 +2730,6 @@ async function runArchitectAgent(params: {
       appendMessage(featureKey(featureName), { role: "assistant", content: msg })
       await update(msg)
       return
-      } // close upstream-clean else
     }
   }
 
