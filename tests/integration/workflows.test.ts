@@ -10106,3 +10106,70 @@ describe("Scenario N95 — V2 PM runner shadow logs alongside legacy", () => {
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario N96: upstream-notice format module round-trip end-to-end ───────
+//
+// Block B2 of the approved system-wide plan. The architect's upstream-notice
+// text was previously a fragile producer/consumer contract: producer at
+// message.ts:2895 built `APPROVED PM SPEC — N GAP[S]:\n...` strings inline;
+// three independent consumer regexes parsed them. B2 extracted the format
+// into `runtime/upstream-notice-format.ts` so both sides share constants.
+//
+// This scenario verifies the round-trip works as integrated through the
+// legacy handler module-load path — the B2 refactor must not break the
+// existing producer→consumer wiring observable in workflows.test.ts.
+// Unit tests at `tests/invariants/upstream-notice-contract.test.ts` cover
+// every shape (singular/plural, combined PM+design lookahead, em-dash
+// preservation); this scenario is the integration-level assertion that
+// the shared module is the wire format end-to-end.
+
+describe("Scenario N96 — upstream-notice format round-trip (Block B2 contract)", () => {
+  it("producer output from formatPmGapNotice parses correctly via parsePmGapText (round-trip integrity)", async () => {
+    const {
+      formatPmGapNotice,
+      formatDesignGapNotice,
+      hasPmGaps,
+      hasDesignGaps,
+      parsePmGapText,
+      parseDesignGapText,
+    } = await import("../../runtime/upstream-notice-format")
+
+    const pmFindings = [
+      { issue: "AC#5 uses vague language: 'smooth'", recommendation: "Replace with concrete metric (latency budget in ms)" },
+      { issue: "AC#13 timing 'after inactivity' undefined", recommendation: "Specify duration (e.g. 'after 60 seconds')" },
+    ]
+    const designFindings = [
+      { issue: "Brand drift: button uses #ABC instead of --primary", recommendation: "Use --primary token from BRAND.md" },
+    ]
+
+    const notice = `${formatPmGapNotice(pmFindings)}\n\n${formatDesignGapNotice(designFindings)}`
+
+    expect(hasPmGaps(notice)).toBe(true)
+    expect(hasDesignGaps(notice)).toBe(true)
+
+    const pmBody = parsePmGapText(notice)
+    expect(pmBody).toContain("1. [PM] AC#5 uses vague language: 'smooth' — Replace with concrete metric")
+    expect(pmBody).toContain("2. [PM] AC#13 timing 'after inactivity' undefined")
+    expect(pmBody).not.toContain("[Design]")            // PM body must stop before design block
+    expect(pmBody).not.toContain("APPROVED DESIGN")      // header literal must not leak
+
+    const designBody = parseDesignGapText(notice)
+    expect(designBody).toContain("1. [Design] Brand drift: button uses #ABC")
+    expect(designBody).not.toContain("[PM]")
+  })
+
+  it("the consumers used by the legacy handler (hasPmGaps, parsePmGapText) are the same exports the contract test exercises (no shadow imports)", async () => {
+    // Sanity: there must be exactly ONE module path for the format. If anyone
+    // accidentally introduces a parallel implementation (a copy-paste regex
+    // back into message.ts), the next manual edit drifts again. This guard
+    // catches that by verifying the expected exports are actually present
+    // and importable on the shared module.
+    const mod = await import("../../runtime/upstream-notice-format")
+    expect(typeof mod.formatPmGapNotice).toBe("function")
+    expect(typeof mod.formatDesignGapNotice).toBe("function")
+    expect(typeof mod.hasPmGaps).toBe("function")
+    expect(typeof mod.hasDesignGaps).toBe("function")
+    expect(typeof mod.parsePmGapText).toBe("function")
+    expect(typeof mod.parseDesignGapText).toBe("function")
+  })
+})

@@ -31,6 +31,14 @@ import { logShadowProposalForFeature } from "../../../runtime/routing/shadow"
 import { buildReadinessReport } from "../../../runtime/readiness-builder"
 import { parseQuestionItems } from "../../../runtime/routing/hold-message-renderer"
 import { shadowArchitectV2, shadowDesignerV2, shadowPmV2 } from "../../../runtime/agents/shadow"
+import {
+  formatPmGapNotice,
+  formatDesignGapNotice,
+  hasPmGaps,
+  hasDesignGaps,
+  parsePmGapText,
+  parseDesignGapText,
+} from "../../../runtime/upstream-notice-format"
 
 // Used by the readiness directive to surface the active escalation's item count
 // derived from `pendingEscalation.question` / `escalationNotification.question`
@@ -2890,14 +2898,13 @@ async function runArchitectAgent(params: {
       }
     }
     const archFindings: string[] = []
-    if (pmAllFindings.length > 0) {
-      const lines = pmAllFindings.map((f, i) => `${i + 1}. [PM] ${f.issue} — ${f.recommendation}`).join("\n")
-      archFindings.push(`APPROVED PM SPEC — ${pmAllFindings.length} GAP${pmAllFindings.length === 1 ? "" : "S"}:\n${lines}`)
-    }
-    if (designAllFindings.length > 0) {
-      const lines = designAllFindings.map((f, i) => `${i + 1}. [Design] ${f.issue} — ${f.recommendation}`).join("\n")
-      archFindings.push(`APPROVED DESIGN SPEC — ${designAllFindings.length} GAP${designAllFindings.length === 1 ? "" : "S"}:\n${lines}`)
-    }
+    // Block B2: format strings live in `runtime/upstream-notice-format.ts` —
+    // single source of truth. Producer + consumer share the same constants;
+    // round-trip is asserted by `tests/invariants/upstream-notice-contract.test.ts`.
+    const pmNotice = formatPmGapNotice(pmAllFindings)
+    if (pmNotice) archFindings.push(pmNotice)
+    const designNotice = formatDesignGapNotice(designAllFindings)
+    if (designNotice) archFindings.push(designNotice)
     if (archFindings.length > 0) {
       upstreamNoticeArch = `\n\n[INTERNAL — Upstream spec gaps you found during your review. Present these as YOUR findings to the user, never as "the platform's". Follow your "How you open every conversation" rules to determine WHEN to surface them (orientation turns: do not surface; substantive turns: assert escalation plan per PM-first ordering).\n${archFindings.join("\n\n")}]`
     } else {
@@ -3128,8 +3135,11 @@ async function runArchitectAgent(params: {
   // architect did NOT call offer_upstream_revision, auto-trigger escalation.
   // PM-first ordering: if BOTH PM and design gaps exist, only escalate PM.
   // Design gaps wait until PM gaps are resolved.
-  const pmGapsInNotice = upstreamNoticeArch.includes("APPROVED PM SPEC")
-  const designGapsInNotice = upstreamNoticeArch.includes("APPROVED DESIGN SPEC")
+  // Block B2: detection + extraction go through `runtime/upstream-notice-format.ts`
+  // (single source of truth shared with the producer above). No more inline regex
+  // literals at the consumer sites — the contract is enforced structurally.
+  const pmGapsInNotice = hasPmGaps(upstreamNoticeArch)
+  const designGapsInNotice = hasDesignGaps(upstreamNoticeArch)
   const archCalledDesignEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "design")
 
   // PM-first conversational enforcement (BACKLOG: "Architect prose-vs-state
@@ -3141,8 +3151,7 @@ async function runArchitectAgent(params: {
   // conversational-layer gap that the existing finalize-time gate alone left
   // open.
   if (!readOnly && pmGapsInNotice && archCalledDesignEscalation) {
-    const pmGapRegex = /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
-    const pmGapText = upstreamNoticeArch.match(pmGapRegex)?.[1]?.trim()
+    const pmGapText = parsePmGapText(upstreamNoticeArch)
     if (pmGapText) {
       console.log(`[ESCALATION-GATE] architect post-run: PM-first override — agent called offer_upstream_revision(design) but PM gaps must close first. Re-queuing target=pm.`)
       clearPendingEscalation(featureKey(featureName))
@@ -3155,16 +3164,14 @@ async function runArchitectAgent(params: {
 
     if (pmGapsInNotice && !archCalledPmEscalation) {
       // PM gaps take priority — escalate PM first, design waits
-      const pmGapRegex = /APPROVED PM SPEC — \d+ GAPS?:\n([\s\S]*?)(?=APPROVED DESIGN|$)/
-      const pmGapText = upstreamNoticeArch.match(pmGapRegex)?.[1]?.trim()
+      const pmGapText = parsePmGapText(upstreamNoticeArch)
       if (pmGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: PM gaps in context but agent did not call offer_upstream_revision(pm) — auto-triggering`)
         setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       }
     } else if (designGapsInNotice && !archCalledDesignEscalation) {
       // No PM gaps (or already escalated) — now check design gaps
-      const designGapRegex = /APPROVED DESIGN SPEC — \d+ GAPS?:\n([\s\S]*?)$/
-      const designGapText = upstreamNoticeArch.match(designGapRegex)?.[1]?.trim()
+      const designGapText = parseDesignGapText(upstreamNoticeArch)
       if (designGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: design gaps in context but agent did not call offer_upstream_revision(design) — auto-triggering`)
         setPendingEscalation(featureKey(featureName), { targetAgent: "design", question: designGapText, designContext: "" })

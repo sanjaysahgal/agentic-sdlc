@@ -95,6 +95,25 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Phase enum extension — rename `complete` → `spec-complete`; add coding/review/deployment phases (must land before Block F2 / Coder agent)
+
+**Why this exists:** today's `complete` phase in `docs/ROUTING_STATE_MACHINE.md` and `runtime/routing/types.ts` means "all three specs approved on main, no drafts/pending state" — i.e. *spec-complete*, not feature-complete in the broader product sense. The terminology will mislead the moment we extend the lifecycle into engineering execution: when a Coder agent starts producing a PR, the feature is no longer "spec-complete" alone — it has additional state (PR open, PR merged, deploy pending, deployed). The `complete` name becomes wrong.
+
+**The change:**
+- Rename phase value `complete` → `spec-complete` everywhere (enum, switch arms, fixtures, decision-table rows in §8 of the spec, user-facing prose like "Feature is complete. Use `/pm`...").
+- Extend the phase enum (forward-compatible placeholders, can stay un-implemented until F2 ships): `coding-in-progress`, `code-complete`, `review-in-progress`, `reviewed`, `deployment-pending`, `deployed`. Each new phase has a deterministic GitHub-derivable signal (PR exists / PR merged / deploy succeeded) and a canonical agent (Coder, Reviewer).
+- Update `phase-detector.ts` to keep returning `spec-complete` for the existing predicate (no behavior change today); the new phases are no-op placeholders until F2 wires them.
+- Update `resolveAgent()` mapping to handle the new phases (Coder for `coding-in-progress`, Reviewer for `review-in-progress`, etc.) — these stay unreachable until F2.
+- User-facing prose in the consultant template needs to change from "Feature is complete" to "All specs are approved" (or similar) so the wording is honest.
+
+**Why before F2:** the rename is a one-day pure refactor today (string replace + enum extension + test-fixture updates). After F2 ships, every new phase reference would have to be split during the rename — cheap now, expensive later. The rename also clarifies the Block E cutover semantics: V2 cutover is about *spec-completion correctness*, not about feature completion in the broader product sense.
+
+**Scope boundary:** this entry adds the phase taxonomy and renames the existing one; it does NOT implement Coder/Reviewer behavior, which is Block F2/F3 + the M1 scaffold. The new phase values are placeholders gated by the deterministic predicates that F2 wires up.
+
+**Priority:** P1 — enables F2 cleanly. Schedule before Block E cutover so the cutover ships with the right names baked in (avoids a follow-on rename that affects the V2 dispatcher).
+
+---
+
 ### ⚠️ SUPERSEDED — Surgical production patches retired by Block A of the system-wide plan
 
 The three entries below are surgical patches that shipped during the wart-fix arc. Each is retired by Block A (single-path V2 agent runners) of the approved system-wide plan. They remain in the legacy code but are unreachable post-Block-E cutover. **Per the user directive, no further surgical patches in this scope ship. The bugs persist in production until V2 lands; the durable answer is the V2 rewrite, not more patches.**
