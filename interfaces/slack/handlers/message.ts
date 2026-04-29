@@ -26,8 +26,18 @@ import { patchEngineeringSpecWithDecision } from "../../../runtime/engineering-s
 import { sanitizePmSpecDraft } from "../../../runtime/pm-spec-sanitizer"
 import { handlePmTool, handleArchitectTool, handleDesignTool } from "../../../runtime/tool-handlers"
 import type { ToolHandlerContext, PmToolDeps, ArchitectToolDeps, ArchitectToolState, DesignToolDeps, DesignToolCtx, DesignToolState } from "../../../runtime/tool-handlers"
-import { featureKey, threadKey } from "../../../runtime/routing/types"
+import { featureKey, threadKey, type AgentId } from "../../../runtime/routing/types"
 import { logShadowProposalForFeature } from "../../../runtime/routing/shadow"
+import { buildReadinessReport } from "../../../runtime/readiness-builder"
+import { parseQuestionItems } from "../../../runtime/routing/hold-message-renderer"
+
+// Used by the readiness directive to surface the active escalation's item count
+// derived from `pendingEscalation.question` / `escalationNotification.question`
+// (the conversation-store normalizes inline numbered items to one-per-line).
+function countNumberedItems(question: string | undefined): number {
+  if (!question) return 0
+  return parseQuestionItems(question).count
+}
 
 const { paths: workspacePaths, targetFormFactors } = loadWorkspaceConfig()
 
@@ -58,6 +68,19 @@ const phaseEntryAuditCache = new Map<string, string>()
 // action menu on cache hits without re-parsing the notice string.
 const designReadinessFindingsCache = new Map<string, Array<{ issue: string; recommendation: string }>>()
 
+// Phase 5 wart fix — parallel cache storing the structured count payload that feeds the
+// readiness directive (`buildReadinessReport` in runtime/readiness-builder.ts). Each phase
+// entry caches both the formatted notice (existing string cache) AND these counts so the
+// directive can be reconstructed on cache hit without re-running audits. Keyed identically
+// to the corresponding `phaseEntryAuditCache` entry.
+type ReadinessCounts = {
+  pmFindingCount?:     number  // architect path only
+  designFindingCount?: number  // architect path only (architect's view of design spec) OR designer's-own-spec readiness
+  ownFindingCount:     number  // architect: engineering-spec; designer: design-spec
+  ownStatus:          "ready" | "dirty" | "missing"
+}
+const readinessCountsCache = new Map<string, ReadinessCounts>()
+
 // Cache for LLM render ambiguity results from auditSpecRenderAmbiguity.
 // Populated by state queries; consumed by subsequent regular-path messages without extra LLM calls.
 // Key: `render-ambiguity:${featureName}:${specFingerprint}` — invalidates automatically on spec edits.
@@ -75,6 +98,7 @@ export function clearPhaseAuditCaches(): void {
   phaseEntryAuditCache.clear()
   designReadinessFindingsCache.clear()
   renderAmbiguitiesCache.clear()
+  readinessCountsCache.clear()
 }
 
 
@@ -1588,6 +1612,7 @@ async function runDesignAgent(params: {
   // LLM rubric runs in parallel as @enrichment — additional findings only, never the sole gate.
   // Content-addressed cache on the combined result (deterministic + enrichment).
   let upstreamNoticeDesign = ""
+  let designUpstreamPmCount = 0
   const pmSpecPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const pmSpecContent = await readFile(pmSpecPath, "main").catch(() => null)
 
@@ -1596,6 +1621,7 @@ async function runDesignAgent(params: {
     const cacheKey = `design:${featureName}:${fp}`
     if (phaseEntryAuditCache.has(cacheKey)) {
       upstreamNoticeDesign = phaseEntryAuditCache.get(cacheKey)!
+      designUpstreamPmCount = readinessCountsCache.get(cacheKey)?.pmFindingCount ?? 0
     } else {
       // Primary: deterministic audit (instant, no API call)
       const deterministicResult = auditPmSpec(pmSpecContent)
@@ -1622,7 +1648,13 @@ async function runDesignAgent(params: {
       } else {
         upstreamNoticeDesign = ""
       }
+      designUpstreamPmCount = allFindings.length
       phaseEntryAuditCache.set(cacheKey, upstreamNoticeDesign)
+      readinessCountsCache.set(cacheKey, {
+        pmFindingCount:  designUpstreamPmCount,
+        ownFindingCount: 0,
+        ownStatus:       "missing",
+      })
     }
   }
 
@@ -1807,7 +1839,44 @@ async function runDesignAgent(params: {
   if (fixIntent.isFixAll) {
     console.log(`[FIX-INTENT] fixAllNotice=${fixAllNotice ? "GENERATED (" + fixAllNotice.length + " chars)" : "EMPTY — no items to fix"}`)
   }
-  let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice
+  // Phase 5 wart fix — designer-readiness directive (cross-agent parity with the architect
+  // path; same `buildReadinessReport` builder). Designer's upstream is just PM. Injected
+  // unconditionally on non-readOnly turns; suppresses on the escalation-reply readOnly path
+  // where the brief carries readiness context already.
+  let designReadinessDirective = ""
+  if (!readOnly) {
+    const fkDesign = featureKey(featureName)
+    const pendingEscD      = getPendingEscalation(fkDesign)
+    const escNotificationD = getEscalationNotification(fkDesign)
+    const activeRawD = pendingEscD ?? escNotificationD
+    const activeEscD = activeRawD
+      ? {
+          targetAgent: (activeRawD.targetAgent === "design" ? "ux-design" : activeRawD.targetAgent) as AgentId,
+          originAgent: ((escNotificationD?.originAgent === "design" ? "ux-design" : escNotificationD?.originAgent) ?? "ux-design") as AgentId,
+          itemCount:   countNumberedItems(activeRawD.question),
+          summary:     pendingEscD ? "see thread above" : "@mention posted",
+        }
+      : null
+    const designOwnStatus: "ready" | "dirty" | "missing" =
+      !designDraftContent ? "missing" :
+      designReadinessFindings.length > 0 ? "dirty" :
+      "ready"
+    const designReport = buildReadinessReport({
+      callingAgent: "ux-design",
+      featureName,
+      ownSpec: {
+        specType:     "design",
+        status:       designOwnStatus,
+        findingCount: designReadinessFindings.length,
+      },
+      upstreamAudits: [
+        { auditingAgent: "ux-design", specType: "product", findingCount: designUpstreamPmCount },
+      ],
+      activeEscalation: activeEscD,
+    })
+    designReadinessDirective = `\n\n${designReport.directive}`
+  }
+  let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice + designReadinessDirective
   const systemPrompt = buildDesignSystemBlocks(context, featureName, readOnly)
 
   await update("_UX Designer is thinking..._")
@@ -2677,6 +2746,8 @@ async function runArchitectAgent(params: {
   // Audits both upstream specs in parallel using content-addressed cache.
   // Cache invalidates automatically when either upstream spec is manually edited mid-phase.
   let upstreamNoticeArch = ""
+  let archUpstreamPmCount = 0
+  let archUpstreamDesignCount = 0
   const pmSpecPathArch = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`
   const designSpecPathArch = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.design.md`
   const [pmSpecContentArch, designSpecContentArch] = await Promise.all([
@@ -2686,6 +2757,9 @@ async function runArchitectAgent(params: {
   const archCacheKey = `arch:${featureName}:${specFingerprint(pmSpecContentArch ?? "")}:${specFingerprint(designSpecContentArch ?? "")}`
   if (phaseEntryAuditCache.has(archCacheKey)) {
     upstreamNoticeArch = phaseEntryAuditCache.get(archCacheKey)!
+    const cached = readinessCountsCache.get(archCacheKey)
+    archUpstreamPmCount     = cached?.pmFindingCount     ?? 0
+    archUpstreamDesignCount = cached?.designFindingCount ?? 0
   } else {
     // Principle 11: deterministic audits are the PRIMARY gate. LLM rubric is @enrichment.
     // Primary: instant deterministic checks (same input = same output)
@@ -2736,13 +2810,23 @@ async function runArchitectAgent(params: {
     } else {
       upstreamNoticeArch = ""
     }
+    archUpstreamPmCount     = pmAllFindings.length
+    archUpstreamDesignCount = designAllFindings.length
     phaseEntryAuditCache.set(archCacheKey, upstreamNoticeArch)
+    readinessCountsCache.set(archCacheKey, {
+      pmFindingCount:     archUpstreamPmCount,
+      designFindingCount: archUpstreamDesignCount,
+      ownFindingCount:    0,
+      ownStatus:          "missing",  // own count is tracked under archPhaseCacheKey below
+    })
   }
 
   // Always-on engineering spec completeness audit — runs on every architect agent message.
   // Content-addressed cache on spec fingerprint: any edit to the draft invalidates automatically.
   // Principle 7: this check runs always, not when the user asks a readiness-adjacent phrase.
   let archReadinessNotice = ""
+  let archOwnEngCount = 0
+  let archOwnStatus: "ready" | "dirty" | "missing" = "missing"
   const engSpecDraftPath = `${workspacePaths.featuresRoot}/${featureName}/${featureName}.engineering.md`
   const engDraftContent = await readFile(engSpecDraftPath, `spec/${featureName}-engineering`).catch(() => null)
 
@@ -2756,6 +2840,9 @@ async function runArchitectAgent(params: {
     const archPhaseCacheKey = `arch-phase:${featureName}:${efp}`
     if (phaseEntryAuditCache.has(archPhaseCacheKey)) {
       archReadinessNotice = phaseEntryAuditCache.get(archPhaseCacheKey)!
+      const cached = readinessCountsCache.get(archPhaseCacheKey)
+      archOwnEngCount = cached?.ownFindingCount ?? 0
+      archOwnStatus   = cached?.ownStatus       ?? "missing"
     } else {
       // Principle 11: deterministic audit is the PRIMARY gate for engineering readiness.
       const engDeterministic = auditEngineeringSpec(engDraftContent)
@@ -2778,10 +2865,18 @@ async function runArchitectAgent(params: {
       if (engMerged.length > 0) {
         const findingLines = engMerged.map((f, i) => `${i + 1}. ${f.issue} — ${f.recommendation}`).join("\n")
         archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: ${engMerged.length} gap${engMerged.length === 1 ? "" : "s"} blocking implementation handoff. These are YOUR findings from reviewing the spec. Follow your "How you open every conversation" rules to determine WHEN to surface them.\n${findingLines}]`
+        archOwnStatus    = "dirty"
+        archOwnEngCount  = engMerged.length
       } else if (engDeterministic.ready && (archAuditResult?.ready ?? true)) {
         archReadinessNotice = `\n\n[INTERNAL — Engineering readiness: Spec passed all rubric criteria. You may confirm the spec is implementation-ready when asked.]`
+        archOwnStatus    = "ready"
+        archOwnEngCount  = 0
       }
       phaseEntryAuditCache.set(archPhaseCacheKey, archReadinessNotice)
+      readinessCountsCache.set(archPhaseCacheKey, {
+        ownFindingCount: archOwnEngCount,
+        ownStatus:       archOwnStatus,
+      })
     }
   }
 
@@ -2812,9 +2907,47 @@ async function runArchitectAgent(params: {
 
   // Suppress upstream notices on orientation turns — architect orients first, gaps come next turn.
   const archNotices = readOnly ? "" : isOrientationTurn ? "" : (upstreamNoticeArch + archReadinessNotice + designAssumptionsNotice)
+
+  // Phase 5 wart fix — architect-readiness directive (BACKLOG: "Architect readiness messaging
+  // must reflect full upstream chain state — P14/P15 enforcement gap"). Deterministic
+  // structural directive built from the same audit results the existing notices use, but
+  // injected UNCONDITIONALLY (including on orientation turns). Closes Turn-A vs Turn-B
+  // divergence — same state must produce the same readiness numbers in the response,
+  // regardless of user phrasing or orientation status (Principle 11). Suppressed only on
+  // readOnly invocations (escalation reply context — the brief carries readiness already).
+  let archReadinessDirective = ""
+  if (!readOnly) {
+    const fkArch = featureKey(featureName)
+    const pendingEsc      = getPendingEscalation(fkArch)
+    const escNotification = getEscalationNotification(fkArch)
+    const activeRaw = pendingEsc ?? escNotification
+    const activeEsc = activeRaw
+      ? {
+          targetAgent: (activeRaw.targetAgent === "design" ? "ux-design" : activeRaw.targetAgent) as AgentId,
+          originAgent: ((escNotification?.originAgent === "design" ? "ux-design" : escNotification?.originAgent) ?? "architect") as AgentId,
+          itemCount:   countNumberedItems(activeRaw.question),
+          summary:     pendingEsc ? "see thread above" : "@mention posted",
+        }
+      : null
+    const report = buildReadinessReport({
+      callingAgent: "architect",
+      featureName,
+      ownSpec: {
+        specType:     "engineering",
+        status:       archOwnStatus,
+        findingCount: archOwnEngCount,
+      },
+      upstreamAudits: [
+        { auditingAgent: "architect", specType: "product", findingCount: archUpstreamPmCount },
+        { auditingAgent: "architect", specType: "design",  findingCount: archUpstreamDesignCount },
+      ],
+      activeEscalation: activeEsc,
+    })
+    archReadinessDirective = `\n\n${report.directive}`
+  }
   const enrichedUserMessageArch = readOnly
     ? userMessage  // escalation brief is already complete
-    : buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices
+    : buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsArch, priorContext: priorContextArch }) + archNotices + archReadinessDirective
   const systemPrompt = buildArchitectSystemBlocks(context, featureName, readOnly)
 
   await update("_Architect is thinking..._")

@@ -58,9 +58,11 @@ The platform must scale to 10+ agents (Coder, Reviewer, future) and to multi-ten
 
 ---
 
-### Architect readiness messaging must reflect full upstream chain state — P14/P15 enforcement gap (2026-04-27)
+### ✅ Architect readiness messaging must reflect full upstream chain state — P14/P15 enforcement gap (2026-04-27, FIXED 2026-04-28)
 
-**Priority: P0 — load-bearing trust violation surfaced during Phase 3 manual testing. Lands as part of Phase 5 wart fixes (separate from routing invariants but same flavor of "system says X, but X isn't true").**
+**Status: FIXED (2026-04-28)** — `runtime/readiness-builder.ts` produces a deterministic structural directive that the architect (and designer) receives unconditionally on every non-readOnly turn. Same state ⇒ same numbers, regardless of user phrasing or orientation status (Principle 11). Cross-agent parity (Principle 15): same builder is wired into both architect and designer paths. 30 builder tests cover every state combo (ready / dirty-own / dirty-upstream / escalation-active / ready-pending-approval), label correctness, pluralization, and the canonical regression case from the manual test on 2026-04-27. Production wiring: `interfaces/slack/handlers/message.ts` adds `readinessCountsCache` (parallel to `phaseEntryAuditCache`) holding the structured count payload; `archReadinessDirective` and `designReadinessDirective` are appended to the agent context unconditionally so the agent can never minimize the readiness numbers based on user phrasing. Suppressed only on `readOnly` invocations (escalation-reply context where the brief carries readiness already). Validation post-fix: re-run the manual test 2026-04-27 — both Turn A (`/architect hi`) and Turn B (`Hi, I want to work on this feature`) now receive the same directive, so the agent's response can no longer say "Nothing blocking" when upstream gaps + active escalation exist.
+
+**Priority: P0 — load-bearing trust violation surfaced during Phase 3 manual testing. Landed as part of Phase 5 wart fixes (separate from routing invariants but same flavor of "system says X, but X isn't true").**
 
 The architect's always-on `archReadinessNotice` runs `auditPhaseCompletion(buildEngineeringSpecRubric)` against the engineering spec content only — it checks engineering completeness, NOT the full upstream chain (PM spec, Design spec). The upstream-spec audits (`auditPmSpec`, `auditDesignSpec`) only fire at `handleFinalizeEngineeringSpec` time. So when the architect says "Nothing blocking — you can review and approve when ready," it can be silently incorrect: the engineering spec is internally complete, but the upstream chain has unresolved findings that will block finalization.
 

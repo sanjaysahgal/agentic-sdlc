@@ -9462,3 +9462,62 @@ describe("Scenario N75 — Standard design path emits branch=confirmed-design lo
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario N87: Architect-readiness directive injected unconditionally ───
+//
+// Closes the load-bearing trust violation surfaced by manual testing
+// 2026-04-27 (BACKLOG: "Architect readiness messaging must reflect full
+// upstream chain state — P14/P15 enforcement gap"). Pre-fix, the architect
+// said "Nothing blocking" on Turn A and "4 PM-scope gaps + 41 design-scope
+// gaps" on Turn B with identical state — a Principle 11 violation.
+//
+// Fix: runtime/readiness-builder.ts produces a deterministic structural
+// directive injected into the architect's user message on every non-readOnly
+// turn, including orientation turns. This test verifies the directive
+// reaches the agent's prompt verbatim — the LLM cannot minimize the report
+// because the directive specifies the exact counts to surface.
+
+describe("Scenario N87 — Architect-readiness directive injected on every non-readOnly turn", () => {
+  const THREAD = "workflow-n87"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPhaseAuditCaches()
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+  })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
+
+  it("architect path appends a PLATFORM READINESS DIRECTIVE to the user message", async () => {
+    // Engineering draft exists so the readiness audit fires.
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Acceptance Criteria\n1. AC#1\n").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    // Classifier preludes + the agent's response.
+    mockAnthropicCreate
+      .mockResolvedValue({ stop_reason: "end_turn", content: [{ type: "text", text: "Architect responding." }] })
+
+    const params = makeParams(THREAD, "feature-onboarding", "Hi, where are we on this feature?")
+    await handleFeatureChannelMessage(params)
+
+    // Find the runAgent call — the user message contains the directive.
+    const agentCall = mockAnthropicCreate.mock.calls.find((c: any[]) =>
+      c[0]?.messages?.some((m: any) => m.role === "user" && typeof m.content === "string" && m.content.includes("PLATFORM READINESS DIRECTIVE"))
+    )
+    expect(agentCall, "expected runAgent invocation to carry the readiness directive in the user message").toBeDefined()
+
+    const userMsg = agentCall![0].messages.find((m: any) => m.role === "user").content as string
+    // Directive must name the feature, the calling agent, and the deterministic Principle 11 contract.
+    expect(userMsg).toContain("[PLATFORM READINESS DIRECTIVE — Architect on `onboarding`]")
+    expect(userMsg).toContain("MUST report these counts verbatim")
+    expect(userMsg).toContain("Principle 11")
+    // Directive surfaces the three count lines (own + upstream + escalation).
+    expect(userMsg).toMatch(/Own engineering spec for `onboarding`/)
+    expect(userMsg).toMatch(/Upstream spec audits/)
+    expect(userMsg).toMatch(/Active escalation/)
+  })
+})
