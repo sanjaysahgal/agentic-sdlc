@@ -203,6 +203,44 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-6 — V2 PM runner shadow log (Block A7 burn-in gate)
+
+**Why this can't be automated:** integration tests verify the shadow log appears with the right shape; only real Slack traffic over 48h verifies the V2 classifier's branch decisions match what legacy actually does on the diversity of real user messages. Same shape as MT-4 / MT-5 with the agent swapped — PM-bound messages instead of architect/designer-bound. Block A (architect + designer + PM V2 runners) is feature-complete; this is the last per-agent burn-in before Block E (cutover) becomes eligible.
+
+**Last verified:** never (added alongside Block A7 commit; 48h zero-divergence burn-in clock starts on first verified manual run).
+
+**Scope clarification:** MT-6 verifies the V2 PM runner shadow fires when the PM runner is invoked. Messages that hit the universal-guard (hold-pending-escalation, escalation-confirmed, etc.) short-circuit before the PM-branch wiring point — shadow correctly does NOT fire on those.
+
+**Pre-flight (every manual run):**
+1. Restart the bot.
+2. Verify the `[BOOT]` line shows `codeMarker=v2-pm-shadow` AND `commit=<HEAD-sha>`.
+
+**Setup:** any feature in `product-spec-in-progress` phase. PM is the canonical agent.
+
+**Actions:**
+1. Send `/pm hi` in `#feature-<name>`.
+2. Send a substantive message: `Hi, I want to work on this feature`.
+3. Send a check-in: `where are we`.
+
+**Expected outcome:**
+- Legacy PM responds normally to each message (V2 doesn't intercept; production behavior unchanged).
+- For each message, exactly one `[V2-PM-SHADOW]` line appears in `logs/bot-YYYY-MM-DD.log` BEFORE the legacy PM's response logs.
+- Each shadow line includes `feature=<name>`, `branch=<kind>`, `aggregate=<state>`, `total=<n>`.
+
+**Branch expectations for the canonical messages:**
+- `/pm hi` (slash, "hi" alone matches CHECK_IN_RE) → shadow `branch=state-query-fast-path`.
+- `Hi, I want to work on this feature` (substantive, not a check-in) → shadow `branch=normal-agent-turn`.
+- `where are we` (substantive, not CHECK_IN_RE — same minimal-shadow caveat as MT-4/5: `isStateQuery` degrades to false in this initial wiring) → shadow `branch=normal-agent-turn`.
+
+**Failure signatures:**
+- **No `[V2-PM-SHADOW]` line** → wiring bug in `interfaces/slack/handlers/message.ts` PM branch entry. Check the import + call site.
+- **Shadow line includes `[V2-PM-SHADOW-ERROR]`** → internal shadow failure; check the error reason field. Should NEVER block the legacy handler from running.
+- **Shadow `branch=` doesn't match the legacy actual response shape** → V2 classifier diverges from legacy intent classification; document the divergence and investigate before Block E.
+
+**Burn-in clock:** Block A7 contributes the third of three 48h zero-divergence shadow clocks (architect MT-4, designer MT-5, PM MT-6). All three must be green before Block E (cutover) is eligible.
+
+---
+
 ## Maintenance
 
 - When you add a fix to a path covered above, update the scenario's "Last verified" line.

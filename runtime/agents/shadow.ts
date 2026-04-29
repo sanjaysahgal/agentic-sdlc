@@ -38,6 +38,11 @@ import {
   type DesignIntent,
   type DesignStateFlags,
 } from "./runDesignAgentV2"
+import {
+  classifyPmBranch,
+  type PmIntent,
+  type PmStateFlags,
+} from "./runPmAgentV2"
 
 export type ArchitectShadowParams = {
   readonly featureName:  string
@@ -98,6 +103,36 @@ export function shadowDesignerV2(params: DesignShadowParams): void {
   } catch (err) {
     console.log(
       `[V2-DESIGNER-SHADOW-ERROR] feature=${params.featureName} reason=${String(err).slice(0, 200)}`,
+    )
+  }
+}
+
+export type PmShadowParams = {
+  readonly featureName:  string
+  readonly userMessage:  string
+  readonly intent:       PmIntent
+  readonly state:        PmStateFlags
+  readonly reportInput:  ReadinessReportInput
+}
+
+// Block A7 PM shadow. Same shape as architect/designer shadows.
+// Logs `[V2-PM-SHADOW] feature=<x> branch=<y> aggregate=<z> total=<n>`
+// per PM-bound message during the 48h burn-in. Never throws, never
+// posts, never mutates state, never calls the LLM.
+export function shadowPmV2(params: PmShadowParams): void {
+  try {
+    const report = buildReadinessReport(params.reportInput)
+    const branch = classifyPmBranch({
+      report,
+      intent: params.intent,
+      state:  params.state,
+    })
+    console.log(
+      `[V2-PM-SHADOW] feature=${params.featureName} branch=${branch} aggregate=${report.aggregate} total=${report.totalFindingCount}`,
+    )
+  } catch (err) {
+    console.log(
+      `[V2-PM-SHADOW-ERROR] feature=${params.featureName} reason=${String(err).slice(0, 200)}`,
     )
   }
 }

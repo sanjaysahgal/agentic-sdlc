@@ -10032,3 +10032,77 @@ describe("Scenario N94 — V2 designer runner shadow logs alongside legacy", () 
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario N95: V2 PM runner shadow logs alongside legacy ─────────────────
+//
+// Block A7 of the approved system-wide plan
+// (~/.claude/plans/rate-this-plan-zesty-tiger.md). Same shape as Scenarios
+// N93 / N94 with the agent swapped — V2 PM runner is NOT yet wired to
+// handle production traffic; legacy `runPmAgent` continues to handle the
+// message; shadow logs what V2 would have classified for each PM-bound
+// message.
+//
+// Shadow contract: never throws, never mutates state, never posts to Slack,
+// never calls the LLM, emits exactly one `[V2-PM-SHADOW]` log line per
+// PM-bound message.
+//
+// After this scenario lands, Block A is feature-complete: all three V2
+// agent runners (architect, designer, PM) ship with shadow observation
+// integration coverage.
+
+describe("Scenario N95 — V2 PM runner shadow logs alongside legacy", () => {
+  const THREAD = "workflow-n95"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "pm")
+  })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
+
+  it("emits one [V2-PM-SHADOW] line on every PM-bound message", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    // No spec branches → product-spec-in-progress phase → PM is canonical
+    mockPaginate.mockResolvedValue([])
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "PM responding." }],
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "Hi")
+    await handleFeatureChannelMessage(params)
+
+    const shadowLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[V2-PM-SHADOW]"))
+
+    expect(shadowLines).toHaveLength(1)
+    expect(shadowLines[0]).toContain("feature=onboarding")
+    expect(shadowLines[0]).toMatch(/branch=[a-z-]+/)
+    expect(shadowLines[0]).toMatch(/aggregate=[a-z-]+/)
+
+    logSpy.mockRestore()
+  })
+
+  it("shadow never throws even on edge cases (e.g. empty message)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockPaginate.mockResolvedValue([])
+    mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "x" }],
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "")
+    await expect(handleFeatureChannelMessage(params)).resolves.not.toThrow()
+
+    const shadowAny = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("V2-PM-SHADOW"))
+    expect(shadowAny.length).toBeGreaterThanOrEqual(1)
+
+    logSpy.mockRestore()
+  })
+})

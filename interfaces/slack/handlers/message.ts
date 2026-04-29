@@ -30,7 +30,7 @@ import { featureKey, threadKey, type AgentId } from "../../../runtime/routing/ty
 import { logShadowProposalForFeature } from "../../../runtime/routing/shadow"
 import { buildReadinessReport } from "../../../runtime/readiness-builder"
 import { parseQuestionItems } from "../../../runtime/routing/hold-message-renderer"
-import { shadowArchitectV2, shadowDesignerV2 } from "../../../runtime/agents/shadow"
+import { shadowArchitectV2, shadowDesignerV2, shadowPmV2 } from "../../../runtime/agents/shadow"
 
 // Used by the readiness directive to surface the active escalation's item count
 // derived from `pendingEscalation.question` / `escalationNotification.question`
@@ -1140,6 +1140,36 @@ ${archPendingEscalation.question}`
     // resolveAgent() already verified this is the correct agent for the current phase.
     // No phase-advance checks needed — stale state was corrected at the top.
     console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}${slashOverrideReadOnly ? " (read-only slash override)" : ""}`)
+
+    // Block A7 — V2 PM runner shadow mode (per ~/.claude/plans/rate-this-plan-zesty-tiger.md).
+    // DESIGN-REVIEWED: shadow invocation per Principle 12 — same shape as the architect/designer
+    // shadows above. (1) Scales: O(1) classifier-only, no LLM, no spec fetches. (2) Owned by
+    // runtime/agents/shadow.ts; this site is just the call point. (3) Cross-cutting: completes
+    // the V2-runner observation pattern across PM/designer/architect; future Coder/Reviewer
+    // agents will reuse this shape via the M1 scaffold. Logs `[V2-PM-SHADOW]` per PM-bound
+    // message; 48h zero-divergence burn-in (MT-6) is the manual-test gate.
+    shadowPmV2({
+      featureName: getFeatureName(channelName),
+      userMessage,
+      intent: {
+        isAffirmative: isAffirmative(userMessage),
+        isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
+        isStateQuery:  false, // LLM-classified inside legacy; shadow stays cheap and degrades to false
+        isOffTopic:    false, // same as above
+      },
+      state: {
+        hasPendingApproval: !!getPendingApproval(featureKey(featureName)),
+        readOnly:           slashOverrideReadOnly,
+      },
+      reportInput: {
+        callingAgent:     "pm",
+        featureName:      getFeatureName(channelName),
+        ownSpec:          { specType: "product", status: "missing", findingCount: 0 }, // stub; cheap shadow
+        upstreamAudits:   [],  // PM is head of chain — always empty
+        activeEscalation: null,
+      },
+    })
+
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
       await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update, readOnly: slashOverrideReadOnly })
     }})

@@ -24,6 +24,12 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   v2-pm-shadow (Block A7) — adds [V2-PM-SHADOW] log on every PM-bound
+//     message; legacy production behavior unchanged. Same fire-and-forget
+//     observation pattern as the architect/designer shadows. Block A
+//     (architect + designer + PM V2 runners) is feature-complete after
+//     this commit. 48h burn-ins for all three (MT-4, MT-5, MT-6) must
+//     accumulate green before Block E cutover.
 //   v2-designer-shadow (Block A6) — adds [V2-DESIGNER-SHADOW] log on every
 //     designer-bound message; legacy production behavior unchanged. Same
 //     fire-and-forget observation pattern as v2-architect-shadow. 48h
@@ -35,7 +41,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "v2-designer-shadow"
+export const CODE_MARKER = "v2-pm-shadow"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"
