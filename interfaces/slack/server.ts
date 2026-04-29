@@ -7,6 +7,11 @@ import logger from "../../runtime/logger"
 
 const PID_FILE = path.join(process.cwd(), ".bot.pid")
 
+// Boot fingerprint extracted to runtime/boot-fingerprint so it's unit-testable
+// and the test enforces the codeMarker invariant (must change on shipping any
+// fix that introduces a specific log line we want to verify in production).
+import { bootFingerprint } from "../../runtime/boot-fingerprint"
+
 // Route all console output through winston so every log line is timestamped,
 // level-tagged, written to stdout, and persisted to rotating daily log files
 // under logs/ with 14-day retention and 20MB per-file cap.
@@ -55,6 +60,8 @@ function releasePidLock(): void {
 
 ;(async () => {
   await acquirePidLock()
+  const { commit, codeMarker } = bootFingerprint()
+  console.log(`[BOOT] commit=${commit} codeMarker=${codeMarker} pid=${process.pid}`)
   await app.start()
   console.log("⚡ agentic-sdlc Slack bot running in Socket Mode")
 })()
