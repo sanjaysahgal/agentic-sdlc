@@ -106,6 +106,15 @@ export type ReadinessReport = {
   // line the agent must report. Whitespace + numbers are surfaced
   // verbatim per Principle 11.
   readonly directive: string
+
+  // User-facing summary derived from the same source data as `directive`,
+  // formatted for direct posting to Slack on deterministic fast-paths
+  // (state-query check-ins, off-topic redirects, post-approval handoffs).
+  // Block A3 fast-path decision (per ~/.claude/plans/rate-this-plan-zesty-tiger.md
+  // and docs/AGENT_RUNNER_REWRITE_MAP.md): V2 runners use this on
+  // deterministic branches; the LLM `directive` on slow-path branches.
+  // Same source of truth for both — single-path discipline preserved.
+  readonly summary: string
 }
 
 // ── Public function ──────────────────────────────────────────────────────────
@@ -122,7 +131,64 @@ export function buildReadinessReport(input: ReadinessReportInput): ReadinessRepo
     return "ready-pending-approval"
   })()
 
-  return { aggregate, totalFindingCount, directive: formatDirective(input, aggregate, totalFindingCount) }
+  return {
+    aggregate,
+    totalFindingCount,
+    directive: formatDirective(input, aggregate, totalFindingCount),
+    summary:   formatUserSummary(input, aggregate, totalFindingCount),
+  }
+}
+
+// ── User-facing summary (Block A3 fast-path renderer) ─────────────────────────
+//
+// Produces direct-posting prose from the same source data as the LLM
+// directive. Used by V2 runners' deterministic branches so the user sees
+// readiness numbers without paying for an LLM call. Slack-formatting:
+// `*bold*` for emphasis, `\`backticks\`` for the feature name (matches the
+// directive's convention).
+
+function formatUserSummary(
+  input:     ReadinessReportInput,
+  aggregate: ReadinessReport["aggregate"],
+  total:     number,
+): string {
+  const ownType   = input.ownSpec.specType
+  const featRef   = `\`${input.featureName}\``
+
+  switch (aggregate) {
+    case "ready": {
+      // Own clean + upstream clean (or no upstream). Approval-ready.
+      const upstreamNote = input.upstreamAudits.length > 0
+        ? " Upstream specs are clean."
+        : ""
+      return `*${input.featureName} ${ownType} spec* — internal audit clean (0 findings).${upstreamNote} Reply *approved* when ready and I'll hand off.`
+    }
+    case "ready-pending-approval": {
+      // Own ready (or missing draft); aggregate didn't trip any other branch.
+      return `*${input.featureName} ${ownType} spec* — ready for your phase's approval gate when you are.`
+    }
+    case "dirty-own": {
+      const noun = input.ownSpec.findingCount === 1 ? "finding" : "findings"
+      return `*${input.featureName} ${ownType} spec* — ${input.ownSpec.findingCount} ${noun} from this phase's audit. Reply *show items* to see them, or fix and re-save.`
+    }
+    case "dirty-upstream": {
+      const parts: string[] = []
+      for (const a of input.upstreamAudits) {
+        if (a.findingCount > 0) {
+          const noun = a.findingCount === 1 ? "finding" : "findings"
+          parts.push(`${a.findingCount} ${a.specType} ${noun}`)
+        }
+      }
+      const upstreamSummary = parts.join(" + ")
+      return `*${featRef} upstream blockers* — ${upstreamSummary} (total ${total}). Resolve upstream before this spec can be approved. PM-first ordering applies.`
+    }
+    case "escalation-active": {
+      const esc = input.activeEscalation!
+      const targetShort = lookupAgent(esc.targetAgent)?.shortName ?? esc.targetAgent
+      const noun        = esc.itemCount === 1 ? "item" : "items"
+      return `*${featRef} ${ownType} spec* — paused. ${targetShort} is engaged on ${esc.itemCount} ${noun}. Reply *yes* to resume after ${targetShort} finishes, or send your own corrections.`
+    }
+  }
 }
 
 // ── Directive formatter (the structural enforcement vehicle) ──────────────────

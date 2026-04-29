@@ -301,3 +301,111 @@ describe("buildReadinessReport — Phase 5 wart fix (architect/designer readines
     })
   })
 })
+
+// ─── Block A3: user-facing summary (renderReadinessUserSummary integrated) ────
+//
+// Per docs/AGENT_RUNNER_REWRITE_MAP.md A3 decision, V2 runners use the
+// `summary` field on deterministic fast-path branches (state-query check-ins,
+// off-topic redirects, post-approval handoffs) — same source of truth as
+// the LLM `directive`, formatted for direct posting to Slack.
+
+describe("buildReadinessReport.summary — Block A3 fast-path user-facing renderer", () => {
+  describe("aggregate=ready", () => {
+    it("clean own + no upstream → 'internal audit clean' + approval prompt", () => {
+      const r = buildReadinessReport(input())
+      expect(r.summary).toContain("internal audit clean (0 findings)")
+      expect(r.summary).toContain("Reply *approved*")
+      // Ready branch uses bold "*<feature> <specType> spec*" (visual emphasis
+      // on the spec identity). Backticks are reserved for the dirty-upstream
+      // and escalation-active branches where the feature name needs visual
+      // distinction from surrounding prose.
+      expect(r.summary).toContain("*onboarding engineering spec*")
+    })
+
+    it("clean own + clean upstream → notes upstream is clean too", () => {
+      const r = buildReadinessReport(input({
+        upstreamAudits: [{ auditingAgent: "architect", specType: "product", findingCount: 0 }],
+      }))
+      expect(r.summary).toContain("Upstream specs are clean")
+    })
+  })
+
+  describe("aggregate=dirty-own", () => {
+    it("singular finding pluralization", () => {
+      const r = buildReadinessReport(input({
+        ownSpec: { specType: "engineering", status: "dirty", findingCount: 1 },
+      }))
+      expect(r.summary).toContain("1 finding from this phase's audit")
+      expect(r.summary).not.toContain("1 findings")
+      expect(r.summary).toContain("show items")
+    })
+
+    it("plural finding pluralization", () => {
+      const r = buildReadinessReport(input({
+        ownSpec: { specType: "engineering", status: "dirty", findingCount: 7 },
+      }))
+      expect(r.summary).toContain("7 findings from this phase's audit")
+    })
+  })
+
+  describe("aggregate=dirty-upstream (the canonical regression case)", () => {
+    it("4 PM + 26 design + 15 design (architect-only) reproduces in user summary", () => {
+      const r = buildReadinessReport(input({
+        upstreamAudits: [PM_AUDIT, DESIGN_AUDIT_BY_DESIGNER, DESIGN_AUDIT_BY_ARCH],
+      }))
+      expect(r.summary).toContain("4 product findings")
+      expect(r.summary).toContain("26 design findings")
+      expect(r.summary).toContain("15 design findings")
+      expect(r.summary).toContain("total 45")
+      expect(r.summary).toContain("PM-first ordering")
+    })
+
+    it("only PM dirty — surfaces PM count without Design noise", () => {
+      const r = buildReadinessReport(input({
+        upstreamAudits: [PM_AUDIT, { auditingAgent: "architect", specType: "design", findingCount: 0 }],
+      }))
+      expect(r.summary).toContain("4 product findings")
+      expect(r.summary).not.toContain("0 design findings")
+    })
+  })
+
+  describe("aggregate=escalation-active", () => {
+    it("names target agent + item count + resume instruction", () => {
+      const r = buildReadinessReport(input({
+        activeEscalation: { targetAgent: "pm", originAgent: "architect", itemCount: 4 },
+      }))
+      expect(r.summary).toContain("paused")
+      expect(r.summary).toContain("PM is engaged on 4 items")
+      expect(r.summary).toContain("Reply *yes*")
+    })
+
+    it("singular item pluralization", () => {
+      const r = buildReadinessReport(input({
+        activeEscalation: { targetAgent: "pm", originAgent: "architect", itemCount: 1 },
+      }))
+      expect(r.summary).toContain("PM is engaged on 1 item")
+      expect(r.summary).not.toMatch(/1 items/)
+    })
+  })
+
+  describe("aggregate=ready-pending-approval", () => {
+    it("missing draft state → approval-gate prose", () => {
+      const r = buildReadinessReport(input({
+        ownSpec: { specType: "engineering", status: "missing", findingCount: 0 },
+      }))
+      expect(r.summary).toContain("ready for your phase's approval gate")
+    })
+  })
+
+  describe("determinism (Principle 11)", () => {
+    it("same input → byte-identical summary across repeated calls", () => {
+      const i = input({
+        upstreamAudits:  [PM_AUDIT, DESIGN_AUDIT_BY_DESIGNER],
+        activeEscalation: { targetAgent: "pm", originAgent: "architect", itemCount: 4 },
+      })
+      const a = buildReadinessReport(i)
+      const b = buildReadinessReport(i)
+      expect(a.summary).toBe(b.summary)
+    })
+  })
+})
