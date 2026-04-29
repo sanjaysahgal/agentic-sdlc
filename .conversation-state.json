@@ -1,12 +1,5 @@
 {
-  "pendingEscalations": {
-    "onboarding": {
-      "targetAgent": "pm",
-      "question": "1. [PM] AC uses vague language: \"clear\" — two implementers would interpret this differently. — Replace \"clear\" with a concrete, measurable criterion.\n2. [PM] AC uses vague language: \"clear\" — two implementers would interpret this differently. — Replace \"clear\" with a concrete, measurable criterion.\n3. [PM] AC uses undefined timing: \"after inactivity\" without a numeric value in seconds or minutes. — Replace \"after inactivity\" with a specific duration (e.g. \"within 200ms\", \"after 60 seconds of inactivity\").\n4. [PM] AC uses undefined timing: \"immediately\" without a numeric value in seconds or minutes. — Replace \"immediately\" with a specific duration (e.g. \"within 200ms\", \"after 60 seconds of inactivity\").",
-      "designContext": "",
-      "timestamp": 1777351082433
-    }
-  },
+  "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
   "escalationNotifications": {},
@@ -18,7 +11,8 @@
     "1777334167.015779": "pm",
     "1777344339.872729": "ux-design",
     "1777344717.129509": "pm",
-    "1777344950.903089": "architect"
+    "1777344950.903089": "architect",
+    "1777478197.899039": "architect"
   },
   "orientedUsers": [
     "onboarding:U0AMFLP4S9G"
