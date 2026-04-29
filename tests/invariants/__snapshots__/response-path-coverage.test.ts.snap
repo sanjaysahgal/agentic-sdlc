@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Response-path coverage invariant — Block A1 spike > runArchitectAgent > snapshots the not-readiness-aware emission sites for review 1`] = `
+[
+  {
+    "callee": "update",
+    "line": 2628,
+    "snippet": "confirmMessage",
+  },
+  {
+    "callee": "update",
+    "line": 2647,
+    "snippet": ""The engineering spec has been modified since the approval was offered. Please …",
+  },
+  {
+    "callee": "update",
+    "line": 2660,
+    "snippet": "approvalMessage",
+  },
+  {
+    "callee": "update",
+    "line": 2677,
+    "snippet": "msg",
+  },
+  {
+    "callee": "update",
+    "line": 2731,
+    "snippet": "msg",
+  },
+]
+`;
+
+exports[`Response-path coverage invariant — Block A1 spike > runDesignAgent > snapshots the not-readiness-aware emission sites for review 1`] = `
+[
+  {
+    "callee": "update",
+    "line": 1310,
+    "snippet": ""The design spec has been modified since the approval was offered. Please revie…",
+  },
+  {
+    "callee": "update",
+    "line": 1324,
+    "snippet": "approvalMessage",
+  },
+  {
+    "callee": "update",
+    "line": 1346,
+    "snippet": "msg",
+  },
+  {
+    "callee": "update",
+    "line": 1560,
+    "snippet": "msg + stateActionMenu",
+  },
+  {
+    "callee": "chat.postMessage",
+    "line": 1580,
+    "snippet": "{ channel: channelId, thread_ts: threadTs, text: "_Context from earlier in this…",
+  },
+]
+`;
+
+exports[`Response-path coverage invariant — Block A1 spike > runPmAgent > snapshots the not-readiness-aware emission sites for review 1`] = `
+[
+  {
+    "callee": "update",
+    "line": 1168,
+    "snippet": ""The spec has been modified since the approval was offered. Please review the c…",
+  },
+  {
+    "callee": "update",
+    "line": 1182,
+    "snippet": "approvalMessage",
+  },
+  {
+    "callee": "update",
+    "line": 1283,
+    "snippet": "\`\${prefix}\${response}\`",
+  },
+]
+`;
