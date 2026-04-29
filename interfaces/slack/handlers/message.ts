@@ -1875,6 +1875,7 @@ async function runDesignAgent(params: {
       activeEscalation: activeEscD,
     })
     designReadinessDirective = `\n\n${designReport.directive}`
+    console.log(`[READINESS] designer feature=${featureName} aggregate=${designReport.aggregate} own=${designOwnStatus}(${designReadinessFindings.length}) pm=${designUpstreamPmCount} esc=${activeEscD ? `${activeEscD.targetAgent}(${activeEscD.itemCount})` : "none"} total=${designReport.totalFindingCount}`)
   }
   let enrichedUserMessageDesign = buildEnrichedMessage({ userMessage, lockedDecisions: lockedDecisionsDesign, priorContext: priorContextDesign }) + brandDriftNotice + qualityNotice + specTextNotice + upstreamNoticeDesign + designReadinessNotice + pmDesignGuidanceNotice + fixAllNotice + designReadinessDirective
   const systemPrompt = buildDesignSystemBlocks(context, featureName, readOnly)
@@ -2944,6 +2945,7 @@ async function runArchitectAgent(params: {
       activeEscalation: activeEsc,
     })
     archReadinessDirective = `\n\n${report.directive}`
+    console.log(`[READINESS] architect feature=${featureName} aggregate=${report.aggregate} own=${archOwnStatus}(${archOwnEngCount}) pm=${archUpstreamPmCount} design=${archUpstreamDesignCount} esc=${activeEsc ? `${activeEsc.targetAgent}(${activeEsc.itemCount})` : "none"} total=${report.totalFindingCount}`)
   }
   const enrichedUserMessageArch = readOnly
     ? userMessage  // escalation brief is already complete

@@ -80,5 +80,11 @@ export async function classifyDismissIntent(rawText: string): Promise<DismissCla
   })
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "NOT-DISMISS"
-  return { dismiss: text === "DISMISS", rawOutput: text }
+  const dismiss = text === "DISMISS"
+  // Operators debugging "user dismissed but agent kept escalating" need the
+  // raw classifier output and the input that produced it. Truncate the input
+  // to keep the log line bounded; the classifier is conservative-bias by
+  // design so spotting false negatives is more important than false positives.
+  console.log(`[DISMISS-CLASSIFIER] dismiss=${dismiss} rawOutput="${text}" input="${rawText.slice(0, 80).replace(/\n/g, " ")}"`)
+  return { dismiss, rawOutput: text }
 }
