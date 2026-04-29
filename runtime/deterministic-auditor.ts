@@ -576,7 +576,7 @@ export function auditEngineeringSpec(specContent: string): DeterministicAuditRes
 // ────────────────────────────────────────────────────────────────────────────────
 
 /** Deferral phrases that agents should never use — they defer to the user instead of recommending. */
-const DEFERRAL_PHRASES = [
+export const DEFERRAL_PHRASES = [
   "what would you like to focus on",
   "which option do you prefer",
   "what do you think",
@@ -596,7 +596,7 @@ const DEFERRAL_PHRASES = [
 ]
 
 /** Legitimate question patterns that should NOT trigger the gate. */
-const LEGITIMATE_QUESTIONS = [
+export const LEGITIMATE_QUESTIONS = [
   "should I escalate",
   "say yes",
   "say *yes*",
@@ -609,12 +609,18 @@ export function detectHedgeLanguage(response: string): string[] {
   const lower = response.toLowerCase()
   const hedges: string[] = []
   for (const phrase of DEFERRAL_PHRASES) {
-    if (lower.includes(phrase)) {
+    // Lowercase both sides — the surfaced-by-Block-I4 bug was that
+    // DEFERRAL_PHRASES contains case-sensitive entries (e.g. "shall I")
+    // which never matched against `lower`. Normalizing at compare time
+    // makes the contract "case-insensitive substring match" regardless of
+    // how phrases are spelled in the constant.
+    const phraseLower = phrase.toLowerCase()
+    if (lower.includes(phraseLower)) {
       // Check if it's a legitimate question (escalation confirmation, etc.)
       const isLegitimate = LEGITIMATE_QUESTIONS.some(lq => {
-        const idx = lower.indexOf(phrase)
-        const surrounding = lower.slice(Math.max(0, idx - 50), idx + phrase.length + 50)
-        return surrounding.includes(lq)
+        const idx = lower.indexOf(phraseLower)
+        const surrounding = lower.slice(Math.max(0, idx - 50), idx + phraseLower.length + 50)
+        return surrounding.includes(lq.toLowerCase())
       })
       if (!isLegitimate) {
         hedges.push(phrase)
