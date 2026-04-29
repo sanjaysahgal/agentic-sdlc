@@ -2,7 +2,9 @@ import Anthropic from "@anthropic-ai/sdk"
 
 const client = new Anthropic({ maxRetries: 0, timeout: 15_000 })
 
-const SYSTEM_PROMPT = `You are classifying a user's message to a design review tool that shows a numbered list of open issues.
+// Exported for the producer-side prompt-anchor test (Block B3 of the
+// approved system-wide plan). Changes to this prompt are spec-visible.
+export const FIX_INTENT_SYSTEM_PROMPT = `You are classifying a user's message to a design review tool that shows a numbered list of open issues.
 
 Determine if the user is requesting that the tool apply fixes to some or all of the listed issues.
 
@@ -53,7 +55,7 @@ export async function classifyFixIntent(message: string): Promise<{
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 32,
-    system: SYSTEM_PROMPT,
+    system: FIX_INTENT_SYSTEM_PROMPT,
     messages: [{ role: "user", content: message }],
   })
 

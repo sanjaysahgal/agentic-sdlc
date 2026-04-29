@@ -3,7 +3,9 @@ import Anthropic from "@anthropic-ai/sdk"
 // 30s timeout — Haiku gap scans are short; no retries: a stall is a failure.
 const client = new Anthropic({ maxRetries: 0, timeout: 30_000 })
 
-const SYSTEM_PROMPT = `You are a gap classifier. Your job: read a UX design agent's escalation question and classify each item as PM-scope, design-scope, or architecture-scope.
+// Exported for the producer-side prompt-anchor test (Block B3 of the
+// approved system-wide plan). Changes to this prompt are spec-visible.
+export const PM_GAP_SYSTEM_PROMPT = `You are a gap classifier. Your job: read a UX design agent's escalation question and classify each item as PM-scope, design-scope, or architecture-scope.
 
 THE PM OWNS THE WHAT — NOT THE HOW.
 A PM cares about one thing: the best possible customer journey to maximize user delight, retention, and revenue. The PM defines what must happen from the user's perspective. The PM never designs implementations.
@@ -65,7 +67,7 @@ export async function classifyForPmGaps(params: {
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    system: PM_GAP_SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent }],
   })
 

@@ -95,6 +95,26 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Real-Haiku classifier fixture capture — operator-driven, complements Block B3 anchor gate
+
+**Why this exists:** Block B3 ships the producer-side prompt-anchor gate (`tests/invariants/classifier-prompt-anchors.test.ts`) which catches *prompt drift*. The orthogonal failure mode — *model drift*, where the prompt is intact but real Haiku produces unexpected output for a canonical example — requires real captured Haiku output. The capture infrastructure ships with B3 (`scripts/capture-classifier-fixtures.ts`); populating the fixtures requires an `ANTHROPIC_API_KEY` and is operator work, not platform work.
+
+**What's done (Block B3):**
+- Capture script at `scripts/capture-classifier-fixtures.ts`
+- Canonical inputs derived from each classifier's own prompt examples
+- Output writes to `tests/fixtures/agent-output/<classifier-name>/captured.json` with regression flagging in stderr
+
+**What's pending:**
+- Run `npx tsx scripts/capture-classifier-fixtures.ts` once with API access to populate baseline fixtures
+- Build the consumer-side replay test (`tests/invariants/classifier-fixture-replay.test.ts`) that loads the captured.json files, mocks Haiku to return the captured output, asserts each consumer extracts the expected boolean/category
+- Wire a CI cadence for re-capture (quarterly + on prompt change + on model-version bump)
+
+**Cost:** ~30 Haiku calls per run (~2 cents at current pricing). Bounded.
+
+**When:** any time before Block E cutover. Does not block Block A burn-ins or Block C/D/G/H/I/J/K/L/M parallel work.
+
+---
+
 ### Phase enum extension — rename `complete` → `spec-complete`; add coding/review/deployment phases (must land before Block F2 / Coder agent)
 
 **Why this exists:** today's `complete` phase in `docs/ROUTING_STATE_MACHINE.md` and `runtime/routing/types.ts` means "all three specs approved on main, no drafts/pending state" — i.e. *spec-complete*, not feature-complete in the broader product sense. The terminology will mislead the moment we extend the lifecycle into engineering execution: when a Coder agent starts producing a PR, the feature is no longer "spec-complete" alone — it has additional state (PR open, PR merged, deploy pending, deployed). The `complete` name becomes wrong.

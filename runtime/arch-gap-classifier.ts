@@ -3,7 +3,9 @@ import Anthropic from "@anthropic-ai/sdk"
 // 30s timeout — Haiku classifier; no retries: a stall is a failure.
 const client = new Anthropic({ maxRetries: 0, timeout: 30_000 })
 
-const SYSTEM_PROMPT = `You are a design escalation scope classifier. A UI designer is asking an architect a question before escalating it.
+// Exported for the producer-side prompt-anchor test (Block B3 of the
+// approved system-wide plan). Changes to this prompt are spec-visible.
+export const ARCH_GAP_SYSTEM_PROMPT = `You are a design escalation scope classifier. A UI designer is asking an architect a question before escalating it.
 
 Your job: determine whether this question is a true design-blocking architectural unknown, or just an implementation detail the designer should state as a design assumption and continue.
 
@@ -33,7 +35,7 @@ export async function classifyForArchGap(question: string): Promise<"ARCH-GAP" |
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 32,
-    system: SYSTEM_PROMPT,
+    system: ARCH_GAP_SYSTEM_PROMPT,
     messages: [{ role: "user", content: question }],
   })
 
