@@ -21,7 +21,8 @@ jobs:
 
       - run: npm ci
 
-      - run: npm test
+      - name: Test suite + coverage thresholds (Block I2)
+        run: npm run test:coverage
 
       - name: Type check
         run: npx tsc --noEmit
