@@ -102,13 +102,15 @@ Source range: `interfaces/slack/handlers/message.ts:1286–~1850`.
 
 Five not-readiness-aware emissions found by A1 spike.
 
-| # | Legacy line | Behavior | V2 strategy |
-|---|---|---|---|
-| 1 | 1310 | Stale-spec error after `pendingApproval` was offered | Same shape as architect #2: warning includes current readiness summary; tag-eligible only after D2 review. |
-| 2 | 1324 | `pendingApproval` confirm → design spec approved, handoff to architect | V2 emits via `renderApprovalHandoff(report)`. The designer's handoff specifically references the next agent (architect) — the renderer reads `report.callingAgent` and `agent-registry.ts`'s phase ownership to name "the Architect produces the engineering plan" without hardcoding. |
-| 3 | 1346 | Off-topic redirect | Same shape as architect #4. |
-| 4 | 1560 | State-query fast-path → `buildDesignStateResponse()` + `stateActionMenu` | V2 fast-path calls `buildReadinessReport()` first; passes the report into the design-specific summary builder so the response surfaces upstream PM findings + own design audit count + active escalations alongside the state info. Action menu is suppressed when readiness is in `escalation-active` aggregate (user can't act mid-escalation). |
-| 5 | 1580 | Summarization-warning notice → "Context from earlier was summarized" | This is a **non-content notice**, analogous to a status placeholder. V2 emits it tagged `@readiness-irrelevant` because the message is a meta-system advisory, not a state report. The B1 gate honors the tag. |
+**STATUS: 6 of 6 branches implemented in `runtime/agents/runDesignAgentV2.ts` (Block A6 — all designer branches complete).** Designer differs from architect in: no `pendingDecisionReview` branch (architect-only concern), off-topic redirect identifies as "UX Designer" not "Architect", approval-confirm handoff names the architect (next phase per `agent-registry.ts`) instead of engineer agents, save mutation type is `save-approved-design-spec` (distinct from architect's engineering-spec save), upstream audits are PM only. Same single-path invariant: one entry, one user-emission return per branch, `buildReadinessReport()` is the single source of truth. V2 is NOT yet wired into the dispatcher — production traffic continues through legacy `runDesignAgent`. Block A6 shadow wiring follows the runner commit; cutover is Block E.
+
+| # | Legacy line | Behavior | V2 strategy | Status |
+|---|---|---|---|---|
+| 1 | 1310 | Stale-spec error after `pendingApproval` was offered | Same shape as architect #2: warning includes current readiness summary; tag-eligible only after D2 review. | DONE — `renderStaleSpecError` |
+| 2 | 1324 | `pendingApproval` confirm → design spec approved, handoff to architect | V2 emits via `renderApprovalConfirm`; handoff text names "software architect" as the next-phase agent (resolved from `agent-registry.ts`'s phase ownership; not hardcoded). | DONE — `renderApprovalConfirm` |
+| 3 | 1346 | Off-topic redirect | Same shape as architect #4 — surfaces `report.summary` alongside the redirect; identifies as "UX Designer". | DONE — `renderOffTopicRedirect` |
+| 4 | 1560 | State-query fast-path → `buildDesignStateResponse()` + `stateActionMenu` | V2 fast-path emits `report.summary` directly (single source of truth); action-menu rendering moved to a deps-injected post-render hook in production wiring (suppressed in `escalation-active` aggregate). | DONE — `renderStateQueryFastPath` |
+| 5 | 1580 | Summarization-warning notice → "Context from earlier was summarized" | This is a **non-content notice**, analogous to a status placeholder. V2 emits it tagged `@readiness-irrelevant` because the message is a meta-system advisory, not a state report. The B1 gate honors the tag. | DEFERRED to production wiring — emitted from the wrapper that detects context-window summarization, tagged `@readiness-irrelevant`, NOT inside the V2 runner |
 
 ## runPmAgent → runPmAgentV2
 
