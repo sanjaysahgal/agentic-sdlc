@@ -1,0 +1,43 @@
+name: Mutation testing (weekly)
+
+# Block I1 of the approved system-wide plan
+# (~/.claude/plans/rate-this-plan-zesty-tiger.md). Stryker mutation testing
+# scoped to the pure modules covered by Block I4's property-based tests.
+# Runs on a weekly schedule + on demand. NOT a per-PR gate — runtime is too
+# long for the dev loop. The structural shape of the config is enforced
+# per-PR by `tests/invariants/mutation-config.test.ts`; this workflow
+# enforces the actual mutation score against the configured break threshold.
+
+on:
+  schedule:
+    # Mondays at 09:00 UTC. Adjust if the sweep starts colliding with
+    # other recurring jobs.
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  mutation:
+    name: Stryker mutation suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run Stryker
+        run: npm run mutation
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30

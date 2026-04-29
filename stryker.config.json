@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment_": "Block I1 of the approved system-wide plan (~/.claude/plans/rate-this-plan-zesty-tiger.md). Mutation testing scoped to the pure modules with the strongest test coverage — same modules covered by Block I4's property-based tests. Runs periodically (manual trigger via `npm run mutation`); not gated per-PR because runtime is too long for the dev loop. Threshold is intentionally conservative on the first cut — bumping the high threshold higher requires improving test quality.",
+  "packageManager": "npm",
+  "reporters": ["progress", "clear-text", "html"],
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "runtime/upstream-notice-format.ts",
+    "runtime/deterministic-auditor.ts"
+  ],
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 55
+  },
+  "timeoutMS": 30000,
+  "concurrency": 4,
+  "tempDirName": "stryker-tmp",
+  "cleanTempDir": true
+}

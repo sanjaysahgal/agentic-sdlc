@@ -39,7 +39,7 @@
     { "id": "H4", "title": "Model-upgrade evals (run on Claude version bump)",                            "block": "H", "gates_block_e": true, "status": "pending" },
     { "id": "H5", "title": "A/B prompt comparison harness",                                               "block": "H", "gates_block_e": true, "status": "pending" },
 
-    { "id": "I1", "title": "Mutation testing (Stryker or equivalent, periodic)",                          "block": "I", "gates_block_e": true, "status": "pending" },
+    { "id": "I1", "title": "Mutation testing (Stryker or equivalent, periodic)",                          "block": "I", "gates_block_e": true, "status": "done"    },
     { "id": "I2", "title": "Coverage thresholds enforced at PR time",                                     "block": "I", "gates_block_e": true, "status": "done"    },
     { "id": "I3", "title": "Regression catalog (one test file per historical bug)",                       "block": "I", "gates_block_e": true, "status": "done"    },
     { "id": "I4", "title": "Property-based tests for pure modules (fast-check)",                          "block": "I", "gates_block_e": true, "status": "done"    },

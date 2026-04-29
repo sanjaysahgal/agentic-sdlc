@@ -17,6 +17,7 @@
     "test:all": "vitest run && playwright test tests/visual/",
     "test:smoke": "SMOKE_TEST=true vitest run tests/smoke/",
     "test:watch": "vitest",
+    "mutation": "stryker run",
     "eval": "tsx scripts/run-evals.ts",
     "eval:pm": "tsx scripts/run-evals.ts -- --agent pm",
     "eval:design": "tsx scripts/run-evals.ts -- --agent design",
@@ -40,6 +41,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^22.19.15",
     "@vitest/coverage-v8": "^4.1.2",
     "fast-check": "^4.7.0",

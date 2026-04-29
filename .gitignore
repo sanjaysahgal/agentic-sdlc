@@ -6,3 +6,8 @@ logs/
 .confirmed-agents.json
 .bot.pid
 .conversation-history.json
+
+# Block I1 — Stryker mutation testing artifacts
+reports/mutation/
+stryker-tmp/
+.stryker-tmp/
