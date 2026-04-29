@@ -9944,3 +9944,91 @@ describe("Scenario N93 — V2 architect runner shadow logs alongside legacy", ()
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario N94: V2 designer runner shadow logs alongside legacy ───────────
+//
+// Block A6 of the approved system-wide plan
+// (~/.claude/plans/rate-this-plan-zesty-tiger.md). Same shape as Scenario
+// N93 with the agent swapped — V2 designer runner is NOT yet wired to handle
+// production traffic; legacy `runDesignAgent` continues to handle the
+// message; shadow logs what V2 would have classified for each design-bound
+// message.
+//
+// Shadow contract: never throws, never mutates state, never posts to Slack,
+// never calls the LLM, emits exactly one `[V2-DESIGNER-SHADOW]` log line per
+// design-bound message.
+
+describe("Scenario N94 — V2 designer runner shadow logs alongside legacy", () => {
+  const THREAD = "workflow-n94"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "ux-design")
+  })
+  afterEach(() => { clearHistory(featureKey("onboarding")) })
+
+  it("emits one [V2-DESIGNER-SHADOW] line on every designer-bound message", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockDesignInProgressState()
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Designer responding." }],
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "Hi")
+    await handleFeatureChannelMessage(params)
+
+    const shadowLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[V2-DESIGNER-SHADOW]"))
+
+    expect(shadowLines).toHaveLength(1)
+    expect(shadowLines[0]).toContain("feature=onboarding")
+    expect(shadowLines[0]).toMatch(/branch=[a-z-]+/)
+    expect(shadowLines[0]).toMatch(/aggregate=[a-z-]+/)
+
+    logSpy.mockRestore()
+  })
+
+  it("shadow runs even when the legacy handler hits the orientation auto-continue path (one shadow line per inbound user message)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockDesignInProgressState()
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "Designer responding." }],
+    })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi I am new"), userId: "U_N94_NEW" }
+    await handleFeatureChannelMessage(params)
+
+    const shadowLines = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("[V2-DESIGNER-SHADOW]"))
+
+    expect(shadowLines).toHaveLength(1)
+
+    logSpy.mockRestore()
+  })
+
+  it("shadow never throws even on edge cases (e.g. empty message)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    mockDesignInProgressState()
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "x" }],
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "")
+    await expect(handleFeatureChannelMessage(params)).resolves.not.toThrow()
+
+    const shadowAny = logSpy.mock.calls
+      .map((call) => String(call[0] ?? ""))
+      .filter((line) => line.includes("V2-DESIGNER-SHADOW"))
+    expect(shadowAny.length).toBeGreaterThanOrEqual(1)
+
+    logSpy.mockRestore()
+  })
+})

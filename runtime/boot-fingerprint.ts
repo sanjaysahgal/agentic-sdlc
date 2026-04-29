@@ -24,6 +24,10 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   v2-designer-shadow (Block A6) — adds [V2-DESIGNER-SHADOW] log on every
+//     designer-bound message; legacy production behavior unchanged. Same
+//     fire-and-forget observation pattern as v2-architect-shadow. 48h
+//     burn-in (MT-5) gates A7 (PM V2).
 //   v2-architect-shadow (Block A5) — adds [V2-ARCHITECT-SHADOW] log on every
 //     architect-bound message; legacy production behavior unchanged. Shadow
 //     wrapper is observation-only (no Slack posts, no state mutations, no
@@ -31,7 +35,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "v2-architect-shadow"
+export const CODE_MARKER = "v2-designer-shadow"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

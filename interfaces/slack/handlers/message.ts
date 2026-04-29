@@ -30,7 +30,7 @@ import { featureKey, threadKey, type AgentId } from "../../../runtime/routing/ty
 import { logShadowProposalForFeature } from "../../../runtime/routing/shadow"
 import { buildReadinessReport } from "../../../runtime/readiness-builder"
 import { parseQuestionItems } from "../../../runtime/routing/hold-message-renderer"
-import { shadowArchitectV2 } from "../../../runtime/agents/shadow"
+import { shadowArchitectV2, shadowDesignerV2 } from "../../../runtime/agents/shadow"
 
 // Used by the readiness directive to surface the active escalation's item count
 // derived from `pendingEscalation.question` / `escalationNotification.question`
@@ -866,6 +866,35 @@ ${brief}`
     // runs readOnly — designer orients without gap dump.
     const designIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureKey(featureName), userId) : false
     console.log(`[ROUTER] branch=confirmed-design feature=${featureName}${slashOverrideReadOnly ? " (read-only slash override)" : ""}`)
+
+    // Block A6 — V2 designer runner shadow mode (per ~/.claude/plans/rate-this-plan-zesty-tiger.md).
+    // DESIGN-REVIEWED: shadow invocation per Principle 12 — same shape as the architect shadow above.
+    // (1) Scales: O(1) classifier-only, no LLM, no spec fetches in this minimal phase. (2) Owned by
+    // runtime/agents/shadow.ts; this site is just the call point. (3) Cross-cutting: PM shadow in A7
+    // will reuse this pattern. Logs `[V2-DESIGNER-SHADOW]` per designer-bound message; 48h zero-
+    // divergence burn-in (MT-5) is the manual-test gate that gates A7.
+    shadowDesignerV2({
+      featureName: getFeatureName(channelName),
+      userMessage,
+      intent: {
+        isAffirmative: isAffirmative(userMessage),
+        isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
+        isStateQuery:  false, // LLM-classified inside legacy; shadow stays cheap and degrades to false
+        isOffTopic:    false, // same as above
+      },
+      state: {
+        hasPendingApproval: !!getPendingApproval(featureKey(featureName)),
+        readOnly:           designIsOrientation || slashOverrideReadOnly,
+      },
+      reportInput: {
+        callingAgent:     "ux-design",
+        featureName:      getFeatureName(channelName),
+        ownSpec:          { specType: "design", status: "missing", findingCount: 0 }, // stub; cheap shadow
+        upstreamAudits:   [],
+        activeEscalation: null,
+      },
+    })
+
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update, readOnly: designIsOrientation || slashOverrideReadOnly })
     }})

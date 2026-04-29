@@ -33,6 +33,11 @@ import {
   type ArchitectIntent,
   type ArchitectStateFlags,
 } from "./runArchitectAgentV2"
+import {
+  classifyDesignBranch,
+  type DesignIntent,
+  type DesignStateFlags,
+} from "./runDesignAgentV2"
 
 export type ArchitectShadowParams = {
   readonly featureName:  string
@@ -63,6 +68,36 @@ export function shadowArchitectV2(params: ArchitectShadowParams): void {
   } catch (err) {
     console.log(
       `[V2-ARCHITECT-SHADOW-ERROR] feature=${params.featureName} reason=${String(err).slice(0, 200)}`,
+    )
+  }
+}
+
+export type DesignShadowParams = {
+  readonly featureName:  string
+  readonly userMessage:  string
+  readonly intent:       DesignIntent
+  readonly state:        DesignStateFlags
+  readonly reportInput:  ReadinessReportInput
+}
+
+// Block A6 designer shadow. Same shape as the architect shadow above.
+// Logs `[V2-DESIGNER-SHADOW] feature=<x> branch=<y> aggregate=<z> total=<n>`
+// per designer-bound message during the 48h burn-in. Never throws, never
+// posts, never mutates state, never calls the LLM.
+export function shadowDesignerV2(params: DesignShadowParams): void {
+  try {
+    const report = buildReadinessReport(params.reportInput)
+    const branch = classifyDesignBranch({
+      report,
+      intent: params.intent,
+      state:  params.state,
+    })
+    console.log(
+      `[V2-DESIGNER-SHADOW] feature=${params.featureName} branch=${branch} aggregate=${report.aggregate} total=${report.totalFindingCount}`,
+    )
+  } catch (err) {
+    console.log(
+      `[V2-DESIGNER-SHADOW-ERROR] feature=${params.featureName} reason=${String(err).slice(0, 200)}`,
     )
   }
 }
