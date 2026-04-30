@@ -2,70 +2,389 @@
   "schema_version": 1,
   "purpose": "Block B5 of the approved system-wide plan (~/.claude/plans/rate-this-plan-zesty-tiger.md). Single source of truth for cutover-gating item status. The CI test at tests/invariants/cutover-gate.test.ts reads this manifest and asserts every required item is marked done before `runtime/cutover-flag.ts:CUTOVER_ENABLED` can be set to true. Manifest schema lives in tests/invariants/cutover-gate.test.ts; updates land in the same PR as the corresponding work.",
   "items": [
-    { "id": "A1", "title": "Response-path coverage TS-AST walker (spike)",                                 "block": "A", "gates_block_e": true, "status": "done"    },
-    { "id": "A2", "title": "AGENT_RUNNER_REWRITE_MAP.md",                                                  "block": "A", "gates_block_e": true, "status": "done"    },
-    { "id": "A3", "title": "Fast-path decision recorded in rewrite map",                                   "block": "A", "gates_block_e": true, "status": "done"    },
-    { "id": "A4", "title": "runArchitectAgentV2 (all 7 branches)",                                         "block": "A", "gates_block_e": true, "status": "done"    },
-    { "id": "A5", "title": "Architect shadow wiring + 48h burn-in (MT-4)",                                 "block": "A", "gates_block_e": true, "status": "burn-in" },
-    { "id": "A6", "title": "runDesignAgentV2 + shadow + 48h burn-in (MT-5)",                               "block": "A", "gates_block_e": true, "status": "burn-in" },
-    { "id": "A7", "title": "runPmAgentV2 + shadow + 48h burn-in (MT-6)",                                   "block": "A", "gates_block_e": true, "status": "burn-in" },
-
-    { "id": "B1", "title": "V2-runner structural invariant gate (productionalized)",                       "block": "B", "gates_block_e": true, "status": "done"    },
-    { "id": "B2", "title": "Cross-agent contract tests (upstream-notice format)",                          "block": "B", "gates_block_e": true, "status": "done"    },
-    { "id": "B3", "title": "Producer/consumer parity (classifier prompt-anchor gate)",                     "block": "B", "gates_block_e": true, "status": "done"    },
-    { "id": "B4", "title": "Determinism-tag structural gate",                                              "block": "B", "gates_block_e": true, "status": "done"    },
-    { "id": "B5", "title": "Cutover-gate test (this manifest + check)",                                    "block": "B", "gates_block_e": true, "status": "done"    },
-
-    { "id": "C1", "title": "Multi-tenant correctness verification (sandbox tenant-B parallel run)",        "block": "C", "gates_block_e": true, "status": "pending" },
-    { "id": "C2", "title": "Pre-cutover migration smoke against prod state",                              "block": "C", "gates_block_e": true, "status": "pending" },
-    { "id": "C3", "title": "Nightly E2E smoke (real GitHub + real Slack)",                                "block": "C", "gates_block_e": true, "status": "pending" },
-    { "id": "C4", "title": "Real-fixture producer tests for every classifier",                            "block": "C", "gates_block_e": true, "status": "pending" },
-    { "id": "C5", "title": "MANUAL_TESTS.md per-agent per-behavior catalog complete",                     "block": "C", "gates_block_e": true, "status": "done"    },
-
-    { "id": "D1", "title": "Error-path coverage (GitHub 502, Slack rate-limit, Anthropic 529, GitHub 401)", "block": "D", "gates_block_e": true, "status": "done"    },
-    { "id": "D2", "title": "State-corruption recovery (partial write, restart race, unknown fields)",      "block": "D", "gates_block_e": true, "status": "done"    },
-    { "id": "D3", "title": "Per-turn performance budget (synthetic + production)",                         "block": "D", "gates_block_e": true, "status": "done"    },
-    { "id": "D4", "title": "Chaos / fuzzing (message ordering, mid-turn restart, concurrent spec edits)", "block": "D", "gates_block_e": true, "status": "done"    },
-
-    { "id": "G1", "title": "Log-coverage gate (every state mutation has structured log line)",            "block": "G", "gates_block_e": true, "status": "done"    },
-    { "id": "G2", "title": "Request-id tracing across multi-step turn",                                   "block": "G", "gates_block_e": true, "status": "pending" },
-    { "id": "G3", "title": "Metrics emission (counters + histograms via thin interface)",                 "block": "G", "gates_block_e": true, "status": "pending" },
-    { "id": "G4", "title": "Alert hooks (cutover divergence, smoke failure, perf budget breach)",         "block": "G", "gates_block_e": true, "status": "pending" },
-    { "id": "G5", "title": "Log retention + redaction (PII/token scrubbing, per-tenant tagging)",         "block": "G", "gates_block_e": true, "status": "pending" },
-
-    { "id": "H1", "title": "Canonical eval dataset (50+ per agent, 30+ per classifier)",                  "block": "H", "gates_block_e": true, "status": "pending" },
-    { "id": "H2", "title": "Eval runner (replay + score)",                                                "block": "H", "gates_block_e": true, "status": "pending" },
-    { "id": "H3", "title": "Prompt-drift regression CI test",                                             "block": "H", "gates_block_e": true, "status": "pending" },
-    { "id": "H4", "title": "Model-upgrade evals (run on Claude version bump)",                            "block": "H", "gates_block_e": true, "status": "pending" },
-    { "id": "H5", "title": "A/B prompt comparison harness",                                               "block": "H", "gates_block_e": true, "status": "pending" },
-
-    { "id": "I1", "title": "Mutation testing (Stryker or equivalent, periodic)",                          "block": "I", "gates_block_e": true, "status": "done"    },
-    { "id": "I2", "title": "Coverage thresholds enforced at PR time",                                     "block": "I", "gates_block_e": true, "status": "done"    },
-    { "id": "I3", "title": "Regression catalog (one test file per historical bug)",                       "block": "I", "gates_block_e": true, "status": "done"    },
-    { "id": "I4", "title": "Property-based tests for pure modules (fast-check)",                          "block": "I", "gates_block_e": true, "status": "done"    },
-
-    { "id": "J1", "title": "Per-agent per-behavior MT-N entries in MANUAL_TESTS.md",                      "block": "J", "gates_block_e": true, "status": "done"    },
-    { "id": "J2", "title": "Manual-test gating pre-commit hook",                                          "block": "J", "gates_block_e": true, "status": "done"    },
-    { "id": "J3", "title": "CODE_MARKER bump enforcement hook",                                           "block": "J", "gates_block_e": true, "status": "done"    },
-
-    { "id": "K1", "title": "Storage layer abstraction + durable backend",                                 "block": "K", "gates_block_e": true, "status": "pending" },
-    { "id": "K2", "title": "Per-tenant isolation at storage layer (RLS or equivalent)",                   "block": "K", "gates_block_e": true, "status": "pending" },
-    { "id": "K3", "title": "Tenant-onboarding script",                                                    "block": "K", "gates_block_e": true, "status": "pending" },
-    { "id": "K4", "title": "1000-tenant load test passing",                                               "block": "K", "gates_block_e": true, "status": "pending" },
-    { "id": "K5", "title": "Per-tenant cost monitoring",                                                  "block": "K", "gates_block_e": true, "status": "pending" },
-    { "id": "K6", "title": "Per-tenant rate limiting",                                                    "block": "K", "gates_block_e": true, "status": "pending" },
-
-    { "id": "L1", "title": "Backup strategy (daily snapshot, restore tested)",                            "block": "L", "gates_block_e": true, "status": "pending" },
-    { "id": "L2", "title": "DR runbook (full state loss, token revocation, outage, host failure)",        "block": "L", "gates_block_e": true, "status": "pending" },
-    { "id": "L3", "title": "Secrets hygiene gate (pre-commit secret scanner)",                            "block": "L", "gates_block_e": true, "status": "done"    },
-    { "id": "L4", "title": "Admin audit log (immutable, separate from operational logs)",                 "block": "L", "gates_block_e": true, "status": "pending" },
-    { "id": "L5", "title": "Tenant offboarding script (GDPR-compliant deletion)",                         "block": "L", "gates_block_e": true, "status": "pending" },
-
-    { "id": "M1", "title": "New-agent scaffold script",                                                   "block": "M", "gates_block_e": true, "status": "pending" },
-    { "id": "M2", "title": "ADR directory + Definition-of-Done CI hook for SYSTEM_ARCHITECTURE.md",       "block": "M", "gates_block_e": true, "status": "done"    },
-    { "id": "M3", "title": "Operator runbook (operations, on-call, common incidents)",                    "block": "M", "gates_block_e": true, "status": "pending" },
-    { "id": "M4", "title": "Customer onboarding documentation (WorkspaceConfig + prerequisites)",         "block": "M", "gates_block_e": true, "status": "pending" },
-    { "id": "M5", "title": "Contribution guide for adding agents",                                        "block": "M", "gates_block_e": true, "status": "pending" }
+    {
+      "id": "A1",
+      "title": "Response-path coverage TS-AST walker (spike)",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "A2",
+      "title": "AGENT_RUNNER_REWRITE_MAP.md",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "A3",
+      "title": "Fast-path decision recorded in rewrite map",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "A4",
+      "title": "runArchitectAgentV2 (all 7 branches)",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "A5",
+      "title": "Architect shadow wiring + 48h burn-in (MT-4)",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "burn-in"
+    },
+    {
+      "id": "A6",
+      "title": "runDesignAgentV2 + shadow + 48h burn-in (MT-5)",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "burn-in"
+    },
+    {
+      "id": "A7",
+      "title": "runPmAgentV2 + shadow + 48h burn-in (MT-6)",
+      "block": "A",
+      "gates_block_e": true,
+      "status": "burn-in"
+    },
+    {
+      "id": "B1",
+      "title": "V2-runner structural invariant gate (productionalized)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "B2",
+      "title": "Cross-agent contract tests (upstream-notice format)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "B3",
+      "title": "Producer/consumer parity (classifier prompt-anchor gate)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "B4",
+      "title": "Determinism-tag structural gate",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "B5",
+      "title": "Cutover-gate test (this manifest + check)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "C1",
+      "title": "Multi-tenant correctness verification (sandbox tenant-B parallel run)",
+      "block": "C",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "C2",
+      "title": "Pre-cutover migration smoke against prod state",
+      "block": "C",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "C3",
+      "title": "Nightly E2E smoke (real GitHub + real Slack)",
+      "block": "C",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "C4",
+      "title": "Real-fixture producer tests for every classifier",
+      "block": "C",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "C5",
+      "title": "MANUAL_TESTS.md per-agent per-behavior catalog complete",
+      "block": "C",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "D1",
+      "title": "Error-path coverage (GitHub 502, Slack rate-limit, Anthropic 529, GitHub 401)",
+      "block": "D",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "D2",
+      "title": "State-corruption recovery (partial write, restart race, unknown fields)",
+      "block": "D",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "D3",
+      "title": "Per-turn performance budget (synthetic + production)",
+      "block": "D",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "D4",
+      "title": "Chaos / fuzzing (message ordering, mid-turn restart, concurrent spec edits)",
+      "block": "D",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "G1",
+      "title": "Log-coverage gate (every state mutation has structured log line)",
+      "block": "G",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "G2",
+      "title": "Request-id tracing across multi-step turn",
+      "block": "G",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "G3",
+      "title": "Metrics emission (counters + histograms via thin interface)",
+      "block": "G",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "G4",
+      "title": "Alert hooks (cutover divergence, smoke failure, perf budget breach)",
+      "block": "G",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "G5",
+      "title": "Log retention + redaction (PII/token scrubbing, per-tenant tagging)",
+      "block": "G",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "H1",
+      "title": "Canonical eval dataset (50+ per agent, 30+ per classifier)",
+      "block": "H",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "H2",
+      "title": "Eval runner (replay + score)",
+      "block": "H",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "H3",
+      "title": "Prompt-drift regression CI test",
+      "block": "H",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "H4",
+      "title": "Model-upgrade evals (run on Claude version bump)",
+      "block": "H",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "H5",
+      "title": "A/B prompt comparison harness",
+      "block": "H",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "I1",
+      "title": "Mutation testing (Stryker or equivalent, periodic)",
+      "block": "I",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "I2",
+      "title": "Coverage thresholds enforced at PR time",
+      "block": "I",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "I3",
+      "title": "Regression catalog (one test file per historical bug)",
+      "block": "I",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "I4",
+      "title": "Property-based tests for pure modules (fast-check)",
+      "block": "I",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "J1",
+      "title": "Per-agent per-behavior MT-N entries in MANUAL_TESTS.md",
+      "block": "J",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "J2",
+      "title": "Manual-test gating pre-commit hook",
+      "block": "J",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "J3",
+      "title": "CODE_MARKER bump enforcement hook",
+      "block": "J",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "K1",
+      "title": "Storage layer abstraction + durable backend",
+      "block": "K",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "K2",
+      "title": "Per-tenant isolation at storage layer (RLS or equivalent)",
+      "block": "K",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "K3",
+      "title": "Tenant-onboarding script",
+      "block": "K",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "K4",
+      "title": "1000-tenant load test passing",
+      "block": "K",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "K5",
+      "title": "Per-tenant cost monitoring",
+      "block": "K",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "K6",
+      "title": "Per-tenant rate limiting",
+      "block": "K",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "L1",
+      "title": "Backup strategy (daily snapshot, restore tested)",
+      "block": "L",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "L2",
+      "title": "DR runbook (full state loss, token revocation, outage, host failure)",
+      "block": "L",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "L3",
+      "title": "Secrets hygiene gate (pre-commit secret scanner)",
+      "block": "L",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "L4",
+      "title": "Admin audit log (immutable, separate from operational logs)",
+      "block": "L",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "L5",
+      "title": "Tenant offboarding script (GDPR-compliant deletion)",
+      "block": "L",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "M1",
+      "title": "New-agent scaffold script",
+      "block": "M",
+      "gates_block_e": true,
+      "status": "pending"
+    },
+    {
+      "id": "M2",
+      "title": "ADR directory + Definition-of-Done CI hook for SYSTEM_ARCHITECTURE.md",
+      "block": "M",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "M3",
+      "title": "Operator runbook (operations, on-call, common incidents)",
+      "block": "M",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "M4",
+      "title": "Customer onboarding documentation (WorkspaceConfig + prerequisites)",
+      "block": "M",
+      "gates_block_e": true,
+      "status": "done"
+    },
+    {
+      "id": "M5",
+      "title": "Contribution guide for adding agents",
+      "block": "M",
+      "gates_block_e": true,
+      "status": "done"
+    }
   ],
-  "valid_statuses": ["pending", "in-progress", "burn-in", "done"]
+  "valid_statuses": [
+    "pending",
+    "in-progress",
+    "burn-in",
+    "done"
+  ]
 }

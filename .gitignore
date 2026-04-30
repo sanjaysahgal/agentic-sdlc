@@ -11,3 +11,6 @@ logs/
 reports/mutation/
 stryker-tmp/
 .stryker-tmp/
+
+# Block L1 — daily state backups (off-host destination is the long-term plan)
+backups/
