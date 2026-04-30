@@ -350,7 +350,7 @@
       "title": "New-agent scaffold script",
       "block": "M",
       "gates_block_e": true,
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "M2",
