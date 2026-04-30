@@ -440,6 +440,31 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-16 — Tool-name + platform-commentary stripper sentence-drop (Block N2)
+
+**Why this can't be automated:** unit tests verify the regex pattern is sentence-level (not token-level). Only real LLM + real Slack proves the new stripper handles real agent output gracefully — multi-clause sentences mixing legitimate content with the offending token, sentence-end punctuation variations, code blocks, and Slack markdown all interact at runtime.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** any feature in any in-progress phase. Architect is the most likely to produce tool-name leaks (engineering spec finalize flow).
+
+**Actions:**
+1. Coax the agent into mentioning a tool by name. Suggested: in `engineering-in-progress`, say to architect "approved — go ahead and finalize."
+2. Read the Slack reply.
+
+**Expected outcome:**
+- Slack reply does NOT contain literal tool-name tokens like `finalize_engineering_spec()`, `save_product_spec_draft()`, `apply_design_spec_patch()`.
+- The reply is NOT mangled with empty backticks like `Calling \`\` now.` — that's the pre-N2 failure mode.
+- The reply still has substantive content. If the agent's only sentence was the tool-name claim, the response may be short — that's acceptable; the platform's tool-loop will continue and produce a follow-up.
+- `logs/bot-YYYY-MM-DD.log` contains `[AGENT-RESPONSE] dropping sentences containing tool name references: <names>` when stripping fires.
+
+**Failure signatures:**
+- Reply contains literal `finalize_*()` or other tool names → regex pattern broken.
+- Reply contains `\`\`` or other empty-backtick artifacts → sentence-drop not catching the surrounding punctuation.
+- Reply is empty / mangled paragraph → drop was too aggressive (a multi-clause sentence with the tool-name in one clause lost the whole thing). Document the input that triggered it and tighten the pattern.
+
+---
+
 ## Maintenance
 
 - When you add a fix to a path covered above, update the scenario's "Last verified" line.

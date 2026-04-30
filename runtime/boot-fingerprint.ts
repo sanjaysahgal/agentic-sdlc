@@ -24,6 +24,14 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   block-n+n2-stripper-fixes — Block N replaces the legacy hedge gate
+//     with `enforceNoHedging` (3 sites, [HEDGE-GATE] <agent>: rewrote N
+//     deferral phrase(s) log line) + injects buildAntiDeferralBlock into
+//     PM/Designer/Architect prompts. Block N2 changes the tool-name +
+//     platform-commentary strippers in claude-client.ts to sentence-drop
+//     instead of token-drop ([AGENT-RESPONSE] dropping sentences ... log
+//     lines). MT-7, MT-8, MT-16 are the manual scenarios that depend on
+//     this marker.
 //   v2-pm-shadow (Block A7) — adds [V2-PM-SHADOW] log on every PM-bound
 //     message; legacy production behavior unchanged. Same fire-and-forget
 //     observation pattern as the architect/designer shadows. Block A
@@ -41,7 +49,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "v2-pm-shadow"
+export const CODE_MARKER = "block-n+n2-stripper-fixes"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"
