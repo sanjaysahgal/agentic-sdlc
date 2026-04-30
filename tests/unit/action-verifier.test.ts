@@ -108,6 +108,21 @@ describe("platform commentary stripping — structural verification", () => {
     expect(clientCode).toContain("I have no tools available")
     expect(clientCode).toContain("the platform should")
     expect(clientCode).toContain("I cannot apply")
-    expect(clientCode).toContain("platformCommentaryPatterns")
+    expect(clientCode).toContain("platformCommentarySentencePatterns")  // Block N2: sentence-drop variant
+  })
+
+  // Block N2 — extension of Block N's hedge-gate sentence-drop pattern.
+  // The tool-name stripper at runtime/claude-client.ts:144 used to strip just
+  // the token "finalize_engineering_spec()", leaving malformed output like
+  // "Calling `` now." This tanked LLM-judged eval criteria the same way the
+  // hedge gate's canned-text replacement did. Fix: drop the entire sentence
+  // containing the tool reference.
+  it("regex sentence-drop pattern (claude-client.ts) drops the whole sentence on tool-name match", () => {
+    const fs = require("fs")
+    const clientCode = fs.readFileSync("runtime/claude-client.ts", "utf8")
+    // The sentence-drop variant uses [^.!?\n]* before AND after the tool-name pattern.
+    expect(clientCode).toMatch(/sentencePattern\s*=\s*\/\[\^\.!\?\\n\]\*/)
+    // Cleanup pass that normalizes whitespace + collapses blank-line runs.
+    expect(clientCode).toContain(".replace(/\\n{3,}/g, \"\\n\\n\")")
   })
 })

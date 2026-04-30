@@ -130,25 +130,41 @@ export async function runAgent(params: {
       // Strip internal platform language that should never appear in user-facing output:
       // 1. Tool call names: "finalize_engineering_spec()", "save_product_spec_draft()"
       // 2. Platform commentary: "I have no tools available", "the platform should route"
+      //
+      // Block N2 (extension of Block N's hedge-gate sentence-drop): when stripping
+      // tool-name tokens or platform commentary, drop the ENTIRE sentence that
+      // contained the offending text — not just the token. Stripping just the
+      // token left malformed output like "Calling `` now." which tanked LLM-judged
+      // eval criteria the same way the hedge gate's canned-text replacement did.
       const toolNamePattern = /\b(save_|apply_|finalize_|offer_|run_|read_|rewrite_|generate_|fetch_)\w+\(\)/g
-      const platformCommentaryPatterns = [
-        /\bI have no tools available[^.]*\./gi,
-        /\bthe platform should[^.]*\./gi,
-        /\bI cannot apply[^.]*directly[^.]*\./gi,
-        /\bNote:.*tool access[^.]*\./gi,
-        /\bNote:.*no tools[^.]*\./gi,
-      ]
       const stripped = text.match(toolNamePattern)
       if (stripped) {
-        console.log(`[AGENT-RESPONSE] stripping tool name references: ${stripped.join(", ")}`)
-        text = text.replace(toolNamePattern, "").replace(/\n{3,}/g, "\n\n").trim()
+        console.log(`[AGENT-RESPONSE] dropping sentences containing tool name references: ${stripped.join(", ")}`)
+        // Sentence-drop: a sentence is a run of non-newline non-period text optionally
+        // preceded by surrounding punctuation/backticks, ending in a sentence terminator.
+        const sentencePattern = /[^.!?\n]*\b(save_|apply_|finalize_|offer_|run_|read_|rewrite_|generate_|fetch_)\w+\(\)[^.!?\n]*[.!?]?/g
+        text = text.replace(sentencePattern, "")
       }
-      for (const pattern of platformCommentaryPatterns) {
+      const platformCommentarySentencePatterns = [
+        /[^.!?\n]*\bI have no tools available\b[^.!?\n]*[.!?]?/gi,
+        /[^.!?\n]*\bthe platform should\b[^.!?\n]*[.!?]?/gi,
+        /[^.!?\n]*\bI cannot apply\b[^.!?\n]*\bdirectly\b[^.!?\n]*[.!?]?/gi,
+        /[^.!?\n]*\bNote:[^.!?\n]*\btool access\b[^.!?\n]*[.!?]?/gi,
+        /[^.!?\n]*\bNote:[^.!?\n]*\bno tools\b[^.!?\n]*[.!?]?/gi,
+      ]
+      for (const pattern of platformCommentarySentencePatterns) {
         if (pattern.test(text)) {
-          console.log(`[AGENT-RESPONSE] stripping platform commentary: ${pattern.source}`)
-          text = text.replace(pattern, "").replace(/\n{3,}/g, "\n\n").trim()
+          console.log(`[AGENT-RESPONSE] dropping sentence containing platform commentary: ${pattern.source}`)
+          text = text.replace(pattern, "")
         }
       }
+      // Cleanup: normalize whitespace + collapse blank-line runs created by drops.
+      text = text
+        .split("\n")
+        .map((l) => l.replace(/  +/g, " ").trim())
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
       console.log(`[AGENT-RESPONSE] ${text.slice(0, 500)}`)
       return text
     }
