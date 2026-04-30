@@ -20,14 +20,14 @@
     { "id": "C2", "title": "Pre-cutover migration smoke against prod state",                              "block": "C", "gates_block_e": true, "status": "pending" },
     { "id": "C3", "title": "Nightly E2E smoke (real GitHub + real Slack)",                                "block": "C", "gates_block_e": true, "status": "pending" },
     { "id": "C4", "title": "Real-fixture producer tests for every classifier",                            "block": "C", "gates_block_e": true, "status": "pending" },
-    { "id": "C5", "title": "MANUAL_TESTS.md per-agent per-behavior catalog complete",                     "block": "C", "gates_block_e": true, "status": "pending" },
+    { "id": "C5", "title": "MANUAL_TESTS.md per-agent per-behavior catalog complete",                     "block": "C", "gates_block_e": true, "status": "done"    },
 
     { "id": "D1", "title": "Error-path coverage (GitHub 502, Slack rate-limit, Anthropic 529, GitHub 401)", "block": "D", "gates_block_e": true, "status": "done"    },
     { "id": "D2", "title": "State-corruption recovery (partial write, restart race, unknown fields)",      "block": "D", "gates_block_e": true, "status": "done"    },
     { "id": "D3", "title": "Per-turn performance budget (synthetic + production)",                         "block": "D", "gates_block_e": true, "status": "done"    },
     { "id": "D4", "title": "Chaos / fuzzing (message ordering, mid-turn restart, concurrent spec edits)", "block": "D", "gates_block_e": true, "status": "done"    },
 
-    { "id": "G1", "title": "Log-coverage gate (every state mutation has structured log line)",            "block": "G", "gates_block_e": true, "status": "pending" },
+    { "id": "G1", "title": "Log-coverage gate (every state mutation has structured log line)",            "block": "G", "gates_block_e": true, "status": "done"    },
     { "id": "G2", "title": "Request-id tracing across multi-step turn",                                   "block": "G", "gates_block_e": true, "status": "pending" },
     { "id": "G3", "title": "Metrics emission (counters + histograms via thin interface)",                 "block": "G", "gates_block_e": true, "status": "pending" },
     { "id": "G4", "title": "Alert hooks (cutover divergence, smoke failure, perf budget breach)",         "block": "G", "gates_block_e": true, "status": "pending" },
@@ -57,7 +57,7 @@
 
     { "id": "L1", "title": "Backup strategy (daily snapshot, restore tested)",                            "block": "L", "gates_block_e": true, "status": "pending" },
     { "id": "L2", "title": "DR runbook (full state loss, token revocation, outage, host failure)",        "block": "L", "gates_block_e": true, "status": "pending" },
-    { "id": "L3", "title": "Secrets hygiene gate (pre-commit secret scanner)",                            "block": "L", "gates_block_e": true, "status": "pending" },
+    { "id": "L3", "title": "Secrets hygiene gate (pre-commit secret scanner)",                            "block": "L", "gates_block_e": true, "status": "done"    },
     { "id": "L4", "title": "Admin audit log (immutable, separate from operational logs)",                 "block": "L", "gates_block_e": true, "status": "pending" },
     { "id": "L5", "title": "Tenant offboarding script (GDPR-compliant deletion)",                         "block": "L", "gates_block_e": true, "status": "pending" },
 

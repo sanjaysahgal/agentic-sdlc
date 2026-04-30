@@ -338,11 +338,13 @@ export function appendMessage(key: FeatureKey, message: Message): void {
   const history = store.get(flat) ?? []
   history.push(message)
   store.set(flat, history)
+  console.log(`[STORE] appendMessage: feature=${flat} role=${message.role} historyLen=${history.length}`)
   persistConversationHistory()
 }
 
 export function clearHistory(key: FeatureKey): void {
   const flat = featureKeyToString(key)
+  console.log(`[STORE] clearHistory: feature=${flat} (clears history + confirmedAgent + pending state)`)
   store.delete(flat)
   confirmedAgents.delete(flat)
   pendingEscalations.delete(flat)
@@ -378,7 +380,9 @@ export function setConfirmedAgent(key: FeatureKey, agent: string): void {
 }
 
 export function clearConfirmedAgent(key: FeatureKey): void {
-  confirmedAgents.delete(featureKeyToString(key))
+  const flat = featureKeyToString(key)
+  console.log(`[STORE] clearConfirmedAgent: feature=${flat}`)
+  confirmedAgents.delete(flat)
 }
 
 // Thread agent — tracks which agent owns a general channel thread (persisted across restarts).
