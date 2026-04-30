@@ -62,7 +62,7 @@
     { "id": "L5", "title": "Tenant offboarding script (GDPR-compliant deletion)",                         "block": "L", "gates_block_e": true, "status": "pending" },
 
     { "id": "M1", "title": "New-agent scaffold script",                                                   "block": "M", "gates_block_e": true, "status": "pending" },
-    { "id": "M2", "title": "ADR directory + Definition-of-Done CI hook for SYSTEM_ARCHITECTURE.md",       "block": "M", "gates_block_e": true, "status": "pending" },
+    { "id": "M2", "title": "ADR directory + Definition-of-Done CI hook for SYSTEM_ARCHITECTURE.md",       "block": "M", "gates_block_e": true, "status": "done"    },
     { "id": "M3", "title": "Operator runbook (operations, on-call, common incidents)",                    "block": "M", "gates_block_e": true, "status": "pending" },
     { "id": "M4", "title": "Customer onboarding documentation (WorkspaceConfig + prerequisites)",         "block": "M", "gates_block_e": true, "status": "pending" },
     { "id": "M5", "title": "Contribution guide for adding agents",                                        "block": "M", "gates_block_e": true, "status": "pending" }
