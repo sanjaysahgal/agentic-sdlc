@@ -27,6 +27,54 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 ---
 
+### Execution priority — sequence to ship onboarding end-to-end on a reliable foundation (2026-04-30)
+
+**Established 2026-04-30 after the integration walk surfaced 7 lettered bugs (A–G) + an architectural gap. Driving forward in "find what breaks" mode is revealing bugs faster than fixing them. To get onboarding past architect on a foundation that supports adding Coder/Reviewer next, sequence the foundation fixes BEFORE more integration walking.**
+
+**Operating constraints for this priority work (non-negotiable):**
+- ONE bug per session. No bundling. No "while I'm in there." Hook 4 (bundled-fix detector) enforces at commit time.
+- All references use canonical manifest IDs (B6, D5, etc.). The lettered names "Bug A–G" are dead — replaced by manifest IDs after Step 1 below. Pre-commit hook blocks commits referencing "Bug A/B/C/.../G" as letters.
+- Each bug fix lands as: code change + unit test + regression catalog entry + MT entry + CODE_MARKER bump (if production-wired) + Hook 5 audit PASS.
+- After each fix, the next session is the next single bug — not "while we're at it, also…".
+
+**Step 1 — Build the constraints (~30 min, single session):**
+- Hook 4: pre-commit detector that blocks commits with >5 unrelated source files unless each is enumerated with rationale. Verified via synthetic violation.
+- Lettered-bug-blocker hook: pre-commit gate that fails commits whose message contains `Bug [A-Z]` as a referenced issue (carve-out: Bug #N for the regression catalog's numbered series). Forces canonical manifest IDs.
+- Convert lettered bugs E, F, G + the architectural-gap to manifest items B9, B10, B11, B12 (or wherever they fit by block). After this, all 7 bugs (A–G) + arch gap have manifest IDs (D5, B6, B7, B8, B9, B10, B11, B12). The lettered names live only as historical references in the BACKLOG.md prose.
+
+**Step 2–8 — Foundation fixes, ordered by what unblocks the rest:**
+
+| Step | Manifest ID | Was called | Why this priority | Estimate |
+|---|---|---|---|---|
+| 2 | D5 | Bug A | Clear-on-restart wipes notifications. Blocks every subsequent fix from being testable end-to-end (every CODE_MARKER bump → restart → in-flight state lost). Must land first or no other fix can be verified through a real onboarding cycle. | half day |
+| 3 | B11 (architectural gap, covers B10 / Bug G) | Architectural gap | No structural verification of cited spec content. Highest correctness risk — without this, every PM/architect/designer recommendation is a hallucination waiting to corrupt the spec. Must land before any more agent escalations against real specs. Covers Bug G's PM-specific instance plus all other agents' equivalent risk. | 1–2 days |
+| 4 | B6 | Bug B | Architect escalates 1 of N detected gaps. Cuts round-trip count for every escalation by N×. Big quality-of-life impact. | half day |
+| 5 | B8 | Bug D | Engineering-spec writeback violates SSOT + accumulates duplicate headings. Small fix, high cleanup value. Delete `patchEngineeringSpecWithDecision` or make it idempotent + audit-gated. | hour |
+| 6 | B7 | Bug C | PM falsely claims "applying patch now" in readOnly mode. UX clarity. Prompt update + cross-agent invariant. | hour |
+| 7 | B9 | Bug E | `patchProductSpecWithRecommendations` non-deterministic on category rules. Apply category substitutions deterministically before Sonnet. | half day |
+| 8 | B10 | Bug F | Platform impersonates agent in 3rd person on re-audit messages. Text fix + cross-agent invariant. | hour |
+
+**Total: ~3–4 days of focused single-bug-per-session work.**
+
+**Step 9 — Resume integration walk (~1 day):** drive onboarding past architect (currently parked at AC 20 hallucination), through design (37 design-spec findings exist), through engineering finalize. Should fly because the friction sources are gone — no more lost state on restart, no AC hallucinations slipping through, no "1 of N" round trips.
+
+**Step 10 — Add Coder agent.** On a platform that has been demonstrated to drive a feature through end-to-end without hallucinations or lost state. Each existing bug has a regression test pinning it.
+
+**Why this beats "continue forward":**
+- Each bug we fix mid-walk requires same care + tests + MTs as a focused session, but we're fragmented and tired.
+- The lettered-bug naming chaos goes away (manifest IDs only).
+- I'm structurally constrained by Hook 4 + lettered-blocker; user doesn't have to be vigilant.
+- When Coder lands, every existing bug has a regression test pinning it.
+- Onboarding ships faster overall (less rework, fewer round trips per phase).
+
+**Why this is realistic given the assistant's track record this session:**
+- The constraints (hooks) are mechanical — they don't depend on the assistant's discipline.
+- Single-bug-per-session means scope is bounded.
+- Each session's output is inspectable (one bug fix + its test + its catalog entry).
+- After Step 1 lands, the structural constraints are in place before any subsequent step can drift.
+
+---
+
 ### System-wide robustness plan — supersedes the routing refactor's original Phase 4-7
 
 **Priority: P0 — sole source of sanctioned work. Per the user directive set in this session, NEVER recommend or execute on anything that is not a system-wide solution. Surgical patches forbidden — even when production has a known bug.**
