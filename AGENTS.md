@@ -330,6 +330,14 @@ Every agent must surface all known constraint violations on every response — w
 
 **Every new agent added to the platform must define and wire its proactive audit before the agent is considered complete.** A new agent without an audit is not done — it is dangerous. The spec will accumulate violations the human cannot see.
 
+### Anti-deferral block (Block N option-3 — non-negotiable for every spec-producing agent)
+
+Every agent prompt builder (PM, Designer, Architect, and every future agent that holds a conversation with a human) must inject `buildAntiDeferralBlock()` from `runtime/deterministic-auditor.ts` into its system prompt via template interpolation. The block lists every entry of `DEFERRAL_PHRASES` — the same phrases the runtime `enforceNoHedging` gate rewrites — so prompt + runtime gate stay in sync at a single source of truth.
+
+The cross-agent invariant test `tests/invariants/anti-deferral-prompt-contract.test.ts` enforces this: every prompt builder included in the test must contain `ANTI_DEFERRAL_BLOCK_MARKER` AND every `DEFERRAL_PHRASES` entry verbatim. Adding a new agent requires extending that test (one line in the BUILDERS array). Adding a new deferral phrase to `DEFERRAL_PHRASES` automatically requires it to appear in every agent prompt — caught at PR time otherwise.
+
+The runtime layer at `interfaces/slack/handlers/message.ts` calls `enforceNoHedging(response)` on every non-readonly agent turn (PM, Designer, Architect — same shared helper, Principle 15). Detected phrases are rewritten in place: imperative substitutes preserve substantive content; whole-sentence drop for open-ended deferrals. No canned generic appendix.
+
 ### Spec link on approval-ready
 When an agent determines the spec is ready for approval, it must share a direct GitHub link to the current draft so the human can read the full spec before committing. The URL is constructed from `WorkspaceConfig` — no hardcoding. Format:
 

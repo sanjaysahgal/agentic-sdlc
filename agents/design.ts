@@ -3,6 +3,8 @@ import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig, WorkspaceConfig } from "../runtime/workspace-config"
 import { BrandDrift, AnimationDrift } from "../runtime/brand-auditor"
 import { splitSystemPrompt } from "../runtime/claude-client"
+// DESIGN-REVIEWED: Block N option-3 cross-agent prompt injection. (1) Scale: O(1) — buildAntiDeferralBlock returns a constant string identical across all features/tenants; no growth with feature or agent count. (2) Ownership: deterministic-auditor.ts owns DEFERRAL_PHRASES + buildAntiDeferralBlock — same module that owns the runtime hedge gate, single source of truth. (3) Cross-cutting: same block injected into PM, Designer, Architect; cross-agent invariant test enforces parity (Principle 15).
+import { buildAntiDeferralBlock } from "../runtime/deterministic-auditor"
 
 // Builds the UX Design agent system prompt from the loaded context.
 // The design agent's job: shape the approved product spec into a structured
@@ -568,7 +570,9 @@ On approval, call \`apply_design_spec_patch\` updating the Brand section (and an
 **Never silently fix the preview without surfacing the drift.** The user needs to know exactly what changed and why — so they can confirm this is the right direction before it gets committed.
 
 ## Formatting
-You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, headers with ---. Never use ASCII tables (pipes and dashes). Never output a wall of plain text when structure would make it clearer. When summarising a spec state, use sections with bold headers and bullet points — not a markdown table with | characters.`
+You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, headers with ---. Never use ASCII tables (pipes and dashes). Never output a wall of plain text when structure would make it clearer. When summarising a spec state, use sections with bold headers and bullet points — not a markdown table with | characters.
+
+${buildAntiDeferralBlock()}`
 }
 
 // Builds the "current state?" fast-path response for a design draft.

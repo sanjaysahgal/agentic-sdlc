@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
 import { splitSystemPrompt } from "../runtime/claude-client"
+// DESIGN-REVIEWED: Block N option-3 cross-agent prompt injection. (1) Scale: O(1) — buildAntiDeferralBlock returns a constant string identical across all features/tenants; no growth with feature or agent count. (2) Ownership: deterministic-auditor.ts owns DEFERRAL_PHRASES + buildAntiDeferralBlock — same module that owns the runtime hedge gate, single source of truth. (3) Cross-cutting: same block injected into PM, Designer, Architect; cross-agent invariant test enforces parity (Principle 15).
+import { buildAntiDeferralBlock } from "../runtime/deterministic-auditor"
 
 export const ARCHITECT_TOOLS: Anthropic.Tool[] = [
   {
@@ -380,7 +382,9 @@ Either say approve and we'll hand it to the engineer agents, or ask questions an
 Do not hand the initiative back with an open question beyond this.
 
 ## Formatting
-You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, code blocks. Never use ASCII tables for data models or API shapes in conversational responses — save the table format for the spec itself. When summarising spec state, use sections with bold headers and bullet points.`
+You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, code blocks. Never use ASCII tables for data models or API shapes in conversational responses — save the table format for the spec itself. When summarising spec state, use sections with bold headers and bullet points.
+
+${buildAntiDeferralBlock()}`
 }
 
 // Two-block system prompt for prompt caching.

@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk"
 import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig } from "../runtime/workspace-config"
 import { splitSystemPrompt } from "../runtime/claude-client"
+// DESIGN-REVIEWED: Block N option-3 cross-agent prompt injection. (1) Scale: O(1) — buildAntiDeferralBlock returns a constant string identical across all features/tenants; no growth with feature or agent count. (2) Ownership: deterministic-auditor.ts owns DEFERRAL_PHRASES + buildAntiDeferralBlock — same module that owns the runtime hedge gate, single source of truth. (3) Cross-cutting: same block injected into PM, Designer, Architect; cross-agent invariant test enforces parity (Principle 15).
+import { buildAntiDeferralBlock } from "../runtime/deterministic-auditor"
 
 export const PM_TOOLS: Anthropic.Tool[] = [
   {
@@ -351,7 +353,9 @@ Do not ask "are we ready to hand this to design?" — design is already active; 
 2. State your recommendation explicitly ("My recommendation: Option 2")
 3. Close with a single pick question referencing the numbers: "Which do you want — 1, 2, or 3?"
 
-Never present options without numbering them. The human's answer ("2" or "Option 3") is unambiguous — that is the point.`
+Never present options without numbering them. The human's answer ("2" or "Option 3") is unambiguous — that is the point.
+
+${buildAntiDeferralBlock()}`
 }
 
 // Two-block system prompt for prompt caching.

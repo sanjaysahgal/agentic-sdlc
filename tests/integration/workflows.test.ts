@@ -8491,7 +8491,7 @@ describe("Scenario N83 — Universal hedge detection gate fires for PM and Desig
   beforeEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
   afterEach(() => { clearHistory(featureKey("onboarding")); clearSummaryCache("onboarding") })
 
-  it("PM hedge gate strips trailing questions and appends assertive close", async () => {
+  it("PM hedge gate rewrites deferral phrases into imperatives, preserves substantive content (Block N option 3)", async () => {
     setConfirmedAgent(featureKey("onboarding"), "pm")
 
     // PM path: classifyMessageScope → runAgent
@@ -8505,9 +8505,14 @@ describe("Scenario N83 — Universal hedge detection gate fires for PM and Desig
     await handleFeatureChannelMessage(params)
 
     const text = lastUpdateText(params.client)
-    expect(text).toContain("I'll proceed with the approach outlined above.")
-    expect(text).not.toContain("What would you like to focus on?")
-    expect(text).not.toContain("Shall I explore option A or B?")
+    // Substantive content preserved (no canned "I'll proceed" appendix)
+    expect(text).toContain("Here are two options for the onboarding flow.")
+    expect(text).not.toContain("I'll proceed with the approach outlined above")
+    // Open-ended deferral sentence dropped entirely
+    expect(text).not.toContain("What would you like to focus on")
+    // "Shall I" rewritten to "I'll" (preserves rest of sentence)
+    expect(text).not.toMatch(/\bShall I\b/i)
+    expect(text).toMatch(/I'll explore option A or B/)
   })
 
   it("hedge gate code exists in all three agent paths (structural verification)", () => {

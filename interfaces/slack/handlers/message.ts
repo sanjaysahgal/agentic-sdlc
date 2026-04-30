@@ -11,7 +11,7 @@ import { loadWorkspaceConfig } from "../../../runtime/workspace-config"
 import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLockedDecisions, auditSpecRenderAmbiguity, filterDesignContent, auditRedundantBranding, auditCopyCompleteness, auditSpecStructure } from "../../../runtime/spec-auditor"
 import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
-import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, detectHedgeLanguage } from "../../../runtime/deterministic-auditor"
+import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, enforceNoHedging } from "../../../runtime/deterministic-auditor"
 import { verifyActionClaims } from "../../../runtime/action-verifier"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -1356,17 +1356,16 @@ async function runPmAgent(params: {
   // Expose collected tool calls to caller if requested (e.g. to detect spec saves in continuation path)
   if (callerToolCallsOut) callerToolCallsOut.push(...toolCallsOutPm)
 
-  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
-  // Same pattern as architect. PM has no escalation-offered state (root agent).
+  // ─── POST-RUN: Universal hedge enforcement (Block N option-3, Principle 11 + 15)
+  // Replaces the legacy "strip trailing `?` lines and append canned text" gate
+  // with `enforceNoHedging` — phrase-level rewriter that preserves the agent's
+  // substantive content. Same helper used by architect + designer (cross-agent
+  // parity per Principle 15).
   if (!readOnly) {
-    const hedges = detectHedgeLanguage(response)
-    if (hedges.length > 0) {
-      console.log(`[HEDGE-GATE] pm: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
-      const lines = response.trim().split("\n")
-      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
-        lines.pop()
-      }
-      response = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    const { rewritten, hedgesDetected } = enforceNoHedging(response)
+    if (hedgesDetected.length > 0) {
+      console.log(`[HEDGE-GATE] pm: rewrote ${hedgesDetected.length} deferral phrase(s): ${hedgesDetected.join(", ")}`)
+      response = rewritten
     }
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
@@ -2620,18 +2619,14 @@ async function runDesignAgent(params: {
     }
   }
 
-  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
-  // Same pattern as architect. Guard: skip on readOnly AND on escalation-just-offered
-  // (the CTA text is platform-generated — hedge-stripping it would be a false positive).
+  // ─── POST-RUN: Universal hedge enforcement (Block N option-3, Principle 11 + 15)
+  // Same shared helper as PM + architect. Guard: skip on escalation-just-offered
+  // (CTA text is platform-generated — rewriting it would be a false positive).
   if (!readOnly && !escalationJustOffered) {
-    const hedges = detectHedgeLanguage(finalResponse)
-    if (hedges.length > 0) {
-      console.log(`[HEDGE-GATE] design: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
-      const lines = finalResponse.trim().split("\n")
-      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
-        lines.pop()
-      }
-      finalResponse = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    const { rewritten, hedgesDetected } = enforceNoHedging(finalResponse)
+    if (hedgesDetected.length > 0) {
+      console.log(`[HEDGE-GATE] design: rewrote ${hedgesDetected.length} deferral phrase(s): ${hedgesDetected.join(", ")}`)
+      finalResponse = rewritten
     }
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────
@@ -3258,19 +3253,14 @@ ${response}`
   }
   // ─── END ESCALATION ASSERTIVE OVERRIDE ─────────────────────────────────────
 
-  // ─── POST-RUN: Universal hedge detection (Principle 11 — deterministic) ────
-  // Detect deferral language in agent response. If found, strip trailing questions
-  // and replace with an assertive statement. Same check applies to all agents.
-  // Guard: skip on escalation-just-offered (CTA is platform-generated, not agent prose).
+  // ─── POST-RUN: Universal hedge enforcement (Block N option-3, Principle 11 + 15)
+  // Same shared helper as PM + designer (cross-agent parity, Principle 15).
+  // Guard: skip on escalation-just-offered (CTA is platform-generated).
   if (!readOnly && !escalationJustOfferedArch) {
-    const hedges = detectHedgeLanguage(finalArchResponse)
-    if (hedges.length > 0) {
-      console.log(`[HEDGE-GATE] architect: detected ${hedges.length} deferral phrase(s): ${hedges.join(", ")}`)
-      const lines = finalArchResponse.trim().split("\n")
-      while (lines.length > 0 && lines[lines.length - 1].trim().endsWith("?")) {
-        lines.pop()
-      }
-      finalArchResponse = lines.join("\n") + "\n\nI'll proceed with the approach outlined above."
+    const { rewritten, hedgesDetected } = enforceNoHedging(finalArchResponse)
+    if (hedgesDetected.length > 0) {
+      console.log(`[HEDGE-GATE] architect: rewrote ${hedgesDetected.length} deferral phrase(s): ${hedgesDetected.join(", ")}`)
+      finalArchResponse = rewritten
     }
   }
   // ─── END HEDGE GATE ─────────────────────────────────────────────────────────

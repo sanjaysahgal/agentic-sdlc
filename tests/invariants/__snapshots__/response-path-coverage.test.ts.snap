@@ -4,27 +4,27 @@ exports[`Response-path coverage invariant — Block A1 spike > runArchitectAgent
 [
   {
     "callee": "update",
-    "line": 2728,
+    "line": 2723,
     "snippet": "confirmMessage",
   },
   {
     "callee": "update",
-    "line": 2747,
+    "line": 2742,
     "snippet": ""The engineering spec has been modified since the approval was offered. Please …",
   },
   {
     "callee": "update",
-    "line": 2760,
+    "line": 2755,
     "snippet": "approvalMessage",
   },
   {
     "callee": "update",
-    "line": 2777,
+    "line": 2772,
     "snippet": "msg",
   },
   {
     "callee": "update",
-    "line": 2831,
+    "line": 2826,
     "snippet": "msg",
   },
 ]
@@ -34,27 +34,27 @@ exports[`Response-path coverage invariant — Block A1 spike > runDesignAgent > 
 [
   {
     "callee": "update",
-    "line": 1410,
+    "line": 1409,
     "snippet": ""The design spec has been modified since the approval was offered. Please revie…",
   },
   {
     "callee": "update",
-    "line": 1424,
+    "line": 1423,
     "snippet": "approvalMessage",
   },
   {
     "callee": "update",
-    "line": 1446,
+    "line": 1445,
     "snippet": "msg",
   },
   {
     "callee": "update",
-    "line": 1660,
+    "line": 1659,
     "snippet": "msg + stateActionMenu",
   },
   {
     "callee": "chat.postMessage",
-    "line": 1680,
+    "line": 1679,
     "snippet": "{ channel: channelId, thread_ts: threadTs, text: "_Context from earlier in this…",
   },
 ]
@@ -74,7 +74,7 @@ exports[`Response-path coverage invariant — Block A1 spike > runPmAgent > snap
   },
   {
     "callee": "update",
-    "line": 1383,
+    "line": 1382,
     "snippet": "\`\${prefix}\${response}\`",
   },
 ]

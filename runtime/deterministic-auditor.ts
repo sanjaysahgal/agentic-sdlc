@@ -604,6 +604,108 @@ export const LEGITIMATE_QUESTIONS = [
   "approve",
 ]
 
+/**
+ * Block N — shared anti-deferral block for all 3 agent system prompts
+ * (PM, Designer, Architect). Single source of truth for the phrase list:
+ * derived from DEFERRAL_PHRASES so prompt + runtime gate stay in sync.
+ *
+ * Cross-agent invariant test
+ * `tests/invariants/anti-deferral-prompt-contract.test.ts` asserts every
+ * agent prompt builder includes this block AND every DEFERRAL_PHRASES
+ * entry appears in the rendered text.
+ *
+ * The MARKER constant is the structural anchor the invariant test scans
+ * for — do not change it without updating the test.
+ */
+export const ANTI_DEFERRAL_BLOCK_MARKER = "## Never defer to the user — these phrases are forbidden"
+
+export function buildAntiDeferralBlock(): string {
+  const phrases = DEFERRAL_PHRASES.map((p) => `- "${p}"`).join("\n")
+  return `${ANTI_DEFERRAL_BLOCK_MARKER}
+The platform rewrites these phrases into imperative form on every response — but rewriting damages the response shape. You must never produce them in the first place.
+
+${phrases}
+
+When tempted to ask "what would you like" or "shall I" — make the call yourself, state your recommendation, and let the user override. You are the expert; do not abdicate.`
+}
+
+/**
+ * Phrase → imperative-substitute map for the hedge gate's rewriter.
+ * Block N (option 3 of the post-I4 system-wide fix). The rewriter replaces
+ * detected DEFERRAL_PHRASES with the substitute below; an empty-string
+ * substitute means "drop the entire sentence containing this phrase".
+ *
+ * Single source of truth — every entry in DEFERRAL_PHRASES MUST have a
+ * matching key here (case-insensitive). The invariant test
+ * `tests/invariants/anti-deferral-prompt-contract.test.ts` enforces this.
+ */
+export const HEDGE_REWRITES: ReadonlyMap<string, string> = new Map([
+  // Permission-asking — replace with imperative ("Shall I X?" → "I'll X?")
+  ["shall i",                          "I'll"],
+  ["should i proceed",                 "Proceeding"],
+  ["would you like me to",             "I'll"],
+  ["do you want me to",                "I'll"],
+  ["what would you like me to",        "I'll"],
+  // Open-ended deferral phrases — drop the entire sentence containing them
+  ["what would you like to focus on",  ""],
+  ["which option do you prefer",       ""],
+  ["what do you think",                ""],
+  ["how would you like to proceed",    ""],
+  ["what approach would you prefer",   ""],
+  ["let me know what you'd like",      ""],
+  ["which direction",                  ""],
+  ["what's your preference",           ""],
+  ["up to you",                        ""],
+  ["your call",                        ""],
+  ["depends on your",                  ""],
+])
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * @deterministic — Block N hedge enforcement. Detects deferral phrases via
+ * `detectHedgeLanguage` (which already suppresses legitimate-question
+ * context), then rewrites each detected phrase using HEDGE_REWRITES:
+ * imperative substitutes preserve substantive content; empty substitutes
+ * drop the entire sentence containing the phrase.
+ *
+ * Replaces the previous "strip trailing `?` lines and append canned
+ * `I'll proceed with the approach outlined above`" gate, which tanked
+ * LLM-judged eval criteria ("concrete proposal", "concise response") by
+ * appending meta-text instead of preserving the agent's actual proposal.
+ */
+export function enforceNoHedging(response: string): { rewritten: string; hedgesDetected: string[] } {
+  const hedges = detectHedgeLanguage(response)
+  if (hedges.length === 0) return { rewritten: response, hedgesDetected: [] }
+
+  let result = response
+  for (const phrase of hedges) {
+    const replacement = HEDGE_REWRITES.get(phrase.toLowerCase()) ?? ""
+    if (replacement === "") {
+      // Drop the entire sentence containing the phrase.
+      const re = new RegExp(`[^.!?\\n]*${escapeRegex(phrase)}[^.!?\\n]*[.!?]?`, "gi")
+      result = result.replace(re, "")
+    } else {
+      // Preserve grammar by replacing the phrase only (case-insensitive).
+      const re = new RegExp(escapeRegex(phrase), "gi")
+      result = result.replace(re, replacement)
+    }
+  }
+
+  // Clean up artifacts of removal: collapse double spaces, trim blank lines,
+  // remove leading/trailing whitespace per line.
+  result = result
+    .split("\n")
+    .map((l) => l.replace(/  +/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+
+  return { rewritten: result, hedgesDetected: hedges }
+}
+
 /** @deterministic — detects if an agent response defers decisions to the user. */
 export function detectHedgeLanguage(response: string): string[] {
   const lower = response.toLowerCase()
