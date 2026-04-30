@@ -10,7 +10,7 @@
  */
 
 import { AgentContext } from "./context-loader"
-import { Message } from "./conversation-store"
+import { Message, PendingEscalation } from "./conversation-store"
 import type { FeatureKey } from "./routing/types"
 import { featureKey } from "./routing/types"
 import type { DecisionCorrection, DecisionAuditResult } from "./spec-auditor"
@@ -239,7 +239,7 @@ export type ArchitectToolDeps = {
   auditDownstreamReadiness: PmToolDeps["auditDownstreamReadiness"]
   auditSpecStructure: (content: string, specType: "design" | "product" | "engineering") => Array<{ issue: string; recommendation: string }>
   clearHandoffSection: (params: { featureName: string; filePath: string; sectionHeading: string }) => Promise<void>
-  setPendingEscalation: (key: FeatureKey, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; engineeringContext?: string }) => void
+  setPendingEscalation: (key: FeatureKey, escalation: PendingEscalation) => void
   readFile: FileReader
 }
 
@@ -471,6 +471,7 @@ export async function handleOfferUpstreamRevision(
   console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
   deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: target,
+    originAgent: "architect",  // offer_upstream_revision is called by the architect agent
     question,
     designContext: "",
     engineeringContext: ctx.context.currentDraft ?? undefined,
@@ -502,7 +503,7 @@ export type DesignToolDeps = {
   classifyForPmGaps: (params: { agentResponse: string; approvedProductSpec?: string }) => Promise<{ gaps: string[]; architectItems: string[]; designItems: string[] }>
   classifyForArchGap: (question: string) => Promise<string>
   preseedEngineeringSpec: (params: { featureName: string; filePath: string; architectItems: string[] }) => Promise<void>
-  setPendingEscalation: (key: FeatureKey, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; productSpec?: string }) => void
+  setPendingEscalation: (key: FeatureKey, escalation: PendingEscalation) => void
   generateDesignPreview: (params: { specContent: string; featureName: string; brandContent?: string }) => Promise<{ html: string; warnings: string[] }>
   saveDraftHtmlPreview: (params: { featureName: string; filePath: string; content: string }) => Promise<void>
   filterDesignContent: (html: string) => Promise<string>
@@ -758,6 +759,7 @@ export async function handleOfferPmEscalation(
   }
   deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: "pm",
+    originAgent: "ux-design",  // design agent calling offer_pm_escalation
     question: filteredQuestion,
     designContext: ctx.context.currentDraft ?? "",
     productSpec: ctx.context.approvedProductSpec ?? undefined,
@@ -787,6 +789,7 @@ export async function handleOfferArchitectEscalation(
   }
   deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: "architect",
+    originAgent: "ux-design",  // design agent calling offer_architect_escalation
     question: archQuestion,
     designContext: ctx.context.currentDraft ?? "",
   })

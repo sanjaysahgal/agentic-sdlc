@@ -466,6 +466,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
     })
@@ -583,6 +584,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "1. SSO failure path undefined — what is the recovery path?",
       designContext: "",
       productSpec: "## Acceptance Criteria\n1. Users can sign in via SSO.\n2. Handle gracefully.",
@@ -1702,6 +1704,7 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "architect",
+      originAgent: "ux-design",
       question: "Where is user state persisted between logged-out and logged-in sessions?",
       designContext: "Onboarding design in progress.",
     })
@@ -2648,6 +2651,7 @@ describe("Scenario N1 — Non-affirmative during PM escalation → reminder, esc
 
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "Should social login be supported?",
       designContext: "Onboarding design in progress.",
     })
@@ -2690,6 +2694,7 @@ describe("Scenario N2 — Non-affirmative during architect escalation → remind
 
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "architect",
+      originAgent: "ux-design",
       question: "Where is user state persisted between sessions?",
       designContext: "Onboarding design in progress.",
     })
@@ -3454,6 +3459,7 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "What happens to the guest session when the user signs up mid-conversation?",
       designContext: "Design in progress.",
     })
@@ -4609,6 +4615,7 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
     // Pre-seed architect upstream escalation
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "design",
+      originAgent: "architect",
       question: "The modal sheet must support partial-height drag — current design specifies full-screen only, which the native nav stack cannot support.",
       designContext: "",
     })
@@ -4720,6 +4727,7 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     // Pre-seed pending escalation — user will confirm "yes" to trigger PM brief
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "Should the onboarding nudge be dismissable? If so, does it re-appear after session reset?",
       designContext: "The design spec currently shows a persistent nudge with no X button.",
     })
@@ -4915,6 +4923,7 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     // Two-item brief — PM must produce 2 "My recommendation:" lines
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "1. When SSO fails for a returning user, should they remain logged out with an error, or enter a retry state?\n2. Define what the logged-out indicator must communicate to the user and the conditions under which it appears.",
       designContext: "",
     })
@@ -4984,6 +4993,7 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     // but pendingEscalation was loaded from .conversation-state.json
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "1. Replace 'ambient awareness only' with a concrete measurable requirement.\n2. Specify the exact text the logged-out indicator should display.",
       designContext: "",
     })
@@ -5041,6 +5051,7 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     // or set by the pre-run structural gate before the main-branch fallback was implemented.
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "1. What is the exact copy for the logged-out indicator?",
       designContext: "",
       // productSpec intentionally absent
@@ -5885,6 +5896,7 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     clearHistory(featureKey("onboarding"))
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "1. What is the exact copy for the logged-out indicator?",
       designContext: "",
     })
@@ -8964,7 +8976,7 @@ describe("Scenario N42 — /pm during pending escalation shows hold message", ()
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "design", question: "Color palette unspecified", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "design", originAgent: "architect", question: "Color palette unspecified", designContext: "" })
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
@@ -8999,7 +9011,7 @@ describe("Scenario N43 — /design during pending escalation shows hold message 
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", question: "AC#1 uses vague language", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", originAgent: "architect", question: "AC#1 uses vague language", designContext: "" })
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
@@ -9390,6 +9402,7 @@ describe("Scenario N74 — Universal-guard hold emits a branch=hold-pending-esca
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "ux-design",
       question: "AC#5 uses vague language: 'soon'",
       designContext: "design draft fixture",
     })
@@ -9748,6 +9761,7 @@ describe("Scenario N91 — Readiness directive surfaces active escalation when o
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
     setPendingEscalation(featureKey("onboarding"), {
       targetAgent: "pm",
+      originAgent: "architect",
       question: "1. AC#1 vague\n2. Missing error path",
       designContext: "",
       productSpec: "## AC\n1. SSO sign-in",

@@ -24,6 +24,11 @@ export type Message = {
 
 export type PendingEscalation = {
   targetAgent: "pm" | "architect" | "design"
+  /** Which agent originated the escalation. The router uses this to know who to resume to
+   *  after the target finishes. Required for architect→PM correctness — without it, the
+   *  router has to guess based on targetAgent and gets it wrong (regression bug #10:
+   *  architect→PM escalations resumed to designer instead of architect). */
+  originAgent: "pm" | "ux-design" | "architect"
   question: string        // the specific blocking question to hand to the PM, architect, or designer
   designContext: string   // current design draft — gives them instant context
   productSpec?: string    // approved product spec — so PM agent has full context without re-fetching

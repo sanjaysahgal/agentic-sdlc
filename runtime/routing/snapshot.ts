@@ -237,8 +237,12 @@ function normalizePendingEscalation(v: string | undefined): PendingEscalation | 
     ? "fixture: approved product spec"
     : undefined
   // The `target=corrupt` row is intentional fixture data for the I2 invalid-state branch — preserved verbatim.
+  // originAgent fixture default: assume design originated for pm/architect targets, architect for design target.
+  // Fixture rows that need to exercise architect→pm specifically can override via targetRaw match.
+  const originDefault: PendingEscalation["originAgent"] = targetRaw === "design" ? "architect" : "ux-design"
   return {
     targetAgent:   targetRaw,
+    originAgent:   originDefault,
     question:      "fixture: blocking question",
     designContext: "fixture: design draft",
     ...(productSpec !== undefined ? { productSpec } : {}),

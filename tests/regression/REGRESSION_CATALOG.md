@@ -29,3 +29,4 @@
 | #7 | `withThinking` silently swallowed `chat.update` failures, leaving users with a permanent "thinking..." placeholder | tests/regression/error-recovery.test.ts |
 | #8 | Blocking gate: PM agent saved spec even when `[blocking: yes]` questions remained unresolved | tests/regression/error-recovery.test.ts |
 | #9 | Gap detection: the gap question must be persisted to conversation history so the next turn has the context to fix it | tests/regression/error-recovery.test.ts |
+| #10 | PendingEscalation lacked `originAgent`, so architect→PM escalations were silently routed to designer (router guessed `targetAgent === "design" ? "architect" : "ux-design"`). Fixed by making `originAgent` a required field and reading it directly in the router. | tests/regression/origin-agent-routing.test.ts |

@@ -24,6 +24,11 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   bug-10-origin-agent-routing — bug #10 fix: PendingEscalation now carries
+//     originAgent (required field). Router reads it directly instead of
+//     guessing based on targetAgent. Architect→PM escalations now resume
+//     correctly to architect (previously routed to designer). MT-17
+//     verifies end-to-end against real Slack.
 //   block-n+n2-stripper-fixes — Block N replaces the legacy hedge gate
 //     with `enforceNoHedging` (3 sites, [HEDGE-GATE] <agent>: rewrote N
 //     deferral phrase(s) log line) + injects buildAntiDeferralBlock into
@@ -49,7 +54,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "block-n+n2-stripper-fixes"
+export const CODE_MARKER = "bug-10-origin-agent-routing"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

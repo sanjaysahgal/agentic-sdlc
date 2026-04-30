@@ -440,6 +440,36 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-17 — Architect→PM escalation resumes to architect (bug #10)
+
+**Why this can't be automated:** unit tests verify `setPendingEscalation`/`getPendingEscalation` round-trip the `originAgent` field. The integration test verifies the router reads it. But only real Slack + real LLM proves the end-to-end flow: architect detects PM gaps → user says yes → PM gives recommendations → user says yes to apply → spec patched → control returns to ARCHITECT (not designer) → architect can finalize engineering.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches `bug-10-origin-agent-routing`.
+
+**Setup:** any feature in engineering phase with PM-spec gaps that the architect's `auditPmSpec` will detect. The `onboarding` feature in `agentic-health360` already has 4 vague-language gaps that match.
+
+**Actions:**
+1. In `#feature-onboarding`, send any substantive message that triggers an architect turn (e.g. "where are we").
+2. Architect should detect PM gaps and surface a "Say yes" CTA targeting PM.
+3. Reply `yes` in the architect's thread.
+4. PM agent runs in escalation-resume mode and gives 4 concrete recommendations.
+5. PM's reply should NOT say "continue design" — it should reference the architect or "continue engineering".
+6. Reply `yes` again to apply PM's patches.
+7. PM applies patches to PM spec branch. Spec gets updated.
+8. Send any substantive message — architect should resume (NOT designer). Verify by [ROUTER] log line `confirmedAgent=architect`.
+
+**Expected outcome:**
+- After step 4: PM responds with recommendations, log shows `[ROUTER] universal-guard: restoring confirmedAgent=architect → architect for escalation confirmation` (no-op restore because origin matches).
+- After step 6: PM applies patches via tool call.
+- After step 8: architect runs (NOT designer). `auditPmSpec` finds 0 gaps (assuming patches were correct).
+
+**Failure signatures:**
+- PM's reply contains "continue design" — origin-agent fix didn't propagate to the brief text.
+- After step 8, designer runs instead of architect — the universal-guard or escalationNotification origin-agent is still wrong.
+- Spec patch never reaches GitHub — `apply_product_spec_patch` tool call missing or failing.
+
+---
+
 ### MT-16 — Tool-name + platform-commentary stripper sentence-drop (Block N2)
 
 **Why this can't be automated:** unit tests verify the regex pattern is sentence-level (not token-level). Only real LLM + real Slack proves the new stripper handles real agent output gracefully — multi-clause sentences mixing legitimate content with the offending token, sentence-end punctuation variations, code blocks, and Slack markdown all interact at runtime.

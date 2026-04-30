@@ -502,8 +502,11 @@ export async function handleFeatureChannelMessage(params: {
 
   // Guard 2: Pending escalation + affirmative → restore confirmedAgent to originating agent
   // so the correct branch handles the confirmation flow.
+  // BUG #10 FIX: originAgent now lives on the PendingEscalation itself. Previously the router
+  // guessed based on targetAgent ("design" → architect; everything else → ux-design), which was
+  // wrong for architect→PM escalations (the architect originated, but the guess said designer).
   if (universalPending && isAffirmative(userMessage)) {
-    const originAgent = universalPending.targetAgent === "design" ? "architect" : "ux-design"
+    const originAgent = universalPending.originAgent
     if (confirmedAgent !== originAgent) {
       console.log(`[ROUTER] universal-guard: restoring confirmedAgent=${confirmedAgent} → ${originAgent} for escalation confirmation`)
       confirmedAgent = originAgent
@@ -734,6 +737,7 @@ ${brief}`
               console.log(`[ESCALATION] auto-close re-audit: PM spec still has ${reaudit.findings.length} finding(s) — re-escalating`)
               setPendingEscalation(featureKey(featureName), {
                 targetAgent: "pm",
+                originAgent: "ux-design",  // design's auto-close re-audit found gaps; design is resuming after PM
                 question: reaudit.escalationBrief,
                 designContext: "",
                 productSpec: updatedPmSpec,
@@ -758,7 +762,7 @@ ${brief}`
           const archEscalationCall = continuationToolCalls.find(t => t.name === "offer_architect_escalation")
           if (archEscalationCall) {
             const archQuestion = archEscalationCall.input.question as string
-            setPendingEscalation(featureKey(featureName), { targetAgent: "architect", question: archQuestion, designContext: "" })
+            setPendingEscalation(featureKey(featureName), { targetAgent: "architect", originAgent: "pm", question: archQuestion, designContext: "" })
             console.log(`[ROUTER] branch=escalation-auto-close-arch feature=${featureName} — PM flagged architecture gap: "${archQuestion.slice(0, 80)}"`)
             await client.chat.postMessage({
               channel: channelId,
@@ -832,6 +836,7 @@ ${brief}`
               console.log(`[ESCALATION] re-audit: PM spec still has ${reaudit.findings.length} finding(s) after writeback — re-escalating`)
               setPendingEscalation(featureKey(featureName), {
                 targetAgent: "pm",
+                originAgent: "ux-design",  // design's writeback re-audit found gaps; design resumes after PM
                 question: reaudit.escalationBrief,
                 designContext: "",
                 productSpec: patchedSpec,
@@ -1062,6 +1067,7 @@ ${archPendingEscalation.question}`
             console.log(`[ESCALATION] re-audit: ${targetLabel} spec still has ${reaudit.findings.length} finding(s) after writeback — re-escalating`)
             setPendingEscalation(featureKey(featureName), {
               targetAgent: blockingSpec,
+              originAgent: "architect",  // architect's writeback re-audit found gaps; architect resumes
               question: reaudit.escalationBrief,
               designContext: "",
               productSpec: blockingSpec === "pm" ? patchedUpstreamSpec : undefined,
@@ -2527,7 +2533,7 @@ async function runDesignAgent(params: {
   if (productFindings.length > 0 && !agentCalledEscalation) {
     console.log(`[ESCALATION] Gate 2 (N18) fired — productFindings:\n${productFindings.map(f => f.issue).join("\n")}`)
     const consolidated = productFindings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
-    setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+    setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "ux-design", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
     const escalationResponse = `${consolidated}\n\n${assertionText}`
     appendMessage(featureKey(featureName), { role: "assistant", content: escalationResponse })
@@ -2565,7 +2571,7 @@ async function runDesignAgent(params: {
         const g3FilteredQuestion = g3Classification.gaps.length === 1
           ? g3Classification.gaps[0]
           : g3Classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
-        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "ux-design", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       }
     } else {
       console.log(`[ESCALATION] Gate 3 (fallback prose) — no pattern match`)
@@ -2586,7 +2592,7 @@ async function runDesignAgent(params: {
     console.log(`[ESCALATION] Gate 4 result: ${classification.gaps.length} gaps — ${classification.gaps.length === 0 ? "NONE" : classification.gaps.join(" | ")}`)
     if (classification.gaps.length > 0) {
       const consolidated = classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
-      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "ux-design", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     }
   } else {
     console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureKey(featureName))}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}, gate3ClassifierRan=${gate3ClassifierRan}`)
@@ -3150,7 +3156,7 @@ async function runArchitectAgent(params: {
     if (pmGapText) {
       console.log(`[ESCALATION-GATE] architect post-run: PM-first override — agent called offer_upstream_revision(design) but PM gaps must close first. Re-queuing target=pm.`)
       clearPendingEscalation(featureKey(featureName))
-      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     }
   }
 
@@ -3162,14 +3168,14 @@ async function runArchitectAgent(params: {
       const pmGapText = parsePmGapText(upstreamNoticeArch)
       if (pmGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: PM gaps in context but agent did not call offer_upstream_revision(pm) — auto-triggering`)
-        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       }
     } else if (designGapsInNotice && !archCalledDesignEscalation) {
       // No PM gaps (or already escalated) — now check design gaps
       const designGapText = parseDesignGapText(upstreamNoticeArch)
       if (designGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: design gaps in context but agent did not call offer_upstream_revision(design) — auto-triggering`)
-        setPendingEscalation(featureKey(featureName), { targetAgent: "design", question: designGapText, designContext: "" })
+        setPendingEscalation(featureKey(featureName), { targetAgent: "design", originAgent: "architect", question: designGapText, designContext: "" })
       }
     }
   }

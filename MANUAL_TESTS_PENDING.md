@@ -31,3 +31,9 @@
 - Added by commit: `ad8132c` (Block N2: sentence-drop)
 - Why: the stripper now drops whole sentences containing tool references. Edge cases — multi-clause sentences mixing legitimate content with the offending token — only surface in real-LLM Slack runs
 - Full scenario: see `MANUAL_TESTS.md` MT-16
+
+### MT-17 — Architect→PM escalation resumes to architect (bug #10 fix)
+
+- Added by commit: <pending — this commit>
+- Why: bug #10 — PendingEscalation lacked originAgent, router guessed wrong for architect→PM. End-to-end fix requires real Slack to verify control returns to architect (not designer) after PM resolves.
+- Full scenario: see `MANUAL_TESTS.md` MT-17
