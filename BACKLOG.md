@@ -109,6 +109,44 @@ These were found while driving the `onboarding` feature forward through the arch
 
 ---
 
+### Orchestration continuity gaps — agent handoffs require user nudges between phases (2026-04-30)
+
+Surfaced 2026-04-30 driving onboarding. The platform's individual agent runners work, but the *orchestration* of agent-to-agent handoffs requires the user to send messages at every transition. Cutover-gate manifest doesn't measure workflow continuity — every block A–M is about individual agent invariants. None measure agent-to-agent handoff fluidity.
+
+**Gap-A — PM/Designer escalation-confirmed brief lacks closure clause.** PM produces only the recommendations text and stops. No "Done — spec updated, escalation resolved." Brief at [message.ts:585–597](interfaces/slack/handlers/message.ts#L585-L597). Designer-side symmetric (Gap-E).
+
+**Gap-B — Platform doesn't auto-trigger architect resume after PM/Designer applies patches.** The `arch-upstream-revision-reply` branch only fires when *the user* sends an affirmative. There's no "PM finished applying → invoke architect" continuation in the orchestrator. User has to send another message to trigger architect re-run.
+
+**Gap-C — No structural verifier between "PM applied patch" and "architect resumes".** Currently re-audit is the only gate (see Bug B writeback at message.ts:1062-1080). Doesn't verify the patch actually wrote through cleanly before invoking the next agent.
+
+**Gap-D — Architect's turn doesn't auto-chain upstream-PM-clean → check design next.** Each phase requires a separate user prompt. Architect should, in one continuation: confirm PM gaps closed → re-audit design → escalate to designer if needed → otherwise proceed to engineering finalize.
+
+**Gap-E — Designer-side symmetry of Gap-A and Gap-B.** Same architecture as A+B but on the design side. When designer is escalated to (architect→design or PM-from-design-flow), same closure + auto-handoff problems.
+
+These five Gaps probably warrant a dedicated Block (call it Block N3 — orchestration continuity) with structural enforcement: an end-to-end integration scenario in `tests/integration/workflows.test.ts` that drives PM → architect → designer → architect → finalize as one continuous flow with no user-message nudges between agent transitions.
+
+---
+
+### Wiring debt — infrastructure-only items in the cutover-gate manifest need real callers (2026-04-30)
+
+The honest manifest re-grade today (schema v2 with `verification` field) revealed several items that are `status=done` but `verification=infrastructure-only` — code/scripts/modules that exist with tests but have ZERO production callers. Each needs to either get wired into a real production path OR be explicitly demoted (with a backlog explanation of why).
+
+**A4 — runArchitectAgentV2 not wired into production.** 100+ tests pass but legacy `runArchitectAgent` still handles all real architect traffic. Wired only via shadow wrapper. Block E (cutover) is what flips this.
+
+**G1 — Log-coverage gate is underscoped.** Invariant scans only `runtime/conversation-store.ts` mutators. Misses `message.ts` post-run mutations (escalation override replacement, hedge-gate skip path), tool-handler state mutations, github-client state writes. Fix shape: extend the AST walker to scan every file that mutates platform state; either log or document in the exempt list with justification.
+
+**G5 — Log redaction module has zero callers.** `redactToken/redactPii/redactAll` ship with 12 unit tests but are not called by any production logger. Real GitHub responses still get logged in plaintext. Fix shape: wire `redactToken` into the bot's logger (likely `runtime/logger.ts` or wherever GitHub responses are serialized for log lines).
+
+**L1 — Backup script runs daily but restore never tested.** No off-host destination, no quarterly DR drill performed. Fix shape: pick an off-host destination (S3 with versioning is the recommended path), implement the restore-test side, run a real quarterly drill.
+
+**L4 — Admin audit log module has zero callers.** `recordAdminAuditEvent` exists with 6 unit tests; no real event has ever been recorded. Fix shape: call it from `scripts/offboard-tenant.ts` (already done in code but offboarding has never run for real), call it from any future tenant-onboarding script, call it on `CUTOVER_ENABLED` flip (Block E).
+
+**L5 — Offboarding script never run against real tenant state.** `--dry-run` mode tested locally only. The "delete the GitHub spec files" half is operator-manual, not scripted. Fix shape: run it against a sandbox tenant (Block C1's tenant-B). Add the GitHub-deletion half if appropriate.
+
+**M1 — New-agent scaffold script never used.** Template bugs would only surface in real use. Fix shape: use it next time a new agent is added (Block F2 Coder, Block F3 Reviewer); each use surfaces template gaps.
+
+---
+
 ### Real-Haiku classifier fixture capture — operator-driven, complements Block B3 anchor gate
 
 **Why this exists:** Block B3 ships the producer-side prompt-anchor gate (`tests/invariants/classifier-prompt-anchors.test.ts`) which catches *prompt drift*. The orthogonal failure mode — *model drift*, where the prompt is intact but real Haiku produces unexpected output for a canonical example — requires real captured Haiku output. The capture infrastructure ships with B3 (`scripts/capture-classifier-fixtures.ts`); populating the fixtures requires an `ANTHROPIC_API_KEY` and is operator work, not platform work.
