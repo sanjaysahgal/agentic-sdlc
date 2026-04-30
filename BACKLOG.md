@@ -147,6 +147,28 @@ The honest manifest re-grade today (schema v2 with `verification` field) reveale
 
 ---
 
+### Backlog hygiene + smaller items captured 2026-04-30
+
+These are items identified in conversations or audits but not previously formalized as backlog entries. Captured here so they don't drift.
+
+**`.conversation-state.json` is tracked in git instead of gitignored.** Every state mutation auto-commits to the repo. The file is per-tenant operational state, not source code. Should be gitignored alongside `.confirmed-agents.json` and `.conversation-history.json`. Fix shape: add `.conversation-state.json` to `.gitignore`, run `git rm --cached .conversation-state.json`, commit.
+
+**Hook 4 — bundled-fix detector (deferred 2026-04-30).** Pre-commit hook to flag commits touching >5 unrelated source files without per-file rationale in the message. Deferred from "5 hooks for discipline enforcement" discussion in favor of building only Hook 5 (turn audit). Add when we observe a near-miss bundle in real conditions.
+
+**Hooks 1, 2, 3 — additional discipline gates (deferred 2026-04-30).** Hook 1: regression-test-required gate (block runtime commits without `tests/regression/` file added or `MT-NEEDED:` in message). Hook 2: catalog-entry-required gate (block "fix" commits without REGRESSION_CATALOG.md update). Hook 3: verification-evidence gate (require `Verified gate fires:` in commit message when promoting cutover-gate item to `wired-and-exercised`). Deferred from same discussion as Hook 4. Add when we observe a near-miss in real conditions.
+
+**End-to-end integration test for the full agent chain (PM → architect → designer → architect → finalize).** Per the orchestration-continuity gaps section above, no integration test currently drives a feature through all phases as ONE continuous flow with no user-message nudges between agent transitions. Existing `tests/integration/workflows.test.ts` covers individual scenarios. This would be a new top-level scenario like Scenario N100 — chain-of-handoff continuity. Implements after Block N3 (orchestration continuity gaps) lands.
+
+**Cross-references between trackers (deferred 2026-04-30).** Numbered regression-catalog bugs (#1–#10) should reference the cutover-gate manifest item they relate to (e.g. bug #10 ↔ none directly, but "originAgent routing" ↔ Block A bug class). MT-N entries should reference the manifest item they verify. Deferred as nice-to-have navigation; nothing gets forgotten because each individual item is captured in its own tracker — this is just for navigation.
+
+**Block C/G/H/K individual item detail lives only in `docs/cutover-gate-status.json`, not in BACKLOG.md prose.** BACKLOG.md mentions Block C/G/H/K at the block level in the 19-layer plan section. Each individual item (C1 multi-tenant, C2 pre-cutover migration, C3 nightly E2E, C4 real-fixture classifiers; G2 request-id tracing, G3 metrics, G4 alert hooks; H1 eval dataset, H2 eval runner, H3 prompt-drift CI, H4 model-upgrade evals, H5 A/B harness; K1 storage abstraction, K2 RLS, K3 onboarding script, K4 1000-tenant load test, K5 cost monitoring, K6 rate limiting) carries verification status, fix shape, and notes in the manifest. Use the manifest as the source of truth for these.
+
+**Post-cutover Blocks: E (cutover flip), F1 (legacy code cleanup), F2 (Coder agent), F3 (Reviewer agent).** Mentioned in 19-layer plan as future Blocks but not in `docs/cutover-gate-status.json` because they happen AT or AFTER cutover, not as gates before it. Block E = the flip itself when all cutover-gate items are wired-and-exercised. Block F1 = delete legacy `runArchitectAgent`/`runDesignAgent`/`runPmAgent` after V2 runners are in production. Block F2 = build Coder agent on Block M1 scaffold; requires Phase enum extension (separate backlog entry above) to land first. Block F3 = build Reviewer agent on same scaffold. These are tracked here as forward work; each needs its own deliverable list when it becomes the next block to start.
+
+**Block A4-related collision: J3 CODE_MARKER bump enforcement vs A clear-on-restart wipe.** Two enforcements collide: every production-wiring fix bumps CODE_MARKER (J3), which requires a bot restart to verify, which wipes in-flight `escalationNotifications` (Bug A's clear-on-restart logic). User has to redo any in-flight escalation after every fix that bumps the marker. Resolution comes when Bug A is fixed (escalationNotifications get TTL like the other pending state). Not a separate backlog entry; flagged here as a design concern that's resolved by D5 (Bug A fix).
+
+---
+
 ### Real-Haiku classifier fixture capture — operator-driven, complements Block B3 anchor gate
 
 **Why this exists:** Block B3 ships the producer-side prompt-anchor gate (`tests/invariants/classifier-prompt-anchors.test.ts`) which catches *prompt drift*. The orthogonal failure mode — *model drift*, where the prompt is intact but real Haiku produces unexpected output for a canonical example — requires real captured Haiku output. The capture infrastructure ships with B3 (`scripts/capture-classifier-fixtures.ts`); populating the fixtures requires an `ANTHROPIC_API_KEY` and is operator work, not platform work.
