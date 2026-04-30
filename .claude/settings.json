@@ -147,6 +147,11 @@
             "type": "command",
             "timeout": 5,
             "command": "PENDING=$(npx tsx scripts/mt.ts count 2>/dev/null || echo 0); if [ \"$PENDING\" -gt 0 ]; then LIST=$(npx tsx scripts/mt.ts list 2>/dev/null | tail -n +2 | tr '\\n' ' '); echo \"{\\\"hookSpecificOutput\\\": {\\\"hookSpecificOutput\\\": \\\"Stop\\\", \\\"additionalContext\\\": \\\"[MT PENDING] $PENDING manual test(s) pending: $LIST. Walk the user through them one at a time. Run \\`npx tsx scripts/mt.ts next\\` to print the first one's full instructions. The pre-push hook will block pushes until MANUAL_TESTS_PENDING.md is empty.\\\"}}\"; fi; true"
+          },
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "OUT=$(bash scripts/discipline-audit.sh 2>/dev/null); if [ -n \"$OUT\" ]; then printf '{\"hookSpecificOutput\": {\"hookSpecificOutput\": \"Stop\", \"additionalContext\": %s}}\\n' \"$(printf '%s' \"$OUT\" | jq -Rs .)\"; fi; true"
           }
         ]
       }
