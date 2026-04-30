@@ -11,6 +11,7 @@ export async function withThinking(params: {
   run: (update: (text: string) => Promise<void>) => Promise<void>
 }): Promise<void> {
   const { client, channelId, threadTs, agent, run } = params
+  console.log(`[J3-SYNTHETIC] verifying hook fires`)
 
   const label = agent ? `_${agent} is thinking..._` : "_Thinking..._"
 

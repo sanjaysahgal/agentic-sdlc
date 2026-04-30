@@ -371,8 +371,6 @@ export async function handleFeatureChannelMessage(params: {
   channelName: string
   threadTs: string
   userMessage: string
-  // SYNTHETIC VIOLATION — verifying J3 hook
-  // console.log(`[J3-TEST] synthetic-marker`)
   userImages?: UserImage[]
   channelId: string
   client: any
