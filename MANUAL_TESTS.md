@@ -241,6 +241,205 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-7 — Hedge gate live in production (Block N enforceNoHedging)
+
+**Why this can't be automated:** unit tests verify `enforceNoHedging` rewrites correctly given a fixed string; only real LLM + real Slack proves the rewriter actually fires on agent-produced text and that the rewritten output renders cleanly through Slack's markdown. The gate runs at three call sites — verify against any one agent.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** any feature in any in-progress phase. Pick the agent matching the phase.
+
+**Actions:**
+1. Coax the agent into producing a deferral phrase. Suggested prompt: "I'm not sure which way to go on this — give me your two options and ask me which one I prefer."
+2. Read the Slack reply.
+
+**Expected outcome:**
+- Agent's response does NOT contain "shall I", "would you like me to", "what would you like to focus on", "up to you", or any other `DEFERRAL_PHRASES` entry.
+- If the agent did produce one, the platform rewrote it: log line `[HEDGE-GATE] <agent>: rewrote N deferral phrase(s): <phrases>` appears in `logs/bot-YYYY-MM-DD.log`, AND the Slack reply contains the rewritten imperative form ("I'll X" instead of "shall I X") OR the deferring sentence is gone.
+- The response does NOT contain the legacy canned text "I'll proceed with the approach outlined above" — that string is retired.
+
+**Failure signatures:**
+- Slack reply contains a verbatim `DEFERRAL_PHRASES` entry AND no `[HEDGE-GATE]` log line → gate not firing on this path; check the call-site guard (e.g. `escalationJustOffered`).
+- Slack reply contains "I'll proceed with the approach outlined above" → legacy code path still wired somewhere; grep the codebase.
+
+---
+
+### MT-8 — Anti-deferral block in agent prompts (Block N buildAntiDeferralBlock)
+
+**Why this can't be automated:** the cross-agent invariant test asserts the block is INJECTED into prompts; only real-LLM behavior verifies the model actually OBEYS the instruction and stops producing deferral phrases at the source. Complementary to MT-7 (which checks the runtime rewrite gate).
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** fresh feature, no draft yet. Pick PM (canonical first-agent path).
+
+**Actions:**
+1. Send `/pm` in `#feature-<name>`.
+2. Send a deliberately ambiguous opener: "We need to build something. Let's start there."
+
+**Expected outcome:**
+- PM's first response is opinionated and proposes a concrete direction WITHOUT asking "what would you like to focus on?" or "shall I X?". Acceptable closing: a single numbered-options pick question ("Which option — 1, 2, or 3?") which is allowed because the prompt's "When presenting options" rule overrides general anti-deferral.
+- Run the same flow with Designer + Architect agents on their respective phases — same expectation.
+
+**Failure signatures:**
+- Agent's response contains a `DEFERRAL_PHRASES` entry that the platform did NOT rewrite → rare double-failure; the prompt rule was ignored AND the runtime gate also missed it (check `LEGITIMATE_QUESTIONS` context — may have been suppressed).
+
+---
+
+### MT-9 — PM spec-auditor surfaces gaps on every draft save (real-LLM)
+
+**Why this can't be automated:** integration tests stub `auditPmSpec` calls; only real LLM + real GitHub draft persistence verifies the audit findings render correctly in Slack alongside the save confirmation, with a clickable spec URL.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** fresh feature in `product-spec-in-progress`.
+
+**Actions:**
+1. Send a partial spec via PM: include user stories but omit the `## Open Questions` section entirely. Ask PM to "save the draft."
+2. Read the Slack reply.
+
+**Expected outcome:**
+- Slack reply contains the saved-draft confirmation with GitHub URL.
+- Slack reply also contains audit findings — at minimum a flag for the missing/incomplete section (the PM_RUBRIC enforces an Open Questions section).
+- `logs/bot-YYYY-MM-DD.log` contains `[AUDITOR] auditPmSpec: N finding(s)` with N >= 1.
+
+**Failure signatures:**
+- Save confirmation appears but no audit findings → audit not running on save path; check `auditPmSpec` invocation in tool handler.
+- Audit findings logged but not in Slack reply → findings consumed but not surfaced; check the response composition.
+
+---
+
+### MT-10 — Designer brand auditor on every response (real BRAND.md)
+
+**Why this can't be automated:** brand auditor pulls live BRAND.md content from the customer repo; integration tests stub `auditBrandTokens`. Only a live Slack run with a designer-produced spec containing a drifted token (e.g. `--accent: #FF0000` vs BRAND.md `--accent: #00B894`) verifies the auditor catches drift in the actual production-rendered spec.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** feature in `design-in-progress` with an existing draft.
+
+**Actions:**
+1. Ask designer to "update the primary button to use --accent: #FF0000."
+2. Designer should patch the spec.
+
+**Expected outcome:**
+- Slack reply includes a brand-audit warning naming the drifted token AND the canonical BRAND.md value.
+- `logs/bot-YYYY-MM-DD.log` contains `[BRAND-AUDIT] design: N drift finding(s)` with N >= 1.
+
+**Failure signatures:**
+- Spec patched but no brand-audit warning → auditor not invoked on patch path. Check `auditBrandTokens` call in design tool handler.
+
+---
+
+### MT-11 — Architect downstream-readiness audit blocks finalize on upstream gaps
+
+**Why this can't be automated:** the audit reads approved PM + design specs from main branch via real GitHub API; integration tests stub the spec fetcher. Verifies CLAUDE.md Principle 14 (deterministic audits are retroactive) — even an approved upstream spec can fail current rubrics, blocking finalization.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** feature in `engineering-in-progress` with PM + design specs approved on main. Pick a feature whose PM spec contains vague language that `auditPmSpec` flags (or seed one).
+
+**Actions:**
+1. Architect builds a complete engineering spec.
+2. Send "approved — finalize" to architect.
+
+**Expected outcome:**
+- Finalize is BLOCKED. Slack reply explains the upstream PM gaps and offers escalation (`offer_pm_escalation` flow).
+- `logs/bot-YYYY-MM-DD.log` contains `[ESCALATION] architect → PM` with the gap count.
+
+**Failure signatures:**
+- Finalize succeeds despite known upstream gaps → `handleFinalizeEngineeringSpec` not running upstream audit. Check the gate.
+
+---
+
+### MT-12 — Concierge orientation + cross-channel routing
+
+**Why this can't be automated:** concierge runs in a different channel scope (`#general` or main channel), routes to feature channels using live workspace config; integration tests stub the channel resolver. Verifies the operator-facing flow.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** at least one feature in any in-progress phase.
+
+**Actions:**
+1. Send `hi` in `#${mainChannel}` (the workspace's general channel — never a feature channel).
+2. Read the reply.
+3. Send a feature-specific question: "what's the status of the onboarding feature?"
+
+**Expected outcome:**
+- (1) Concierge orients: introduces itself, lists current in-progress features with phases, points at the right channel for each.
+- (3) Concierge gives a status summary AND points to `#feature-onboarding` for substantive work.
+
+**Failure signatures:**
+- Concierge claims to be PM/Designer/Architect → wrong agent loaded for `#general`; check `agent-router.ts`.
+- Concierge tries to write a spec → domain-boundary violation; check concierge prompt + tool stripping.
+
+---
+
+### MT-13 — Cross-agent approval-confirm flow
+
+**Why this can't be automated:** approval intent classification + spec save + phase advance is tested in isolation; only real Slack proves the user-facing `Spec approved → saved → phase advanced → next agent introduces itself` chain renders correctly across agents.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** any feature with a draft pending approval (PM, Designer, OR Architect).
+
+**Actions:**
+1. Send "approved — let's lock it in" to the current agent.
+2. Read the Slack reply.
+
+**Expected outcome:**
+- Slack reply confirms the spec was saved, includes the GitHub URL.
+- Phase advances on the next message: posting any message in the same channel routes to the next-phase agent (PM → Designer → Architect).
+- The next agent introduces itself with a "Read the room first" orientation: names the feature, current phase, what it owns.
+
+**Failure signatures:**
+- Re-confirmation loop ("are you sure?") → approval-detection regression; check `isSpecApproval` classifier.
+- Phase doesn't advance → `resolveAgent()` not corrected; check `setConfirmedAgent` call in finalize handler.
+- Next agent doesn't orient → orientation prompt block missing or `orientedUsers` set incorrectly.
+
+---
+
+### MT-14 — Slash-command override during read-only (post-approval) mode
+
+**Why this can't be automated:** spec-iteration override (slash-as-confirmation) is exercised in tests but the real LLM has to honor the read-only directive AND offer the iteration prompt. Verifies the I22 dismiss-classifier flow.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** feature in `product-spec-approved-awaiting-design` (PM spec approved; design not started). Confirmed agent is design.
+
+**Actions:**
+1. Send `/pm` in `#feature-<name>`.
+2. Send "I want to revise the success criteria for AC-3."
+
+**Expected outcome:**
+- (1) PM acknowledges the iteration entry, references the approved spec, asks how the user wants to change AC-3 (read-only orientation).
+- (2) PM proposes a specific edit, NOT silently overwriting the spec.
+
+**Failure signatures:**
+- PM writes the spec without asking → read-only override not in effect; check spec-iteration mode wiring.
+
+---
+
+### MT-15 — First-time-user orientation (cross-agent)
+
+**Why this can't be automated:** orientation triggers on unknown `userId`; integration tests use fake userIds. Real Slack run with a never-seen user verifies the two-pass orientation + auto-continue substantive pass.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** any in-progress feature. User who has NOT messaged this feature before (clear `orientedUsers` if needed via state file edit).
+
+**Actions:**
+1. Send a substantive message that would normally trigger an LLM turn: "what should I focus on next?"
+
+**Expected outcome:**
+- First Slack post: orientation — agent introduces itself, names the feature + phase + what it owns. Brief.
+- Second Slack post (auto-continued): substantive answer to the question.
+- `orientedUsers` set updated for `<feature>:<userId>`.
+
+**Failure signatures:**
+- Single response that mixes orientation + substance → auto-continue not firing.
+- No orientation, just substance → orientation gate skipped; check `userId` not in `orientedUsers`.
+
+---
+
 ## Maintenance
 
 - When you add a fix to a path covered above, update the scenario's "Last verified" line.

@@ -50,6 +50,10 @@
           },
           {
             "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then STAGED=$(git diff --name-only --cached 2>/dev/null); if echo \"$STAGED\" | grep -qE '^(interfaces/slack/(app|server|handlers/(message|commands|thinking))\\.ts|runtime/(agents/|conversation-store|boot-fingerprint|routing/(spec-parser|snapshot|migrate-routing-state))\\.ts)'; then if ! echo \"$STAGED\" | grep -qFx 'MANUAL_TESTS.md'; then DIFF=$(git diff --cached 2>/dev/null); if ! echo \"$DIFF\" | grep -qE 'MT-CHECKED:'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[MANUAL TEST GATE \u2014 Block J2] Staged diff modifies a file covered by MT-N scenarios in MANUAL_TESTS.md (interfaces/slack/handlers, runtime/agents, conversation-store, routing entry-points, boot-fingerprint). The fix author must explicitly acknowledge which manual scenario(s) need re-running. Either: (1) update MANUAL_TESTS.md (add a new scenario, update the Last verified line for the relevant entry, or note the change), OR (2) add // MT-CHECKED: [MT-N or none-applicable, with reason] in the diff if no manual re-test is needed.\"}}'; fi; fi; fi; fi; true"
+          },
+          {
+            "type": "command",
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then DIFF=$(git diff --cached 2>/dev/null); if echo \"$DIFF\" | grep -qE '^\\+.*(userMessage|rawUserMessage)\\.(includes|startsWith|match|indexOf)\\(' && ! echo \"$DIFF\" | grep -q 'KEYWORD-JUSTIFIED:'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[FREE TEXT CLASSIFICATION] Code uses keyword/substring matching on user message content (includes, startsWith, match, indexOf). Human free-text must be classified by LLM (Haiku), not keywords. Add // KEYWORD-JUSTIFIED: [reason] if this is matching machine-generated structured input, not user prose.\"}}'; fi; fi; true"
           }
         ]
