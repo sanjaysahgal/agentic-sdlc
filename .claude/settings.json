@@ -26,7 +26,7 @@
           },
           {
             "type": "command",
-            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git push'; then PENDING=$(npx tsx scripts/mt.ts count 2>/dev/null || echo 0); if [ \"$PENDING\" -gt 0 ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"[MT PENDING BLOCK] $PENDING manual test(s) pending in MANUAL_TESTS_PENDING.md. The user must run each one in real Slack and mark it done before this push can proceed. Run: npx tsx scripts/mt.ts list (to see them) | npx tsx scripts/mt.ts next (to start the first one) | npx tsx scripts/mt.ts done MT-N (to mark a test done after PASS). Repeat until 0 pending, then re-run git push. If a test cannot be run yet, explicitly remove it from MANUAL_TESTS_PENDING.md with a backlog entry naming when it will be run.\\\"}}\"; fi; fi; true"
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git push'; then PENDING=$(npx tsx scripts/mt.ts count 2>/dev/null || echo 0); if [ \"$PENDING\" -gt 0 ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"[MT PENDING BLOCK] $PENDING blocking manual test(s) pending in MANUAL_TESTS_PENDING.md (## Blocking pre-push section). The user must run each one in real Slack and mark it done before this push can proceed. Run: npx tsx scripts/mt.ts list (shows blocking + spot-check, labeled) | npx tsx scripts/mt.ts next (start first BLOCKING one) | npx tsx scripts/mt.ts done MT-N (mark done after PASS). Repeat until count=0, then re-run git push. Spot-check entries do NOT block push — they're done opportunistically during integration walks. If a blocking test cannot be run yet, demote it to ## Spot-check during integration walk with a one-line rationale, or remove it with a backlog entry naming when it will be run.\\\"}}\"; fi; fi; true"
           },
           {
             "type": "command",
@@ -154,7 +154,7 @@
           {
             "type": "command",
             "timeout": 5,
-            "command": "PENDING=$(npx tsx scripts/mt.ts count 2>/dev/null || echo 0); if [ \"$PENDING\" -gt 0 ]; then LIST=$(npx tsx scripts/mt.ts list 2>/dev/null | tail -n +2 | tr '\\n' ' '); echo \"{\\\"hookSpecificOutput\\\": {\\\"hookSpecificOutput\\\": \\\"Stop\\\", \\\"additionalContext\\\": \\\"[MT PENDING] $PENDING manual test(s) pending: $LIST. Walk the user through them one at a time. Run \\`npx tsx scripts/mt.ts next\\` to print the first one's full instructions. The pre-push hook will block pushes until MANUAL_TESTS_PENDING.md is empty.\\\"}}\"; fi; true"
+            "command": "PENDING=$(npx tsx scripts/mt.ts count 2>/dev/null || echo 0); if [ \"$PENDING\" -gt 0 ]; then LIST=$(npx tsx scripts/mt.ts list 2>/dev/null | tail -n +2 | tr '\\n' ' '); echo \"{\\\"hookSpecificOutput\\\": {\\\"hookSpecificOutput\\\": \\\"Stop\\\", \\\"additionalContext\\\": \\\"[MT PENDING] $PENDING blocking manual test(s) pending: $LIST. Walk the user through the blocking ones one at a time. Run \\`npx tsx scripts/mt.ts next\\` to print the first BLOCKING one's full instructions. Spot-check entries do NOT block push and are done opportunistically during integration walks. The pre-push hook blocks pushes until the blocking tier is empty.\\\"}}\"; fi; true"
           },
           {
             "type": "command",

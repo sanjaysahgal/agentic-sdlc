@@ -9,43 +9,64 @@
 >   - PASSED: `npx tsx scripts/mt.ts done MT-N`
 >   - FAILED: leave it pending and tell the assistant what failed
 >
-> Pre-push hook blocks pushes while this list is non-empty. The Stop-event
-> hook prints the count at the end of every turn so neither side forgets.
+> **Two tiers** (introduced 2026-04-30 after the value-of-MT discussion):
+>
+> - `## Blocking pre-push` — the pre-push hook blocks pushes while this
+>   section is non-empty. Use this tier when the MT verifies a behavior
+>   that automated tests provably cannot exercise (real LLM compliance
+>   with prompt rules, real bot restart, real Slack rendering).
+> - `## Spot-check during integration walk` — these are tracked but do
+>   NOT block push. Use this tier when integration coverage already
+>   exercises the wiring end-to-end with mocks and the only marginal
+>   verification a real-Slack run adds is a 60-second smoke check.
+>   These get done opportunistically the next time you walk a feature
+>   through the relevant phase.
+>
+> **Default tier:** Blocking. Move to spot-check ONLY when integration
+> tests demonstrably cover the path end-to-end and the LLM/IO layer
+> isn't the source of risk. Document the rationale in the entry.
+>
+> The Stop-event hook prints the count of blocking entries at the end of
+> every turn so neither side forgets.
 
-## Current pending
+## Blocking pre-push
 
 ### MT-7 — Hedge gate live in production (Block N enforceNoHedging)
 
 - Added by commit: `b914a28` (Block N: hedge gate rewriter + cross-agent prompt contract)
-- Why this blocks cutover: real-Slack rendering of rewritten output isn't covered by unit tests
+- Why blocking: real-LLM compliance with prompt rules cannot be synthesized by mocks. The unit test verifies `enforceNoHedging` rewrites correctly; only real Slack proves the rewritten output renders as intended in production.
 - Full scenario: see `MANUAL_TESTS.md` MT-7
 
 ### MT-8 — Anti-deferral block in agent prompts (Block N buildAntiDeferralBlock)
 
 - Added by commit: `b914a28` (same as MT-7)
-- Why: real LLM has to actually obey the new prohibition; unit tests verify the block is INJECTED, not honored
+- Why blocking: real LLM must actually obey the prohibition; unit tests verify the block is INJECTED into the prompt, not that the model honors it. Mocks cannot verify model compliance.
 - Full scenario: see `MANUAL_TESTS.md` MT-8
 
 ### MT-16 — Tool-name + platform-commentary stripper sentence-drop (Block N2)
 
 - Added by commit: `ad8132c` (Block N2: sentence-drop)
-- Why: the stripper now drops whole sentences containing tool references. Edge cases — multi-clause sentences mixing legitimate content with the offending token — only surface in real-LLM Slack runs
+- Why blocking: stripper drops whole sentences containing tool references. Edge cases — multi-clause sentences mixing legitimate content with the offending token, sentence-end punctuation variations, code blocks, Slack markdown — only surface in real-LLM Slack runs. Mocks cannot synthesize realistic agent prose.
 - Full scenario: see `MANUAL_TESTS.md` MT-16
-
-### MT-17 — Architect→PM escalation resumes to architect (bug #10 fix)
-
-- Added by commit: <pending — this commit>
-- Why: bug #10 — PendingEscalation lacked originAgent, router guessed wrong for architect→PM. End-to-end fix requires real Slack to verify control returns to architect (not designer) after PM resolves.
-- Full scenario: see `MANUAL_TESTS.md` MT-17
 
 ### MT-18 — EscalationNotification survives bot restart within TTL (D5 fix)
 
-- Added by commit: <this commit, D5 fix>
-- Why: D5 (was Bug A) — escalationNotifications used to be wiped on every restart, colliding with J3 CODE_MARKER bump. Real-restart test verifies notifications now survive within PENDING_STATE_TTL_MS (24h).
+- Added by commit: `a5f8eaf` (D5 fix)
+- Why blocking: integration tests cannot simulate a real process restart with on-disk persistence. The fix relies on `clearStaleEntries` running at startup and `timestamp` surviving the JSON round-trip — only a real `kill -9` + restart proves both ends.
 - Full scenario: see `MANUAL_TESTS.md` MT-18
+
+## Spot-check during integration walk
+
+### MT-17 — Architect→PM escalation resumes to architect (bug #10 fix)
+
+- Added by commit: `9e6727d` (Bug #10 originAgent fix)
+- Why spot-check (not blocking): integration test `tests/regression/origin-agent-routing.test.ts` covers the routing assertion (`originAgent` is read directly, not guessed) end-to-end. The only marginal verification a real-Slack run adds is a 60-second smoke check that control visibly returns to architect — already verified once at commit time. Demoted 2026-04-30 per the value-of-MT discussion.
+- Run opportunistically: next time we walk a feature through architect-phase escalation in real Slack, confirm post-confirmation control returns to architect (not designer). No need to run as a standalone exercise.
+- Full scenario: see `MANUAL_TESTS.md` MT-17
 
 ### MT-19 — PM AC-citation hallucination detection in escalation-resume (B11 v1, bug #12)
 
-- Added by commit: <this commit, B11 v1>
-- Why: B11 v1 — deterministic spec-content verifier wired log-only into the PM escalation-resume site. Unit + regression tests prove the verifier and its wiring; only real Slack proves it fires on real PM responses and the `[CONTENT-VERIFIER]` log line surfaces the violation so an operator can intervene before the spec is corrupted.
+- Added by commit: `d83762e` (B11 v1)
+- Why spot-check (not blocking): integration test `tests/integration/workflows.test.ts` Scenario B11 v1 drives `handleFeatureChannelMessage` → `arch-upstream-escalation-confirmed` → mocked PM response with AC 99 → `readFile` mock → `verifyAcReferences` → `[CONTENT-VERIFIER]` log assertion end-to-end. The only marginal verification a real-Slack run adds is "the real GitHub path resolves correctly" — a 60-second smoke check, not a full scenario. Demoted 2026-04-30 per the value-of-MT discussion.
+- Run opportunistically: next time PM is invoked in escalation-resume on a feature where the spec has known AC count, eyeball the bot logs for `[CONTENT-VERIFIER] feature=<name> site=arch-upstream-escalation-confirmed` if PM cites an AC.
 - Full scenario: see `MANUAL_TESTS.md` MT-19
