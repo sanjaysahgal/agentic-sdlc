@@ -24,6 +24,18 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b6-architect-escalation-consolidation — manifest B6 fix (regression
+//     catalog bug #13). Adds deterministic count helpers
+//     (`countPlatformGapItems`, `countAgentGapItems`) to
+//     `runtime/upstream-notice-format.ts` and a post-run consolidation
+//     gate in the architect path at `interfaces/slack/handlers/message.ts`.
+//     When the architect calls `offer_upstream_revision(target=pm|design)`
+//     and the agent's question enumerates fewer items than
+//     `auditPmSpec`/`auditDesignSpec` detected, the gate overrides
+//     `pendingEscalation.question` with the consolidated platform brief.
+//     Eliminates the N-round-trip pattern. Both PM and design targets
+//     covered per Principle 15. Log marker `[ESCALATION-GATE] B6:`.
+//     MT-20 is the spot-check scenario.
 //   b11-v1-content-verifier-pm-escalation-resume — manifest B11 v1 fix
 //     (was Bug G, regression catalog bug #12). Adds deterministic
 //     `runtime/spec-content-verifier.ts` and wires it log-only into the PM
@@ -72,7 +84,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "b11-v1-content-verifier-pm-escalation-resume"
+export const CODE_MARKER = "b6-architect-escalation-consolidation"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

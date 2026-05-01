@@ -70,3 +70,10 @@
 - Why spot-check (not blocking): integration test `tests/integration/workflows.test.ts` Scenario B11 v1 drives `handleFeatureChannelMessage` → `arch-upstream-escalation-confirmed` → mocked PM response with AC 99 → `readFile` mock → `verifyAcReferences` → `[CONTENT-VERIFIER]` log assertion end-to-end. The only marginal verification a real-Slack run adds is "the real GitHub path resolves correctly" — a 60-second smoke check, not a full scenario. Demoted 2026-04-30 per the value-of-MT discussion.
 - Run opportunistically: next time PM is invoked in escalation-resume on a feature where the spec has known AC count, eyeball the bot logs for `[CONTENT-VERIFIER] feature=<name> site=arch-upstream-escalation-confirmed` if PM cites an AC.
 - Full scenario: see `MANUAL_TESTS.md` MT-19
+
+### MT-20 — Architect-escalation consolidation gate (B6, bug #13)
+
+- Added by commit: <this commit, B6>
+- Why spot-check (not blocking): integration test `tests/integration/workflows.test.ts` Scenario B6 drives `handleFeatureChannelMessage` → architect tool_use `offer_upstream_revision(pm)` with 1 enumerated gap → B6 gate → `pendingEscalation.question` overridden with consolidated 3-gap brief — both positive (override fires) and negative (faithful enumeration retained) cases asserted end-to-end. Real-Slack adds the marginal "operator can read the consolidated brief without confusion" check. Spot-check tier from the start per the value-of-MT discussion.
+- Run opportunistically: next time the architect is run in `engineering-in-progress` on a feature with multiple deterministic PM gaps, grep `logs/bot-YYYY-MM-DD.log` for `[ESCALATION-GATE] B6:` to confirm the gate fires when the agent under-enumerates.
+- Full scenario: see `MANUAL_TESTS.md` MT-20

@@ -498,6 +498,32 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-20 — Architect-escalation consolidation gate (B6, bug #13)
+
+**Why this can't be automated (fully):** unit + regression tests prove the count helpers; integration test (`workflows.test.ts` Scenario B6) drives the architect through `offer_upstream_revision(pm)` with mocked Anthropic and verifies the override fires end-to-end. This MT is a **spot-check** — the only marginal real-Slack verification is "the consolidated brief renders the way an operator can read it" and "the gate doesn't cause a confusing UX when the agent's prose differs from the platform brief."
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD (`b6-architect-escalation-consolidation`).
+
+**Setup:**
+- Feature: any feature in `engineering-in-progress` phase with an approved PM spec on main containing 3+ deterministic gaps (e.g. multiple AC lines using vague timing words like "quickly", "smooth").
+- Architect must NOT have a `pendingEscalation` queued before you start.
+
+**Actions:**
+1. In `#feature-<X>`, ask the architect to finalize the engineering spec or to walk through the upstream gaps.
+2. Wait for the architect's response. Tail `logs/bot-YYYY-MM-DD.log`.
+3. Look for `[ESCALATION-GATE] B6:` in the logs.
+
+**Expected outcome:**
+- If the architect enumerated all N platform-detected gaps in its `offer_upstream_revision` question, no `[ESCALATION-GATE] B6:` line — gate is a no-op.
+- If the architect dropped some, log line: `[ESCALATION-GATE] B6: architect's PM escalation enumerated K of N platform-detected gaps — overriding question with consolidated brief`.
+- After confirming "yes" to the escalation, the PM agent receives the FULL consolidated brief (not the architect's narrow subset). PM's response should address all N gaps in one round.
+
+**Failure signatures:**
+- Multiple round-trips required to close all PM gaps → override didn't fire. Check that `pendingEscalation.question` after the architect's tool call contains the platform-formatted `1. [PM] …` lines, not the architect's prose.
+- Override fires when it shouldn't (false positive): the agent enumerated all gaps but the gate misjudged the count. Check `countAgentGapItems` regex behavior on the agent's actual question text.
+
+---
+
 ### MT-19 — PM AC-citation hallucination detection in escalation-resume (B11 v1, bug #12)
 
 **Why this can't be automated:** unit + regression tests prove the verifier function and its wiring. Only real LLM + real Slack proves the verifier (a) actually fires on real PM responses in the escalation-resume path, (b) catches the canonical Bug-G class (PM cites an AC that doesn't exist or quotes wording the AC doesn't contain), (c) emits the `[CONTENT-VERIFIER]` log line so the operator can intervene before the spec is corrupted. v1 is log-only — no user-facing output yet.

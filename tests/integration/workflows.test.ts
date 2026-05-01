@@ -10193,6 +10193,157 @@ describe("Scenario N96 — upstream-notice format round-trip (Block B2 contract)
   })
 })
 
+// ─── Scenario B6: Architect-escalation consolidation — drop-of-N gaps overridden ─────────────
+//
+// E2E coverage for the new B6 post-run gate at message.ts (manifest B6, regression
+// catalog bug #13). Bug surfaced 2026-04-30: auditPmSpec finds N findings on the
+// approved PM spec; architect calls offer_upstream_revision(target=pm) with a
+// question text that enumerates only 1 of those N — the rest are silently dropped.
+// User had to do N round-trips for what should be one.
+//
+// Fix: post-run gate compares countAgentGapItems(pendingEscalation.question) against
+// countPlatformGapItems(parsePmGapText(upstreamNoticeArch)). When platform > agent,
+// override pendingEscalation.question with the consolidated platform brief. Same
+// logic mirrored for the design escalation target. Both branches deterministic, no
+// LLM in the gate path (Principle 11).
+
+describe("Scenario B6 — architect's PM escalation question is overridden when it enumerates < platform-detected gaps", () => {
+  const THREAD = "workflow-b6"
+
+  // PM spec on main with THREE deterministic findings — auditPmSpec will return 3
+  // gaps because each AC line uses a vague word from VAGUE_WORDS / VAGUE_TIMING /
+  // VAGUE_ERROR_PHRASES.
+  const PM_SPEC_THREE_GAPS = `# Onboarding Product Spec
+
+## User Stories
+1. User signs up via SSO
+2. User receives confirmation email
+
+## Acceptance Criteria
+1. AC#1: User onboarding should feel smooth
+2. AC#2: Confirmation email arrives quickly
+3. AC#3: Errors are handled when the request fails
+
+## Non-Goals
+- Admin dashboard out of scope
+
+## Open Questions
+(none)
+`
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPhaseAuditCaches()
+    clearPendingEscalation(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+  })
+
+  it("architect calls offer_upstream_revision(pm) with 1-item question → B6 gate overrides with consolidated 3-gap brief", async () => {
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md") && ref === "main") {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_THREE_GAPS).toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n(none)").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    // Architect's mocked response: tool_use offer_upstream_revision(target=pm) with
+    // a question that enumerates only 1 of the 3 platform-detected gaps. The
+    // post-run gate should detect 1 < 3 and override the question.
+    mockAnthropicCreate.mockImplementation(async ({ tools }: any) => {
+      const isAgentRun = Array.isArray(tools) && tools.some((t: any) => t.name === "offer_upstream_revision")
+      if (isAgentRun) {
+        return {
+          stop_reason: "tool_use",
+          content: [{
+            type: "tool_use",
+            id: "t1",
+            name: "offer_upstream_revision",
+            input: {
+              targetAgent: "pm",
+              question: "1. AC#1 uses vague language — please tighten",
+            },
+          }],
+        }
+      }
+      // Anything else (classifiers, etc.): default benign response
+      return {
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "NONE" }],
+        usage: { input_tokens: 5, output_tokens: 5 },
+      }
+    })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi, where are we?"), userId: "U_B6" }
+    await handleFeatureChannelMessage(params)
+
+    const pending = getPendingEscalation(featureKey("onboarding"))
+    expect(pending, "expected architect to have queued PM escalation").not.toBeNull()
+    expect(pending!.targetAgent).toBe("pm")
+
+    // Override fired — the question is now the platform's consolidated brief, not the agent's 1-item text.
+    // The consolidated brief is produced by formatPmGapNotice → parsePmGapText, so it has
+    // `1. [PM] …`, `2. [PM] …`, `3. [PM] …` markers.
+    const consolidatedMarkerCount = (pending!.question.match(/^\d+\.\s+\[PM\]\s/gm) ?? []).length
+    expect(consolidatedMarkerCount).toBe(3)
+
+    // The agent's narrow text must no longer be the entirety of the question.
+    expect(pending!.question).not.toBe("1. AC#1 uses vague language — please tighten")
+  })
+
+  it("architect calls offer_upstream_revision(pm) enumerating ALL N gaps → no override (gate skipped, agent's text retained)", async () => {
+    // Negative case: when the agent's enumeration matches the platform count, the
+    // gate is a no-op. This proves the gate doesn't override unconditionally — the
+    // agent gets to keep its prose contribution when it covers all platform gaps.
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md") && ref === "main") {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_THREE_GAPS).toString("base64"), type: "file" } })
+      }
+      if (path?.endsWith("onboarding.engineering.md") && ref === "spec/onboarding-engineering") {
+        return Promise.resolve({ data: { content: Buffer.from("# Eng Spec\n## Open Questions\n(none)").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+
+    const FAITHFUL_ENUMERATION = "1. AC#1 vague language\n2. AC#2 timing not numeric\n3. AC#3 error behavior unspecified"
+    mockAnthropicCreate.mockImplementation(async ({ tools }: any) => {
+      const isAgentRun = Array.isArray(tools) && tools.some((t: any) => t.name === "offer_upstream_revision")
+      if (isAgentRun) {
+        return {
+          stop_reason: "tool_use",
+          content: [{
+            type: "tool_use",
+            id: "t1",
+            name: "offer_upstream_revision",
+            input: { targetAgent: "pm", question: FAITHFUL_ENUMERATION },
+          }],
+        }
+      }
+      return {
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "NONE" }],
+        usage: { input_tokens: 5, output_tokens: 5 },
+      }
+    })
+
+    const params = { ...makeParams(THREAD, "feature-onboarding", "Hi, where are we?"), userId: "U_B6_NEG" }
+    await handleFeatureChannelMessage(params)
+
+    const pending = getPendingEscalation(featureKey("onboarding"))
+    expect(pending, "expected architect to have queued PM escalation").not.toBeNull()
+    // Agent's faithful enumeration kept verbatim — no override.
+    expect(pending!.question).toBe(FAITHFUL_ENUMERATION)
+  })
+})
+
 // ─── Scenario B11 v1: PM AC-citation hallucination detection in escalation-resume ─────────────
 //
 // E2E coverage for the new arch-upstream-escalation-confirmed wiring (manifest B11 v1,

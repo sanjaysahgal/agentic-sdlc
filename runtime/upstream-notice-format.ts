@@ -90,3 +90,25 @@ export function parseDesignGapText(notice: string): string | null {
   const m = notice.match(DESIGN_BODY_RE)
   return m?.[1]?.trim() ?? null
 }
+
+// ── Gap-count helpers (B6 — architect-escalation consolidation gate) ─────────
+//
+// `countPlatformGapItems` matches the strict producer format (`N. [PM] …` or
+// `N. [Design] …`) — used to count gaps in a parsed body. This is the
+// platform's source-of-truth count of deterministic findings.
+//
+// `countAgentGapItems` matches a generic numbered list item (`N. …`) anywhere
+// in free-form prose — used to count how many distinct items the architect
+// enumerated when calling `offer_upstream_revision(question="…")`. The agent
+// rewords the platform brief, so a strict label match is too restrictive;
+// any numbered item counts as one enumerated gap.
+//
+// Both are pure deterministic counters per Principle 11.
+
+export function countPlatformGapItems(parsedBody: string): number {
+  return (parsedBody.match(/^\d+\.\s+\[(?:PM|Design)\]\s/gm) ?? []).length
+}
+
+export function countAgentGapItems(text: string): number {
+  return (text.match(/^\s*\d+\.\s+\S/gm) ?? []).length
+}

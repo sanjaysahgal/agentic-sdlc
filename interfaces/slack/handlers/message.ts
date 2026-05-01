@@ -39,6 +39,8 @@ import {
   hasDesignGaps,
   parsePmGapText,
   parseDesignGapText,
+  countPlatformGapItems,
+  countAgentGapItems,
 } from "../../../runtime/upstream-notice-format"
 
 // Used by the readiness directive to surface the active escalation's item count
@@ -3189,6 +3191,43 @@ async function runArchitectAgent(params: {
       console.log(`[ESCALATION-GATE] architect post-run: PM-first override — agent called offer_upstream_revision(design) but PM gaps must close first. Re-queuing target=pm.`)
       clearPendingEscalation(featureKey(featureName))
       setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+    }
+  }
+
+  // ─── B6 — Architect-escalation consolidation gate ──────────────────────────
+  // When auditPmSpec / auditDesignSpec found N findings but the architect's
+  // offer_upstream_revision question only enumerated fewer than N items, the
+  // agent silently dropped the rest. The deterministic re-audit safety net
+  // would catch them on the next round-trip — but that's N round-trips for
+  // what should be one. Override the question with the consolidated platform
+  // brief from parsePmGapText / parseDesignGapText so every detected gap
+  // ships in the first escalation. Per Principle 11 (deterministic audits)
+  // and Principle 8 (platform enforcement). Manifest B6, regression catalog
+  // bug #13.
+  {
+    const archPending = getPendingEscalation(featureKey(featureName))
+    if (!readOnly && archPending && archPending.originAgent === "architect") {
+      if (archPending.targetAgent === "pm" && pmGapsInNotice) {
+        const fullBrief = parsePmGapText(upstreamNoticeArch)
+        if (fullBrief) {
+          const platformCount = countPlatformGapItems(fullBrief)
+          const agentCount = countAgentGapItems(archPending.question)
+          if (platformCount > 1 && agentCount < platformCount) {
+            console.log(`[ESCALATION-GATE] B6: architect's PM escalation enumerated ${agentCount} of ${platformCount} platform-detected gaps — overriding question with consolidated brief`)
+            setPendingEscalation(featureKey(featureName), { ...archPending, question: fullBrief })
+          }
+        }
+      } else if (archPending.targetAgent === "design" && designGapsInNotice) {
+        const fullBrief = parseDesignGapText(upstreamNoticeArch)
+        if (fullBrief) {
+          const platformCount = countPlatformGapItems(fullBrief)
+          const agentCount = countAgentGapItems(archPending.question)
+          if (platformCount > 1 && agentCount < platformCount) {
+            console.log(`[ESCALATION-GATE] B6: architect's design escalation enumerated ${agentCount} of ${platformCount} platform-detected gaps — overriding question with consolidated brief`)
+            setPendingEscalation(featureKey(featureName), { ...archPending, question: fullBrief })
+          }
+        }
+      }
     }
   }
 

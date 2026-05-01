@@ -30,7 +30,7 @@ import { resolve } from "node:path"
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const CATALOG_PATH = resolve(REPO_ROOT, "MANUAL_TESTS.md")
 
-const MIN_MT_COUNT = 19  // raised from 18 when MT-19 (B11 v1 PM AC-citation hallucination detection) was added
+const MIN_MT_COUNT = 20  // raised from 19 when MT-20 (B6 architect-escalation consolidation gate) was added
 
 const REQUIRED_SECTIONS = [
   "Why this can't be automated",

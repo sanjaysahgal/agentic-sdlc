@@ -23,6 +23,8 @@ import {
   hasDesignGaps,
   parsePmGapText,
   parseDesignGapText,
+  countPlatformGapItems,
+  countAgentGapItems,
   type Finding,
 } from "../../runtime/upstream-notice-format"
 
@@ -173,5 +175,50 @@ describe("upstream-notice-format — label constants are pinned (drift detection
   it("Header separator is em-dash (U+2014), not hyphen (U+002D) — changing breaks consumer regex", () => {
     const out = formatPmGapNotice([f("a", "b")])
     expect(out).toContain("—")  // em-dash literal
+  })
+})
+
+// ── B6 (architect-escalation consolidation gate) — gap-count helpers ────────
+describe("upstream-notice-format — gap-count helpers (B6)", () => {
+  it("countPlatformGapItems counts each `N. [PM] …` line in a parsed body", () => {
+    const findings = [f("issue 1", "rec 1"), f("issue 2", "rec 2"), f("issue 3", "rec 3")]
+    const body = parsePmGapText(formatPmGapNotice(findings))!
+    expect(countPlatformGapItems(body)).toBe(3)
+  })
+
+  it("countPlatformGapItems counts each `N. [Design] …` line in a design body", () => {
+    const findings = [f("d1", "r1"), f("d2", "r2")]
+    const body = parseDesignGapText(formatDesignGapNotice(findings))!
+    expect(countPlatformGapItems(body)).toBe(2)
+  })
+
+  it("countPlatformGapItems returns 0 on free-form prose (no label markers)", () => {
+    expect(countPlatformGapItems("Just a free-form sentence with no markers.")).toBe(0)
+  })
+
+  it("countAgentGapItems counts numbered list items in agent prose (rewording allowed)", () => {
+    const agentText = "1. AC#1 needs clarification on timing\n2. The error path for AC#3 is missing\n3. Non-Goals section is empty"
+    expect(countAgentGapItems(agentText)).toBe(3)
+  })
+
+  it("countAgentGapItems returns 1 when the agent enumerated only one of N platform-detected gaps (B6 trigger condition)", () => {
+    const agentText = "1. AC#1 needs clarification on timing — please tighten."
+    expect(countAgentGapItems(agentText)).toBe(1)
+  })
+
+  it("countAgentGapItems returns 0 when the agent wrote prose without enumeration", () => {
+    const agentText = "AC#1 needs tightening and the error path for AC#3 is missing."
+    expect(countAgentGapItems(agentText)).toBe(0)
+  })
+
+  it("countAgentGapItems is tolerant of leading whitespace (architect prose often indents)", () => {
+    const agentText = "  1. first item\n  2. second item"
+    expect(countAgentGapItems(agentText)).toBe(2)
+  })
+
+  it("determinism (Principle 11): same input always returns same count", () => {
+    const text = "1. one\n2. two\n3. three"
+    expect(countAgentGapItems(text)).toBe(countAgentGapItems(text))
+    expect(countPlatformGapItems("1. [PM] x — y\n2. [PM] a — b")).toBe(countPlatformGapItems("1. [PM] x — y\n2. [PM] a — b"))
   })
 })
