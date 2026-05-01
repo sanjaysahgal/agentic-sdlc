@@ -9,6 +9,11 @@ import Anthropic from "@anthropic-ai/sdk"
 import { applySpecPatch } from "./spec-patcher"
 import { readFile, updateApprovedSpecOnMain } from "./github-client"
 import { loadWorkspaceConfig } from "./workspace-config"
+import {
+  extractCategoryRules,
+  applyCategoryRules,
+  findResidualCategoryViolations,
+} from "./category-rule-extractor"
 
 const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
 
@@ -26,6 +31,22 @@ export async function patchDesignSpecWithRecommendations(params: {
   if (!existingSpec) {
     console.log(`[ESCALATION] design spec writeback: spec not found on main for feature=${featureName}, skipping`)
     return null
+  }
+
+  // B9 (cross-agent parity per Principle 15) — Deterministic category-rule
+  // application. Designer recommendations can include universal substitution
+  // directives like 'any "fast" becomes "within 200ms"' just as PM
+  // recommendations can. Same Haiku-inconsistency bug class — pull the
+  // substitution out of Haiku's hands. Mirror of pm-escalation-spec-writer.ts.
+  // MT-CHECKED: MT-23 already covers both PM and design paths (the existing
+  // scenario doesn't need updating; the spot-check operator should now
+  // observe the [ESCALATION] B9: log line for the architect→designer leg too).
+  const categoryRules = extractCategoryRules(recommendations)
+  let preProcessedSpec = existingSpec
+  if (categoryRules.length > 0) {
+    preProcessedSpec = applyCategoryRules(existingSpec, categoryRules)
+    const ruleLines = categoryRules.map((r, i) => `  ${i + 1}. "${r.from}" → "${r.to}"`).join("\n")
+    console.log(`[ESCALATION] B9: extracted ${categoryRules.length} category rule(s) from Designer recommendations for feature=${featureName} — applied deterministically before Haiku merge:\n${ruleLines}`)
   }
 
   const response = await client.messages.create({
@@ -52,7 +73,7 @@ RULES — follow exactly:
 5. Output ONLY sections that changed, in full (complete section body). No preamble, no explanation, nothing outside ## or ### sections.`,
     messages: [{
       role: "user",
-      content: `EXISTING DESIGN SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS FROM ARCHITECT:\n${question}\n\nDESIGNER RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with the Designer's confirmed changes applied.`,
+      content: `EXISTING DESIGN SPEC:\n${preProcessedSpec}\n\nBLOCKING QUESTIONS FROM ARCHITECT:\n${question}\n\nDESIGNER RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with the Designer's confirmed changes applied.`,
     }],
   })
 
@@ -62,7 +83,18 @@ RULES — follow exactly:
     return null
   }
 
-  const mergedSpec = applySpecPatch(existingSpec, patch)
+  let mergedSpec = applySpecPatch(preProcessedSpec, patch)
+
+  // B9 (cross-agent parity) — Post-Haiku residual safety net. Same as the PM
+  // path: if Haiku's merge re-introduced any from-word, apply the rules again.
+  if (categoryRules.length > 0) {
+    const residuals = findResidualCategoryViolations(mergedSpec, categoryRules)
+    if (residuals.length > 0) {
+      const residualLines = residuals.map((r, i) => `  ${i + 1}. "${r.from}" survived → re-applying`).join("\n")
+      console.log(`[ESCALATION] B9: Haiku's merge re-introduced ${residuals.length} category-rule term(s) in design spec for feature=${featureName} — applying rules as final pass:\n${residualLines}`)
+      mergedSpec = applyCategoryRules(mergedSpec, residuals)
+    }
+  }
 
   await updateApprovedSpecOnMain({
     filePath: designSpecPath,

@@ -141,4 +141,62 @@ describe("bug #16 — patcher non-deterministic on PM category rules (manifest B
     expect(mergeHaikuIdx, "Haiku merge call (after extractCategoryRules) must exist in source").toBeGreaterThan(-1)
     expect(extractIdx).toBeLessThan(mergeHaikuIdx)
   })
+
+  // ── B9b: cross-agent parity (Principle 15) ────────────────────────────────
+  // The same category-rule application must exist in design-escalation-spec-writer.ts.
+  // Designer recommendations during architect→designer escalation can include
+  // universal substitution directives just like PM recommendations can. A fix
+  // shipped only in PM but not design would re-introduce the N-round-trip bug
+  // class on the architect→designer path.
+
+  it("structural assertion (B9b cross-agent parity): the extractor + applier + residual checker are wired into design-escalation-spec-writer.ts", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/design-escalation-spec-writer.ts"),
+      "utf8",
+    )
+
+    expect(source).toMatch(/from\s+["']\.\/category-rule-extractor["']/)
+    expect(source).toMatch(/extractCategoryRules\s*\(/)
+    expect(source).toMatch(/applyCategoryRules\s*\(/)
+    expect(source).toMatch(/findResidualCategoryViolations\s*\(/)
+    expect(source).toMatch(/\[ESCALATION\] B9:/)
+  })
+
+  it("structural assertion (B9b): pre-Haiku application happens BEFORE the Haiku merge call in design writer too", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/design-escalation-spec-writer.ts"),
+      "utf8",
+    )
+    const extractIdx = source.indexOf("extractCategoryRules(")
+    expect(extractIdx, "extractCategoryRules call must exist in design-escalation-spec-writer.ts source").toBeGreaterThan(-1)
+    // design-escalation-spec-writer.ts has only one Haiku call (no
+    // strip-visual-details pass like PM has). Find from start.
+    const haikuIdx = source.indexOf("client.messages.create(")
+    expect(haikuIdx, "Haiku call must exist in design-escalation-spec-writer.ts source").toBeGreaterThan(-1)
+    expect(extractIdx).toBeLessThan(haikuIdx)
+  })
+
+  it("structural assertion (B9b): both writers use the SAME shared module — no duplicate parsers", async () => {
+    // Per Principle 15 + Block B2's single-source-of-truth pattern, both
+    // writers import from runtime/category-rule-extractor.ts. A future
+    // contributor who copy-pasted the regex into one of the writers would
+    // break this assertion.
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const pmSource = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/pm-escalation-spec-writer.ts"),
+      "utf8",
+    )
+    const designSource = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/design-escalation-spec-writer.ts"),
+      "utf8",
+    )
+    const importRe = /from\s+["']\.\/category-rule-extractor["']/
+    expect(pmSource).toMatch(importRe)
+    expect(designSource).toMatch(importRe)
+  })
 })

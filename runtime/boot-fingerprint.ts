@@ -24,6 +24,18 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b9b-design-category-rule-cross-agent-parity — manifest B9 cross-agent
+//     parity (Principle 15). Mirrors the B9 deterministic category-rule
+//     extractor + applier + residual safety net into
+//     runtime/design-escalation-spec-writer.ts (architect→designer
+//     escalation path) — same fix, same shared module
+//     (runtime/category-rule-extractor.ts), same log markers
+//     ([ESCALATION] B9: extracted / Haiku's merge re-introduced …),
+//     mirroring runtime/pm-escalation-spec-writer.ts. Eliminates the
+//     N-round-trip Haiku-inconsistency bug class on the architect→designer
+//     path that Scenario B9 covered for architect→PM. Caught pre-walk via
+//     the post-implementation coverage audit + cross-agent-parity review.
+//     MT-23 covers both paths.
 //   b10-platform-message-prefix — manifest B10 fix (regression catalog
 //     bug #17). Adds runtime/platform-message-prefix.ts exporting
 //     PLATFORM_MESSAGE_PREFIX = "*Platform —*" — the neutral prefix for
@@ -135,7 +147,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "b10-platform-message-prefix"
+export const CODE_MARKER = "b9b-design-category-rule-cross-agent-parity"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

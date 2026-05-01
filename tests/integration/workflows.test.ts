@@ -10417,6 +10417,106 @@ Sign-up flow.
   })
 })
 
+// ─── Scenario B9b: Designer category rule applied deterministically (cross-agent parity) ──────
+//
+// E2E coverage for B9 cross-agent parity per Principle 15. Mirror of Scenario B9
+// but on the architect→designer escalation path. When the Designer responds with
+// a universal substitution directive like 'any "fast" becomes "within 200ms"',
+// the platform must extract and apply the rule deterministically before handing
+// the design spec to Haiku — same pattern as the PM path. This scenario drives
+// an architect→designer escalation reply through handleFeatureChannelMessage
+// with a deliberately-buggy mocked Haiku patch and asserts the saved design
+// spec on main has 0 surviving from-words.
+
+describe("Scenario B9b — Designer category rule applied deterministically across all design-spec instances (cross-agent parity)", () => {
+  const THREAD = "workflow-b9b"
+  const FEATURE = "onboarding"
+  const DESIGN_SPEC_DIRTY = `# Onboarding Design Spec
+
+## Screens
+### Auth Sheet
+Modal that opens fast.
+
+### Dashboard
+Hero animation runs fast on first paint.
+
+### Confirmation
+Toast appears fast after submit.
+
+## Open Questions
+(none)
+`
+
+  beforeEach(async () => {
+    clearHistory(featureKey(FEATURE))
+    clearPhaseAuditCaches()
+    setConfirmedAgent(featureKey(FEATURE), "architect")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification(featureKey(FEATURE), {
+      targetAgent: "design",
+      originAgent: "architect",
+      question: "Vague animation timing — multiple screens use 'fast' without numeric duration.",
+      recommendations: `My recommendation: any "fast" becomes "within 200ms" — that's the brand-system animation budget we should adopt across all screens.`,
+    })
+  })
+  afterEach(async () => {
+    clearHistory(featureKey(FEATURE))
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification(featureKey(FEATURE))
+  })
+
+  it("standalone confirmation triggers patchDesignSpecWithRecommendations; deterministic category-rule application substitutes ALL 'fast' instances even if Haiku returns a buggy patch", async () => {
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      // Match both ref="main" (explicit, used by readFile in patchDesignSpecWithRecommendations)
+      // and ref=undefined (used by updateApprovedSpecOnMain to fetch the SHA before writing).
+      if (path?.endsWith(`${FEATURE}.design.md`) && (ref === "main" || ref === undefined)) {
+        return Promise.resolve({ data: { content: Buffer.from(DESIGN_SPEC_DIRTY).toString("base64"), sha: "abc", type: "file" } })
+      }
+      // For any other reads (engineering spec, etc.) return 404
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Simulate Haiku's buggy behavior on the design path: patch substitutes 1 of 3
+    // instances, leaves 2 as "fast." Without B9b's residual safety net, those 2
+    // would survive in the saved design spec. With B9b wired in, the residual
+    // check fires and applies the rule again.
+    const HAIKU_BUGGY_DESIGN_PATCH = `## Screens
+### Auth Sheet
+Modal that opens within 200ms.
+
+### Dashboard
+Hero animation runs fast on first paint.
+
+### Confirmation
+Toast appears fast after submit.`
+
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: HAIKU_BUGGY_DESIGN_PATCH }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 50 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Find the createOrUpdate call that wrote the design spec to main.
+    const designWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.path?.includes(`${FEATURE}.design.md`),
+    )
+    expect(designWrite, "expected design spec writeback to fire").toBeDefined()
+    const writtenContent = Buffer.from(designWrite![0].content, "base64").toString()
+
+    // B9b contract: NO instances of "fast" survive — even though Haiku's patch
+    // left 2 of them in. The deterministic post-Haiku residual safety net
+    // caught them and applied the rule again, just like the PM path.
+    expect(writtenContent).not.toMatch(/\bfast\b/i)
+    // All 3 screens that originally said "fast" now say "within 200ms."
+    expect((writtenContent.match(/within 200ms/g) ?? []).length).toBeGreaterThanOrEqual(3)
+  })
+})
+
 // ─── Scenario B7: readOnly brief carries the no-spec-writing-tools clause ─────────────────────
 //
 // E2E coverage for the new B7 wiring (manifest B7, regression catalog bug #15).
