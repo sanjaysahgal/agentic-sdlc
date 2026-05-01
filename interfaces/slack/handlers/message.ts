@@ -1049,18 +1049,14 @@ ${archPendingEscalation.question}`
 
       // Standalone confirmation — resume architect with injected revision.
       console.log(`[ROUTER] branch=arch-upstream-revision-reply feature=${featureName} target=${archNotifTarget}`)
-      // Write the decision to BOTH the engineering spec AND the upstream spec.
-      // Engineering spec: records the decision so the architect has it.
-      // Upstream spec (product or design): applies the PM/designer's recommendation
-      // so the approved spec on main reflects the confirmed change.
+      // B8 / Principle 16 — spec write ownership: write the upstream agent's
+      // resolved recommendation to the upstream spec ONLY. The architect re-reads
+      // the upstream spec on every run via loadArchitectAgentContext, so
+      // duplicating the decision into the engineering spec under a
+      // `### Architect Decision (pre-engineering)` heading would create two
+      // sources of truth (Principle 1) and produce append-only duplicate-heading
+      // blocks (one per escalation). Engineering-spec writeback retired.
       if (archEscalationNotification.recommendations) {
-        // Write to engineering spec (non-blocking)
-        await patchEngineeringSpecWithDecision({
-          featureName,
-          question: archEscalationNotification.question,
-          decision: archEscalationNotification.recommendations,
-        }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
-
         // Write to upstream spec — product spec for PM escalations, design spec for design escalations
         // Capture the patched spec for re-audit below.
         let patchedUpstreamSpec: string | null = null

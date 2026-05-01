@@ -24,6 +24,19 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b8-spec-write-ownership — manifest B8 fix (regression catalog bug #14).
+//     Codified CLAUDE.md Principle 16 (Spec write ownership — resolved
+//     decisions land only in the owner's spec; carve-outs for preseed-
+//     open-items and reciprocal cleanup are explicit). Removed the
+//     patchEngineeringSpecWithDecision call from the architect's
+//     upstream-revision-reply branch in interfaces/slack/handlers/message.ts
+//     (PM/designer-authored content was being recorded under
+//     `### Architect Decision (pre-engineering)` heading in the
+//     architect-owned engineering spec — wrong author, wrong spec, wrong
+//     framing, append-only layout). Architect re-reads upstream spec on
+//     every run; no information lost. Structural invariant
+//     tests/invariants/spec-write-ownership.test.ts AST-greps every
+//     writeback callsite and pins to documented allow-list. MT-21 spot-check.
 //   b6-architect-escalation-consolidation — manifest B6 fix (regression
 //     catalog bug #13). Adds deterministic count helpers
 //     (`countPlatformGapItems`, `countAgentGapItems`) to
@@ -84,7 +97,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "b6-architect-escalation-consolidation"
+export const CODE_MARKER = "b8-spec-write-ownership"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

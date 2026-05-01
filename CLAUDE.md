@@ -241,6 +241,39 @@ This is not "nice to have" — it's a structural invariant. When a new agent is 
 
 **Enforcement:** Pre-commit hook `[ESCALATION WRITEBACK GATE]` counts `branch=*-reply` paths vs `patchProductSpecWithRecommendations`/`patchEngineeringSpecWithDecision` calls. Blocks if writebacks < reply paths.
 
+### 16. Spec write ownership — resolved decisions land only in the owner's spec
+
+**Every agent owns exactly one spec; resolved decisions authored by that agent land only in that spec. The platform is always the writer (acting as scribe), but it never moves agent X's resolved content into agent Y's spec.**
+
+| Agent | Owned spec | Path on disk |
+|---|---|---|
+| PM | product spec | `<features>/<feature>/<feature>.product.md` |
+| Designer | design spec | `<features>/<feature>/<feature>.design.md` |
+| Architect | engineering spec | `<features>/<feature>/<feature>.engineering.md` |
+
+**The rule applies to RESOLVED content** — a decision the owning agent made that should be the canonical record. If PM's escalation-resume run produces "AC#1 timing is 200ms," that lands in the **product spec only**, not in the engineering spec under a `### Architect Decision` heading. The architect re-reads the product spec on every run via `loadArchitectAgentContext`; duplicating into the engineering spec creates two sources of truth (Principle 1 violation) and append-only writeback layouts that pile up `### Architect Decision (pre-engineering)` blocks.
+
+**Carve-out — preseeded open items / handoff sections.** An upstream agent MAY write into a downstream agent's spec when the content is explicitly **unresolved** — a TODO list or handoff section the downstream agent will resolve. The legitimate cases today:
+- `preseedEngineeringSpec` — designer queues architect-scope items as TODOs in the engineering spec for the architect to resolve.
+- `seedHandoffSection` — designer seeds `## Design Assumptions To Validate` into the engineering spec for the architect to validate or reject.
+- `clearHandoffSection` — architect (after `finalize_engineering_spec`) removes `## Design Assumptions` from the design spec on main, since the assumptions have been validated/superseded. Reciprocal cleanup of a section the upstream agent itself marked transient.
+
+**Carve-out test:** the section heading must contain the words "TODO," "To Validate," "Open Question," or equivalent transient-state language. If you can't justify the cross-agent write as a flagged-open-item, it's a violation.
+
+**The decision gate before writing any new writeback callsite:**
+1. Is the content a *resolved decision* or an *open item*?
+2. If resolved: who authored it? That agent's owned spec is the only allowed destination.
+3. If open: is the destination spec's owner the agent that will resolve it? Use the preseed pattern.
+4. If neither: the write doesn't belong here at all.
+
+**Historical violation (April 2026):** `patchEngineeringSpecWithDecision` was called from BOTH paths in `interfaces/slack/handlers/message.ts`:
+- Designer→architect escalation reply (correct — architect-authored content into engineering spec)
+- Architect→PM/designer escalation reply (wrong — PM/designer-authored content into engineering spec)
+
+The wrong call recorded PM's product-spec resolutions under a `### Architect Decision (pre-engineering)` heading in the engineering spec — wrong author, wrong spec, wrong framing. Append-only layout meant N escalations produced N duplicate-heading blocks. Caught by `auditSpecStructure` after the fact, but no structural gate prevented the write. Manifest B8, regression catalog bug #14.
+
+**Enforcement:** `tests/invariants/spec-write-ownership.test.ts` — AST-greps every callsite of `saveDraft*` / `saveApproved*` / `patch*Spec*` / `preseed*` / `seedHandoffSection` / `updateApprovedSpecOnMain` and verifies each is consistent with the principle (or a documented carve-out). Adding a new writeback that doesn't fit FAILS at PR time.
+
 ---
 
 ## Architecture

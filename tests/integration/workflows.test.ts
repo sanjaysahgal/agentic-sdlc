@@ -5532,29 +5532,56 @@ describe("Scenario N44b — Arch upstream escalation confirmation writes to engi
     clearEscalationNotification(featureKey("onboarding"))
   })
 
-  it("writes pre-engineering decision to engineering spec branch before resuming architect", async () => {
+  it("writes PM decision to product spec ONLY — engineering spec is NOT touched (B8 / Principle 16)", async () => {
+    // FLIPPED 2026-04-30 by B8 fix per CLAUDE.md Principle 16 (spec write ownership).
+    // Pre-B8: this test asserted the engineering spec WAS written with a `### Architect Decision`
+    // block — that was the violation (PM-authored content recorded in the architect-owned
+    // engineering spec, append-only layout producing N duplicate-heading blocks per N escalations).
+    // Post-B8: PM's resolved recommendation lands in the PRODUCT spec only; the architect
+    // re-reads it from there via loadArchitectAgentContext when it resumes.
     mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
     mockCreateRef.mockResolvedValue({})
     mockCreateOrUpdate.mockResolvedValue({})
-    mockGetContent.mockRejectedValue(Object.assign(new Error("Not Found"), { status: 404 }))
-
-    // Anthropic: architect resumes after confirmation
-    mockAnthropicCreate.mockResolvedValue({
-      content: [{ type: "text", text: "PM confirmed background sync is in scope. Proceeding with engineering spec." }],
-      stop_reason: "end_turn",
+    // Product spec on main returns a stub so patchProductSpecWithRecommendations has something to merge into.
+    const PM_SPEC_STUB = `# Onboarding\n\n## Acceptance Criteria\n1. AC#1: existing item\n\n## Open Questions\n(none)\n`
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        return { data: { content: Buffer.from(PM_SPEC_STUB).toString("base64"), sha: "abc", type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("Not Found"), { status: 404 })
     })
+
+    // Anthropic: (1) Haiku patch merge for PM spec writeback, (2) architect resumes
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: PM_SPEC_STUB }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 30, output_tokens: 30 },
+      })
+      .mockResolvedValue({
+        content: [{ type: "text", text: "PM confirmed background sync is in scope. Proceeding with engineering spec." }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 30, output_tokens: 30 },
+      })
 
     const params = makeParams(THREAD, "feature-onboarding", "confirmed, proceed")
     await handleFeatureChannelMessage(params)
 
-    // Engineering spec branch must have been written with the decision
-    const engWrite = mockCreateOrUpdate.mock.calls.find(
-      (c: any[]) => c[0]?.path?.includes("onboarding.engineering.md")
+    // Product spec MUST have been written (PM-authored content → product spec, owner-consistent)
+    const productWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.path?.includes("onboarding.product.md")
     )
-    expect(engWrite).toBeDefined()
-    const engContent = Buffer.from(engWrite![0].content, "base64").toString()
-    expect(engContent).toContain("Pre-Engineering Architectural Decisions")
-    expect(engContent).toContain(ARCH_QUESTION)
+    expect(productWrite, "expected PM recommendation to be written to product spec").toBeDefined()
+
+    // Engineering spec MUST NOT have been written with a Pre-Engineering Architectural Decisions block
+    // (the B8 violation). It's fine if the engineering branch is touched for unrelated reasons (e.g.
+    // resolveAgent reads from it), but no createOrUpdate to the engineering file with the decision block.
+    const engWriteWithDecision = mockCreateOrUpdate.mock.calls.find((c: any[]) => {
+      if (!c[0]?.path?.includes("onboarding.engineering.md")) return false
+      const content = c[0]?.content ? Buffer.from(c[0].content, "base64").toString() : ""
+      return content.includes("Pre-Engineering Architectural Decisions") || content.includes(ARCH_QUESTION)
+    })
+    expect(engWriteWithDecision, "[B8 / Principle 16] engineering spec must NOT receive PM-authored content under `### Architect Decision (pre-engineering)` — that violates spec write ownership").toBeUndefined()
   })
 })
 

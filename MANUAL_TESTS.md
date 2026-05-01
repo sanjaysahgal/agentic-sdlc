@@ -498,6 +498,32 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-21 — Spec write ownership: engineering spec stays clean of PM-authored content (B8, bug #14)
+
+**Why this can't be automated (fully):** unit + invariant + regression tests + flipped integration scenario already prove the wiring end-to-end with mocks. This MT is a **spot-check** — the only marginal real-Slack verification is "after a full architect→PM round-trip in production, the engineering spec on `spec/<feature>-engineering` does not contain a `### Architect Decision (pre-engineering)` block carrying PM-authored content."
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD (`b8-spec-write-ownership`).
+
+**Setup:**
+- Feature: any feature in `engineering-in-progress` phase with an approved PM spec on main containing a known number of deterministic gaps.
+- Architect must have a `pendingEscalation` queued targeting PM (architect already escalated; user about to confirm).
+
+**Actions:**
+1. In `#feature-<X>`, post `yes` to confirm the architect's PM escalation.
+2. PM responds with recommendations; you confirm with `yes`.
+3. Inspect the engineering spec branch: `git fetch && git show spec/<feature>-engineering:specs/features/<feature>/<feature>.engineering.md`.
+
+**Expected outcome:**
+- The product spec on main was patched with the PM's recommendations (visible in the resulting GitHub diff).
+- The engineering spec branch does NOT contain any new `### Architect Decision (pre-engineering)` block from this turn. (Pre-existing blocks from before the B8 fix are fine; the test is "no new ones added by this turn.")
+- Bot logs do NOT contain `[ENGINEERING-DECISION] patchEngineeringSpecWithDecision: decision written` for this turn from the architect's `upstream-revision-reply` branch.
+
+**Failure signatures:**
+- Engineering spec gets a new `### Architect Decision (pre-engineering)` block after an architect→PM confirmation → B8 regression. Check that `interfaces/slack/handlers/message.ts` arch-upstream-revision-reply branch did not accidentally re-acquire the call. The structural invariant test should already have caught it at PR time.
+- Same content appears in BOTH product spec AND engineering spec → the principle is being violated. Inspect which path wrote it via the `[ESCALATION]` log lines.
+
+---
+
 ### MT-20 — Architect-escalation consolidation gate (B6, bug #13)
 
 **Why this can't be automated (fully):** unit + regression tests prove the count helpers; integration test (`workflows.test.ts` Scenario B6) drives the architect through `offer_upstream_revision(pm)` with mocked Anthropic and verifies the override fires end-to-end. This MT is a **spot-check** — the only marginal real-Slack verification is "the consolidated brief renders the way an operator can read it" and "the gate doesn't cause a confusing UX when the agent's prose differs from the platform brief."

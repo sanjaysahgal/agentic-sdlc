@@ -73,7 +73,14 @@
 
 ### MT-20 — Architect-escalation consolidation gate (B6, bug #13)
 
-- Added by commit: <this commit, B6>
+- Added by commit: `55b776b` (B6)
 - Why spot-check (not blocking): integration test `tests/integration/workflows.test.ts` Scenario B6 drives `handleFeatureChannelMessage` → architect tool_use `offer_upstream_revision(pm)` with 1 enumerated gap → B6 gate → `pendingEscalation.question` overridden with consolidated 3-gap brief — both positive (override fires) and negative (faithful enumeration retained) cases asserted end-to-end. Real-Slack adds the marginal "operator can read the consolidated brief without confusion" check. Spot-check tier from the start per the value-of-MT discussion.
 - Run opportunistically: next time the architect is run in `engineering-in-progress` on a feature with multiple deterministic PM gaps, grep `logs/bot-YYYY-MM-DD.log` for `[ESCALATION-GATE] B6:` to confirm the gate fires when the agent under-enumerates.
 - Full scenario: see `MANUAL_TESTS.md` MT-20
+
+### MT-21 — Spec write ownership: engineering spec stays clean of PM-authored content (B8, bug #14)
+
+- Added by commit: <this commit, B8 + Principle 16>
+- Why spot-check (not blocking): four layers of automated coverage already exist — (1) structural invariant `tests/invariants/spec-write-ownership.test.ts` AST-greps every writeback callsite and pins it to the documented allow-list, (2) regression test `tests/regression/spec-write-ownership.test.ts` (bug #14) pins the post-fix shape, (3) flipped integration scenario N44b in `tests/integration/workflows.test.ts` asserts engineering spec NOT touched and product spec IS written end-to-end, (4) cross-agent audit confirmed exactly one violation existed system-wide. Real-Slack adds the marginal "the actual GitHub branch ends up clean" check.
+- Run opportunistically: next time you drive a feature through architect→PM escalation in real Slack, eyeball `git show spec/<feature>-engineering:specs/features/<feature>/<feature>.engineering.md` for a fresh `### Architect Decision (pre-engineering)` block. None should appear from architect→PM rounds.
+- Full scenario: see `MANUAL_TESTS.md` MT-21

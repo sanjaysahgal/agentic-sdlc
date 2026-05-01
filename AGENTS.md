@@ -330,6 +330,18 @@ Every agent must surface all known constraint violations on every response — w
 
 **Every new agent added to the platform must define and wire its proactive audit before the agent is considered complete.** A new agent without an audit is not done — it is dangerous. The spec will accumulate violations the human cannot see.
 
+### Spec write ownership (CLAUDE.md Principle 16 — non-negotiable for every spec-producing agent)
+
+**Every spec-producing agent owns exactly one spec; resolved decisions authored by that agent land only in that spec. Cross-agent writes are allowed only for preseeded open items (TODOs, "To Validate" handoff sections), never for resolved content.**
+
+| Agent | Owned spec | Allowed writers | Carve-outs |
+|---|---|---|---|
+| PM | product spec | PM tools (`save_product_spec_draft`, `apply_product_spec_patch`, `finalize_product_spec`); platform-as-scribe in escalation-confirmation paths writing PM-authored recommendations | none — no other agent ever writes resolved content here |
+| Designer | design spec | Designer tools; platform-as-scribe in escalation-confirmation paths writing designer-authored recommendations | architect's `clearHandoffSection` removes the transient `## Design Assumptions` section after `finalize_engineering_spec` (reciprocal cleanup) |
+| Architect | engineering spec | Architect tools; platform-as-scribe in design→architect escalation-confirmation path writing architect-authored decisions | designer's `preseedEngineeringSpec` queues architect-scope items as TODOs; designer's `seedHandoffSection` seeds `## Design Assumptions To Validate` |
+
+**Enforcement:** `tests/invariants/spec-write-ownership.test.ts` AST-greps every callsite of `saveDraft*` / `saveApproved*` / `patch*Spec*` / `preseed*` / `seedHandoffSection` / `updateApprovedSpecOnMain` and pins each to a documented allow-list with rationale. Adding a new writeback requires updating the manifest in the same commit. The historical violation (manifest B8, regression catalog bug #14) was the architect's `upstream-revision-reply` branch writing PM/designer-authored content into the engineering spec — retired by the codified principle + invariant test.
+
 ### Anti-deferral block (Block N option-3 — non-negotiable for every spec-producing agent)
 
 Every agent prompt builder (PM, Designer, Architect, and every future agent that holds a conversation with a human) must inject `buildAntiDeferralBlock()` from `runtime/deterministic-auditor.ts` into its system prompt via template interpolation. The block lists every entry of `DEFERRAL_PHRASES` — the same phrases the runtime `enforceNoHedging` gate rewrites — so prompt + runtime gate stay in sync at a single source of truth.
