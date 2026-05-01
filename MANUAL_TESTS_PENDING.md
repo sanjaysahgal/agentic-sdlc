@@ -87,7 +87,14 @@
 
 ### MT-22 — readOnly brief clause prevents action-claim prose in escalation responses (B7, bug #15)
 
-- Added by commit: <this commit, B7>
+- Added by commit: `804d73c` (B7)
 - Why spot-check (not blocking): structural invariant `tests/invariants/readonly-brief-clause.test.ts` (9 tests) pins that the clause is injected into every readOnly brief site; regression test `tests/regression/readonly-brief-clause.test.ts` (bug #15) pins the clause content. The fix is a prompt-rule (probabilistic per Principle 8), so real Slack adds the marginal "agent actually honors the clause" check — but the structural invariant ensures the worst case is "occasional non-compliance," not "silent missing clause."
 - Run opportunistically: next time you confirm a queued PM escalation in real Slack, eyeball PM's response for "Applying the patch..." / "I'll update..." action-claim prose. Should be absent.
 - Full scenario: see `MANUAL_TESTS.md` MT-22
+
+### MT-23 — PM category rule applied deterministically across all spec instances (B9, bug #16)
+
+- Added by commit: <this commit, B9>
+- Why spot-check (not blocking): three layers of automated coverage already exist — (1) 25 unit tests for `extractCategoryRules` / `applyCategoryRules` / `findResidualCategoryViolations` covering every supported pattern + word-boundary semantics + determinism, (2) 6 regression tests (bug #16) including a structural-wiring assertion that the extractor is called BEFORE Haiku, (3) integration scenario B9 in `workflows.test.ts` that drives `handleFeatureChannelMessage` with a deliberately-buggy mocked Haiku patch and asserts the saved spec has 0 surviving from-words. Real Slack adds the marginal "the actual GitHub diff is clean across all instances" check.
+- Run opportunistically: next time PM gives a universal substitution rule in real Slack (e.g. `any "X" becomes "Y"`), grep `logs/bot-YYYY-MM-DD.log` for `[ESCALATION] B9:` to confirm the rule was extracted, and inspect the resulting GitHub diff on main to confirm all instances were substituted.
+- Full scenario: see `MANUAL_TESTS.md` MT-23

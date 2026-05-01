@@ -24,6 +24,17 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b9-category-rule-deterministic-application — manifest B9 fix
+//     (regression catalog bug #16). Adds runtime/category-rule-extractor.ts —
+//     pure deterministic extractor (Principle 11) for universal substitution
+//     directives in PM recommendations ("any 'immediately' becomes 'within 1
+//     second'"). Wired into runtime/pm-escalation-spec-writer.ts: extracts
+//     rules → applies them via word-boundary string replace BEFORE Haiku
+//     merge → post-Haiku residual check fires findResidualCategoryViolations
+//     and re-applies if Haiku re-introduced any from-word. Eliminates the
+//     N-round-trip pattern caused by Haiku's inconsistent application of
+//     PM substitution directives. Log markers `[ESCALATION] B9: extracted`
+//     and `[ESCALATION] B9: Haiku's merge re-introduced`. MT-23 spot-check.
 //   b7-readonly-brief-clause — manifest B7 fix (regression catalog bug #15).
 //     Adds runtime/readonly-brief-clause.ts exporting
 //     READONLY_AGENT_BRIEF_CLAUSE — the shared constant declaring the
@@ -109,7 +120,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "b7-readonly-brief-clause"
+export const CODE_MARKER = "b9-category-rule-deterministic-application"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

@@ -498,6 +498,36 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-23 — PM category rule applied deterministically across all spec instances (B9, bug #16)
+
+**Why this can't be automated (fully):** unit + regression tests prove the extractor + applier; integration scenario B9 in `workflows.test.ts` drives `handleFeatureChannelMessage` end-to-end with a mocked-buggy Haiku and asserts the saved spec has 0 surviving from-words. This MT is a **spot-check** — the only marginal real-Slack verification is "the actual GitHub diff after a real escalation confirmation has all instances substituted, regardless of how Haiku behaved."
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD (`b9-category-rule-deterministic-application`).
+
+**Setup:**
+- Feature: any feature in design-in-progress phase with an approved PM spec on main containing a recurring vague word in 3+ acceptance criteria (e.g. multiple ACs using "immediately" without numeric bounds, or multiple ACs using "smooth" without specifics).
+- Designer just escalated to PM (queued `pendingEscalation` with target=pm).
+- PM about to respond with a universal substitution directive.
+
+**Actions:**
+1. Confirm the queued escalation with `yes` so the PM agent runs.
+2. PM responds with a category rule like `My recommendation: any "immediately" becomes "within 1 second"` (or whatever the surfaced from-word is).
+3. Confirm with `yes` to trigger the writeback.
+4. Tail `logs/bot-YYYY-MM-DD.log` and grep for `[ESCALATION] B9:`.
+5. Inspect the resulting GitHub diff on main: `git fetch origin && git diff origin/main^..origin/main -- specs/features/<feature>/<feature>.product.md`.
+
+**Expected outcome:**
+- Bot logs contain `[ESCALATION] B9: extracted N category rule(s) from PM recommendations` followed by the rule list.
+- If Haiku's merge re-introduces any from-word, logs ALSO contain `[ESCALATION] B9: Haiku's merge re-introduced N category-rule term(s) — applying rules as final pass`.
+- The saved product spec on main contains ZERO instances of the from-word ("immediately") and ALL instances of the to-phrase ("within 1 second") wherever the from-word used to appear.
+
+**Failure signatures:**
+- Saved spec still contains the from-word in any AC → either the extractor missed the rule (check the rule format matches the supported patterns: `any/all/every X becomes Y`, `replace all X with Y`, `change every X to Y`) OR the residual safety net didn't fire (check the `[ESCALATION] B9:` log lines for "applying rules as final pass").
+- Bot logs don't contain `[ESCALATION] B9:` at all → the extractor didn't recognize the rule. Capture the PM's exact prose for backlog (may need to add the new pattern to `extractCategoryRules`).
+- The to-phrase appears in places it shouldn't (e.g. inside an unrelated word like "breakfasten") → word-boundary regex bug. Capture the spec context for backlog.
+
+---
+
 ### MT-22 — readOnly brief clause prevents action-claim prose in escalation responses (B7, bug #15)
 
 **Why this can't be automated (fully):** the structural invariant pins that the clause is *injected* into every brief; the regression test pins what the clause says. Only real Slack with a real LLM proves the agent *honors* the clause and stops producing "Applying the patch..." prose. This is a spot-check tier MT — the prompt-rule fix is probabilistic per Principle 8, but the structural invariant ensures the clause is always present, so the worst case is "agent ignores the clause occasionally" which the operator will catch in the response prose.

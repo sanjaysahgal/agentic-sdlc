@@ -10220,6 +10220,103 @@ describe("Scenario N96 — upstream-notice format round-trip (Block B2 contract)
   })
 })
 
+// ─── Scenario B9: Category rules applied deterministically before Haiku merge ───────────────
+//
+// E2E coverage for the new B9 wiring (manifest B9, regression catalog bug #16).
+// When the PM (in escalation-resume mode) responds with a universal substitution
+// directive like `any "immediately" becomes "within 1 second"`, the platform now
+// extracts the rule deterministically and applies it to the spec BEFORE handing
+// it to Haiku. This scenario drives a designer→PM escalation reply through
+// handleFeatureChannelMessage, mocks Haiku's merge to (deliberately) return a
+// no-op patch, and verifies the saved product spec on main has all 4 instances
+// of the from-word substituted — proving the deterministic path is doing the
+// work, independent of Haiku's behavior.
+
+describe("Scenario B9 — PM category rule applied deterministically across all spec instances", () => {
+  const THREAD = "workflow-b9"
+  const FEATURE = "onboarding"
+  const PM_SPEC_DIRTY = `# Onboarding Product Spec
+
+## Goal
+Sign-up flow.
+
+## Acceptance Criteria
+1. AC#1: User receives confirmation immediately after sign-up.
+2. AC#2: AI responds immediately when prompted.
+3. AC#3: Errors surface immediately on form submission.
+4. AC#4: Messages persist across sessions.
+5. AC#5: Logout completes immediately.
+
+## Open Questions
+(none)
+`
+
+  beforeEach(async () => {
+    clearHistory(featureKey(FEATURE))
+    clearPhaseAuditCaches()
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification(featureKey(FEATURE), {
+      targetAgent: "pm",
+      originAgent: "ux-design",
+      question: "1. Vague timing — multiple ACs use 'immediately' without a numeric bound.",
+      recommendations: `My recommendation: any "immediately" becomes "within 1 second" — that's the platform SLA we should adopt across all sign-up, response, error, and logout flows.`,
+    })
+  })
+  afterEach(async () => {
+    clearHistory(featureKey(FEATURE))
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification(featureKey(FEATURE))
+  })
+
+  it("standalone confirmation triggers patchProductSpecWithRecommendations; deterministic category-rule application substitutes ALL 4 'immediately' instances even if Haiku returns a no-op patch", async () => {
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith(`${FEATURE}.product.md`) && ref === "main") {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_DIRTY).toString("base64"), sha: "abc", type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Simulate Haiku's actual buggy behavior (the Bug-E pattern): return a
+    // patched section where Haiku substituted 2 of 4 instances and left the
+    // other 2 as "immediately." Without B9's post-Haiku residual safety net,
+    // those 2 stragglers would survive in the saved spec. With B9 wired in,
+    // the residual check fires and applies the rule again.
+    const HAIKU_BUGGY_PATCH = `## Acceptance Criteria
+1. AC#1: User receives confirmation within 1 second after sign-up.
+2. AC#2: AI responds immediately when prompted.
+3. AC#3: Errors surface within 1 second on form submission.
+4. AC#4: Messages persist across sessions.
+5. AC#5: Logout completes immediately.`
+
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: HAIKU_BUGGY_PATCH }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 50 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Find the createOrUpdate call that wrote the product spec to main.
+    const productWrite = mockCreateOrUpdate.mock.calls.find(
+      (c: any[]) => c[0]?.path?.includes(`${FEATURE}.product.md`),
+    )
+    expect(productWrite, "expected product spec writeback").toBeDefined()
+    const writtenContent = Buffer.from(productWrite![0].content, "base64").toString()
+
+    // B9 contract: NO instances of "immediately" survive — even though Haiku's
+    // patch left 2 of them in. The deterministic post-Haiku residual safety
+    // net caught them and applied the rule again.
+    expect(writtenContent).not.toMatch(/\bimmediately\b/i)
+    // All 4 ACs that originally said "immediately" (AC#1, #2, #3, #5) now say
+    // "within 1 second."
+    expect((writtenContent.match(/within 1 second/g) ?? []).length).toBeGreaterThanOrEqual(4)
+  })
+})
+
 // ─── Scenario B7: readOnly brief carries the no-spec-writing-tools clause ─────────────────────
 //
 // E2E coverage for the new B7 wiring (manifest B7, regression catalog bug #15).

@@ -6,6 +6,11 @@ import Anthropic from "@anthropic-ai/sdk"
 import { applySpecPatch } from "./spec-patcher"
 import { readFile, saveApprovedSpec } from "./github-client"
 import { loadWorkspaceConfig } from "./workspace-config"
+import {
+  extractCategoryRules,
+  applyCategoryRules,
+  findResidualCategoryViolations,
+} from "./category-rule-extractor"
 
 // 60s timeout — spec patch generation is a focused Haiku call; no retries.
 const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
@@ -79,6 +84,21 @@ export async function patchProductSpecWithRecommendations(params: {
     return null
   }
 
+  // B9 — Deterministic category-rule application (Principle 11).
+  // PMs often issue universal substitution directives like "any 'immediately'
+  // becomes 'within 1 second'." Haiku's merge applies these inconsistently
+  // (replaces some, leaves others). Pull the substitution out of Haiku's
+  // hands: extract the rules from the recommendation text, apply them to the
+  // spec deterministically BEFORE Haiku sees it. Haiku then merges the rest
+  // of the recommendation on top of the already-substituted spec.
+  const categoryRules = extractCategoryRules(recommendations)
+  let preProcessedSpec = existingSpec
+  if (categoryRules.length > 0) {
+    preProcessedSpec = applyCategoryRules(existingSpec, categoryRules)
+    const ruleLines = categoryRules.map((r, i) => `  ${i + 1}. "${r.from}" → "${r.to}"`).join("\n")
+    console.log(`[ESCALATION] B9: extracted ${categoryRules.length} category rule(s) from PM recommendations for feature=${featureName} — applied deterministically before Haiku merge:\n${ruleLines}`)
+  }
+
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 4096,
@@ -120,7 +140,7 @@ RULES — follow exactly:
 9. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
     messages: [{
       role: "user",
-      content: `EXISTING SPEC:\n${existingSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions, visual/technical details stripped, and any remaining vague language in the spec resolved where the PM's intent is already clear.`,
+      content: `EXISTING SPEC:\n${preProcessedSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions, visual/technical details stripped, and any remaining vague language in the spec resolved where the PM's intent is already clear.`,
     }],
   })
 
@@ -130,7 +150,21 @@ RULES — follow exactly:
     return null
   }
 
-  let mergedSpec = applySpecPatch(existingSpec, patch)
+  let mergedSpec = applySpecPatch(preProcessedSpec, patch)
+
+  // B9 — Post-Haiku residual check. If Haiku's merge re-introduced any
+  // category-rule "from" word (rare — happens when Haiku rewrites a criterion
+  // that previously contained the substituted term), apply the rules again as
+  // a final safety net so the deterministic invariant survives the LLM's
+  // judgment.
+  if (categoryRules.length > 0) {
+    const residuals = findResidualCategoryViolations(mergedSpec, categoryRules)
+    if (residuals.length > 0) {
+      const residualLines = residuals.map((r, i) => `  ${i + 1}. "${r.from}" survived → re-applying`).join("\n")
+      console.log(`[ESCALATION] B9: Haiku's merge re-introduced ${residuals.length} category-rule term(s) for feature=${featureName} — applying rules as final pass:\n${residualLines}`)
+      mergedSpec = applyCategoryRules(mergedSpec, residuals)
+    }
+  }
 
   // Structural post-patch audit: if the merged spec contains visual/animation details
   // that Haiku was supposed to strip (Rule 3) but didn't, run a second focused pass to
