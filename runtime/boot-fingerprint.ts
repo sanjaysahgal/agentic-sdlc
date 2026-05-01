@@ -24,6 +24,21 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b10-platform-message-prefix — manifest B10 fix (regression catalog
+//     bug #17). Adds runtime/platform-message-prefix.ts exporting
+//     PLATFORM_MESSAGE_PREFIX = "*Platform —*" — the neutral prefix for
+//     every platform-composed Slack notification. All 6 agent-name static
+//     prefix sites in interfaces/slack/handlers/message.ts converted from
+//     `*Product Manager*` / `*PM*` / `*Designer*` etc. to use the shared
+//     constant + bodies rewritten in platform first-person voice
+//     ("we'll bring the PM agent back into this thread"). Structural
+//     invariant tests/invariants/platform-message-prefix.test.ts AST-greps
+//     every handler file's `text:` template literals and fails on any
+//     agent-name static prefix; only ${mention} (Slack <@U…> ping or
+//     text-fallback role label) is allowed. Retires the prose-vs-state
+//     mismatch class at the platform-notification layer (Block N2 + B7
+//     fixed it at the agent-response and brief layers respectively).
+//     MT-24 spot-check.
 //   b9-category-rule-deterministic-application — manifest B9 fix
 //     (regression catalog bug #16). Adds runtime/category-rule-extractor.ts —
 //     pure deterministic extractor (Principle 11) for universal substitution
@@ -120,7 +135,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "b9-category-rule-deterministic-application"
+export const CODE_MARKER = "b10-platform-message-prefix"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

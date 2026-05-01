@@ -342,6 +342,14 @@ Every agent must surface all known constraint violations on every response — w
 
 **Enforcement:** `tests/invariants/spec-write-ownership.test.ts` AST-greps every callsite of `saveDraft*` / `saveApproved*` / `patch*Spec*` / `preseed*` / `seedHandoffSection` / `updateApprovedSpecOnMain` and pins each to a documented allow-list with rationale. Adding a new writeback requires updating the manifest in the same commit. The historical violation (manifest B8, regression catalog bug #14) was the architect's `upstream-revision-reply` branch writing PM/designer-authored content into the engineering spec — retired by the codified principle + invariant test.
 
+### Platform message prefix (manifest B10 — non-negotiable for every platform-composed Slack notification)
+
+**Every platform-composed `client.chat.postMessage` call in handler files must use `PLATFORM_MESSAGE_PREFIX` (`*Platform —*`) from `runtime/platform-message-prefix.ts` as the prefix — never an agent-name static prefix (`*Product Manager*`, `*UX Designer*`, `*Architect*`, etc.).** The platform speaks AS the platform, in the platform's voice, never as any of its agents.
+
+The legitimate exception is `${mention}` — Slack `<@U…>` ping (or text-fallback role label when no role-holder is assigned) — which addresses the human role-holder, not impersonates an agent.
+
+The structural invariant `tests/invariants/platform-message-prefix.test.ts` AST-greps every handler file's `text:` template literals and fails on any agent-name static prefix from `FORBIDDEN_AGENT_PREFIXES`. The historical violation (manifest B10, regression catalog bug #17) was 6 platform-composed messages in `interfaces/slack/handlers/message.ts` using `*Product Manager*` / `*Designer*` prefixes while their bodies referred to those same agents in third person — voice/perspective inconsistency. Retired by the codified constant + invariant test + bodies rewritten in platform first-person voice ("we'll bring the PM agent back into this thread").
+
 ### readOnly brief clause (manifest B7 — non-negotiable for every brief that runs an agent in readOnly mode)
 
 Whenever the platform invokes a spec-producing agent with `readOnly: true` (no spec-writing tools provided — typical of escalation-confirmation flows), the brief MUST inject `READONLY_AGENT_BRIEF_CLAUSE` from `runtime/readonly-brief-clause.ts`. The clause names the no-spec-writing-tools contract and forbids action-claim phrasing ("Applying the patch...", "I'll update the spec...") that would contradict the platform's "say *yes* to apply" follow-up message.

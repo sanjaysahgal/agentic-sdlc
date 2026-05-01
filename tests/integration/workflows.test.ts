@@ -558,9 +558,12 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     const params = makeParams(THREAD, "feature-onboarding", "yes")
     await handleFeatureChannelMessage(params)
 
-    // "Product spec updated" closure posted
+    // Platform closure post (B10: prefix is now `*Platform —*`, body uses
+    // platform first-person voice "The product spec was updated…")
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    const closurePost = postCalls.find((c: any) =>
+      c[0]?.text?.includes("*Platform —*") && c[0]?.text?.includes("product spec was updated"),
+    )
     expect(closurePost).toBeDefined()
 
     // EscalationNotification cleared
@@ -6014,9 +6017,12 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     const designCall = mockAnthropicCreate.mock.calls.find((c: any) => Array.isArray(c[0]?.system))
     expect(designCall).toBeDefined()
 
-    // "Product spec updated" closure posted (even when Haiku skipped — platform always confirms)
+    // Platform closure post — even when Haiku skipped, platform always confirms.
+    // B10: prefix is `*Platform —*` and body uses platform first-person voice.
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
-    const closurePost = postCalls.find((c: any) => c[0]?.text?.includes("Product spec updated"))
+    const closurePost = postCalls.find((c: any) =>
+      c[0]?.text?.includes("*Platform —*") && c[0]?.text?.includes("product spec was updated"),
+    )
     expect(closurePost).toBeDefined()
   })
 })
@@ -10217,6 +10223,100 @@ describe("Scenario N96 — upstream-notice format round-trip (Block B2 contract)
     expect(typeof mod.hasDesignGaps).toBe("function")
     expect(typeof mod.parsePmGapText).toBe("function")
     expect(typeof mod.parseDesignGapText).toBe("function")
+  })
+})
+
+// ─── Scenario B10: Platform-composed re-escalation message uses platform voice ────────────────
+//
+// E2E coverage for the B10 fix (manifest B10, regression catalog bug #17). When
+// the platform writes back PM recommendations and the deterministic re-audit
+// finds residual gaps, the platform posts a re-escalation notification. Pre-B10
+// this notification used `*Product Manager* — Spec partially updated, but N gap
+// remains. Say *yes* to bring the PM agent back.` — agent-name prefix while body
+// referred to PM in third person. Post-B10 the prefix is `*Platform —*` and the
+// body is in platform first-person voice ("we'll bring the PM agent back into
+// this thread"). This scenario drives a designer→PM escalation reply where the
+// re-audit detects residual findings, and asserts the posted message uses the
+// platform prefix (not an agent-name prefix).
+
+describe("Scenario B10 — re-escalation notification uses PLATFORM_MESSAGE_PREFIX (not agent-name impersonation)", () => {
+  const THREAD = "workflow-b10"
+  const FEATURE = "onboarding"
+  // Spec where Haiku's writeback won't actually clean the gaps — auditPmSpec
+  // re-audit will detect residual findings and trigger the re-escalation notice.
+  const PM_SPEC_DIRTY = `# Onboarding Product Spec
+
+## Acceptance Criteria
+1. AC#1: User onboarding should feel smooth.
+2. AC#2: AI responds quickly to prompts.
+3. AC#3: Errors handled in time.
+
+## Open Questions
+(none)
+`
+
+  beforeEach(async () => {
+    clearHistory(featureKey(FEATURE))
+    clearPhaseAuditCaches()
+    setConfirmedAgent(featureKey(FEATURE), "ux-design")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification(featureKey(FEATURE), {
+      targetAgent: "pm",
+      originAgent: "ux-design",
+      question: "1. Vague timing across multiple ACs.",
+      recommendations: `My recommendation: tighten the timing language across the spec.`,
+    })
+  })
+  afterEach(async () => {
+    clearHistory(featureKey(FEATURE))
+    const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
+    clearEscalationNotification(featureKey(FEATURE))
+  })
+
+  it("re-escalation notification uses PLATFORM prefix and platform-first-person voice (no agent-name impersonation)", async () => {
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith(`${FEATURE}.product.md`) && ref === "main") {
+        return Promise.resolve({ data: { content: Buffer.from(PM_SPEC_DIRTY).toString("base64"), sha: "abc", type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // Haiku's merge returns a patch that doesn't actually fix the vague language —
+    // the re-audit will detect residual findings and trigger the re-escalation
+    // notification. That's the message we're testing.
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: PM_SPEC_DIRTY }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 50 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Find the platform-composed notification(s) posted via chat.postMessage.
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const platformPosts = postCalls.filter((c: any) => {
+      const text = c[0]?.text
+      return typeof text === "string" && text.includes("*Platform —*")
+    })
+    expect(platformPosts.length, "expected at least one *Platform —* prefixed notification").toBeGreaterThan(0)
+
+    // Specifically: NONE of the platform-composed notifications should start
+    // with an agent-name prefix.
+    for (const c of postCalls) {
+      const text: string = c[0]?.text ?? ""
+      // Skip empty or non-string posts
+      if (!text) continue
+      // The forbidden pattern is `*<RoleLabel>* —` AT THE START of the text.
+      // (Mid-text role mentions are fine; this only enforces the prefix.)
+      const startsWithAgentPrefix = /^\*(?:Product Manager|UX Designer|Designer|Architect|PM)\*\s*[—-]/.test(text.trim())
+      expect(
+        startsWithAgentPrefix,
+        `[B10 REGRESSION] platform-composed postMessage starts with agent-name prefix: "${text.slice(0, 100)}"`,
+      ).toBe(false)
+    }
   })
 })
 

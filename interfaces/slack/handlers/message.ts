@@ -14,6 +14,7 @@ import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from 
 import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, enforceNoHedging } from "../../../runtime/deterministic-auditor"
 import { verifyAcReferences, formatHallucinations } from "../../../runtime/spec-content-verifier"
 import { READONLY_AGENT_BRIEF_CLAUSE } from "../../../runtime/readonly-brief-clause"
+import { PLATFORM_MESSAGE_PREFIX } from "../../../runtime/platform-message-prefix"
 import { verifyActionClaims } from "../../../runtime/action-verifier"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -754,7 +755,7 @@ ${brief}`
               await client.chat.postMessage({
                 channel: channelId,
                 thread_ts: threadTs,
-                text: `*Product Manager* — Spec updated on main, but ${reaudit.findings.length} gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Say *yes* to bring the PM back.`,
+                text: `${PLATFORM_MESSAGE_PREFIX} The product spec was updated on main, but ${reaudit.findings.length} PM-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the PM agent back into this thread.`,
               }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
               return
             }
@@ -776,7 +777,7 @@ ${brief}`
             await client.chat.postMessage({
               channel: channelId,
               thread_ts: threadTs,
-              text: `*Product Manager* — Design questions resolved and spec updated.\n\nHowever, an architecture gap was identified that the architect must address before engineering begins:\n\n${archQuestion}\n\nSay *yes* to bring the architect into this thread now, or continue with design and the architect will address it when the engineering phase begins.`,
+              text: `${PLATFORM_MESSAGE_PREFIX} Design questions are resolved and the product spec was updated.\n\nHowever, an architecture gap was flagged that needs the architect to address before engineering begins:\n\n${archQuestion}\n\nReply *yes* and we'll bring the architect into this thread now, or continue with design and we'll surface this when the engineering phase begins.`,
             })
             return
           }
@@ -853,7 +854,7 @@ ${brief}`
               await client.chat.postMessage({
                 channel: channelId,
                 thread_ts: threadTs,
-                text: `*Product Manager* — Spec partially updated, but ${reaudit.findings.length} gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Say *yes* to bring the PM back.`,
+                text: `${PLATFORM_MESSAGE_PREFIX} The product spec was partially updated, but ${reaudit.findings.length} PM-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the PM agent back into this thread.`,
               }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
               return
             }
@@ -870,7 +871,7 @@ ${brief}`
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: threadTs,
-          text: `*Product Manager* — Product spec updated with the confirmed decisions. The design team can now continue.`,
+          text: `${PLATFORM_MESSAGE_PREFIX} The product spec was updated with the confirmed PM decisions. The design phase can now continue.`,
         }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
       }
 
@@ -1115,7 +1116,7 @@ ${archPendingEscalation.question}`
             await client.chat.postMessage({
               channel: channelId,
               thread_ts: threadTs,
-              text: `*${targetLabel === "PM" ? "Product Manager" : "Designer"}* — Spec partially updated, but ${reaudit.findings.length} gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Say *yes* to bring the ${targetLabel} agent back.`,
+              text: `${PLATFORM_MESSAGE_PREFIX} The ${targetLabel === "PM" ? "product" : "design"} spec was partially updated, but ${reaudit.findings.length} ${targetLabel}-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the ${targetLabel} agent back into this thread.`,
             }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
             clearEscalationNotification(featureKey(featureName))
             return
@@ -1129,7 +1130,7 @@ ${archPendingEscalation.question}`
       await client.chat.postMessage({
         channel: channelId,
         thread_ts: threadTs,
-        text: `*${respondingRole}* — ${respondingRole === "PM" ? "Product" : "Design"} spec updated with the confirmed decision. The architect will resume.`,
+        text: `${PLATFORM_MESSAGE_PREFIX} The ${respondingRole === "PM" ? "product" : "design"} spec was updated with the confirmed ${respondingRole} decision. The architect will now resume.`,
       }).catch(err => console.log(`[ESCALATION] closure message failed (non-blocking): ${err}`))
 
       clearEscalationNotification(featureKey(featureName))

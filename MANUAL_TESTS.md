@@ -498,6 +498,32 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-24 — Platform-composed notifications use platform voice (no agent-name impersonation) (B10, bug #17)
+
+**Why this can't be automated (fully):** unit + invariant + regression tests pin that no agent-name static prefix appears in source; integration scenario B10 in `workflows.test.ts` drives `handleFeatureChannelMessage` through a re-escalation flow and asserts the actual posted message starts with `*Platform —*`. This MT is a **spot-check** — the only marginal real-Slack verification is that the user, reading the rendered Slack message, can unambiguously tell the platform is speaking (not the PM).
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD (`b10-platform-message-prefix`).
+
+**Setup:**
+- Feature: any feature in design-in-progress phase with an approved PM spec on main containing recurring vague language (so the post-writeback re-audit will detect residual gaps and trigger the re-escalation notification — that's the canonical violation site).
+- Designer just escalated to PM; user about to confirm.
+
+**Actions:**
+1. In `#feature-<X>`, post `yes` to confirm the queued PM escalation. PM responds with recommendations.
+2. Confirm the PM's recommendations with `yes`. Platform writes back, re-audits, and (if any gaps remain) posts the re-escalation notification.
+3. Read the platform's notification message in Slack carefully.
+
+**Expected outcome:**
+- The notification starts with `*Platform —*` (not `*Product Manager*`, not `*PM*`, not any other agent label).
+- The body uses platform first-person voice ("we'll bring the PM agent back into this thread") — no third-person impersonation prose like "Say *yes* to bring the PM back."
+- A reader can tell unambiguously that the platform is speaking, not the PM.
+
+**Failure signatures:**
+- Notification starts with `*Product Manager*` / `*UX Designer*` / `*Architect*` etc. → B10 regression. The structural invariant test should have caught it at PR time, so this means a new postMessage was added without going through the invariant.
+- Notification body uses bare imperative ("Say yes to bring the PM back") that could read as the PM speaking about themselves → cosmetic regression; rewrite body in platform first-person.
+
+---
+
 ### MT-23 — PM category rule applied deterministically across all spec instances (B9, bug #16)
 
 **Why this can't be automated (fully):** unit + regression tests prove the extractor + applier; integration scenario B9 in `workflows.test.ts` drives `handleFeatureChannelMessage` end-to-end with a mocked-buggy Haiku and asserts the saved spec has 0 surviving from-words. This MT is a **spot-check** — the only marginal real-Slack verification is "the actual GitHub diff after a real escalation confirmation has all instances substituted, regardless of how Haiku behaved."
