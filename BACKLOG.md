@@ -56,9 +56,23 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 
 **Total: ~3–4 days of focused single-bug-per-session work.**
 
-**Step 9 — Resume integration walk (~1 day):** drive onboarding past architect (currently parked at AC 20 hallucination), through design (37 design-spec findings exist), through engineering finalize. Should fly because the friction sources are gone — no more lost state on restart, no AC hallucinations slipping through, no "1 of N" round trips.
+**Step 9 — Resume integration walk: drive onboarding past architect through design through engineering finalize.** The walk's ACTUAL bar — not just "drive past phases" but produce three crisp specs PLUS structurally-consistent platform messaging:
 
-**Step 10 — Add Coder agent.** On a platform that has been demonstrated to drive a feature through end-to-end without hallucinations or lost state. Each existing bug has a regression test pinning it.
+1. **Three crisp final specs.** Each spec is ready for a downstream agent (Coder) to act on without ambiguity. No deterministic findings remaining. No PLACEHOLDER / TBD / TODO markers. No vague language. No B8-class historical residue. AC numbers consistent across all three specs. Cross-spec coherence (engineering spec maps to product ACs).
+
+2. **Cross-surface message consistency** (CLAUDE.md Principle 17 — codified 2026-05-01 after MT walk Step 2 surfaced B13 — see also `tests/invariants/cross-surface-consistency.test.ts`). Every claim the platform makes about feature state is consistent across all surfaces, all invocations, all channels, and all time within a turn. Same query → same factual answer regardless of agent / channel / slash command / invocation / time within a turn. Specifically:
+   - Across invocations: same query asked 5 times in 5 minutes returns the same factual answer
+   - Across channels: concierge in `#all-<product>` agrees with active agent in `#feature-X`
+   - Across slash commands: `/pm` in feature channel agrees with `/pm` in main channel
+   - Across agents: architect's view of upstream gaps agrees with PM/Designer's view
+   - Within a single response: platform's claim doesn't contradict its own next action
+   - Across time within a turn: state-query response and finalize-gate response query the same source of truth
+
+   The walk WILL surface consistency violations (B13 was the first). Each one gets: manifest entry, regression test, specific assertion in `cross-surface-consistency.test.ts`, root-cause fix routing the surface through the canonical SSOT (`buildReadinessReport`).
+
+3. **Every existing manual test passes.** All 24 MT-N scenarios behave as documented. The 4 blocking MTs (MT-7/8/16/18) verify real-LLM compliance + restart durability; the 20 spot-check MTs verify behavior already covered by integration tests.
+
+**Step 10 — Add Coder agent.** Only after Step 9 closes — three crisp specs are on main, every platform message about state is structurally consistent, every existing MT passes, every newly-surfaced bug has a regression test pinning it. Each existing bug has a regression test pinning it.
 
 **Why this beats "continue forward":**
 - Each bug we fix mid-walk requires same care + tests + MTs as a focused session, but we're fragmented and tired.

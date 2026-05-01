@@ -342,6 +342,27 @@ Every agent must surface all known constraint violations on every response — w
 
 **Enforcement:** `tests/invariants/spec-write-ownership.test.ts` AST-greps every callsite of `saveDraft*` / `saveApproved*` / `patch*Spec*` / `preseed*` / `seedHandoffSection` / `updateApprovedSpecOnMain` and pins each to a documented allow-list with rationale. Adding a new writeback requires updating the manifest in the same commit. The historical violation (manifest B8, regression catalog bug #14) was the architect's `upstream-revision-reply` branch writing PM/designer-authored content into the engineering spec — retired by the codified principle + invariant test.
 
+### Cross-surface message consistency (CLAUDE.md Principle 17 — non-negotiable for every agent + every platform message)
+
+**Every claim any agent or the platform makes about feature state must be consistent with every other surface's claim about the same state.** Same query → same factual answer regardless of agent, channel, slash command, invocation, or time within the turn.
+
+The six dimensions:
+
+| Dimension | Concrete example |
+|---|---|
+| Across invocations | Asking "where are we?" twice in 30 seconds returns the same answer |
+| Across channels | Concierge in `#all-<product>` agrees with active agent in `#feature-X` |
+| Across slash commands | `/pm` in feature channel agrees with `/pm` in main channel |
+| Across agents | Architect's view of upstream gaps agrees with PM/Designer's view |
+| Within a single response | Platform's claim doesn't contradict its own next action |
+| Across time within a turn | State-query response and finalize-gate response query the same source of truth |
+
+**The structural enforcement:** every state-query / readiness-summary / finalize-gate computation derives from the canonical `buildReadinessReport()` in `runtime/readiness-builder.ts` (which composes the deterministic auditors per Principle 11). No handler computes its own readiness independently.
+
+**For every new agent added to the platform:** before the agent ships, audit every surface where the agent will compose a state claim (state-query response, finalize message, escalation notification, cross-channel response). Verify each routes through the SSOT. The cross-surface consistency invariant test must be extended with assertions for the new agent's surfaces.
+
+The historical violation (manifest B13) was the architect's state-query fast-path saying `Nothing blocking — approve when ready` while the finalize gate would block on 31 upstream findings. Two platform messages, same turn, contradicting each other. Retired by routing both surfaces through the same SSOT computation.
+
 ### Platform message prefix (manifest B10 — non-negotiable for every platform-composed Slack notification)
 
 **Every platform-composed `client.chat.postMessage` call in handler files must use `PLATFORM_MESSAGE_PREFIX` (`*Platform —*`) from `runtime/platform-message-prefix.ts` as the prefix — never an agent-name static prefix (`*Product Manager*`, `*UX Designer*`, `*Architect*`, etc.).** The platform speaks AS the platform, in the platform's voice, never as any of its agents.

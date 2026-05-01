@@ -274,6 +274,41 @@ The wrong call recorded PM's product-spec resolutions under a `### Architect Dec
 
 **Enforcement:** `tests/invariants/spec-write-ownership.test.ts` — AST-greps every callsite of `saveDraft*` / `saveApproved*` / `patch*Spec*` / `preseed*` / `seedHandoffSection` / `updateApprovedSpecOnMain` and verifies each is consistent with the principle (or a documented carve-out). Adding a new writeback that doesn't fit FAILS at PR time.
 
+### 17. Cross-surface message consistency — every claim about state agrees, everywhere, every time
+
+**Every claim the platform makes to a user about feature state must be consistent across all surfaces, all invocations, all channels, and all time within a turn. Same query → same factual answer regardless of who's asking, where they're asking, when they're asking, or which agent is responding.**
+
+This is the foundational Archon promise. A user must be able to trust what the platform says about state — if surfaces contradict each other, the user has no reliable way to know what's actually true.
+
+**Consistency dimensions (non-negotiable in all six):**
+
+| Dimension | What "consistent" means |
+|---|---|
+| Across invocations | Same query asked 5 times in 5 minutes returns the same factual answer. No drift. |
+| Across channels | Concierge in `#all-<product>` about feature X agrees with the active agent in `#feature-X`. |
+| Across slash commands | `/pm` in feature channel agrees with `/pm` in main channel about the same feature's state. |
+| Across agents | What architect says about the spec chain agrees with what PM and Designer say. |
+| Within a single response | Platform's claim ("Nothing blocking") doesn't contradict the platform's own next action ("blocked by 31 findings"). |
+| Across time within a turn | State-query response and finalize-gate response query the SAME source of truth. |
+
+**Single source of truth:** every state-query / readiness-summary / finalize-gate computation must derive from the same canonical function — today that's `runtime/readiness-builder.ts`'s `buildReadinessReport()` (and the deterministic auditors it composes per Principle 11). No handler may compute its own readiness independently. Per Principle 1 (single source of truth) and Principle 11 (deterministic audits — same input → same output).
+
+**The decision gate before composing any platform message about state:**
+1. What state is this message claiming?
+2. Is the claim derived from the canonical SSOT (`buildReadinessReport()` + deterministic auditors)?
+3. If a different surface composes a similar message about the same state, do they share that derivation path?
+4. If yes to all three: the message is consistent by construction. If no to any: it's a Principle 17 violation.
+
+**Historical violation (manifest B13, surfaced 2026-05-01 in MT walk Step 2):** Architect's state-query fast-path responded `Nothing blocking — you can review and approve when ready` while the upstream PM spec on main had 1 deterministic finding and the design spec had 30 findings. When the user replies `approved`, the finalize gate (Principle 14: deterministic audits are retroactive) runs `auditPmSpec` + `auditDesignSpec` and blocks with 31 findings — directly contradicting the prior message. Same turn, two platform messages, factually inconsistent. Root cause: the readiness aggregator's `aggregate=ready-pending-approval total=0` only counts the architect's own engineering-spec findings; it does not query upstream specs. The fast-path and the finalize-gate are NOT deriving from the same SSOT.
+
+**Enforcement:** `tests/invariants/cross-surface-consistency.test.ts` — extensible structural invariant. v1 pins the SSOT contract (`buildReadinessReport` exists, exports correctly, is the canonical computation). As consistency violations are surfaced via integration walks, specific assertions are added. The invariant test grows over time as the consistency bar gets more concretely enforced; the principle does not change.
+
+**Discipline when a consistency violation is found:**
+1. Add a manifest entry for the specific violation (with all surfaces it affects enumerated)
+2. Add a regression test pinning the post-fix consistent behavior
+3. Add a specific assertion to `tests/invariants/cross-surface-consistency.test.ts` so the class can never recur
+4. Fix the root cause: route the violating surface through the canonical SSOT
+
 ---
 
 ## Architecture
