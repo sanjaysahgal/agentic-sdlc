@@ -80,7 +80,14 @@
 
 ### MT-21 — Spec write ownership: engineering spec stays clean of PM-authored content (B8, bug #14)
 
-- Added by commit: <this commit, B8 + Principle 16>
+- Added by commit: `a3bf60c` (B8 + Principle 16)
 - Why spot-check (not blocking): four layers of automated coverage already exist — (1) structural invariant `tests/invariants/spec-write-ownership.test.ts` AST-greps every writeback callsite and pins it to the documented allow-list, (2) regression test `tests/regression/spec-write-ownership.test.ts` (bug #14) pins the post-fix shape, (3) flipped integration scenario N44b in `tests/integration/workflows.test.ts` asserts engineering spec NOT touched and product spec IS written end-to-end, (4) cross-agent audit confirmed exactly one violation existed system-wide. Real-Slack adds the marginal "the actual GitHub branch ends up clean" check.
 - Run opportunistically: next time you drive a feature through architect→PM escalation in real Slack, eyeball `git show spec/<feature>-engineering:specs/features/<feature>/<feature>.engineering.md` for a fresh `### Architect Decision (pre-engineering)` block. None should appear from architect→PM rounds.
 - Full scenario: see `MANUAL_TESTS.md` MT-21
+
+### MT-22 — readOnly brief clause prevents action-claim prose in escalation responses (B7, bug #15)
+
+- Added by commit: <this commit, B7>
+- Why spot-check (not blocking): structural invariant `tests/invariants/readonly-brief-clause.test.ts` (9 tests) pins that the clause is injected into every readOnly brief site; regression test `tests/regression/readonly-brief-clause.test.ts` (bug #15) pins the clause content. The fix is a prompt-rule (probabilistic per Principle 8), so real Slack adds the marginal "agent actually honors the clause" check — but the structural invariant ensures the worst case is "occasional non-compliance," not "silent missing clause."
+- Run opportunistically: next time you confirm a queued PM escalation in real Slack, eyeball PM's response for "Applying the patch..." / "I'll update..." action-claim prose. Should be absent.
+- Full scenario: see `MANUAL_TESTS.md` MT-22

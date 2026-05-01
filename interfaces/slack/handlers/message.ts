@@ -13,6 +13,7 @@ import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_RE
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, enforceNoHedging } from "../../../runtime/deterministic-auditor"
 import { verifyAcReferences, formatHallucinations } from "../../../runtime/spec-content-verifier"
+import { READONLY_AGENT_BRIEF_CLAUSE } from "../../../runtime/readonly-brief-clause"
 import { verifyActionClaims } from "../../../runtime/action-verifier"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -587,6 +588,8 @@ export async function handleFeatureChannelMessage(params: {
         : ""
       const pmBrief = `DESIGN TEAM ESCALATION — PM RECOMMENDATIONS NEEDED TO UNBLOCK DESIGN.
 
+${READONLY_AGENT_BRIEF_CLAUSE}
+
 The UX Designer is blocked on the numbered items below. Your job: give a specific, concrete recommendation for each one so design can proceed today. These are your expert recommendations — not final decisions — the human PM will review and confirm or adjust each one.
 
 For each numbered item, respond with the same number so the human can follow along. Output exactly:
@@ -600,6 +603,8 @@ BLOCKING ITEMS:
 ${comprehensiveQuestion}`
 
       const archBrief = `DESIGN TEAM ESCALATION — ARCHITECT RECOMMENDATIONS NEEDED TO UNBLOCK DESIGN.
+
+${READONLY_AGENT_BRIEF_CLAUSE}
 
 The UX Designer is blocked on the numbered items below. Your job: give a specific, concrete recommendation for each one so design can proceed today. These are your expert recommendations — the engineering team will refine at the spec phase.
 
@@ -653,6 +658,7 @@ Do not ask for context. Do not clarify before recommending. Make the best call a
 
 ORIGINAL BRIEF:
 ${brief}`
+            // readOnly continuation: enforcement re-run carries the READONLY_AGENT_BRIEF_CLAUSE transitively via the inlined ${brief}.
             await runPmAgent({ channelName, channelId, threadTs, userMessage: enforcementMessage, client, update: capturingUpdate, readOnly: true })
           }
         }
@@ -939,6 +945,8 @@ ${brief}`
       const brief = isDesignTarget
         ? `ARCHITECT ESCALATION — Design revision needed to unblock engineering.
 
+${READONLY_AGENT_BRIEF_CLAUSE}
+
 While specifying the engineering approach, the architect found a constraint that requires the design spec to be revised before implementation can proceed.
 
 Your job: review the constraint below and provide a concrete design decision so engineering can resume.
@@ -952,6 +960,8 @@ Do not ask for more context. Do not present multiple options. End with: "Once yo
 CONSTRAINT REQUIRING DESIGN REVISION:
 ${archPendingEscalation.question}`
         : `ARCHITECT ESCALATION — PM decision needed to unblock engineering.
+
+${READONLY_AGENT_BRIEF_CLAUSE}
 
 While specifying the engineering approach, the architect found a constraint that requires a product decision before implementation can proceed.
 

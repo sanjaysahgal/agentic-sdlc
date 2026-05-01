@@ -10220,6 +10220,80 @@ describe("Scenario N96 — upstream-notice format round-trip (Block B2 contract)
   })
 })
 
+// ─── Scenario B7: readOnly brief carries the no-spec-writing-tools clause ─────────────────────
+//
+// E2E coverage for the new B7 wiring (manifest B7, regression catalog bug #15).
+// When the architect's pendingEscalation targets PM and the user confirms with "yes",
+// the platform constructs an "ARCHITECT ESCALATION — PM decision needed" brief and
+// invokes runPmAgent with readOnly:true. The brief MUST contain the
+// READONLY_AGENT_BRIEF_CLAUSE (the no-spec-writing-tools contract); without it the
+// PM agent produces prose like "Applying the patch to AC 10 now" — claiming a tool
+// call it cannot make. This scenario inspects the actual userMessage passed to the
+// Anthropic call and asserts the clause is present.
+
+describe("Scenario B7 — architect→PM escalation brief carries READONLY_AGENT_BRIEF_CLAUSE end-to-end", () => {
+  const THREAD = "workflow-b7"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPhaseAuditCaches()
+    clearPendingEscalation(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    setPendingEscalation(featureKey("onboarding"), {
+      targetAgent: "pm",
+      originAgent: "architect",
+      question: "1. AC#1 timing is vague — what's the bound?",
+      designContext: "",
+    })
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
+  })
+
+  it("the brief sent to the PM agent contains the readOnly clause marker (B7 / Principle 15 cross-agent parity)", async () => {
+    mockGetContent.mockImplementation(({ path, ref }: { path?: string; ref?: string }) => {
+      if (path?.endsWith("onboarding.product.md") && ref === "main") {
+        return Promise.resolve({ data: { content: Buffer.from("# Onboarding\n## Acceptance Criteria\n1. AC#1\n").toString("base64"), type: "file" } })
+      }
+      return Promise.reject(Object.assign(new Error("Not Found"), { status: 404 }))
+    })
+    mockPaginate.mockResolvedValue([])
+    mockAnthropicCreate.mockResolvedValue({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "1. My recommendation: tighten AC#1 timing to within 2 seconds." }],
+      usage: { input_tokens: 50, output_tokens: 50 },
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // Locate the Anthropic call where the user message contains the architect-PM brief heading.
+    const briefCall = mockAnthropicCreate.mock.calls.find((c: any[]) => {
+      const body = c[0]
+      const msgs = body?.messages ?? []
+      return msgs.some((m: any) => typeof m.content === "string" && m.content.includes("ARCHITECT ESCALATION — PM decision needed"))
+    })
+    expect(briefCall, "expected an Anthropic call carrying the architect→PM brief").toBeDefined()
+
+    const briefMessage = briefCall![0].messages.find((m: any) =>
+      typeof m.content === "string" && m.content.includes("ARCHITECT ESCALATION — PM decision needed"),
+    )!.content as string
+
+    // The brief must contain the readOnly clause marker — the structural signal that
+    // READONLY_AGENT_BRIEF_CLAUSE was interpolated.
+    expect(
+      briefMessage,
+      "[B7] architect→PM brief must contain READONLY_AGENT_BRIEF_CLAUSE — naming the no-spec-writing-tools contract is required for the agent to avoid action-claim prose",
+    ).toContain("READ-ONLY MODE — STRUCTURAL CONSTRAINT.")
+
+    // And it must contain the canonical DON'T phrasings the agent must avoid.
+    expect(briefMessage).toContain("Applying the patch")
+    expect(briefMessage).toContain("recommend")
+  })
+})
+
 // ─── Scenario B6: Architect-escalation consolidation — drop-of-N gaps overridden ─────────────
 //
 // E2E coverage for the new B6 post-run gate at message.ts (manifest B6, regression

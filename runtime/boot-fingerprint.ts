@@ -24,6 +24,18 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b7-readonly-brief-clause — manifest B7 fix (regression catalog bug #15).
+//     Adds runtime/readonly-brief-clause.ts exporting
+//     READONLY_AGENT_BRIEF_CLAUSE — the shared constant declaring the
+//     no-spec-writing-tools contract for agents invoked with readOnly:true.
+//     Wired into all 4 readOnly brief sites in
+//     interfaces/slack/handlers/message.ts (designer→PM, designer→architect,
+//     architect→PM, architect→design) per Principle 15 cross-agent parity.
+//     Structural invariant tests/invariants/readonly-brief-clause.test.ts
+//     pins both halves: constant exists with right semantics + every brief
+//     interpolates it. Retires the prose-vs-state mismatch class at the
+//     brief-prompt layer (Block N2's runtime stripper handles the same
+//     class at the response layer; this is the cause-side fix). MT-22.
 //   b8-spec-write-ownership — manifest B8 fix (regression catalog bug #14).
 //     Codified CLAUDE.md Principle 16 (Spec write ownership — resolved
 //     decisions land only in the owner's spec; carve-outs for preseed-
@@ -97,7 +109,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "b8-spec-write-ownership"
+export const CODE_MARKER = "b7-readonly-brief-clause"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

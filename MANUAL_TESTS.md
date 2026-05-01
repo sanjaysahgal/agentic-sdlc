@@ -498,6 +498,30 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-22 — readOnly brief clause prevents action-claim prose in escalation responses (B7, bug #15)
+
+**Why this can't be automated (fully):** the structural invariant pins that the clause is *injected* into every brief; the regression test pins what the clause says. Only real Slack with a real LLM proves the agent *honors* the clause and stops producing "Applying the patch..." prose. This is a spot-check tier MT — the prompt-rule fix is probabilistic per Principle 8, but the structural invariant ensures the clause is always present, so the worst case is "agent ignores the clause occasionally" which the operator will catch in the response prose.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD (`b7-readonly-brief-clause`).
+
+**Setup:**
+- Feature: any feature in any in-progress phase with a queued PM escalation (e.g. designer just escalated to PM, or architect just escalated to PM via `offer_upstream_revision`).
+- User about to confirm the escalation with `yes`.
+
+**Actions:**
+1. In `#feature-<X>`, post `yes` to confirm the queued PM escalation.
+2. Read the PM's response in Slack carefully.
+
+**Expected outcome:**
+- The PM's response uses RECOMMENDATION phrasing — `My recommendation: ...`, `Recommend updating to ...`, etc.
+- The PM's response does NOT contain action-claim prose: no "Applying the patch...", no "I'll update the product spec...", no "Saving the change..." (these are the canonical Bug-C phrases the clause forbids).
+- The platform's follow-up message (`*Product Manager* — say *yes* to apply...`) is consistent with the PM's response — no contradiction.
+
+**Failure signatures:**
+- PM's response says "Applying the patch to AC N now" or similar action-claim → the agent didn't honor the clause. Check that the brief did include `READONLY_AGENT_BRIEF_CLAUSE` (the structural invariant test should have caught a missing injection at PR time, so this means the agent's prompt-following dropped). If it recurs across multiple turns, escalate to a runtime gate (rewrite/strip action-claim prose in readOnly responses) — log the failing prose verbatim for backlog.
+
+---
+
 ### MT-21 — Spec write ownership: engineering spec stays clean of PM-authored content (B8, bug #14)
 
 **Why this can't be automated (fully):** unit + invariant + regression tests + flipped integration scenario already prove the wiring end-to-end with mocks. This MT is a **spot-check** — the only marginal real-Slack verification is "after a full architect→PM round-trip in production, the engineering spec on `spec/<feature>-engineering` does not contain a `### Architect Decision (pre-engineering)` block carrying PM-authored content."

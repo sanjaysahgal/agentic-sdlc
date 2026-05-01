@@ -342,6 +342,12 @@ Every agent must surface all known constraint violations on every response — w
 
 **Enforcement:** `tests/invariants/spec-write-ownership.test.ts` AST-greps every callsite of `saveDraft*` / `saveApproved*` / `patch*Spec*` / `preseed*` / `seedHandoffSection` / `updateApprovedSpecOnMain` and pins each to a documented allow-list with rationale. Adding a new writeback requires updating the manifest in the same commit. The historical violation (manifest B8, regression catalog bug #14) was the architect's `upstream-revision-reply` branch writing PM/designer-authored content into the engineering spec — retired by the codified principle + invariant test.
 
+### readOnly brief clause (manifest B7 — non-negotiable for every brief that runs an agent in readOnly mode)
+
+Whenever the platform invokes a spec-producing agent with `readOnly: true` (no spec-writing tools provided — typical of escalation-confirmation flows), the brief MUST inject `READONLY_AGENT_BRIEF_CLAUSE` from `runtime/readonly-brief-clause.ts`. The clause names the no-spec-writing-tools contract and forbids action-claim phrasing ("Applying the patch...", "I'll update the spec...") that would contradict the platform's "say *yes* to apply" follow-up message.
+
+The cross-agent invariant test `tests/invariants/readonly-brief-clause.test.ts` enforces this: every brief site listed in `EXPECTED_BRIEF_LABELS` must interpolate `${READONLY_AGENT_BRIEF_CLAUSE}`. A defense-in-depth heading-proximity check also catches new `readOnly: true` call sites that lack a brief — adding a new readOnly call site requires either pairing it with a brief that injects the clause OR annotating it as a continuation (history-carried clause). The historical violation (manifest B7, regression catalog bug #15) was PM producing "Applying the patch to AC 10 now" prose because the brief never declared the readOnly contract — retired by the shared constant + invariant test.
+
 ### Anti-deferral block (Block N option-3 — non-negotiable for every spec-producing agent)
 
 Every agent prompt builder (PM, Designer, Architect, and every future agent that holds a conversation with a human) must inject `buildAntiDeferralBlock()` from `runtime/deterministic-auditor.ts` into its system prompt via template interpolation. The block lists every entry of `DEFERRAL_PHRASES` — the same phrases the runtime `enforceNoHedging` gate rewrites — so prompt + runtime gate stay in sync at a single source of truth.

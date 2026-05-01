@@ -30,7 +30,7 @@ import { resolve } from "node:path"
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const CATALOG_PATH = resolve(REPO_ROOT, "MANUAL_TESTS.md")
 
-const MIN_MT_COUNT = 21  // raised from 20 when MT-21 (B8 spec write ownership / Principle 16) was added
+const MIN_MT_COUNT = 22  // raised from 21 when MT-22 (B7 readOnly brief clause) was added
 
 const REQUIRED_SECTIONS = [
   "Why this can't be automated",
