@@ -972,7 +972,10 @@
 <a name='L907'></a><a href='#L907'>907</a>
 <a name='L908'></a><a href='#L908'>908</a>
 <a name='L909'></a><a href='#L909'>909</a>
-<a name='L910'></a><a href='#L910'>910</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L910'></a><a href='#L910'>910</a>
+<a name='L911'></a><a href='#L911'>911</a>
+<a name='L912'></a><a href='#L912'>912</a>
+<a name='L913'></a><a href='#L913'>913</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1240,25 +1243,25 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">16x</span>
+<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">15x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">14x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">13x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">11x</span>
 <span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">8x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1440,16 +1443,17 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1736,6 +1740,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
@@ -1760,6 +1765,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1893,7 +1899,7 @@
  */
 &nbsp;
 import { AgentContext } from "./context-loader"
-import { Message } from "./conversation-store"
+import { Message, PendingEscalation } from "./conversation-store"
 import type { FeatureKey } from "./routing/types"
 import { featureKey } from "./routing/types"
 import type { DecisionCorrection, DecisionAuditResult } from "./spec-auditor"
@@ -2122,7 +2128,7 @@ export type ArchitectToolDeps = {
   auditDownstreamReadiness: PmToolDeps["auditDownstreamReadiness"]
   auditSpecStructure: (content: string, specType: "design" | "product" | "engineering") =&gt; Array&lt;{ issue: string; recommendation: string }&gt;
   clearHandoffSection: (params: { featureName: string; filePath: string; sectionHeading: string }) =&gt; Promise&lt;void&gt;
-  setPendingEscalation: (key: FeatureKey, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; engineeringContext?: string }) =&gt; void
+  setPendingEscalation: (key: FeatureKey, escalation: PendingEscalation) =&gt; void
   readFile: FileReader
 }
 &nbsp;
@@ -2354,6 +2360,7 @@ export async function handleOfferUpstreamRevision(
   console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
   deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: target,
+    originAgent: "architect",  // offer_upstream_revision is called by the architect agent
     question,
     designContext: "",
     engineeringContext: ctx.context.currentDraft ?? <span class="branch-1 cbranch-no" title="branch not covered" >undefined,</span>
@@ -2385,7 +2392,7 @@ export type DesignToolDeps = {
   classifyForPmGaps: (params: { agentResponse: string; approvedProductSpec?: string }) =&gt; Promise&lt;{ gaps: string[]; architectItems: string[]; designItems: string[] }&gt;
   classifyForArchGap: (question: string) =&gt; Promise&lt;string&gt;
   preseedEngineeringSpec: (params: { featureName: string; filePath: string; architectItems: string[] }) =&gt; Promise&lt;void&gt;
-  setPendingEscalation: (key: FeatureKey, escalation: { targetAgent: "pm" | "architect" | "design"; question: string; designContext: string; productSpec?: string }) =&gt; void
+  setPendingEscalation: (key: FeatureKey, escalation: PendingEscalation) =&gt; void
   generateDesignPreview: (params: { specContent: string; featureName: string; brandContent?: string }) =&gt; Promise&lt;{ html: string; warnings: string[] }&gt;
   saveDraftHtmlPreview: (params: { featureName: string; filePath: string; content: string }) =&gt; Promise&lt;void&gt;
   filterDesignContent: (html: string) =&gt; Promise&lt;string&gt;
@@ -2641,6 +2648,7 @@ export async function handleOfferPmEscalation(
   }
   deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: "pm",
+    originAgent: "ux-design",  // design agent calling offer_pm_escalation
     question: filteredQuestion,
     designContext: ctx.context.currentDraft ?? <span class="branch-1 cbranch-no" title="branch not covered" >"",</span>
     productSpec: ctx.context.approvedProductSpec ?? <span class="branch-1 cbranch-no" title="branch not covered" >undefined,</span>
@@ -2670,6 +2678,7 @@ export async function handleOfferArchitectEscalation(
   }
   deps.setPendingEscalation(featureKey(ctx.featureName), {
     targetAgent: "architect",
+    originAgent: "ux-design",  // design agent calling offer_architect_escalation
     question: archQuestion,
     designContext: ctx.context.currentDraft ?? <span class="branch-1 cbranch-no" title="branch not covered" >"",</span>
   })
@@ -2797,7 +2806,7 @@ export async function handleFinalizeDesignSpec(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-29T22:32:59.270Z
+                at 2026-05-01T17:43:45.993Z
             </div>
         <script src="../prettify.js"></script>
         <script>

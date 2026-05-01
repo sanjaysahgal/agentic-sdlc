@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for runtime/pm-escalation-spec-writer.ts</title>
+    <title>Code coverage report for runtime/spec-content-verifier.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../prettify.css" />
     <link rel="stylesheet" href="../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../index.html">All files</a> / <a href="index.html">runtime</a> pm-escalation-spec-writer.ts</h1>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">runtime</a> spec-content-verifier.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>44/44</span>
+                <span class='fraction'>70/70</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">85% </span>
+                <span class="strong">93.75% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>17/20</span>
+                <span class='fraction'>30/32</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>7/7</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>40/40</span>
+                <span class='fraction'>64/64</span>
             </div>
         
             
@@ -245,7 +245,20 @@
 <a name='L180'></a><a href='#L180'>180</a>
 <a name='L181'></a><a href='#L181'>181</a>
 <a name='L182'></a><a href='#L182'>182</a>
-<a name='L183'></a><a href='#L183'>183</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -260,13 +273,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -283,36 +294,58 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">237x</span>
-<span class="cline-any cline-yes">877x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">24x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">23x</span>
+<span class="cline-any cline-yes">23x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">24x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">128x</span>
+<span class="cline-any cline-yes">106x</span>
+<span class="cline-any cline-yes">106x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">24x</span>
+<span class="cline-any cline-yes">156x</span>
+<span class="cline-any cline-yes">156x</span>
+<span class="cline-any cline-yes">156x</span>
+<span class="cline-any cline-yes">106x</span>
+<span class="cline-any cline-yes">106x</span>
+<span class="cline-any cline-yes">106x</span>
+<span class="cline-any cline-yes">50x</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">28x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -321,40 +354,40 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">35x</span>
-<span class="cline-any cline-yes">35x</span>
-<span class="cline-any cline-yes">35x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">35x</span>
-<span class="cline-any cline-yes">35x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">32x</span>
-<span class="cline-any cline-yes">32x</span>
-<span class="cline-any cline-yes">32x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">32x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -363,22 +396,39 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">16x</span>
+<span class="cline-any cline-yes">16x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">16x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -388,226 +438,215 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">32x</span>
-<span class="cline-any cline-yes">35x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
-<span class="cline-any cline-yes">27x</span>
-<span class="cline-any cline-yes">27x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// Writes confirmed PM/Architect recommendations back to the approved product spec on main.
-// Called after the human confirms escalation recommendations so the spec auditor doesn't
-// re-discover the same gaps on the next design run.
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * @deterministic — Block N's enforceNoHedging-class structural verifier for spec content.
+ *
+ * Manifest item B11. Surfaced 2026-04-30 (Bug G — PM cites wrong AC numbers in
+ * escalation-resume mode). Without this, every PM/architect/designer escalation
+ * recommendation that cites "AC N" is a hallucination waiting to slip past user
+ * inspection and corrupt the spec via a downstream patcher.
+ *
+ * v1 scope (this module): AC-number references only.
+ *   - Detects "AC N", "AC #N", "AC#N" patterns in agent prose
+ *   - For each cited AC, fetches the actual AC text from the product spec
+ *   - If the agent quotes / claims wording that doesn't actually appear in the
+ *     cited AC, flags it as a hallucination
+ *
+ * Future scope (separate items): screen-name verification, brand-token verification,
+ * section-heading verification, locked-decision verification.
+ *
+ * The function is pure — same input always returns the same output. Caller is
+ * responsible for deciding what to do with the findings (log, block, re-prompt,
+ * surface to user).
+ */
 &nbsp;
-import Anthropic from "@anthropic-ai/sdk"
-import { applySpecPatch } from "./spec-patcher"
-import { readFile, saveApprovedSpec } from "./github-client"
-import { loadWorkspaceConfig } from "./workspace-config"
-import {
-  extractCategoryRules,
-  applyCategoryRules,
-  findResidualCategoryViolations,
-} from "./category-rule-extractor"
-&nbsp;
-// 60s timeout — spec patch generation is a focused Haiku call; no retries.
-const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
-&nbsp;
-// Visual detail patterns that should never appear in a PM product spec.
-// PM spec encodes WHAT the user experiences — not animation values, colors, or gradients.
-// These are structural signals: if any criterion in the spec contains these, it has leaked
-// design/implementation detail that Haiku was supposed to strip but didn't.
-const VISUAL_DETAIL_PATTERNS = [
-  /\b\d+\.?\d*\s*%.*opacit/i,          // opacity percentages: "25% opacity", "opacity 50%"
-  /opacit.*\d+\.?\d*\s*%/i,            // opacity percentages reversed
-  /\b\d+\.?\d*\s*(ms|milliseconds?)\b/i, // animation timing in ms
-  /\b\d+\.?\d*\s*s(?:econds?)?\s+(?:over|duration|cycle|loop)/i, // "2.5 seconds over", "4 second cycle"
-  /(?:over|duration|cycle|loop)\s+\d+\.?\d*\s*s/i, // "over 2.5s"
-  /#[0-9a-fA-F]{3,6}\b/,               // hex color values
-  /rgba?\s*\(/i,                        // rgba/rgb color functions
-  /radial.{0,20}gradient|gradient.{0,20}radial/i, // radial gradient specifics
-  /\bglow\s+(?:radius|size|spread|color)\b/i,  // glow implementation details
-  /easing\s+function|cubic.bezier/i,   // animation easing details
-]
-&nbsp;
-// Fast structural check: does this spec content contain visual/animation details
-// that should never appear in a PM product spec?
-function hasVisualDetails(specContent: string): boolean {
-  // Only scan criteria lines (lines starting with - or digits in ## sections)
-  const criteriaLines = specContent
-    .split("\n")
-    .filter(l =&gt; /^\s*[-\d]/.test(l))
-  return criteriaLines.some(line =&gt; VISUAL_DETAIL_PATTERNS.some(p =&gt; p.test(line)))
+export type AcHallucination = {
+  /** AC number as cited by the agent (e.g. 27 if agent said "AC 27") */
+  citedAcNumber: number
+  /** What the agent claimed AC N contains (extracted from quoted text near the citation) */
+  claimedWording: string
+  /** What AC N actually contains (or null if AC N doesn't exist in the spec at all) */
+  actualWording: string | null
+  /** Reason for flagging — "claimed-wording-not-in-ac" or "ac-does-not-exist" */
+  reason: "claimed-wording-not-in-ac" | "ac-does-not-exist"
 }
 &nbsp;
-// Second-pass Haiku call: strip visual/animation/technical details from a spec
-// that already has them. Called only when hasVisualDetails() fires — not on every patch.
-async function stripVisualDetailsFromSpec(specContent: string): Promise&lt;string&gt; {
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 4096,
-    system: `You are a product spec cleaner. Remove all visual, animation, and technical implementation details from acceptance criteria and edge cases. The PM spec describes WHAT the user experiences — not HOW it looks or is implemented.
+export type ContentVerifierFinding = AcHallucination
 &nbsp;
-Remove from every criterion:
-- Specific opacity percentages (e.g. "25% → 35% opacity", "50–100% opacity")
-- Animation durations (e.g. "2.5 seconds", "4s cycle", "300ms")
-- Color values (hex, rgba, color names)
-- Gradient specifics (radial vs linear, direction, stops)
-- Glow implementation details (radius, spread, combined vs separate)
-- Easing functions (cubic-bezier, ease-in-out)
-- Pixel measurements
+/**
+ * Extract numbered AC items from a product spec. Returns a Map keyed by AC number.
+ * Handles the canonical product-spec format: numbered list items under `## Acceptance Criteria`.
+ *
+ * Robust to:
+ *   - Variations in heading case ("Acceptance Criteria", "ACCEPTANCE CRITERIA")
+ *   - Numbered items with optional leading whitespace
+ *   - Multi-line AC bodies (joins continuation lines)
+ *
+ * Returns Map&lt;number, string&gt; where the string is the full body of that AC (trimmed).
+ */
+export function extractAcMap(productSpec: string): Map&lt;number, string&gt; {
+  const result = new Map&lt;number, string&gt;()
+  if (!productSpec) return result
 &nbsp;
-Replace with the behavior the criterion is describing, without the visual specifics. If a criterion is ONLY a visual implementation detail with no underlying user behavior, remove it entirely.
+  // Find the Acceptance Criteria section (case-insensitive)
+  const acSectionMatch = productSpec.match(/^##\s*Acceptance Criteria\s*$/im)
+  if (!acSectionMatch || acSectionMatch.index === undefined) return result
 &nbsp;
-Output the full spec with all sections preserved. No preamble, no explanation — output only the cleaned spec content.`,
-    messages: [{ role: "user", content: specContent }],
-  })
-  const cleaned = response.content[0].type === "text" ? response.content[0].text.trim() : <span class="branch-1 cbranch-no" title="branch not covered" >specContent</span>
-  return cleaned || <span class="branch-1 cbranch-no" title="branch not covered" >specContent</span>
+  const sectionStart = acSectionMatch.index + acSectionMatch[0].length
+  // Section ends at the next `## ` heading or end of file
+  const remaining = productSpec.slice(sectionStart)
+  const nextHeadingMatch = remaining.match(/^##\s+/m)
+  const sectionEnd = nextHeadingMatch?.index ?? remaining.length
+  const sectionBody = remaining.slice(0, sectionEnd)
+&nbsp;
+  // Stateful line-by-line parse: a numbered line opens a new AC; subsequent
+  // non-numbered, non-heading lines are continuation. Blank lines separate
+  // continuations but don't end the AC.
+  const lines = sectionBody.split("\n")
+  let currentNum: number | null = null
+  let currentBuf: string[] = []
+  const flush = () =&gt; {
+    if (currentNum !== null) {
+      const body = currentBuf.join(" ").trim().replace(/\s+/g, " ")
+      <span class="missing-if-branch" title="else path not taken" >E</span>if (body) result.set(currentNum, body)
+    }
+  }
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd()
+    const numberedMatch = /^(\d+)\.\s+(.*)$/.exec(line)
+    if (numberedMatch) {
+      flush()
+      currentNum = parseInt(numberedMatch[1], 10)
+      currentBuf = [numberedMatch[2]]
+    } else if (currentNum !== null) {
+      const trimmed = line.trim()
+      if (trimmed) currentBuf.push(trimmed)
+    }
+  }
+  flush()
+  return result
 }
 &nbsp;
-export async function patchProductSpecWithRecommendations(params: {
-  featureName: string
-  question: string          // original blocking questions escalated to PM/Architect
-  recommendations: string  // PM/Architect agent response text (confirmed by human)
-  humanConfirmation: string // what the human said when confirming
-}): Promise&lt;string | null&gt; {
-  const { featureName, question, recommendations, humanConfirmation } = params
-  const { paths } = loadWorkspaceConfig()
-  const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
-&nbsp;
-  const existingSpec = await readFile(productSpecPath, "main")
-  if (!existingSpec) {
-    console.log(`[ESCALATION] product spec writeback: spec not found on main for feature=${featureName}, skipping`)
-    return null
+/**
+ * Find AC# references in agent prose. Returns the AC numbers cited and a window
+ * of surrounding text (for extracting the agent's claim about each AC).
+ *
+ * Recognizes: "AC 10", "AC #10", "AC#10", "AC10", "(AC 10)" — case-insensitive.
+ * Does NOT match decimal numbers, version numbers, or AC mentions inside code blocks.
+ */
+export function findAcReferences(agentResponse: string): Array&lt;{ acNumber: number; surroundingText: string }&gt; {
+  const refs: Array&lt;{ acNumber: number; surroundingText: string }&gt; = []
+  const re = /\bAC\s*#?\s*(\d{1,3})\b/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(agentResponse)) !== null) {
+    const acNum = parseInt(m[1], 10)
+    // Capture ±200 chars around the citation for claim extraction
+    const start = Math.max(0, m.index - 200)
+    const end = Math.min(agentResponse.length, m.index + m[0].length + 200)
+    const surroundingText = agentResponse.slice(start, end)
+    refs.push({ acNumber: acNum, surroundingText })
   }
+  return refs
+}
 &nbsp;
-  // B9 — Deterministic category-rule application (Principle 11).
-  // PMs often issue universal substitution directives like "any 'immediately'
-  // becomes 'within 1 second'." Haiku's merge applies these inconsistently
-  // (replaces some, leaves others). Pull the substitution out of Haiku's
-  // hands: extract the rules from the recommendation text, apply them to the
-  // spec deterministically BEFORE Haiku sees it. Haiku then merges the rest
-  // of the recommendation on top of the already-substituted spec.
-  const categoryRules = extractCategoryRules(recommendations)
-  let preProcessedSpec = existingSpec
-  if (categoryRules.length &gt; 0) {
-    preProcessedSpec = applyCategoryRules(existingSpec, categoryRules)
-    const ruleLines = categoryRules.map((r, i) =&gt; `  ${i + 1}. "${r.from}" → "${r.to}"`).join("\n")
-    console.log(`[ESCALATION] B9: extracted ${categoryRules.length} category rule(s) from PM recommendations for feature=${featureName} — applied deterministically before Haiku merge:\n${ruleLines}`)
+/**
+ * Extract quoted phrases near an AC citation. The agent often says something like:
+ *   "AC 10 — 'a clear sign-up call-to-action' should be replaced with ..."
+ * The quoted phrase is what the agent CLAIMS is in AC N. Verifying that phrase
+ * actually appears in AC N is the core check.
+ *
+ * Returns all quoted phrases (single-quoted, double-quoted, or "smart-quoted")
+ * within the surrounding window.
+ */
+export function extractQuotedPhrasesNear(surroundingText: string): string[] {
+  const phrases: string[] = []
+  // Match single-quoted, double-quoted, or smart-quoted strings.
+  // Allow common punctuation inside.
+  const re = /["'“‘]([^"'”’\n]{3,200})["'”’]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(surroundingText)) !== null) {
+    phrases.push(m[1].trim())
   }
+  return phrases
+}
 &nbsp;
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 4096,
-    system: `You are a product spec editor. Given an approved product spec and PM recommendations that resolve blocking gaps, output a targeted patch to make the spec concrete and actionable.
+/**
+ * Main entry point. Returns the list of hallucinations detected in the agent's
+ * response with respect to the product spec. Empty list means the response
+ * passes verification.
+ */
+export function verifyAcReferences(agentResponse: string, productSpec: string): AcHallucination[] {
+  const acMap = extractAcMap(productSpec)
+  const refs = findAcReferences(agentResponse)
+  const hallucinations: AcHallucination[] = []
 &nbsp;
-RULES — follow exactly:
+  for (const ref of refs) {
+    const actualText = acMap.get(ref.acNumber) ?? null
 &nbsp;
-1. REPLACE vague criteria, never keep them alongside concrete versions.
-   For each PM recommendation, find the acceptance criterion it addresses. If that criterion contains vague language — including words like "soft", "non-intrusive", "ambient", "proactively", "seamlessly", "minimal", "appropriate", "subtle", "smooth", "fast", "easy", "good", "improve", or any other unmeasurable adjective — REPLACE the entire criterion with a concrete, measurable version that reflects the PM's confirmed decision. Remove the vague version entirely. Do not output both the old vague criterion and the new concrete one.
+    if (actualText === null) {
+      // AC N doesn't exist in the spec at all
+      const phrases = extractQuotedPhrasesNear(ref.surroundingText)
+      hallucinations.push({
+        citedAcNumber: ref.acNumber,
+        claimedWording: phrases.join(" / ") || <span class="branch-1 cbranch-no" title="branch not covered" >"(no quoted wording extracted)",</span>
+        actualWording: null,
+        reason: "ac-does-not-exist",
+      })
+      continue
+    }
 &nbsp;
-2. KEEP all existing acceptance criteria that are not being replaced.
-   The output section must contain every existing criterion from that section — only the vague ones get replaced; non-vague ones are carried forward unchanged.
+    // AC N exists. Check if any quoted phrase near the citation actually appears in AC N's body.
+    // The agent's claim is "AC N contains X" — if X isn't in AC N's body, it's a hallucination.
+    const phrases = extractQuotedPhrasesNear(ref.surroundingText)
+    if (phrases.length === 0) continue  // No specific claim to verify; skip (could be a generic reference)
 &nbsp;
-3. STRIP visual details, technical details, and UI copy from PM recommendations before writing to spec.
-   The spec encodes WHAT the user experiences — not HOW it looks, HOW it is implemented, or WHAT IT SAYS. Strip:
-   - Specific colors (hex values, rgba, color names)
-   - UI component choices (badge, chip, button, label — unless the PM explicitly owns this as a product requirement)
-   - Exact pixel positions or margins
-   - Timing values in milliseconds unless they define a product-level SLA
-   - Exact UI copy and wording — the PM defines intent ("an inline error the user can dismiss"), the designer writes the actual words. NEVER write specific strings like "The AI is currently unavailable. Please try again in a moment." in the spec.
-   Example: "A persistent non-dismissible error indicator appears at the top of the chat" belongs in the spec. "rgba(245, 245, 245, 0.6) badge in the top-right corner saying 'The AI is currently unavailable.'" does not.
-&nbsp;
-4. ADD new concrete criteria for gaps not already in the spec.
-   If a PM recommendation addresses a gap with no existing criterion, add it as a new numbered criterion in the appropriate section.
-&nbsp;
-5. Route to the correct sections:
-   - Product decisions (UX behavior, what the user experiences, when things fire) → ## Acceptance Criteria
-   - Error experiences and failure modes → ## Edge Cases
-&nbsp;
-6. RESOLVE contradictions — never let two criteria say opposite things.
-   If two PM recommendations in this writeback conflict with each other, OR if a PM recommendation conflicts with an existing spec criterion, resolve it: use the more specific, more restrictive recommendation. Remove the contradictory criterion or text entirely. Never output two criteria that contradict each other on the same topic. Example: if one recommendation says "the warning is dismissible" and another says "the warning is not dismissible", choose the more restrictive one ("not dismissible") and remove any criterion that says it is dismissible.
-&nbsp;
-7. COMPLETE or remove incomplete criteria.
-   If any criterion in the spec is incomplete (ends mid-sentence, is a placeholder, or contains "TBD" / "TODO" / "[incomplete]"), either complete it using the PM's confirmed recommendations or remove it. Never leave an incomplete criterion in the output.
-&nbsp;
-8. HYGIENE PASS — scan the entire spec for any remaining vague language beyond what the current PM recommendations directly address.
-   After applying rules 1–7, scan every criterion in ## Acceptance Criteria and ## Edge Cases for the vague words listed in Rule 1. If a criterion contains vague language AND the correct concrete meaning can be inferred from PM decisions already present in the spec (either from this writeback or from prior confirmed decisions visible in the existing spec), replace it. If the meaning cannot be inferred — the PM never addressed it — leave it unchanged for the next escalation. Do not invent decisions the PM has not made.
-&nbsp;
-9. Output ONLY sections that changed, in full (complete section body — all criteria, not just changed ones). No preamble, no explanation, nothing outside ## sections.`,
-    messages: [{
-      role: "user",
-      content: `EXISTING SPEC:\n${preProcessedSpec}\n\nBLOCKING QUESTIONS:\n${question}\n\nPM RECOMMENDATIONS:\n${recommendations}\n\nOutput the updated spec sections with vague criteria replaced by concrete PM decisions, visual/technical details stripped, and any remaining vague language in the spec resolved where the PM's intent is already clear.`,
-    }],
-  })
-&nbsp;
-  const patch = response.content[0].type === "text" ? response.content[0].text.trim() : ""
-  if (!patch || !patch.includes("##")) {
-    console.log(`[ESCALATION] product spec writeback: Haiku returned no valid patch for feature=${featureName}, skipping`)
-    return null
-  }
-&nbsp;
-  let mergedSpec = applySpecPatch(preProcessedSpec, patch)
-&nbsp;
-  // B9 — Post-Haiku residual check. If Haiku's merge re-introduced any
-  // category-rule "from" word (rare — happens when Haiku rewrites a criterion
-  // that previously contained the substituted term), apply the rules again as
-  // a final safety net so the deterministic invariant survives the LLM's
-  // judgment.
-  if (categoryRules.length &gt; 0) {
-    const residuals = findResidualCategoryViolations(mergedSpec, categoryRules)
-    <span class="missing-if-branch" title="else path not taken" >E</span>if (residuals.length &gt; 0) {
-      const residualLines = residuals.map((r, i) =&gt; `  ${i + 1}. "${r.from}" survived → re-applying`).join("\n")
-      console.log(`[ESCALATION] B9: Haiku's merge re-introduced ${residuals.length} category-rule term(s) for feature=${featureName} — applying rules as final pass:\n${residualLines}`)
-      mergedSpec = applyCategoryRules(mergedSpec, residuals)
+    // Normalize for substring matching: case-insensitive, collapse whitespace.
+    const normalizedActual = actualText.toLowerCase().replace(/\s+/g, " ")
+    for (const phrase of phrases) {
+      const normalizedPhrase = phrase.toLowerCase().replace(/\s+/g, " ")
+      // Skip very short phrases (less informative — likely false positives)
+      if (normalizedPhrase.length &lt; 8) continue
+      // If the phrase is substantial AND not in the AC body, flag it
+      if (!normalizedActual.includes(normalizedPhrase)) {
+        hallucinations.push({
+          citedAcNumber: ref.acNumber,
+          claimedWording: phrase,
+          actualWording: actualText,
+          reason: "claimed-wording-not-in-ac",
+        })
+      }
     }
   }
 &nbsp;
-  // Structural post-patch audit: if the merged spec contains visual/animation details
-  // that Haiku was supposed to strip (Rule 3) but didn't, run a second focused pass to
-  // remove them before saving. This catches opacity values, animation durations, hex
-  // colors, gradient specifics, etc. that should never appear in a PM product spec.
-  if (hasVisualDetails(mergedSpec)) {
-    console.log(`[ESCALATION] product spec writeback: visual details detected in patch for feature=${featureName} — running strip pass`)
-    mergedSpec = await stripVisualDetailsFromSpec(mergedSpec)
-    console.log(`[ESCALATION] product spec writeback: visual detail strip pass complete for feature=${featureName}`)
-  }
+  return hallucinations
+}
 &nbsp;
-  await saveApprovedSpec({ featureName, filePath: productSpecPath, content: mergedSpec })
-  console.log(`[ESCALATION] product spec writeback: patched ${productSpecPath} on main with confirmed PM recommendations`)
-  return mergedSpec
+/**
+ * Format a list of hallucinations as a human-readable diagnostic string,
+ * suitable for log lines or user-facing notices.
+ */
+export function formatHallucinations(hallucinations: AcHallucination[]): string {
+  return hallucinations.map((h, i) =&gt; {
+    if (h.reason === "ac-does-not-exist") {
+      return `${i + 1}. AC ${h.citedAcNumber} does NOT exist in the spec. Agent claimed: "${h.claimedWording}".`
+    }
+    return `${i + 1}. AC ${h.citedAcNumber} does NOT contain "${h.claimedWording}". Actual AC ${h.citedAcNumber} text: "${h.actualWording}".`
+  }).join("\n")
 }
 &nbsp;</pre></td></tr></table></pre>
 

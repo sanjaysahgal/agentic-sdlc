@@ -30,9 +30,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">93.22% </span>
+                <span class="strong">94.91% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>55/59</span>
+                <span class='fraction'>56/59</span>
             </div>
         
             
@@ -770,7 +770,11 @@
 <a name='L705'></a><a href='#L705'>705</a>
 <a name='L706'></a><a href='#L706'>706</a>
 <a name='L707'></a><a href='#L707'>707</a>
-<a name='L708'></a><a href='#L708'>708</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L708'></a><a href='#L708'>708</a>
+<a name='L709'></a><a href='#L709'>709</a>
+<a name='L710'></a><a href='#L710'>710</a>
+<a name='L711'></a><a href='#L711'>711</a>
+<a name='L712'></a><a href='#L712'>712</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -780,9 +784,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -900,9 +904,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">150x</span>
-<span class="cline-any cline-yes">150x</span>
-<span class="cline-any cline-yes">150x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">151x</span>
+<span class="cline-any cline-yes">151x</span>
+<span class="cline-any cline-yes">151x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1482,6 +1490,8 @@ import { AgentContext } from "../runtime/context-loader"
 import { loadWorkspaceConfig, WorkspaceConfig } from "../runtime/workspace-config"
 import { BrandDrift, AnimationDrift } from "../runtime/brand-auditor"
 import { splitSystemPrompt } from "../runtime/claude-client"
+// DESIGN-REVIEWED: Block N option-3 cross-agent prompt injection. (1) Scale: O(1) — buildAntiDeferralBlock returns a constant string identical across all features/tenants; no growth with feature or agent count. (2) Ownership: deterministic-auditor.ts owns DEFERRAL_PHRASES + buildAntiDeferralBlock — same module that owns the runtime hedge gate, single source of truth. (3) Cross-cutting: same block injected into PM, Designer, Architect; cross-agent invariant test enforces parity (Principle 15).
+import { buildAntiDeferralBlock } from "../runtime/deterministic-auditor"
 &nbsp;
 // Builds the UX Design agent system prompt from the loaded context.
 // The design agent's job: shape the approved product spec into a structured
@@ -1895,7 +1905,7 @@ ${context.currentDraft
 &nbsp;
 ## Design system (your authoritative document)
 ${context.designSystem
-    ? <span class="branch-0 cbranch-no" title="branch not covered" >`Read this before every response. Every design decision must be consistent with established patterns:\n\n${context.designSystem}`</span>
+    ? `Read this before every response. Every design decision must be consistent with established patterns:\n\n${context.designSystem}`
     : "No DESIGN_SYSTEM.md exists yet — this is the first feature. Draft the initial design system document as part of the approved spec."}
 &nbsp;
 ## Previously approved design specs (cross-feature coherence)
@@ -2047,7 +2057,9 @@ On approval, call \`apply_design_spec_patch\` updating the Brand section (and an
 **Never silently fix the preview without surfacing the drift.** The user needs to know exactly what changed and why — so they can confirm this is the right direction before it gets committed.
 &nbsp;
 ## Formatting
-You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, headers with ---. Never use ASCII tables (pipes and dashes). Never output a wall of plain text when structure would make it clearer. When summarising a spec state, use sections with bold headers and bullet points — not a markdown table with | characters.`
+You are responding in Slack. Use Slack markdown throughout — bold (*text*), italics (_text_), bullet points, headers with ---. Never use ASCII tables (pipes and dashes). Never output a wall of plain text when structure would make it clearer. When summarising a spec state, use sections with bold headers and bullet points — not a markdown table with | characters.
+&nbsp;
+${buildAntiDeferralBlock()}`
 }
 &nbsp;
 // Builds the "current state?" fast-path response for a design draft.
@@ -2191,7 +2203,7 @@ export function buildDesignSystemBlocks(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-29T22:32:59.270Z
+                at 2026-05-01T17:43:45.993Z
             </div>
         <script src="../prettify.js"></script>
         <script>
