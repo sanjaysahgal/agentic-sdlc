@@ -37,3 +37,9 @@
 - Added by commit: <pending — this commit>
 - Why: bug #10 — PendingEscalation lacked originAgent, router guessed wrong for architect→PM. End-to-end fix requires real Slack to verify control returns to architect (not designer) after PM resolves.
 - Full scenario: see `MANUAL_TESTS.md` MT-17
+
+### MT-18 — EscalationNotification survives bot restart within TTL (D5 fix)
+
+- Added by commit: <this commit, D5 fix>
+- Why: D5 (was Bug A) — escalationNotifications used to be wiped on every restart, colliding with J3 CODE_MARKER bump. Real-restart test verifies notifications now survive within PENDING_STATE_TTL_MS (24h).
+- Full scenario: see `MANUAL_TESTS.md` MT-18

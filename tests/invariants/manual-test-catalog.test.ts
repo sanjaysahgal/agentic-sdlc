@@ -30,7 +30,7 @@ import { resolve } from "node:path"
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const CATALOG_PATH = resolve(REPO_ROOT, "MANUAL_TESTS.md")
 
-const MIN_MT_COUNT = 17  // raised from 16 when MT-17 (architect→PM origin-agent routing fix) was added
+const MIN_MT_COUNT = 18  // raised from 17 when MT-18 (D5 escalationNotification survives restart) was added
 
 const REQUIRED_SECTIONS = [
   "Why this can't be automated",

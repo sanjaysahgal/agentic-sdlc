@@ -470,6 +470,34 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-18 — EscalationNotification survives bot restart within TTL (D5 fix)
+
+**Why this can't be automated:** the bot startup logic runs once per process; integration tests can simulate it but only a real restart while an in-flight escalation is queued exercises the actual D5 fix path against the real on-disk state file. Verifies the J3↔D5 collision is gone (CODE_MARKER bump can happen mid-escalation without losing user state).
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD.
+
+**Setup:** any feature with an active in-flight escalation (`escalationNotifications.<feature>` in `.conversation-state.json` is non-empty). The `onboarding` feature being driven through the integration walk usually has one.
+
+**Actions:**
+1. Note the current escalationNotification: `jq '.escalationNotifications.onboarding | {targetAgent, originAgent, timestamp}' .conversation-state.json`
+2. Restart the bot: `kill -9 $(pgrep -f "tsx.*server.ts" | head -1) && npm run dev`
+3. After restart completes, re-check: `jq '.escalationNotifications.onboarding' .conversation-state.json`
+
+**Expected outcome:**
+- After restart, `escalationNotifications.onboarding` is STILL PRESENT (not cleared).
+- `timestamp` field is preserved verbatim from before restart.
+- `[STORE] startup: clearing stale escalationNotification ...` line does NOT appear in logs (because it's not stale).
+- The integration walk can resume — replying to the prior thread routes to the right agent (architect resume via originAgent).
+
+**Failure signatures:**
+- Notification is gone after restart → `clearStaleEntries(escalationNotifications, ...)` not wired correctly OR timestamp wasn't set.
+- `[STORE] startup: clearing N stale escalation notification(s)` log line appears → the legacy clear-all is still in effect.
+- Notification present but architect doesn't resume on next message → `originAgent` field lost in restart (separate from D5 — would be a different bug).
+
+**Aging test (optional):** to verify TTL works, manually edit `.conversation-state.json` to set the notification's `timestamp` to >24h ago, restart bot, verify it IS cleared this time with the `[STORE] startup: clearing stale escalationNotification` log line.
+
+---
+
 ### MT-16 — Tool-name + platform-commentary stripper sentence-drop (Block N2)
 
 **Why this can't be automated:** unit tests verify the regex pattern is sentence-level (not token-level). Only real LLM + real Slack proves the new stripper handles real agent output gracefully — multi-clause sentences mixing legitimate content with the offending token, sentence-end punctuation variations, code blocks, and Slack markdown all interact at runtime.

@@ -46,6 +46,13 @@ export type EscalationNotification = {
   question: string
   recommendations?: string
   originAgent?: "design" | "architect"  // which agent to resume after reply; defaults to "design" if absent
+  /** When this notification was created (ms since epoch). Used by clearStaleEntries on
+   *  startup so notifications survive bot restarts within PENDING_STATE_TTL_MS, matching
+   *  the same TTL semantics as PendingEscalation/PendingApproval/PendingDecisionReview.
+   *  Manifest item D5 (was Bug A) — fixed 2026-04-30. Previously notifications were
+   *  cleared on every restart unconditionally, which lost in-flight escalation state
+   *  every time the bot was restarted to verify a CODE_MARKER bump (J3 collision). */
+  timestamp?: number
 }
 
 // Pending spec approval — set when the agent detects approval intent.
@@ -303,13 +310,12 @@ function clearStaleEntries<T extends { timestamp?: number }>(map: Map<string, T>
 clearStaleEntries(pendingEscalations, "pendingEscalation")
 clearStaleEntries(pendingApprovals, "pendingApproval")
 clearStaleEntries(pendingDecisionReviews, "pendingDecisionReview")
-// escalationNotifications don't have timestamps — clear all on restart
-// (the agent response was captured but the human may not remember the context)
-if (escalationNotifications.size > 0) {
-  console.log(`[STORE] startup: clearing ${escalationNotifications.size} stale escalation notification(s)`)
-  escalationNotifications.clear()
-}
-if (pendingEscalations.size > 0 || pendingApprovals.size > 0 || pendingDecisionReviews.size > 0) {
+// D5 fix (was Bug A): escalationNotifications now carry a timestamp (set by
+// setEscalationNotification) and survive restarts within PENDING_STATE_TTL_MS,
+// matching the other pending state. Previously clear-all-on-restart wiped
+// in-flight escalations on every CODE_MARKER bump (J3 collision).
+clearStaleEntries(escalationNotifications, "escalationNotification")
+if (pendingEscalations.size > 0 || pendingApprovals.size > 0 || pendingDecisionReviews.size > 0 || escalationNotifications.size > 0) {
   persistConversationState()
 }
 
@@ -486,7 +492,10 @@ export function getEscalationNotification(key: FeatureKey): EscalationNotificati
 export function setEscalationNotification(key: FeatureKey, notification: EscalationNotification): void {
   const flat = featureKeyToString(key)
   console.log(`[STORE] setEscalationNotification: feature=${flat} targetAgent=${notification.targetAgent}`)
-  escalationNotifications.set(flat, notification)
+  // D5 fix: stamp timestamp so clearStaleEntries on next startup respects TTL
+  // (instead of the previous clear-all-on-restart that wiped in-flight escalations
+  // every time the bot was restarted to verify a CODE_MARKER bump).
+  escalationNotifications.set(flat, { ...notification, timestamp: Date.now() })
   persistConversationState()
 }
 

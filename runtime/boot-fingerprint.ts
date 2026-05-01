@@ -24,6 +24,13 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   d5-escalation-notification-survives-restart — manifest D5 (was Bug A) fix:
+//     EscalationNotification now carries `timestamp` (set by
+//     setEscalationNotification). Startup uses clearStaleEntries with
+//     PENDING_STATE_TTL_MS (24h) instead of clear-all. Notifications survive
+//     bot restart within TTL. Resolves J3↔D5 collision: CODE_MARKER bump
+//     can now happen mid-escalation without losing user state. MT-18
+//     verifies end-to-end. Regression catalog bug #11.
 //   bug-10-origin-agent-routing — bug #10 fix: PendingEscalation now carries
 //     originAgent (required field). Router reads it directly instead of
 //     guessing based on targetAgent. Architect→PM escalations now resume
@@ -54,7 +61,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "bug-10-origin-agent-routing"
+export const CODE_MARKER = "d5-escalation-notification-survives-restart"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

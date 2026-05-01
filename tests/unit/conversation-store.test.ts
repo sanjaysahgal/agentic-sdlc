@@ -278,7 +278,12 @@ describe("conversation-store", () => {
     const { getEscalationNotification, setEscalationNotification } = await import("../../runtime/conversation-store")
     const notification = { targetAgent: "pm" as const, question: "What is the session expiry?", recommendations: "1 week" }
     setEscalationNotification(featureKey("onboarding"), notification)
-    expect(getEscalationNotification(featureKey("onboarding"))).toEqual(notification)
+    // D5 fix: setEscalationNotification adds a timestamp field. Verify the input fields
+    // are preserved verbatim, and timestamp is set to a recent value.
+    const got = getEscalationNotification(featureKey("onboarding"))
+    expect(got).toMatchObject(notification)
+    expect(got!.timestamp).toBeDefined()
+    expect(got!.timestamp!).toBeLessThanOrEqual(Date.now())
   })
 
   it("setEscalationNotification calls fs.writeFileSync to persist state to disk", async () => {
