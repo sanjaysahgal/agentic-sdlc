@@ -10192,3 +10192,124 @@ describe("Scenario N96 — upstream-notice format round-trip (Block B2 contract)
     expect(typeof mod.parseDesignGapText).toBe("function")
   })
 })
+
+// ─── Scenario B11 v1: PM AC-citation hallucination detection in escalation-resume ─────────────
+//
+// E2E coverage for the new arch-upstream-escalation-confirmed wiring (manifest B11 v1,
+// regression catalog bug #12). The arch-upstream-escalation-confirmed branch was already
+// covered by N44/N44b for the writeback path; this scenario exercises the new
+// runtime/spec-content-verifier.ts wiring at that same site — log-only contract.
+//
+// Setup: architect has a pendingEscalation queued targeting PM. User confirms with "yes".
+// PM's mocked response cites AC 99 (which does not exist — the seeded product spec only
+// has 3 ACs). The platform must:
+//   1. Run the PM agent (existing behavior — unchanged)
+//   2. Load the approved product spec from main and call verifyAcReferences
+//   3. Emit a [CONTENT-VERIFIER] log line on the detected hallucination
+//
+// v1 contract: detection + log only. The Slack response is unchanged regardless of
+// whether the verifier finds a hallucination — operator is the line of defense.
+
+describe("Scenario B11 v1 — arch-upstream-escalation-confirmed wires verifyAcReferences (log-only)", () => {
+  const THREAD = "workflow-b11-v1"
+  const PRODUCT_SPEC_3_ACS = [
+    "# Onboarding Product Spec",
+    "",
+    "## Acceptance Criteria",
+    "1. The user can sign up with email and password.",
+    "2. The user receives a confirmation email after sign up.",
+    "3. The user can log in with the same credentials.",
+    "",
+    "## Non-Goals",
+    "- Out of scope item",
+  ].join("\n")
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    setPendingEscalation(featureKey("onboarding"), {
+      targetAgent: "pm",
+      originAgent: "architect",
+      question: "AC#1 has vague timing — what's the bound?",
+      designContext: "",
+    })
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"))
+  })
+
+  it("PM cites AC 99 in escalation-resume → [CONTENT-VERIFIER] log line emitted with hallucination=ac-does-not-exist", async () => {
+    // Mock GitHub: product spec on main returns the 3-AC spec for the verifier's readFile call.
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        return { data: { content: Buffer.from(PRODUCT_SPEC_3_ACS).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      // Default for context loads and other paths
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    // PM agent runs and produces a response that cites AC 99 (does not exist) with
+    // a quoted phrase. This is the canonical Bug-G shape.
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: `My recommendation: tighten AC 99 — "the system shall respond instantly" is too vague.` }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 50 },
+    })
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    // The verifier must have logged the hallucination at the arch-upstream-escalation-confirmed site.
+    const verifierLogs = logSpy.mock.calls
+      .map((c) => String(c[0] ?? ""))
+      .filter((s) => s.startsWith("[CONTENT-VERIFIER]"))
+    expect(verifierLogs.length).toBeGreaterThan(0)
+    const matched = verifierLogs.find(
+      (s) =>
+        s.includes("feature=onboarding") &&
+        s.includes("site=arch-upstream-escalation-confirmed") &&
+        s.includes("hallucinations=") &&
+        s.includes("AC 99 does NOT exist"),
+    )
+    expect(matched).toBeDefined()
+
+    logSpy.mockRestore()
+  })
+
+  it("PM cites only existing ACs with faithful wording → no [CONTENT-VERIFIER] log line", async () => {
+    // Negative case: PM's response cites an AC that exists with wording that does appear
+    // in the AC body. Verifier must produce zero findings → no log line.
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        return { data: { content: Buffer.from(PRODUCT_SPEC_3_ACS).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "main-sha" } } })
+    mockCreateOrUpdate.mockResolvedValue({})
+
+    mockAnthropicCreate.mockResolvedValue({
+      content: [{ type: "text", text: `My recommendation on AC 1 — "sign up with email and password" — is to clarify the password complexity rule.` }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, output_tokens: 50 },
+    })
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes")
+    await handleFeatureChannelMessage(params)
+
+    const verifierLogs = logSpy.mock.calls
+      .map((c) => String(c[0] ?? ""))
+      .filter((s) => s.startsWith("[CONTENT-VERIFIER]") && !s.includes("verify-failed"))
+    expect(verifierLogs.length).toBe(0)
+
+    logSpy.mockRestore()
+  })
+})

@@ -12,6 +12,7 @@ import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLo
 import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, enforceNoHedging } from "../../../runtime/deterministic-auditor"
+import { verifyAcReferences, formatHallucinations } from "../../../runtime/spec-content-verifier"
 import { verifyActionClaims } from "../../../runtime/action-verifier"
 import { getPriorContext, buildEnrichedMessage, identifyUncommittedDecisions, generateSaveCheckpoint } from "../../../runtime/conversation-summarizer"
 import { generateDesignPreview } from "../../../runtime/html-renderer"
@@ -971,6 +972,23 @@ ${archPendingEscalation.question}`
           await runPmAgent({ channelName, channelId, threadTs, userMessage: brief, client, update: capturingUpdate, readOnly: true })
         }
       }})
+      // B11 v1 — log-only content verification of PM responses in escalation-resume mode.
+      // Bug G surfaced PM citing AC numbers that don't exist in the product spec; without
+      // a deterministic verifier the wrong AC# would flow into the spec patcher. v1 detects
+      // and logs; v2 will re-prompt and gate the patcher.
+      if (!isDesignTarget && capturedResponse) {
+        try {
+          const productSpecForVerify = await readFile(`${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`, "main").catch(() => null)
+          if (productSpecForVerify) {
+            const hallucinations = verifyAcReferences(capturedResponse, productSpecForVerify)
+            if (hallucinations.length > 0) {
+              console.log(`[CONTENT-VERIFIER] feature=${featureName} site=arch-upstream-escalation-confirmed hallucinations=${hallucinations.length}\n${formatHallucinations(hallucinations)}`)
+            }
+          }
+        } catch (err: unknown) {
+          console.log(`[CONTENT-VERIFIER] feature=${featureName} site=arch-upstream-escalation-confirmed verify-failed err=${String(err).slice(0, 200)}`)
+        }
+      }
       await client.chat.postMessage({
         channel: channelId,
         thread_ts: threadTs,
@@ -1009,6 +1027,20 @@ ${archPendingEscalation.question}`
             await runPmAgent({ channelName, channelId, threadTs, userMessage, client, update: capturingUpdate, readOnly: true })
           }
         }})
+        // B11 v1 — log-only content verification (continuation arm of arch-upstream).
+        if (archNotifTarget !== "design" && updatedRecommendations) {
+          try {
+            const productSpecForVerify = await readFile(`${workspacePaths.featuresRoot}/${featureName}/${featureName}.product.md`, "main").catch(() => null)
+            if (productSpecForVerify) {
+              const hallucinations = verifyAcReferences(updatedRecommendations, productSpecForVerify)
+              if (hallucinations.length > 0) {
+                console.log(`[CONTENT-VERIFIER] feature=${featureName} site=arch-upstream-continuation hallucinations=${hallucinations.length}\n${formatHallucinations(hallucinations)}`)
+              }
+            }
+          } catch (err: unknown) {
+            console.log(`[CONTENT-VERIFIER] feature=${featureName} site=arch-upstream-continuation verify-failed err=${String(err).slice(0, 200)}`)
+          }
+        }
         setEscalationNotification(featureKey(featureName), { ...archEscalationNotification, recommendations: updatedRecommendations || archEscalationNotification.recommendations })
         return
       }

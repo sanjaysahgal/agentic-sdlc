@@ -24,6 +24,17 @@ export type BootFingerprint = {
 // you're not running the fix yet."
 //
 // History (most recent first):
+//   b11-v1-content-verifier-pm-escalation-resume — manifest B11 v1 fix
+//     (was Bug G, regression catalog bug #12). Adds deterministic
+//     `runtime/spec-content-verifier.ts` and wires it log-only into the PM
+//     escalation-resume site at `interfaces/slack/handlers/message.ts`
+//     (both `arch-upstream-escalation-confirmed` and `arch-upstream-continuation`
+//     branches). Detects two classes of AC-citation hallucination:
+//     `ac-does-not-exist` (PM cites AC# beyond spec count) and
+//     `claimed-wording-not-in-ac` (quoted phrase doesn't appear in cited AC).
+//     v1 emits `[CONTENT-VERIFIER]` log only — no user-facing change. v2 will
+//     re-prompt the agent and gate the downstream patcher. MT-19 is the
+//     real-Slack scenario depending on this marker.
 //   d5-escalation-notification-survives-restart — manifest D5 (was Bug A) fix:
 //     EscalationNotification now carries `timestamp` (set by
 //     setEscalationNotification). Startup uses clearStaleEntries with
@@ -61,7 +72,7 @@ export type BootFingerprint = {
 //   readiness-directive+prose-state-fix — adds [READINESS] log in architect
 //     + designer paths, [DISMISS-CLASSIFIER] log in dismiss classifier,
 //     PM-first conversational override.
-export const CODE_MARKER = "d5-escalation-notification-survives-restart"
+export const CODE_MARKER = "b11-v1-content-verifier-pm-escalation-resume"
 
 export function bootFingerprint(): BootFingerprint {
   let commit = "unknown"

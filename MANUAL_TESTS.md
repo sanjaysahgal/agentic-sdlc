@@ -498,6 +498,33 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-19 — PM AC-citation hallucination detection in escalation-resume (B11 v1, bug #12)
+
+**Why this can't be automated:** unit + regression tests prove the verifier function and its wiring. Only real LLM + real Slack proves the verifier (a) actually fires on real PM responses in the escalation-resume path, (b) catches the canonical Bug-G class (PM cites an AC that doesn't exist or quotes wording the AC doesn't contain), (c) emits the `[CONTENT-VERIFIER]` log line so the operator can intervene before the spec is corrupted. v1 is log-only — no user-facing output yet.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD (`b11-v1-content-verifier-pm-escalation-resume`).
+
+**Setup:**
+- Feature: any feature in `engineering-in-progress` phase with an approved PM spec on main containing a `## Acceptance Criteria` section with a known AC count (e.g. 25 ACs).
+- The architect must already have a `pendingEscalation` queued targeting PM (`originAgent: "architect"`, `targetAgent: "pm"`). Easiest way to get one: in `#feature-<X>`, ask the architect to finalize and let the upstream-PM rubric catch a gap and trigger `offer_pm_escalation`.
+
+**Actions:**
+1. In `#feature-<X>`, with the architect's escalation queued, post `yes` to confirm the escalation. The PM should respond with recommendations.
+2. Tail `logs/bot-YYYY-MM-DD.log` and grep for `[CONTENT-VERIFIER]`.
+
+**Expected outcome:**
+- If PM cites only ACs that exist with faithful wording, **no** `[CONTENT-VERIFIER]` log line. (Negative case — pass.)
+- If PM cites a nonexistent AC (e.g. AC 27 when spec has 25), `logs/bot-YYYY-MM-DD.log` contains:
+  `[CONTENT-VERIFIER] feature=<X> site=arch-upstream-escalation-confirmed hallucinations=N` followed by `AC 27 does NOT exist in the spec. Agent claimed: "..."`.
+- v1 is log-only — Slack reply is unchanged. The user/operator is the line of defense; the platform makes the violation visible.
+
+**Failure signatures:**
+- PM cites AC 27 but no `[CONTENT-VERIFIER]` log line → verifier not wired or product spec not loadable. Check `verify-failed` line for the underlying error.
+- `[CONTENT-VERIFIER] verify-failed err=...` for every PM run → the spec path resolution or `readFile` is broken. Fix the wiring, don't suppress the log.
+- v2 work (re-prompt loop, downstream patcher gating) is OUT OF SCOPE for this MT. v1 = detection + log only.
+
+---
+
 ### MT-16 — Tool-name + platform-commentary stripper sentence-drop (Block N2)
 
 **Why this can't be automated:** unit tests verify the regex pattern is sentence-level (not token-level). Only real LLM + real Slack proves the new stripper handles real agent output gracefully — multi-clause sentences mixing legitimate content with the offending token, sentence-end punctuation variations, code blocks, and Slack markdown all interact at runtime.

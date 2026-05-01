@@ -43,3 +43,9 @@
 - Added by commit: <this commit, D5 fix>
 - Why: D5 (was Bug A) — escalationNotifications used to be wiped on every restart, colliding with J3 CODE_MARKER bump. Real-restart test verifies notifications now survive within PENDING_STATE_TTL_MS (24h).
 - Full scenario: see `MANUAL_TESTS.md` MT-18
+
+### MT-19 — PM AC-citation hallucination detection in escalation-resume (B11 v1, bug #12)
+
+- Added by commit: <this commit, B11 v1>
+- Why: B11 v1 — deterministic spec-content verifier wired log-only into the PM escalation-resume site. Unit + regression tests prove the verifier and its wiring; only real Slack proves it fires on real PM responses and the `[CONTENT-VERIFIER]` log line surfaces the violation so an operator can intervene before the spec is corrupted.
+- Full scenario: see `MANUAL_TESTS.md` MT-19
