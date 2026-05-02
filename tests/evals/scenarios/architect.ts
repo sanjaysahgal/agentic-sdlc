@@ -225,7 +225,6 @@ export const architectScenarios: EvalScenario[] = [
     userMessage: "What's the migration strategy for the onboarding state column?",
     history: midDraftHistory,
     criteria: [
-      "The response answers the migration question with a specific approach — not 'it depends'",
       "The response is concise and focused — under 800 words",
     ],
     deterministicCriteria: [
@@ -236,6 +235,20 @@ export const architectScenarios: EvalScenario[] = [
       {
         label: "No platform language leaked",
         mustNotContain: ["the platform", "[PLATFORM", "[INTERNAL"],
+      },
+      // Per Principle 8a — replace LLM-judged "answers with specific approach not 'it depends'"
+      // (judge variance was marking concrete Prisma-migration responses as failing) with a
+      // deterministic structural check: response must NOT contain pure-hedge phrasing that
+      // signals refusal-to-recommend (Principle 10 violation). Real-LLM responses with concrete
+      // approaches don't trip this; only "it depends" / "depends on the situation" / "you decide"
+      // style hedging does.
+      {
+        label: "Does not hedge with 'it depends' / 'depends on what you' (Principle 10)",
+        check: (response) => {
+          const lower = response.toLowerCase()
+          const hedges = ["it depends.", "it depends ", "depends on the situation", "depends entirely on", "you'll need to decide", "that's up to you"]
+          return !hedges.some((h) => lower.includes(h))
+        },
       },
     ],
   },

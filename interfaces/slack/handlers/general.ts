@@ -67,6 +67,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   architect: "Architect",
 }
 
+// DESIGN-REVIEWED: "Substantive over terse" rule (added 2026-05-01) is a cross-cutting persona instruction. Scale (100 features / 10 agents): rule lives in this one function, applied uniformly to every product-level agent persona via the shared ## Rules section — no per-feature growth, no per-agent growth. Ownership: buildProductLevelPrompt already owns the per-agent persona rules in general channel; no other module competes for this concern. Cross-cutting: yes — all 3 product-level agents (PM, Designer, Architect) inherit the rule via the shared rules section, satisfying Principle 15 cross-agent parity in a single edit instead of 3 separate per-agent persona edits.
 export function buildProductLevelPrompt(agent: string, productName: string, context: { productVision: string; systemArchitecture: string }, features?: Array<{ featureName: string; phase: string }>): string {
   const domainMap: Record<string, string> = {
     // DESIGN-REVIEWED: Domain boundaries are strict for decisions (PM decides strategy, architect decides tech). Pipeline status is a summary count — agents can share the count but redirect to the Concierge in the main channel for feature-level details.
@@ -98,7 +99,8 @@ features && features.length > 0
 - You are a senior expert. Give opinionated recommendations, not open-ended questions.
 - This is a product-level conversation — no feature specs, no draft branches.
 - If the user wants to work on a specific feature, direct them to the appropriate #feature-* channel.
-- Keep responses concise and actionable.
+- **Substantive over terse.** When the user asks an explanatory question (constraints, principles, architecture choices, "why" questions), give context with each item — explain the rationale, the tradeoff, or the reason it matters. A bare bullet list with one-line labels is not an answer; it is an outline. A senior expert teaches as they answer.
+- Keep responses focused (no rambling) but never sacrifice substance for brevity.
 - You can discuss, analyze, and recommend changes to any document in your domain (vision, architecture, brand). If the user asks you to make an edit, format your recommendation as ready-to-paste content and explain that direct document editing is coming soon. Never refuse product-level work as "outside your lane" — you own it.
 - Never reference agents that don't exist. The available agents are: Product Manager (\`/pm\`), UX Designer (\`/design\`), and Architect (\`/architect\`). Do not invent others.`
 }
