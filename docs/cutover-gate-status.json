@@ -366,6 +366,39 @@
       "m0_required": true
     },
     {
+      "id": "F1",
+      "title": "Delete legacy multi-exit handlers (runArchitectAgent / runDesignAgent / runPmAgent + interfaces/slack/handlers/message.ts orchestration logic)",
+      "block": "F",
+      "gates_block_e": true,
+      "status": "pending",
+      "verification": "pending",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true,
+      "verification_note": "Block F1 is the cutover-cleanup. After Block A wiring (A4) + 48h burn-in green (A5/A6/A7) + MT-4/5/6/18 pass, F1 deletes the legacy multi-exit handler orchestration in interfaces/slack/handlers/message.ts and the legacy runArchitectAgent/runDesignAgent/runPmAgent entry-point functions in agents/{architect,design,pm}.ts (the buildXxxSystemPrompt prompt-builders survive — V2 calls them via DI). interfaces/slack/handlers/message.ts shrinks from ~3000 lines to a thin V2 dispatcher. Verifies via: (1) grep 'runArchitectAgent\\b' interfaces/slack/handlers/message.ts returns zero matches; (2) every Slack message routes through runtime/agents/run*AgentV2.ts; (3) [V2-*-SHADOW] log lines disappear (V2 is now production not shadow). M0-required because the V2-only invariant is what structurally retires the entire B-class of legacy bugs (B13, B16, B7, B8, B9, B10, B11). Cannot ship F2/F3 (Coder/Reviewer) on a dual-runtime foundation."
+    },
+    {
+      "id": "F2",
+      "title": "Coder agent (M1 — first new agent on V2-cutover-clean foundation)",
+      "block": "F",
+      "gates_block_e": false,
+      "status": "pending",
+      "verification": "pending",
+      "retired_by_v2_cutover": "false",
+      "m0_required": false,
+      "verification_note": "F2 is the first M1+ priority — promoted to active after M0 acceptance signoff (Step 7). Uses the M1 (manifest item M1) new-agent scaffold; if scaffold has bugs, F2 surfaces them. Coder agent reads approved engineering spec on main and produces implementation PR; uses the same V2-style single-path runner pattern (runCoderAgentV2) per Block B1 invariant. Domain boundary: never makes design or product decisions; surfaces gaps via offer_upstream_revision pattern (same as architect). Per CLAUDE.md AGENTS.md 'New agent enforcement checklist' — must implement every enforcement mechanism existing agents have, table-form. Out of scope for M0 per the canonical sequence's explicit M0/M1+ split."
+    },
+    {
+      "id": "F3",
+      "title": "Reviewer agent (M1 — second new agent on V2-cutover-clean foundation)",
+      "block": "F",
+      "gates_block_e": false,
+      "status": "pending",
+      "verification": "pending",
+      "retired_by_v2_cutover": "false",
+      "m0_required": false,
+      "verification_note": "F3 is the second M1+ agent, after F2. Reviewer agent reviews the Coder agent's PR against the approved engineering spec; surfaces gaps; gates merge. Same V2 pattern + same enforcement checklist as F2. Together F2+F3 close the spec→code→review→merge loop, achieving the BACKLOG north-star ('zero human code in target repo'). Out of scope for M0; queued for M1+ per the canonical sequence's explicit split."
+    },
+    {
       "id": "G1",
       "title": "Log-coverage gate (every state mutation has structured log line)",
       "block": "G",

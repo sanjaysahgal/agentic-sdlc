@@ -49,6 +49,20 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-25 — Nightly E2E smoke runs end-to-end on V2 against real Slack + real GitHub (Step 5, manifest C3)
+
+- Added by commit: `<this commit>` (sweep to close BACKLOG ↔ MANUAL_TESTS catalog gap)
+- Why spot-check (not blocking): per BACKLOG.md canonical M0 sequence, MT-25 lives in the explicit Step 5 inventory (one-time manual trigger of the nightly smoke + alert-path verification on synthetic regression injection). Step 5 cannot complete until MT-25 passes; not gating earlier work.
+- Run opportunistically: during Step 5 implementation per the BACKLOG inventory.
+- Full scenario: see `MANUAL_TESTS.md` MT-25.
+
+### MT-26 — Cross-surface message consistency matrix in real Slack across all 4 agents (Step 7 M0 acceptance gate)
+
+- Added by commit: `<this commit>` (sweep to close BACKLOG ↔ MANUAL_TESTS catalog gap)
+- Why spot-check (not blocking): per BACKLOG.md canonical M0 sequence, MT-26 lives in the explicit Step 7 inventory (the M0 acceptance signoff gate). All 10 cells of the surface-combination matrix must produce the same factual answer for the same query about onboarding feature state. Step 7 cannot pass until MT-26 passes; not gating earlier work.
+- Run opportunistically: during Step 7 M0 acceptance per the BACKLOG inventory.
+- Full scenario: see `MANUAL_TESTS.md` MT-26.
+
 ### MT-27 — General-channel agent answers explanatory questions substantively (commit 70a5786)
 
 - Added by commit: `70a5786` (eval threshold restoration: "substantive over terse" rule in `buildProductLevelPrompt`)

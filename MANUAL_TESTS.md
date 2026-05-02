@@ -498,6 +498,79 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-25 — Nightly E2E smoke runs end-to-end on V2 against real Slack + real GitHub (Step 5 manifest item C3)
+
+**Why this can't be automated (fully):** the smoke IS the automation — but it must be triggered manually ONCE before the cron starts to verify the full pipeline (synthetic-feature creation in real Slack channel + real Anthropic API for 3 phases of agent runs + real GitHub branch creation/PR + finding-count assertion + alert wiring) actually works end-to-end. After this initial verification, the cron runs nightly without intervention; this MT is the one-time human gate.
+
+**Pre-flight:** restart bot; verify `[BOOT]` codeMarker matches HEAD; verify a clean test feature channel exists (or the smoke creates one — depends on Step 5 implementation choice); verify the alert Slack channel is configured.
+
+**Setup:**
+- V2 cutover already complete (Step 2 done — every Slack message routes through `runtime/agents/run*AgentV2.ts`).
+- B13-B16 fixes shipped (Step 3 done — readiness aggregator, B8 residue auditor, patcher section-remove, prose-vs-tools).
+- Block O orchestration continuity wired (Step 4 done — Scenario N100 green; PM→Designer→Architect handoffs auto-trigger).
+- C3 nightly smoke implementation in place (`npm run smoke:nightly` or equivalent script wired up).
+- Real Anthropic API key + real GitHub PAT in `.env`.
+
+**Actions:**
+1. Run `npm run smoke:nightly` (or the equivalent CLI per the Step 5 implementation).
+2. Watch the bot logs for `[SMOKE]` markers as the synthetic feature progresses through PM → Design → Architect phases.
+3. Wait for completion (budget: 20-30 min wall-clock).
+4. After completion, manually inject a synthetic regression (e.g., introduce a deterministic finding into the synthetic feature's product spec on main) and re-run the smoke.
+
+**Expected outcome:**
+- Smoke completes within ~20-30 min budget.
+- Synthetic feature created in a fresh channel (or reuses a designated test channel).
+- 3 specs (product / design / engineering) produced and approved on main.
+- `auditPmSpec` / `auditDesignSpec` / `auditEngineeringSpec` all return 0 deterministic findings.
+- No Slack alert fires on the clean run.
+- On the synthetic-regression re-run: alert fires in the configured channel with a clear message describing the regression (which spec, which finding count grew).
+
+**Failure signatures:**
+- Smoke times out at 30 min → either an agent stalled (check logs for stuck-on-tool-call) or the orchestration auto-trigger from Step 4 didn't fire.
+- 3 specs produced but `auditXxxSpec` returns nonzero findings on the clean run → the agent prompts have regressed; surface as a B-item with `retired_by_v2_cutover: false`.
+- Synthetic regression doesn't trigger the alert → alert wiring is broken; trace the smoke script's alert path (Slack postMessage to the configured channel).
+- Smoke crashes mid-run → log the error and which phase failed; surface as a B-item; the smoke implementation itself needs hardening.
+
+---
+
+### MT-26 — Cross-surface message consistency matrix in real Slack across all 4 agents (Step 7 M0 acceptance gate; Principle 17)
+
+**Why this can't be automated (fully):** Scenario N101 in `tests/integration/workflows.test.ts` will assert factual-answer equality across surfaces using mocked Slack/Anthropic — that pins the SSOT contract. But the structural M0 promise (Principle 17 — "every claim the platform makes about feature state is consistent across all surfaces, all invocations, all channels, all time within a turn") is a property the user must observe in REAL Slack to actually trust. This MT is the human-readable confirmation that Archon is structurally trustworthy at M0.
+
+**Pre-flight:** restart bot; verify `[BOOT]` codeMarker matches HEAD; verify all 4 agents (PM, Designer, Architect, Concierge) are configured and responsive; verify the `onboarding` feature has all 3 specs approved on main with 0 deterministic findings (Step 6 walk complete).
+
+**Setup:**
+- All Step 6 work done — 3 crisp specs on main, full 24 MT catalog passed on V2.
+- General channel (`#all-${PRODUCT_NAME}`) with Concierge active.
+- `#feature-onboarding` channel with current-phase agent active (Architect, since engineering is the last phase).
+- A fixed factual question to ask everywhere: "What's the state of the onboarding feature?"
+
+**Actions (all 10 cells of the consistency matrix — record the factual claim from each):**
+1. General channel natural language to Concierge: type "hi, what's the state of onboarding?"
+2. Feature channel natural language to current-phase agent: type same in `#feature-onboarding`.
+3. `/pm` slash command in general channel: ask same question.
+4. `/design` slash command in general channel: ask same question.
+5. `/architect` slash command in general channel: ask same question.
+6. `/pm` slash command in feature channel: ask same question.
+7. `/design` slash command in feature channel: ask same question.
+8. `/architect` slash command in feature channel: ask same question.
+9. Repeated invocation: ask the same question of the current-phase agent in `#feature-onboarding` 5 times back to back in the same thread.
+10. State-query vs finalize-gate: ask "is anything blocking finalize?" then attempt `finalize_engineering_spec`. Compare the state-query answer to the finalize-gate decision.
+
+**Expected outcome:**
+- All 10 cells produce the SAME factual answer (phase, blockers, next-step facts). Presentation may vary (Concierge speaks in user-facing prose; Architect speaks in domain-specific terms) but the FACTS are invariant.
+- Repeated invocation (cell 9): no drift — all 5 responses give the same factual claim.
+- State-query vs finalize-gate (cell 10): they AGREE — never "Nothing blocking" + finalize fails. Both derive from `buildReadinessReport()` SSOT.
+- No agent refuses to answer state-queries about a feature outside its current phase — PM, Designer, Architect, Concierge all answer the same factual question with consistent facts.
+
+**Failure signatures:**
+- Two cells produce different factual claims (e.g., one says "design phase active," another says "engineering complete") → Principle 17 violation; surface as new B-item with the specific surfaces enumerated; add specific assertion to `tests/invariants/cross-surface-consistency.test.ts`.
+- Repeated invocation drifts (cell 9) → memory/state issue; check for non-deterministic readiness computation in `buildReadinessReport()`.
+- State-query says "Nothing blocking" but finalize fails (cell 10) → the same root cause as B13 (the bug Principle 17 was codified to prevent); the readiness aggregator is not deriving from SSOT.
+- An agent refuses to answer because the feature isn't in its phase → cross-agent state-query model is broken; surface as M0 blocker (Step 7 cannot pass until fixed).
+
+---
+
 ### MT-27 — General-channel agent answers explanatory questions substantively (commit 70a5786, "substantive over terse" rule)
 
 **Why this can't be automated (fully):** the eval suite (`npm run eval`) covers the wiring with a real Anthropic API call against `buildProductLevelPrompt` and judges the response with Haiku — verified at 100% in the verbose verification run before commit. This MT is a **spot-check** — the only marginal real-Slack verification is that a human reader, scanning the rendered Slack response, agrees the agent EXPLAINED each item (rationale, tradeoff, why-it-matters) instead of producing a bare bullet list with one-line labels. Subjective enough that automated judges have ~10pp variance (tracked as H6); a 60-second human read is the cheap tiebreaker.

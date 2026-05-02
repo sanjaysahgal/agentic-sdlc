@@ -83,6 +83,10 @@
           {
             "type": "command",
             "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then if git diff --name-only --cached 2>/dev/null | grep -qFx 'docs/cutover-gate-status.json'; then DIFF=$(git diff --cached docs/cutover-gate-status.json 2>/dev/null); NEW_IDS=$(echo \"$DIFF\" | grep -cE '^\\+ *\"id\":'); NEW_RETIRED=$(echo \"$DIFF\" | grep -cE '^\\+ *\"retired_by_v2_cutover\":'); if [ \"$NEW_IDS\" -gt 0 ] && [ \"$NEW_RETIRED\" -lt \"$NEW_IDS\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[NEW B-ITEM GATE - Principle 18] Commit adds new entries to docs/cutover-gate-status.json but at least one new entry is missing the retired_by_v2_cutover field. Every new manifest item must declare retired_by_v2_cutover: true|false|partial so the question is answered explicitly. true = V2 single-path discipline structurally retires this; do NOT fix in legacy. false = the bug is in shared code or V2 itself; fix in shared/V2. partial = some symptoms retired by V2; verify residual scope.\"}}'; fi; fi; fi; true"
+          },
+          {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // \"\"' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git commit'; then STAGED=$(git diff --name-only --cached 2>/dev/null); if echo \"$STAGED\" | grep -qE '^(BACKLOG\\.md|MANUAL_TESTS\\.md|MANUAL_TESTS_PENDING\\.md|docs/cutover-gate-status\\.json|scripts/check-canonical-consistency\\.ts)$'; then OUT=$(npx tsx scripts/check-canonical-consistency.ts 2>&1); if [ $? -ne 0 ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":$(echo \"$OUT\" | jq -Rs .)}}\"; fi; fi; fi; true"
           }
         ]
       },
