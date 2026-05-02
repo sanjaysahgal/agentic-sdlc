@@ -91,14 +91,18 @@ Sequenced by dependency. Each step lists its manifest items, an estimated cost, 
 - Add pre-commit hooks: legacy-handler edit gate + new B-item gate
 - Add `MANUAL_TESTS_PENDING.md` legacy-paused banner
 
-> **Manual testing required after Step 1:** none.
+> **Manual testing required after Step 1 (one runtime smoke check + 2 deterministic gate checks):**
 >
-> _Why none:_ pure docs/process change — no runtime behavior touched.
+> | MT | Scenario | What it verifies (robustness property) | Pass criterion |
+> |---|---|---|---|
+> | **MT-27** | General-channel agent answers explanatory questions substantively (commit `70a5786` "substantive over terse" rule in `buildProductLevelPrompt`) | All 3 product-level agent personas (PM, Designer, Architect) honor the new prompt rule when invoked via `/pm`, `/design`, `/architect` in the general channel — explanatory questions get explanatory answers (per-item rationale), not bare bullet labels. The eval suite covers the wiring at 100%; this is the human-eyeball spot-check for rendered Slack quality. | Run all 3 slash commands in general channel with explanatory questions (constraints / design principles / caching layer); each response has per-item rationale; agents stay in their lanes; response under ~600 words. Spot-check tier — 60-second eyeball, not blocking. Full scenario in `MANUAL_TESTS.md` MT-27. |
 >
-> _Robustness verified at end of step:_
+> _Robustness verified at end of step (no MT required for these — verify by inspection):_
 > - `npx vitest run` shows the prior baseline test count still green (2279+).
 > - The two new pre-commit hooks fire as designed: a synthetic legacy edit without `LEGACY-FIX-JUSTIFIED:` is BLOCKED; a synthetic manifest add without `retired_by_v2_cutover` is BLOCKED. (Verify by intentional violation, then `git restore` — do not commit.)
 > - `BLOCK_E_FOCUS.md` is loaded into context at session start (visible at top of CLAUDE.md auto-load region).
+>
+> _Note:_ Step 1 was originally pure docs/process. The "substantive over terse" prompt rule landed during Step 1 work to clear the eval-gate flake (tracked as H6 in the manifest); it's a real runtime change to general-channel slash-command paths and warrants the smoke check above per the "Maintain a documented manual test suite" discipline.
 
 **Step 2 — Block A wiring + burn-in completion (3-5 days) — manifest items: A4, A5, A6, A7, F1**
 
