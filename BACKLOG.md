@@ -38,8 +38,9 @@ This is NOT "full Block E cutover with multi-tenant scale." This is "the existin
 2. **Cross-surface message consistency (Principle 17) enforced structurally AND verified across every surface combination.** Same factual question about a feature's state returns the **same factual answer** regardless of surface. Each is a separate testable assertion:
    - **Same channel, same query, repeated N times in same thread** → identical factual answer (no drift across invocations)
    - **General channel (`#all-<product>` concierge) "what's the state of <feature>?"** → same factual answer as the current-phase agent in `#feature-<name>` for the same feature state
-   - **Feature channel direct message (current-phase agent)** vs **slash command in feature channel (`/pm`, `/architect`, `/design`)** → same factual answer for the same feature state (presentation may differ; facts identical)
-   - **Slash command in general channel** vs **slash command in feature channel** for the same feature → same factual answer
+   - **Across all four agents (PM, Designer, Architect, Concierge):** each agent's view of the same feature state agrees with every other agent's view. Asked of any agent in any channel via any invocation method, same factual answer
+   - **Feature channel direct message (current-phase agent)** vs **any slash command in feature channel (`/pm`, `/design`, `/architect`)** → same factual answer for the same feature state (presentation may differ; facts identical)
+   - **Slash command in general channel** vs **same slash command in feature channel** vs **default agent in either channel** for the same feature → same factual answer
    - **State-query response (read-only path) and finalize-gate decision (write path)** → derive from the same canonical `buildReadinessReport()` SSOT; never disagree about whether something is blocking
    - **No handler computes its own readiness independently.** Every surface routes through the canonical SSOT.
    - **Verification:** new integration scenario in `tests/integration/workflows.test.ts` (Scenario N101) enumerates all surface combinations above and asserts factual-answer equality for a fixed feature state. Assertions populate `tests/invariants/cross-surface-consistency.test.ts`.
@@ -169,7 +170,7 @@ This section answers: as the user driving Archon to M0, what should I expect to 
 
 - Type `Hi` in the general channel (`#all-<product>` — concierge) and ask "what's the state of onboarding?" — get an answer
 - Type `Hi` in `#feature-onboarding` and ask the same question of the current-phase agent — get the **same factual answer**
-- Type `/pm` in either channel and ask the same question — get the **same factual answer**
+- Type **any slash command** (`/pm`, `/design`, `/architect`) in either channel and ask the same question — get the **same factual answer** as the channel's default agent. This holds across all four agents (PM, Designer, Architect, Concierge): each agent's view of the same feature state agrees with every other agent's view + with the concierge's view + with the slash-command response, regardless of which agent is asked.
 - Ask the same question 5 times in 5 minutes in the same thread — get the **same factual answer** every time
 - The platform's "ready to approve" claim and the platform's actual finalize-gate behavior **always agree**
 
@@ -179,38 +180,54 @@ Presentation may differ across surfaces (concierge speaks more user-facing prose
 
 #### What you should EXPECT during the M0 work (the journey)
 
-**Step 2 (Block A wiring + burn-in, 3-5 days):**
-- Mostly log-watching. Bot runs in shadow mode → V2 logs `[V2-*-SHADOW]` events alongside legacy responses
-- Few real Slack interactions; mostly automated burn-in metric collection
-- A few MT scenarios to run in real Slack: MT-4 (architect shadow burn-in), MT-5 (designer), MT-6 (PM)
+**Step 2 (Block A wiring + burn-in, 3-5 days) — manual testing required:**
+- Bot runs in shadow mode → V2 logs `[V2-*-SHADOW]` events alongside legacy responses
+- **MT-4 (architect V2 shadow burn-in), MT-5 (designer V2 shadow), MT-6 (PM V2 shadow):** you drive normal feature interactions in real Slack while V2 shadows legacy. The 48h burn-in accumulates evidence that V2 produces equivalent decisions to legacy on real traffic. Without this, cutover is unsafe — you don't know if V2 will misbehave once it takes over
+- **MT-18 (escalation survives bot restart):** verifies D5's fix end-to-end in real Slack
 - At cutover flip: legacy responses stop; V2 takes over. Brief (minutes-scale) chance of regressions surfacing. Each one halts the cutover until fixed
 - F1 deletion: `interfaces/slack/handlers/message.ts` shrinks dramatically (~3000 lines → small dispatcher)
 
-**Step 3 (B13-B16 fixes in V2/shared, 2-3 days):**
+**Step 3 (B13-B16 fixes in V2/shared, 2-3 days) — no manual testing:**
 - Pure code work. No real Slack interaction
 - Each bug fix lands as: shared module change + regression test + invariant assertion + manifest update
 - Each fix increases `tests/invariants/cross-surface-consistency.test.ts` assertion count by 1
 
-**Step 4 (Orchestration continuity, 3-4 days):**
+**Step 4 (Orchestration continuity, 3-4 days) — no manual testing (covered by integration test):**
 - Net new platform behavior — agent handoffs that today require user nudges become automatic
 - After each O-item ships, you'll see less typing required between phases
-- Scenario N100 will be a long-running integration test that drives the full chain in CI
+- Scenario N100 in `workflows.test.ts` is the integration test that drives the full chain end-to-end in CI; replaces the need for ad-hoc manual testing of each O-item
 
-**Step 5 (Nightly E2E smoke, 1-2 days):**
-- One-time setup; runs nightly thereafter
-- You may get a Slack alert if it detects a regression. That's the smoke catching what manual walks would miss
+**Step 5 (Nightly E2E smoke, 1-2 days) — manual testing once, automated thereafter:**
+- One-time setup
+- After wiring, manually trigger the smoke once and verify it runs successfully end-to-end (synthetic feature → 3 approved specs → clean state)
+- Then runs nightly automatically; you get a Slack alert if it detects a regression
 
-**Step 6 (Onboarding integration walk, 2-4 days):**
+**Step 6 (Onboarding integration walk, 2-4 days) — heavy manual testing:**
 - The actual demo. You drive `onboarding` through PM → Design → Engineering on the cleaned V2 platform
+- All 24 MT scenarios are now unblocked on V2 (the legacy-paused banner lifts after Step 2 cutover); they can be exercised opportunistically as the walk surfaces them
 - The 31 existing deterministic findings (1 PM + 30 design) get resolved via escalation flows
 - Each finding resolution exercises B6 (consolidation), B7 (readOnly clause), B9/B9b (category rules), B10 (platform prefix), B11 v1 (content verifier), B13 (readiness consistency), Block O (orchestration continuity)
 - Bugs may surface. Each one gets fixed in V2/shared code (not legacy — Principle 18 hook prevents it). Walk pauses for the fix, then resumes
 - At the end: 3 crisp specs on main
 
-**Step 7 (M0 Acceptance, 1 day):**
-- You verify each acceptance criterion is checked
-- Manifest updated
+**Step 7 (M0 Acceptance, 1 day) — verification + spot-checks:**
+- Run the verification commands (see "How to know M0 is DONE" below)
+- Spot-check the cross-surface consistency criterion in real Slack: ask the same question of concierge in main, of the current-phase agent in feature, via slash from main, via slash from feature, twice each — confirm same factual answer across all
+- Manifest updated; M0 marked DONE
 - M1 (Coder agent / manifest F2) becomes the active priority
+
+**Manual testing summary across the M0 work:**
+
+| Step | Manual MTs needed | Approx. wall-clock |
+|---|---|---|
+| Step 2 | MT-4, MT-5, MT-6 (V2 shadow burn-ins, 48h each can run in parallel), MT-18 (D5 verification) | ~48h burn-in + ~1h driving traffic |
+| Step 3 | none (pure code work) | n/a |
+| Step 4 | none (Scenario N100 covers it) | n/a |
+| Step 5 | smoke trigger + verification once | ~30 min |
+| Step 6 | full 24 MT catalog opportunistically + the integration walk itself | 2-4 days |
+| Step 7 | cross-surface consistency spot-check + verification commands | ~1 hour |
+
+**Total operator time across M0:** ~3-5 days of active testing spread across the 12-19 day platform-work timeline (most of it is in Step 6's integration walk).
 
 #### What you should NOT expect (managed expectations)
 

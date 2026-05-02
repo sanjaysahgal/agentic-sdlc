@@ -286,7 +286,7 @@ This is the foundational Archon promise. A user must be able to trust what the p
 |---|---|
 | Across invocations | Same query asked 5 times in 5 minutes returns the same factual answer. No drift. |
 | Across channels | Concierge in `#all-<product>` about feature X agrees with the active agent in `#feature-X`. |
-| Across slash commands | `/pm` in feature channel agrees with `/pm` in main channel about the same feature's state. |
+| Across slash commands | Any of `/pm`, `/design`, `/architect` in feature channel agrees with the same slash in main channel — for all 4 agents (PM, Designer, Architect, Concierge), each agent's view of the same feature state agrees with every other agent's view. |
 | Across agents | What architect says about the spec chain agrees with what PM and Designer say. |
 | Within a single response | Platform's claim ("Nothing blocking") doesn't contradict the platform's own next action ("blocked by 31 findings"). |
 | Across time within a turn | State-query response and finalize-gate response query the SAME source of truth. |
