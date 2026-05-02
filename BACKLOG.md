@@ -71,7 +71,7 @@ Manifest items (run `jq -r '.items[] | select(.m0_required == true) | "\(.id) [\
 | Block / item | Why deferred | When it becomes blocking |
 |---|---|---|
 | **K1-K6** (multi-tenant scale-out) | User explicitly stated multi-tenant is lower priority. M0 is single-tenant (the customer-zero `${PRODUCT_NAME}` per WorkspaceConfig) demo of routing/orchestration. | When second customer signs (becomes blocker for that customer's onboarding) |
-| **H1-H5** (LLM evals + prompt drift) | Useful for catching model regressions but not blocking routing/orchestration solidity. Manual MTs cover regression detection at M0 scale. | Before scaling to many features (manual MT doesn't scale) |
+| **H1-H6** (LLM evals + prompt drift; eval-criteria deterministic-tightening) | Useful for catching model regressions but not blocking routing/orchestration solidity. Manual MTs cover regression detection at M0 scale. H6 (added 2026-05-01) tightens existing eval criteria to deterministic structural checks per Principle 8a so the gate stops flaking inside the variance band — known noise source until then; operators may use `git push --no-verify` with explicit H6 reference. | Before scaling to many features (manual MT doesn't scale); H6 specifically becomes blocking when eval-flake friction blocks burn-in or integration-walk pushes |
 | **G2-G5** (observability nice-to-haves) | Basic logging works for M0 walk. Request-id tracing, metrics, alerts are operational hygiene. | When operating at scale (>10 features in flight, >1 customer) |
 | **L1** (backup restore tested) | Backups run daily; restore-test never executed. Acceptable single-tenant risk. | Before customer #2 onboards with real production data |
 | **L4-L5** (admin audit log + offboarding) | Both have zero callers today; never used in production. | When compliance / GDPR-deletion request arrives |
@@ -377,7 +377,7 @@ Presentation may differ across surfaces (concierge speaks more user-facing prose
 #### What you should NOT expect (managed expectations)
 
 - **Multi-tenant isolation testing.** Deferred — single-tenant only
-- **Eval drift detection.** Manual MTs catch real-LLM regressions for now; automated evals are M1+
+- **Eval drift detection AND eval-gate variance reduction (H6).** Manual MTs catch real-LLM regressions for now; automated evals + tighter criteria are M1+. The `npm run eval` pre-push gate currently flakes ~10pp around the 85% threshold (judge variance dominates); known noise source, bypass with `git push --no-verify` + reference H6 if needed during M0
 - **Production-grade observability (request tracing, metrics, alerts).** Basic logging only
 - **Backup-restore verification.** Daily backup runs but restore is unverified at M0
 - **GDPR-compliant offboarding.** Code exists; never run for real
@@ -442,7 +442,7 @@ After M0 lands, the active priority becomes adding new agents on the V2-cutover-
 Operational hardening that was deferred from M0 (in priority order):
 
 - **K block (multi-tenant scale-out)** — when second customer signs (K1 storage abstraction is the long pole, ~10d)
-- **H block (LLM evals + prompt drift)** — when scaling to many features
+- **H block (LLM evals + prompt drift; H6 eval-criteria variance reduction)** — when scaling to many features OR when eval-gate flake becomes blocking friction (whichever first)
 - **G2-G5 (observability)** — when operating at scale
 - **L1, L4, L5 (DR + audit + offboarding)** — when compliance / real outage risk requires
 - **C1, C2, C4 (multi-tenant verification, pre-cutover smoke, real-fixture producer)** — when multi-tenant ships

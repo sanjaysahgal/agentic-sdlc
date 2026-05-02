@@ -468,6 +468,17 @@
       "m0_required": false
     },
     {
+      "id": "H6",
+      "title": "Eval-suite criteria deterministic-tightening (drive variance below the 85% threshold)",
+      "block": "H",
+      "gates_block_e": false,
+      "status": "pending",
+      "verification": "pending",
+      "retired_by_v2_cutover": "false",
+      "m0_required": false,
+      "verification_note": "Surfaced 2026-05-01 during M0 reconciliation push attempt. Pre-push eval gate (npm run eval, threshold 85%) flakes between runs — observed range 83-100% across 6 consecutive runs against identical code. Root cause: most criteria are LLM-judged (Haiku as judge) on subjective predicates (substantive / specific / opinionated / discusses-X), so judge variance dominates the verdict. Variance band ~10pp puts the gate inside the noise floor. Two compounding fixes already applied (commit 70a5786) addressed the worst single-criterion offenders by replacing 2 LLM-judged criteria with deterministic structural checks per Principle 8a (architect 'it depends' detection; design empty-state structural reference) and improved the buildProductLevelPrompt 'substantive over terse' rule. Remaining work for H6: (1) audit every LLM-judged criterion across all eval scenarios (~20-25 criteria); (2) for each, decide whether it can be replaced with a deterministic check (presence of required output shape per Principle 8a) or must remain LLM-judged because the assertion is genuinely subjective; (3) for residual LLM-judged criteria, run each scenario N=5 times and compute per-criterion flake rate, drop or rewrite criteria with >20% flake; (4) restore 85% threshold after variance is provably below ±5pp. Until H6 ships, eval-gate flakes are a known noise source and operators may use --no-verify with explicit backlog reference. Does not block M0: M0 quality bar is the 24 MT catalog + cross-surface consistency + 3 crisp specs (Step 6/7), not the eval suite itself; the suite is a regression net, not the primary gate. Does not conflict with H1-H5 (those add coverage and prompt-drift detection; H6 reduces noise in existing coverage)."
+    },
+    {
       "id": "I1",
       "title": "Mutation testing (Stryker or equivalent, periodic)",
       "block": "I",
