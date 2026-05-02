@@ -1,5 +1,19 @@
 # Pending manual tests
 
+> ⛔ **MANUAL TESTING ON LEGACY IS SUSPENDED until Block A cutover (per CLAUDE.md Principle 18).**
+>
+> Reason: legacy handlers (`runArchitectAgent` / `runDesignAgent` / `runPmAgent` in `interfaces/slack/handlers/message.ts`) are scheduled for deletion at Block F1 after Block E cutover. Manual testing on legacy surfaces legacy bugs; fixing them in legacy is throwaway work that gets deleted with the cutover. The canonical M0 work is to ship Block A cutover (V2 single-path runners take over production traffic), then resume manual testing on V2.
+>
+> **MTs blocked from running until Block A cutover** (these test legacy paths that V2 retires by construction): MT-1, MT-2, MT-3, MT-7, MT-8, MT-16, MT-22, MT-24.
+>
+> **MTs unblocked from running** (these test V2-shadow-runner behavior or restart durability that survives cutover): MT-4 (V2 architect shadow burn-in), MT-5 (V2 designer shadow burn-in), MT-6 (V2 PM shadow burn-in), MT-18 (escalation survives restart).
+>
+> Resume the full MT catalog on V2 after Block E cutover completes. Until then, the assistant should not propose running blocked MTs and the operator should not run them.
+>
+> See `BLOCK_E_FOCUS.md` for the canonical M0 work queue.
+
+---
+
 > The current list of MT-N scenarios that need running in real Slack
 > against the current bot. Each entry was added when a production-wiring
 > commit shipped that needs operator verification (per CLAUDE.md

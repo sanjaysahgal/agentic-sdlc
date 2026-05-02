@@ -309,6 +309,36 @@ This is the foundational Archon promise. A user must be able to trust what the p
 3. Add a specific assertion to `tests/invariants/cross-surface-consistency.test.ts` so the class can never recur
 4. Fix the root cause: route the violating surface through the canonical SSOT
 
+### 18. Block E focus — no legacy-handler fixes without justification
+
+**While the platform is on the path from legacy multi-exit handlers to the V2 single-path runners (Block A → Block E cutover → Block F1 legacy deletion), no fix may be made to the legacy handler code without explicit justification in the commit message.** Bug fixes that V2 retires by construction are throwaway work and are forbidden — they must be deferred via the manifest's `retired_by_v2_cutover` annotation.
+
+**Why this principle exists.** The platform has two architectures running in parallel: legacy (`runArchitectAgent` / `runDesignAgent` / `runPmAgent` in `interfaces/slack/handlers/message.ts`, multi-exit anti-pattern) and V2 (`runArchitectAgentV2` / `runDesignAgentV2` / `runPmAgentV2` in `runtime/agents/`, single-path with structural invariants). V2 is fully built and runs in shadow mode; cutover is the threshold that retires legacy. Every fix landed in legacy code between now and cutover is deleted at Block F1. **Repeated drift into legacy fixes has consumed weeks of throwaway work this session alone.** This principle structurally prevents the drift.
+
+**The legacy paths protected by this principle:**
+- `interfaces/slack/handlers/message.ts` (the multi-exit handler — entire file is the legacy entry point)
+- `agents/architect.ts`, `agents/design.ts`, `agents/pm.ts` (the legacy agent entry-point modules)
+- Any legacy-only auto-trigger override / readiness-aggregator code that V2's single-path discipline structurally retires
+
+**The legitimate justifications for editing legacy code (must appear verbatim in commit message as `LEGACY-FIX-JUSTIFIED:`):**
+- `LEGACY-FIX-JUSTIFIED: security-or-data-loss` — the bug actively causes data loss, security exposure, or PII leakage in production right now
+- `LEGACY-FIX-JUSTIFIED: blocks-block-A-cutover` — the bug blocks the cutover itself (e.g., a V2 bug that requires legacy stability to safely deploy V2)
+- `LEGACY-FIX-JUSTIFIED: blocks-production` — the bug breaks the running production system in a way users cannot work around
+
+**What is NOT a valid justification:**
+- "This bug surfaces in manual testing" — defer via `retired_by_v2_cutover: true` and let cutover retire it
+- "This is a small fix" — small fixes accumulate; the size doesn't matter, the throwaway property does
+- "We can fix it now and remove it later" — there is no "remove it later" that's cheaper than not fixing it now
+
+**Enforcement:** Pre-commit hook `[LEGACY-FIX GATE]` blocks any commit modifying the legacy paths above without `LEGACY-FIX-JUSTIFIED:` in the commit message. Mechanical, not memory-dependent. Same shape as Hook 4 (bundled-fix detector).
+
+**Companion structural enforcements:**
+- Every new B-item added to `docs/cutover-gate-status.json` must declare a `retired_by_v2_cutover: <true|false|partial>` field. Pre-commit hook `[NEW B-ITEM GATE]` enforces.
+- `BLOCK_E_FOCUS.md` at repo root lists the next 3-5 manifest items blocking M0, ordered. Read at every session start.
+- `MANUAL_TESTS_PENDING.md` carries a banner: "Manual testing of legacy paths is suspended until Block A cutover. Resume on V2 after burn-in." Pre-push hook respects this.
+
+**Historical context.** Across multiple sessions before this principle was codified, the assistant repeatedly drifted from the canonical Block-A-to-Block-E sequence into reactive single-bug-per-session legacy fixes. Each drift surfaced more bugs (B6, B7, B8, B9, B9b, B10, B11 v1, B13, B14, B15, B16) — most of which were patches to the legacy multi-exit handler that V2's single-path discipline retires by construction. Hours of work landed in code scheduled for deletion at Block F1. This principle, plus the hooks, mechanically prevents the pattern from recurring.
+
 ---
 
 ## Architecture

@@ -1,6 +1,8 @@
 # agentic-sdlc — Feature Backlog
 
-Ordered by priority. One step at a time — human confirms before proceeding to the next.
+> **Single canonical nomenclature for ALL work tracking:** Block letter + item ID per `docs/cutover-gate-status.json` (e.g., `A4`, `B13`, `O1`, `M1`). Permanent secondary identifiers: regression catalog `Bug #N`, `MT-N` manual test scenarios, `Principle N` in CLAUDE.md. **Deprecated and removed from active backlog content:** "Phase 0-7" (legacy routing refactor naming), "Bug A-G" (lettered, replaced by manifest IDs), "Steps 1-10" (the deleted execution-priority sequence), "S0-S6" sequence labels. These were transitional; they survive only in git commit history as historical reference.
+
+> **Single canonical sequence to M0:** the work order below. No competing plans. CLAUDE.md Principle 18 + pre-commit hooks structurally prevent drift back into reactive legacy fixes. `BLOCK_E_FOCUS.md` at repo root names the next 3-5 manifest items at any session start.
 
 ---
 
@@ -15,89 +17,284 @@ The platform is two repos working together:
 | `agentic-sdlc` | The SDLC engine — Slack bot, agents, spec chain, GitHub integration |
 | `agentic-cicd` | The deployment pipeline — builds and deploys the customer's app |
 
-`agentic-health360` is customer zero — the reference implementation that proves the platform end-to-end. health360 is also a real app that will ship to real users. Nothing ships until the full autonomous pipeline exists: spec → code → QA → production, without manual steps.
+The customer-zero reference implementation (per `WorkspaceConfig`) is the proving ground. Brand data (colors, typography, tokens) is customer-specific; the platform reads it via a configurable `brandPath` in `WorkspaceConfig` — it does not own or define brand.
 
-Brand data (colors, typography, tokens) is customer-specific. health360 owns its brand in `agentic-health360`. The platform reads brand context via a configurable `brandPath` in WorkspaceConfig — it does not own or define brand.
-
-**North star — zero human code in the target repo:** Once Steps 6–8 are complete, no human should need to write source code in `agentic-health360`. Spec → code → QA → deploy should be fully agent-driven. Every tradeoff in Steps 6–8 should be evaluated against this goal. This is not a current constraint; it is the design criterion for the autonomous pipeline.
+**North star — zero human code in the target repo:** Once the canonical sequence reaches Block F2/F3 (Coder + Reviewer agents), no human should need to write source code in the customer repo. Spec → code → QA → deploy should be fully agent-driven. Every tradeoff between now and then evaluates against this goal.
 
 ---
 
-## Active (next up)
+## Active (next up): The single canonical sequence to M0
+
+### M0 definition
+
+> Multi-agent routing and orchestration is rock-solid for the 4 existing agents (PM, Designer, Architect, Concierge), demonstrated end-to-end via the onboarding feature producing 3 crisp specs on main. The platform supports adding more agents (Coder, Reviewer next) with confidence.
+
+This is NOT "full Block E cutover with multi-tenant scale." This is "the existing 4 agents work like a coherent team, the example feature proves it, and the foundation supports adding more agents."
+
+### M0 acceptance criteria (the gate — all required)
+
+1. **Block A cutover complete.** V2 single-path runners (`runArchitectAgentV2`, `runDesignAgentV2`, `runPmAgentV2`) handle all production traffic. Legacy multi-exit handlers in `interfaces/slack/handlers/message.ts` deleted (Block F1). Routing through V2's single-path discipline structurally retires the entire class of legacy bugs (B13-class state-query inconsistency, B16-class prose-vs-tools mismatch, etc.).
+
+2. **Cross-surface message consistency (Principle 17) enforced structurally AND verified across every surface combination.** Same factual question about a feature's state returns the **same factual answer** regardless of surface. Each is a separate testable assertion:
+   - **Same channel, same query, repeated N times in same thread** → identical factual answer (no drift across invocations)
+   - **General channel (`#all-<product>` concierge) "what's the state of <feature>?"** → same factual answer as the current-phase agent in `#feature-<name>` for the same feature state
+   - **Feature channel direct message (current-phase agent)** vs **slash command in feature channel (`/pm`, `/architect`, `/design`)** → same factual answer for the same feature state (presentation may differ; facts identical)
+   - **Slash command in general channel** vs **slash command in feature channel** for the same feature → same factual answer
+   - **State-query response (read-only path) and finalize-gate decision (write path)** → derive from the same canonical `buildReadinessReport()` SSOT; never disagree about whether something is blocking
+   - **No handler computes its own readiness independently.** Every surface routes through the canonical SSOT.
+   - **Verification:** new integration scenario in `tests/integration/workflows.test.ts` (Scenario N101) enumerates all surface combinations above and asserts factual-answer equality for a fixed feature state. Assertions populate `tests/invariants/cross-surface-consistency.test.ts`.
+
+3. **Orchestration continuity (Block O).** PM → Designer → Architect → finalize works end-to-end **without user nudges between phases**. The five orchestration items (O1 through O5) are all closed. Integration scenario N100 in `workflows.test.ts` drives the full chain with zero user-message nudges between agent transitions.
+
+4. **Onboarding feature has 3 crisp specs on main.** product.md + design.md + engineering.md, all approved, zero deterministic findings, no PLACEHOLDER / TBD / TODO, no historical residue (B8 cleanup applied), AC numbers consistent across specs, cross-spec coherence (engineering API contracts map to product ACs, design screens match product user stories).
+
+5. **All existing MT scenarios pass.** 24 MT-N entries in `MANUAL_TESTS.md`. The 4 blocking MTs (MT-7/8/16/18) verify real-LLM compliance + restart durability. The 20 spot-check MTs verify behaviors covered by integration tests. NOTE: per Principle 18, manual testing on legacy is suspended until Block A cutover; the catalog runs end-to-end on V2 post-cutover.
+
+6. **Recent B-series fixes verified end-to-end on V2.** D5 (escalation-restart), B6 (escalation consolidation), B7 (readOnly clause), B8 (spec write ownership), B9/B9b (category rules), B10 (platform message prefix), B11 v1 (spec-content verifier) — already shipped to legacy + shared modules. **B13 (readiness aggregator), B14 (audit B8 residue), B15 (patcher section-remove), B16 (architect prose-vs-tools)** — fix in V2 / shared code, not legacy.
+
+7. **Block B structural gates all green.** V2-runner invariants (B1), cross-agent contracts (B2), classifier prompt anchors (B3), determinism tags (B4), cutover-gate test (B5), all spec-content / readOnly / category / platform / write-ownership / consistency invariants — all `wired-and-exercised`.
+
+### What's IN scope for M0
+
+Manifest items (run `jq -r '.items[] | select(.m0_required == true) | "\(.id) [\(.status)/\(.verification)] \(.title)"' docs/cutover-gate-status.json` for the live list):
+
+- **Block A** — V2 single-path agent runners + cutover (A1, A4, A5, A6, A7)
+- **Block B** — Structural CI gates (B1-B5, B13-B16)
+- **Block O (NEW)** — Orchestration continuity (O1-O5)
+- **D5** — Escalation notifications survive restart (verify end-to-end via MT-18)
+- **C3** — Nightly E2E smoke against real infra
+- **F1** — Delete legacy handlers (after Block A cutover)
+
+### What's EXPLICITLY OUT of scope for M0 (deferred to M1+ with rationale)
+
+| Block / item | Why deferred | When it becomes blocking |
+|---|---|---|
+| **K1-K6** (multi-tenant scale-out) | User explicitly stated multi-tenant is lower priority. M0 is single-tenant (the customer-zero `${PRODUCT_NAME}` per WorkspaceConfig) demo of routing/orchestration. | When second customer signs (becomes blocker for that customer's onboarding) |
+| **H1-H5** (LLM evals + prompt drift) | Useful for catching model regressions but not blocking routing/orchestration solidity. Manual MTs cover regression detection at M0 scale. | Before scaling to many features (manual MT doesn't scale) |
+| **G2-G5** (observability nice-to-haves) | Basic logging works for M0 walk. Request-id tracing, metrics, alerts are operational hygiene. | When operating at scale (>10 features in flight, >1 customer) |
+| **L1** (backup restore tested) | Backups run daily; restore-test never executed. Acceptable single-tenant risk. | Before customer #2 onboards with real production data |
+| **L4-L5** (admin audit log + offboarding) | Both have zero callers today; never used in production. | When compliance / GDPR-deletion request arrives |
+| **M3-M5** (operator runbook, customer onboarding doc, contribution guide) | Documentation; not blocking demoable M0. | When onboarding new operators, customers, or contributors |
+| **C1, C2, C4** (multi-tenant parallel run, pre-cutover migration smoke, real-fixture producer tests) | C1 multi-tenant deferred per user priority. C2 + C4 are nice-to-have rigor; absence creates short-feedback-loop risk during M0 walk. | When multi-tenant ships (C1) or when prompt drift is real (C4) |
+
+### The single canonical sequence (work order to M0)
+
+Sequenced by dependency. Each step lists its manifest items, an estimated cost, and a definition of done.
+
+**Step 1 — Reconciliation commit (this commit, ~1 hour) — meta-work, no new manifest items**
+
+- Commit this BACKLOG reconciliation as the sanctioned single canonical path
+- Add CLAUDE.md Principle 18 (Block E focus / no legacy fixes without justification)
+- Add manifest fields (`retired_by_v2_cutover`, `m0_required`) on every item; add Block O entries (O1-O5)
+- Add `BLOCK_E_FOCUS.md` at repo root listing the next 3-5 manifest items blocking M0, ordered
+- Add pre-commit hooks: legacy-handler edit gate + new B-item gate
+- Add `MANUAL_TESTS_PENDING.md` legacy-paused banner
+
+**Step 2 — Block A wiring + burn-in completion (3-5 days) — manifest items: A4, A5, A6, A7, F1**
+
+- A4: wire `runArchitectAgentV2` to handle real production traffic (currently shadow-only). Cutover threshold = 48h burn-in green
+- A5/A6/A7: complete the in-flight 48h burn-ins (MT-4 / MT-5 / MT-6). User runs the agent scenarios in real Slack
+- F1: delete legacy `runArchitectAgent` / `runDesignAgent` / `runPmAgent` and the multi-exit handler logic in `interfaces/slack/handlers/message.ts`. Replace with thin V2 dispatcher
+- Verification: every Slack message routes through `runtime/agents/run*AgentV2.ts`; `interfaces/slack/handlers/message.ts` is dramatically smaller; `[V2-*-SHADOW]` log lines disappear (V2 is now production, not shadow)
+
+**Step 3 — B-series legacy-bug fixes ported to V2 / shared code (2-3 days) — manifest items: B13, B14, B15, B16**
+
+- **B13 (readiness aggregator):** modify `runtime/readiness-builder.ts` so V2's state-query response and V2's finalize-gate decision derive from the same canonical SSOT. Upstream PM/design findings flow into the aggregate. Add specific assertion to `tests/invariants/cross-surface-consistency.test.ts`
+- **B16 (architect prose-vs-tools mismatch):** Block B1 invariant (single emission per branch) partially retires this. Verify in V2 readiness logic that auto-trigger override is ADDITIVE to agent prose (appended P.S.), not REPLACEMENT. Add invariant assertion
+- **B14 (auditEngineeringSpec detect B8 residue):** add deterministic check for `## Pre-Engineering Architectural Decisions` section + `### Architect Decision (pre-engineering)` subsection patterns. Surfaces as a finding so architect proactively flags
+- **B15 (patcher section-remove semantics):** extend `applySpecPatch` with section-remove directive so cleanup of unwanted sections becomes possible via the existing tool surface. Cross-agent: applies to PM / Design / Engineering writers
+
+**Step 4 — Block O (Orchestration continuity, NEW manifest entries) (3-4 days) — manifest items: O1, O2, O3, O4, O5**
+
+- **O1:** PM/Designer escalation-confirmed brief includes structural closure clause (shared constant in `runtime/escalation-closure-clause.ts` similar pattern to B7's readOnly clause). Invariant test pins presence
+- **O2:** Auto-trigger architect resume after PM/Designer writeback completes. Net new platform behavior — V2 dispatcher triggers architect's next turn programmatically when writeback succeeds
+- **O3:** Deterministic verifier between "PM applied patch" and "architect resumes." Pure function in `runtime/orchestration-verifier.ts` checking the writeback wrote what was intended
+- **O4:** Architect's turn auto-chains upstream resolution → next-phase check → escalate or proceed. State machine in V2 architect runner
+- **O5:** Designer-side symmetry of O1 and O2
+- New integration scenario in `tests/integration/workflows.test.ts` drives PM → architect → designer → architect → finalize as ONE continuous flow with no user-message nudges
+
+**Step 5 — Block C nightly E2E smoke (1-2 days) — manifest item: C3**
+
+- Synthetic feature scenario in real Slack + real GitHub
+- Drive PM/Design/Architect to 3 approved specs
+- Assert clean spec state on main; alert on regression (failure or finding count growth)
+- Wire into nightly cron + Slack alert
+
+**Step 6 — Onboarding integration walk on V2 (2-4 days) — no new manifest items; verifies prior steps**
+
+- With V2 cutover live (Step 2), B13-B16 fixed (Step 3), Block O continuous (Step 4), C3 smoke wired (Step 5)
+- Drive `onboarding` feature through 3 phases
+- Resolve all 31 deterministic upstream findings via the (now reliable) escalation flows
+- Verify cross-surface consistency assertion (M0 Acceptance Criterion #2): same factual answer in general / feature / slash / repeated invocations
+- Verify all 24 MT scenarios pass on V2
+- Land 3 crisp specs on main
+
+**Step 7 — M0 Acceptance + manifest update (1 day) — verification step**
+
+- All M0 acceptance criteria checked
+- `docs/cutover-gate-status.json` reflects M0-required items all `wired-and-exercised`
+- BACKLOG.md updated: M0 marked DONE; M1 (manifest item F2 — Coder agent + F3 — Reviewer agent) becomes the active priority
+- Mini-retrospective in PRESENTATIONS or DECISIONS: what worked, what didn't, what the platform proved
+
+**Total estimate: ~12-19 days of focused work to M0.** Variability is in Step 4 (Block O is net new platform behavior) and Step 6 (depends on how many bugs surface during the real walk).
+
+### Delivery discipline (per CLAUDE.md Principles 8, 9, 11, 15, 16, 17, 18)
+
+- **One bug per session.** No bundling. Hook 4 (bundled-fix detector) blocks commits with >5 source files without `BUNDLE-JUSTIFIED:` rationale
+- **Single nomenclature.** All references use canonical manifest IDs. Pre-commit hook blocks `Bug [A-Z]` references in commit messages
+- **No legacy-handler fixes without justification** (Principle 18). Pre-commit hook blocks edits to legacy handler files without `LEGACY-FIX-JUSTIFIED:` in the commit message
+- **Each fix lands as:** code change + unit test + regression catalog entry + MT entry (or `MT-NONE: <reason>`) + CODE_MARKER bump (if production-wired)
+- **Every new manifest item declares `retired_by_v2_cutover: <true|false|partial>`.** Pre-commit hook enforces
+
+### AAU expectations during M0 execution (As-A-User what to expect)
+
+This section answers: as the user driving Archon to M0, what should I expect to see / do / experience along the way and at M0 done?
+
+#### What M0 will look like when DONE (the destination)
+
+**Using Archon to onboard a new feature:**
+
+1. You go to a fresh `#feature-<name>` channel and type a feature description
+2. **Concierge agent** (or first-touch routing) acknowledges and starts you with the **PM agent**
+3. PM produces a draft product spec via conversation. You refine; PM auto-audits for vague language, missing AC, etc; surfaces gaps proactively (Principle 7)
+4. You approve. Platform automatically advances to design phase (no manual nudge — Block O / O2)
+5. **Designer agent** loads context, produces design spec. If it finds upstream product gaps, escalates to PM with a consolidated brief (B6); PM resolves, platform writes back to product spec, automatically resumes designer (O2)
+6. You approve design. Platform advances to engineering
+7. **Architect agent** loads context, produces engineering spec. If upstream gaps surface, auto-escalates to PM and/or Designer in correct priority (PM first per existing routing rule). Each escalation closes via the same continuous flow
+8. You approve engineering. Platform creates a PR
+9. All 3 specs live on main, fully approved, zero deterministic findings
+10. Ready for Coder agent (M1, manifest F2) to start implementation
+
+**Throughout:** every state-query the platform makes returns the **same factual answer** regardless of where you ask it. Concretely, at M0 done you can:
+
+- Type `Hi` in the general channel (`#all-<product>` — concierge) and ask "what's the state of onboarding?" — get an answer
+- Type `Hi` in `#feature-onboarding` and ask the same question of the current-phase agent — get the **same factual answer**
+- Type `/pm` in either channel and ask the same question — get the **same factual answer**
+- Ask the same question 5 times in 5 minutes in the same thread — get the **same factual answer** every time
+- The platform's "ready to approve" claim and the platform's actual finalize-gate behavior **always agree**
+
+Presentation may differ across surfaces (concierge speaks more user-facing prose; the architect speaks more domain-specific) but the facts are invariant.
+
+**Multi-tenant + observability + scale + DR:** these come in M1+. M0 is "one customer, demo-grade."
+
+#### What you should EXPECT during the M0 work (the journey)
+
+**Step 2 (Block A wiring + burn-in, 3-5 days):**
+- Mostly log-watching. Bot runs in shadow mode → V2 logs `[V2-*-SHADOW]` events alongside legacy responses
+- Few real Slack interactions; mostly automated burn-in metric collection
+- A few MT scenarios to run in real Slack: MT-4 (architect shadow burn-in), MT-5 (designer), MT-6 (PM)
+- At cutover flip: legacy responses stop; V2 takes over. Brief (minutes-scale) chance of regressions surfacing. Each one halts the cutover until fixed
+- F1 deletion: `interfaces/slack/handlers/message.ts` shrinks dramatically (~3000 lines → small dispatcher)
+
+**Step 3 (B13-B16 fixes in V2/shared, 2-3 days):**
+- Pure code work. No real Slack interaction
+- Each bug fix lands as: shared module change + regression test + invariant assertion + manifest update
+- Each fix increases `tests/invariants/cross-surface-consistency.test.ts` assertion count by 1
+
+**Step 4 (Orchestration continuity, 3-4 days):**
+- Net new platform behavior — agent handoffs that today require user nudges become automatic
+- After each O-item ships, you'll see less typing required between phases
+- Scenario N100 will be a long-running integration test that drives the full chain in CI
+
+**Step 5 (Nightly E2E smoke, 1-2 days):**
+- One-time setup; runs nightly thereafter
+- You may get a Slack alert if it detects a regression. That's the smoke catching what manual walks would miss
+
+**Step 6 (Onboarding integration walk, 2-4 days):**
+- The actual demo. You drive `onboarding` through PM → Design → Engineering on the cleaned V2 platform
+- The 31 existing deterministic findings (1 PM + 30 design) get resolved via escalation flows
+- Each finding resolution exercises B6 (consolidation), B7 (readOnly clause), B9/B9b (category rules), B10 (platform prefix), B11 v1 (content verifier), B13 (readiness consistency), Block O (orchestration continuity)
+- Bugs may surface. Each one gets fixed in V2/shared code (not legacy — Principle 18 hook prevents it). Walk pauses for the fix, then resumes
+- At the end: 3 crisp specs on main
+
+**Step 7 (M0 Acceptance, 1 day):**
+- You verify each acceptance criterion is checked
+- Manifest updated
+- M1 (Coder agent / manifest F2) becomes the active priority
+
+#### What you should NOT expect (managed expectations)
+
+- **Multi-tenant isolation testing.** Deferred — single-tenant only
+- **Eval drift detection.** Manual MTs catch real-LLM regressions for now; automated evals are M1+
+- **Production-grade observability (request tracing, metrics, alerts).** Basic logging only
+- **Backup-restore verification.** Daily backup runs but restore is unverified at M0
+- **GDPR-compliant offboarding.** Code exists; never run for real
+- **Multiple bot instances / horizontal scale.** Single machine, single process at M0
+- **Polished operator runbook.** M0 demo level; full ops docs are M1+
+
+#### Bugs you may surface during Step 6 (the integration walk)
+
+Realistic expectation per past walks: 3-7 new bugs may surface during the M0 walk. Each one:
+1. Halts the walk immediately
+2. Gets a manifest entry (B17, B18, ...) with `retired_by_v2_cutover` declared
+3. Gets a regression test pinning the post-fix behavior
+4. Gets a structural invariant assertion (where applicable)
+5. Gets fixed in V2 / shared code (Principle 18 hook prevents legacy fixes)
+6. Walk resumes from the same point
+
+This is the cadence. Not "fix everything pre-walk" (impossible). Not "ignore bugs and walk past them" (compounds debt). Fix-then-resume per bug, in V2.
+
+#### How to know M0 is DONE (acceptance check)
+
+Run these commands to verify:
+
+```bash
+# 1. M0-required cutover-gate items wired-and-exercised
+jq '.items[] | select(.gates_block_e == true and .m0_required == true) | select(.verification != "wired-and-exercised") | .id' docs/cutover-gate-status.json
+# should return empty
+
+# 2. V2 cutover complete (no legacy handler in production path)
+grep "runArchitectAgent\b" interfaces/slack/handlers/message.ts # should return no matches
+test -f runtime/agents/runArchitectAgentV2.ts && echo "V2 architect runner present"
+
+# 3. All MT scenarios pass (if pending list is empty, all blocking MTs done)
+npx tsx scripts/mt.ts count # should print 0
+
+# 4. All tests pass
+npx vitest run # should be all green
+
+# 5. End-to-end smoke runs clean (Step 5)
+npm run smoke:nightly # should pass
+
+# 6. Cross-surface consistency: same query in every surface returns same factual answer
+npx vitest run tests/integration/workflows.test.ts -t "Scenario N101" # asserts general-channel concierge answer == feature-channel agent answer == /pm slash answer == repeated-invocation answer
+
+# 7. Three crisp specs on main with zero deterministic findings (operator-run check)
+CUSTOMER_REPO=$(node -e "console.log(require('./runtime/workspace-config').loadWorkspaceConfig().githubRepo)")
+git -C "../$CUSTOMER_REPO" show main:specs/features/onboarding/onboarding.product.md | <run auditPmSpec> # should report 0 findings
+git -C "../$CUSTOMER_REPO" show main:specs/features/onboarding/onboarding.design.md | <run auditDesignSpec> # should report 0 findings
+git -C "../$CUSTOMER_REPO" show main:specs/features/onboarding/onboarding.engineering.md | <run auditEngineeringSpec> # should report 0 findings
+```
+
+When all 7 checks return clean: M0 is done. Coder agent (M1, manifest F2) work begins.
 
 ---
 
-### Execution priority — sequence to ship onboarding end-to-end on a reliable foundation (2026-04-30)
+## Post-M0 (M1+)
 
-**Established 2026-04-30 after the integration walk surfaced 7 lettered bugs (A–G) + an architectural gap. Driving forward in "find what breaks" mode is revealing bugs faster than fixing them. To get onboarding past architect on a foundation that supports adding Coder/Reviewer next, sequence the foundation fixes BEFORE more integration walking.**
+After M0 lands, the active priority becomes adding new agents on the V2-cutover-clean foundation:
 
-**Operating constraints for this priority work (non-negotiable):**
-- ONE bug per session. No bundling. No "while I'm in there." Hook 4 (bundled-fix detector) enforces at commit time.
-- All references use canonical manifest IDs (B6, D5, etc.). The lettered names "Bug A–G" are dead — replaced by manifest IDs after Step 1 below. Pre-commit hook blocks commits referencing "Bug A/B/C/.../G" as letters.
-- Each bug fix lands as: code change + unit test + regression catalog entry + MT entry + CODE_MARKER bump (if production-wired) + Hook 5 audit PASS.
-- After each fix, the next session is the next single bug — not "while we're at it, also…".
+- **F2 — Coder agent** (build on M1 scaffold; requires phase enum extension below to land first)
+- **F3 — Reviewer agent** (build on same scaffold)
 
-**Step 1 — Build the constraints (~30 min, single session):**
-- Hook 4: pre-commit detector that blocks commits with >5 unrelated source files unless each is enumerated with rationale. Verified via synthetic violation.
-- Lettered-bug-blocker hook: pre-commit gate that fails commits whose message contains `Bug [A-Z]` as a referenced issue (carve-out: Bug #N for the regression catalog's numbered series). Forces canonical manifest IDs.
-- Convert lettered bugs E, F, G + the architectural-gap to manifest items B9, B10, B11, B12 (or wherever they fit by block). After this, all 7 bugs (A–G) + arch gap have manifest IDs (D5, B6, B7, B8, B9, B10, B11, B12). The lettered names live only as historical references in the BACKLOG.md prose.
+Operational hardening that was deferred from M0 (in priority order):
 
-**Step 2–8 — Foundation fixes, ordered by what unblocks the rest:**
+- **K block (multi-tenant scale-out)** — when second customer signs (K1 storage abstraction is the long pole, ~10d)
+- **H block (LLM evals + prompt drift)** — when scaling to many features
+- **G2-G5 (observability)** — when operating at scale
+- **L1, L4, L5 (DR + audit + offboarding)** — when compliance / real outage risk requires
+- **C1, C2, C4 (multi-tenant verification, pre-cutover smoke, real-fixture producer)** — when multi-tenant ships
+- **M3-M5 (operator runbook, customer onboarding doc, contribution guide)** — when onboarding new operators / customers / contributors
 
-| Step | Manifest ID | Was called | Why this priority | Estimate |
-|---|---|---|---|---|
-| 2 | D5 | Bug A | Clear-on-restart wipes notifications. Blocks every subsequent fix from being testable end-to-end (every CODE_MARKER bump → restart → in-flight state lost). Must land first or no other fix can be verified through a real onboarding cycle. | half day |
-| 3 | B11 (architectural gap, covers B10 / Bug G) | Architectural gap | No structural verification of cited spec content. Highest correctness risk — without this, every PM/architect/designer recommendation is a hallucination waiting to corrupt the spec. Must land before any more agent escalations against real specs. Covers Bug G's PM-specific instance plus all other agents' equivalent risk. | 1–2 days |
-| 4 | B6 | Bug B | Architect escalates 1 of N detected gaps. Cuts round-trip count for every escalation by N×. Big quality-of-life impact. | half day |
-| 5 | B8 | Bug D | Engineering-spec writeback violates SSOT + accumulates duplicate headings. Small fix, high cleanup value. Delete `patchEngineeringSpecWithDecision` or make it idempotent + audit-gated. | hour |
-| 6 | B7 | Bug C | PM falsely claims "applying patch now" in readOnly mode. UX clarity. Prompt update + cross-agent invariant. | hour |
-| 7 | B9 | Bug E | `patchProductSpecWithRecommendations` non-deterministic on category rules. Apply category substitutions deterministically before Sonnet. | half day |
-| 8 | B10 | Bug F | Platform impersonates agent in 3rd person on re-audit messages. Text fix + cross-agent invariant. | hour |
-
-**Total: ~3–4 days of focused single-bug-per-session work.**
-
-**Step 9 — Resume integration walk: drive onboarding past architect through design through engineering finalize.** The walk's ACTUAL bar — not just "drive past phases" but produce three crisp specs PLUS structurally-consistent platform messaging:
-
-1. **Three crisp final specs.** Each spec is ready for a downstream agent (Coder) to act on without ambiguity. No deterministic findings remaining. No PLACEHOLDER / TBD / TODO markers. No vague language. No B8-class historical residue. AC numbers consistent across all three specs. Cross-spec coherence (engineering spec maps to product ACs).
-
-2. **Cross-surface message consistency** (CLAUDE.md Principle 17 — codified 2026-05-01 after MT walk Step 2 surfaced B13 — see also `tests/invariants/cross-surface-consistency.test.ts`). Every claim the platform makes about feature state is consistent across all surfaces, all invocations, all channels, and all time within a turn. Same query → same factual answer regardless of agent / channel / slash command / invocation / time within a turn. Specifically:
-   - Across invocations: same query asked 5 times in 5 minutes returns the same factual answer
-   - Across channels: concierge in `#all-<product>` agrees with active agent in `#feature-X`
-   - Across slash commands: `/pm` in feature channel agrees with `/pm` in main channel
-   - Across agents: architect's view of upstream gaps agrees with PM/Designer's view
-   - Within a single response: platform's claim doesn't contradict its own next action
-   - Across time within a turn: state-query response and finalize-gate response query the same source of truth
-
-   The walk WILL surface consistency violations (B13 was the first). Each one gets: manifest entry, regression test, specific assertion in `cross-surface-consistency.test.ts`, root-cause fix routing the surface through the canonical SSOT (`buildReadinessReport`).
-
-3. **Every existing manual test passes.** All 24 MT-N scenarios behave as documented. The 4 blocking MTs (MT-7/8/16/18) verify real-LLM compliance + restart durability; the 20 spot-check MTs verify behavior already covered by integration tests.
-
-**Step 10 — Add Coder agent.** Only after Step 9 closes — three crisp specs are on main, every platform message about state is structurally consistent, every existing MT passes, every newly-surfaced bug has a regression test pinning it. Each existing bug has a regression test pinning it.
-
-**Why this beats "continue forward":**
-- Each bug we fix mid-walk requires same care + tests + MTs as a focused session, but we're fragmented and tired.
-- The lettered-bug naming chaos goes away (manifest IDs only).
-- I'm structurally constrained by Hook 4 + lettered-blocker; user doesn't have to be vigilant.
-- When Coder lands, every existing bug has a regression test pinning it.
-- Onboarding ships faster overall (less rework, fewer round trips per phase).
-
-**Why this is realistic given the assistant's track record this session:**
-- The constraints (hooks) are mechanical — they don't depend on the assistant's discipline.
-- Single-bug-per-session means scope is bounded.
-- Each session's output is inspectable (one bug fix + its test + its catalog entry).
-- After Step 1 lands, the structural constraints are in place before any subsequent step can drift.
+Each of these is a separate manifest item or block; status tracked in `docs/cutover-gate-status.json` (`m0_required: false`).
 
 ---
 
-### System-wide robustness plan — supersedes the routing refactor's original Phase 4-7
+## System-wide robustness plan (19-layer ledger reference)
 
-**Priority: P0 — sole source of sanctioned work. Per the user directive set in this session, NEVER recommend or execute on anything that is not a system-wide solution. Surgical patches forbidden — even when production has a known bug.**
+The 19-layer robustness ledger defines WHAT is built. The canonical sequence above defines HOW we ship to M0. Approved plan file: `~/.claude/plans/rate-this-plan-zesty-tiger.md` (rated 10/10 against the 19-layer ledger and the explicit scale targets).
 
-**Approved plan file:** `~/.claude/plans/rate-this-plan-zesty-tiger.md` (rated 10/10 against the 19-layer robustness ledger and the explicit scale targets: many more agents + 1000s of tenants).
-
-**Why the original 7-phase routing refactor was insufficient:** Phases 0-5 delivered routing-decision robustness in v2 (shadow-only). But manual testing surfaced that the legacy multi-exit handlers (`runArchitectAgent`/`runDesignAgent`/`runPmAgent`) retain bugs the routing layer cannot fix — every fix to one internal exit leaves the other 4 fragmented and the next manual test surfaces the next gap. Two surgical production patches (architect-readiness directive `43640ab`, prose-vs-state mismatch fix `959c604`) shipped during this arc; both are retired by the new plan's Block A. A third in-flight surgical patch (state-query fast-path gate) was reverted in `c4c9c15` per the system-wide-only directive.
-
-**The 19-layer robustness ledger (each covered by an explicit deliverable in the plan file, not a promise):**
+The 19 layers (each covered by an explicit deliverable in the plan file):
 
 1. Single source of truth for state representation (`buildReadinessReport` exists)
 2. Single-path agent runners (Block A)
@@ -119,276 +316,60 @@ Brand data (colors, typography, tokens) is customer-specific. health360 owns its
 18. Disaster recovery + backup + secrets (Block L)
 19. Documentation + new-agent scaffold (Block M)
 
-**Phase status (legacy framing — historical reference; superseded by Blocks A-M):**
-- ~~Phase 0~~ ✅ DONE (2026-04-27) — `docs/ROUTING_STATE_MACHINE.md` with FLAG-A through FLAG-E entries.
-- ~~Phase 1~~ ✅ DONE (2026-04-27) — types + registry + codemod through ~120 call sites.
-- ~~Phase 2~~ ✅ DONE (2026-04-27) — pure routers + dispatcher + 49-row matrix tests.
-- ~~Phase 3~~ ✅ STAGE 1 + STAGE 2 DONE (2026-04-27) — shadow mode dual-run, `[ROUTING-V2-PROPOSED]` log emits on every message.
-- ~~Phase 5~~ ✅ DONE (2026-04-28) — 7 of 7 v2-spec-edit sub-items: I1 (slash-as-confirmation), I7-extended (hold-message template), I2 (corrupt targetAgent), I8 (originAgent required), I21 (orientation-on-resume primitive), FLAG-5 (productSpec required), I22 (dismiss-escalation classifier). All in v2 layer; none production-wired.
-- Phase 4 (cutover) → now scoped as **Block E** in approved plan, gated by Blocks A–D + G–M complete.
-- Phase 6 (cleanup) → now scoped as **Block F1**.
-- Phase 7 (Coder/Reviewer) → now scoped as **Block F2/F3**, built on Block M1 scaffold.
-
-**Active blocks (read the plan file for full deliverable detail):**
-- **Block A** — Single-path agent runners (architect → designer → PM, sequential; A1 spike → A2 map → A3 fast-path decision → A4-A7 sequential rewrites). 17d.
-- **Block B** — Structural CI gates (response-path coverage, cross-agent contracts, producer/consumer parity, determinism, cutover gate). 8d parallel after A1.
-- **Block C** — Production verification (multi-tenant, pre-cutover migration smoke, nightly E2E real-infra smoke, real-fixture producer tests, MANUAL_TESTS catalog). 8d parallel.
-- **Block D** — Operational robustness (error paths, state-corruption recovery, performance budgets, chaos/fuzzing). 6d parallel after A2.
-- **Block G** — Structured observability (log-coverage gate, request-id tracing, metrics, alert hooks, retention/redaction). 5d parallel after A2.
-- **Block H** — LLM evals + prompt-drift regression (canonical dataset, eval runner, PR-time gate, model-upgrade evals, A/B harness). 7d parallel.
-- **Block I** — Test-suite hardening (mutation testing, coverage thresholds, regression catalog, property-based tests). 5d parallel.
-- **Block J** — Manual test catalog completeness + gating hooks (per-agent per-behavior MT-N entries, MT-staleness hook, CODE_MARKER bump enforcement). 3d parallel.
-- **Block K** — Multi-tenant scale-out (storage abstraction + durable backend, row-level tenant isolation, onboarding script, 1000-tenant load test, per-tenant cost monitoring, rate limiting). 10d (storage migration is long pole).
-- **Block L** — Disaster recovery + backup + secrets (backup, DR runbook, secrets gate, admin audit log, offboarding). 5d parallel.
-- **Block M** — Documentation + new-agent scaffold (scaffold script, ADRs, operator runbook, customer onboarding doc, contribution guide). 4d parallel.
-- **Block E** — Cutover, gated by all blocks above DONE (pre-cutover smoke → `ROUTING_V2=1` → 7-day burn-in). 8d.
-- **Block F** — Cleanup + new agents (delete legacy handlers; Coder/Reviewer built on Block M scaffold). 2d + 1-2d each.
-
-**Total critical path: ~7 weeks elapsed.** Parallel blocks total ~50 person-days running during the architect-rewrite + storage-migration window.
-
-**Verification checkpoints (manual + automated, per the plan):**
-1. After A1 spike — gate works against current code.
-2. After each A4-A7 shadow verification (architect, designer, PM) — V2 runner zero-divergences vs legacy on 48h prod traffic.
-3. After H eval baseline — regression detector live.
-4. After K4 load test — 1000-tenant scale claim verified.
-5. After E3 burn-in — full MT regression sweep + 7-day green smoke.
-
-**The bugs surfaced in manual testing across this multi-day arc** (slash-as-confirmation, hold-message label, architect-readiness Principle-11 violation, prose-vs-state mismatch, state-query fast-path bypass) are RETIRED by Block A. The state-query fast-path bypass is structurally impossible in V2 because every response path goes through `buildReadinessReport()`.
+Phase status (legacy framing — historical reference; superseded by Blocks A-M):
+- Phase 0 ✅ DONE — `docs/ROUTING_STATE_MACHINE.md` with FLAG entries
+- Phase 1 ✅ DONE — types + registry + codemod through ~120 call sites
+- Phase 2 ✅ DONE — pure routers + dispatcher + matrix tests
+- Phase 3 ✅ STAGE 1 + STAGE 2 DONE — shadow mode dual-run, `[ROUTING-V2-PROPOSED]` log emits on every message
+- Phase 5 ✅ DONE — 7 of 7 v2-spec-edit sub-items
+- Phase 4 → now scoped as Block E (cutover), gated by Blocks A-D + G-M complete
+- Phase 6 → now scoped as Block F1
+- Phase 7 → now scoped as Block F2/F3, built on Block M1 scaffold
 
 ---
 
-### Bugs surfaced 2026-04-30 by driving onboarding past architect→PM escalation
+## Block O — Orchestration continuity (formalized in this commit)
 
-These were found while driving the `onboarding` feature forward through the architect→PM upstream-revision flow. Bug #10 (origin-agent routing) was fixed in commit `476ab08` and lives in `tests/regression/REGRESSION_CATALOG.md`. The four below are not yet fixed.
+Promoted from informal "orchestration continuity gaps" prose to formal manifest entries (O1-O5). Detail in `docs/cutover-gate-status.json`. The five items each correspond to one of the original Gap A-E items surfaced during integration walks:
 
-**Bug A — Bot restart wipes in-flight escalation notifications.** [conversation-store.ts:308-310](runtime/conversation-store.ts#L308-L310) deliberately clears all `escalationNotifications` on every startup. Asymmetric with `pendingEscalations` (which use TTL via `clearStaleEntries`). Result: every CODE_MARKER bump → required restart → in-flight escalation lost → user redoes the round. Two enforcements (J3 marker bump + this clear-on-restart) collide and there's no test of the collision. **Fix shape:** add `timestamp` to `EscalationNotification` type, replace clear-all-on-restart with `clearStaleEntries(escalationNotifications, "escalationNotification")`. Single source of truth: same TTL constant as the other pending state.
+- **O1** ↔ Gap A: PM/Designer escalation-confirmed brief includes structural closure clause
+- **O2** ↔ Gap B: Auto-trigger architect resume after PM/Designer applies patches
+- **O3** ↔ Gap C: Deterministic verifier between "PM applied patch" and "architect resumes"
+- **O4** ↔ Gap D: Architect's turn auto-chains upstream resolution → next-phase check → escalate or proceed
+- **O5** ↔ Gap E: Designer-side symmetry of O1 and O2
 
-**Bug B — Architect's `offer_upstream_revision` LLM tool call escalates only 1 of N detected gaps.** `auditPmSpec` finds N findings deterministically; the architect's LLM only puts one in the question text. Other N-1 are silently dropped at the architect's first turn. Caught later only by the deterministic re-audit safety net at [message.ts:1062-1080](interfaces/slack/handlers/message.ts#L1062-L1080) after a writeback. Means user does N round-trips for what should be one. **Fix shape:** the post-run escalation gate at [message.ts:3163-3181](interfaces/slack/handlers/message.ts#L3163-L3181) currently auto-triggers when the agent didn't escalate at all — extend it to verify the agent's escalation question contains ALL `auditPmSpec` findings consolidated; if not, override the question text with the consolidated brief from `parsePmGapText` / `formatPmGapNotice`.
+All five are M0-required and `retired_by_v2_cutover: false` (the V2 single-path discipline retires some symptoms but not the orchestration handoff structure itself; Block O is net new platform behavior).
 
-**Bug C — PM falsely claims it applied a patch in `readOnly: true` mode.** PM's escalation-confirmed brief at [message.ts:951-964](interfaces/slack/handlers/message.ts#L951-L964) (architect→PM variant) doesn't tell PM it has no tool access. PM produces prose like "Applying the patch to AC 10 now" and shows before/after — but PM is `readOnly` and cannot patch. The platform message immediately after says "reply to confirm" (truthful), creating a contradiction the user has to resolve by trusting platform over PM. Same class as Block N2 (prose-vs-state mismatch) but at the PM brief layer. **Fix shape:** structural prompt update — add explicit "you are in read-only mode; do not claim to apply changes — your job is to recommend, the user confirms, the platform applies" clause to the architect→PM and design→PM briefs. Cross-agent invariant test asserts both briefs contain this clause.
-
-**Architectural gap — no platform-wide structural verifier for agent-cited spec content.** Surfaced 2026-04-30. Today the platform has Block N hedge gate (output cleanliness), Block N2 stripper (cleanliness), action-verifier (claims of tool calls), and prompt-level "never hallucinate" rules in agent prompts (`agents/pm.ts:291`, etc — probabilistic). What's missing: a deterministic gate that, before any agent's recommendation/output reaches the user, verifies all spec-content references (AC numbers, screen names, section headings, locked decisions cited) actually exist with the wording cited. Without this, every agent's escalation/recommendation is a hallucination waiting to slip past user inspection. Bug G is one manifestation (PM in escalation-resume); same class can occur in architect (citing engineering AC numbers, design screens), designer (citing brand tokens or screens). **Fix shape:** new module `runtime/spec-content-verifier.ts` exporting `verifyContentReferences(agentResponse, specContext): { hallucinations: HallucinationFinding[] }`. Called as a post-LLM enforcement gate at every agent's response site (PM run, design run, architect run). When hallucinations detected: re-prompt the agent with "you cited 'AC N: X' but AC N actually says 'Y' — fix and resend." Same architectural pattern as Block N's `enforceNoHedging`. Cross-agent invariant test asserts every agent's response site calls this verifier. **Until this lands, user is the only defense against spec-content hallucinations** — gap is real.
-
-**Bug G — PM hallucinates AC numbers / fabricates spec content in escalation-resume mode.** Surfaced 2026-04-30 across multiple rounds (1:08 PM cited AC 8 as containing "after inactivity" — it doesn't; 4:14 PM cited AC 27 as containing "immediately" — it doesn't). PM in escalation-resume mode (read-only, brief = the auditor's finding text) free-writes prose recommending patches against AC numbers it picks without verifying the AC actually contains the wording. The patcher then runs against hallucinated context — either no-ops (audit re-flags) or modifies wrong text. **Fix shape:** before PM emits its recommendation in escalation-resume mode, structurally verify each AC# cited actually contains the wording PM claims. If not, force a re-prompt with "AC N does not contain X — find the correct AC, or ask the user where it is." Could be implemented as a deterministic post-LLM gate that parses PM's recommendation for `AC N` references, fetches AC N from the product spec, and string-matches the cited wording. Same architectural pattern as Block N's hedge-gate enforceNoHedging — verify presence of required output structure before letting it proceed. **Same class as Bug C** (PM false claims) but distinct — C is about claiming actions taken, G is about citing wrong content.
-
-**Bug F — Re-audit and similar platform messages impersonate the agent in third person.** Surfaced 2026-04-30. The re-escalation message at [message.ts:1078](interfaces/slack/handlers/message.ts#L1078) (and likely other similar platform-built messages) is formatted as `*Product Manager* — Spec partially updated, but N gap remains. Say *yes* to bring the PM agent back.` This prefixes the platform's text with the agent name (as if PM said it) while the content talks about PM in third person ("bring the PM agent back") — PM is the one supposedly speaking, asking to bring itself back. Voice/perspective inconsistency. Same class of issue likely exists in other platform-composed messages that use agent-name prefix. **Fix shape:** either (a) drop the agent-name prefix on PLATFORM-built messages (use a neutral prefix like `*Platform —*` or no prefix), or (b) rewrite the body in first person consistent with the prefix ("I've partially updated the spec, but 1 gap remains. Say *yes* to continue."). Audit all platform-built messages in handlers/message.ts for the same pattern. Cross-agent invariant test asserts no platform-built message uses third-person about the agent it's prefixed as.
-
-**Bug E — `patchProductSpecWithRecommendations` is non-deterministic on category-level recommendations.** Surfaced 2026-04-30 step 6. PM gives a category rule like "any 'immediately' becomes 'within 1 second'" expecting find-and-replace across the entire spec. Sonnet's patcher (in `runtime/pm-escalation-spec-writer.ts` or wherever `patchProductSpecWithRecommendations` runs the merge) applies the rule INCONSISTENTLY — replaces some instances, leaves others. The deterministic `auditPmSpec` catches the misses and triggers a re-escalation, but each miss = an extra round trip for the user. **Fix shape:** when PM's recommendation contains an explicit category rule (regex-detectable: "any X becomes Y" / "find-and-replace" / "across every AC"), apply the substitution deterministically (string-level) BEFORE handing to Sonnet for the rest of the merge. Or alternatively, gate the writeback on a deterministic re-audit before the postMessage; if the audit still has the same category findings, force another Sonnet pass with a stricter "you missed N instances" directive.
-
-**Bug D — `patchEngineeringSpecWithDecision` violates Principle 1 (single source of truth) and creates duplicate headings.** When the architect resolves an upstream PM revision, two writebacks fire: `patchProductSpecWithRecommendations` (correct — wording change goes on product spec) AND `patchEngineeringSpecWithDecision` (questionable — appends a `### Architect Decision (pre-engineering)` section to the engineering spec as a denormalized record). Implementation appends without checking for an existing section, so every resolution accumulates a duplicate heading. The deterministic auditor at `auditSpecStructure` already detects the duplicate — but the writeback isn't gated on it. **Fix shape:** delete `patchEngineeringSpecWithDecision` entirely (architect can re-read the product spec when needed — that's the point of single source of truth). Or, if there's a real need for an architect-side decision log, make it idempotent (replace the section, don't append) AND gate writeback on the structural audit.
+End-to-end integration scenario N100 in `tests/integration/workflows.test.ts` drives PM → architect → designer → architect → finalize as ONE continuous flow with no user-message nudges. Gating verification for the Block O work.
 
 ---
 
-### Orchestration continuity gaps — agent handoffs require user nudges between phases (2026-04-30)
+## Wiring debt — infrastructure-only items needing real callers
 
-Surfaced 2026-04-30 driving onboarding. The platform's individual agent runners work, but the *orchestration* of agent-to-agent handoffs requires the user to send messages at every transition. Cutover-gate manifest doesn't measure workflow continuity — every block A–M is about individual agent invariants. None measure agent-to-agent handoff fluidity.
+These items are `status=done` in the manifest but `verification=infrastructure-only` — code exists with tests but no production callers. M0 requires only A4 to be wired (cutover); the rest are M1+.
 
-**Gap-A — PM/Designer escalation-confirmed brief lacks closure clause.** PM produces only the recommendations text and stops. No "Done — spec updated, escalation resolved." Brief at [message.ts:585–597](interfaces/slack/handlers/message.ts#L585-L597). Designer-side symmetric (Gap-E).
+- **A4** (V2 architect runner not wired into production) — **M0-REQUIRED**, addressed by Step 2 of the canonical sequence
+- **G1** (log-coverage gate underscoped) — M1+
+- **G5** (log redaction module has zero callers) — M1+
+- **L1** (backup script runs daily but restore never tested) — M1+
+- **L4** (admin audit log module has zero callers) — M1+
+- **L5** (offboarding script never run against real tenant state) — M1+
+- **M1** (new-agent scaffold script never used) — M1+ (used by F2 Coder agent build)
 
-**Gap-B — Platform doesn't auto-trigger architect resume after PM/Designer applies patches.** The `arch-upstream-revision-reply` branch only fires when *the user* sends an affirmative. There's no "PM finished applying → invoke architect" continuation in the orchestrator. User has to send another message to trigger architect re-run.
-
-**Gap-C — No structural verifier between "PM applied patch" and "architect resumes".** Currently re-audit is the only gate (see Bug B writeback at message.ts:1062-1080). Doesn't verify the patch actually wrote through cleanly before invoking the next agent.
-
-**Gap-D — Architect's turn doesn't auto-chain upstream-PM-clean → check design next.** Each phase requires a separate user prompt. Architect should, in one continuation: confirm PM gaps closed → re-audit design → escalate to designer if needed → otherwise proceed to engineering finalize.
-
-**Gap-E — Designer-side symmetry of Gap-A and Gap-B.** Same architecture as A+B but on the design side. When designer is escalated to (architect→design or PM-from-design-flow), same closure + auto-handoff problems.
-
-These five Gaps probably warrant a dedicated Block (call it Block N3 — orchestration continuity) with structural enforcement: an end-to-end integration scenario in `tests/integration/workflows.test.ts` that drives PM → architect → designer → architect → finalize as one continuous flow with no user-message nudges between agent transitions.
+Each item carries fix-shape detail in the manifest's `verification_note` field.
 
 ---
 
-### Wiring debt — infrastructure-only items in the cutover-gate manifest need real callers (2026-04-30)
+## Backlog hygiene + smaller items
 
-The honest manifest re-grade today (schema v2 with `verification` field) revealed several items that are `status=done` but `verification=infrastructure-only` — code/scripts/modules that exist with tests but have ZERO production callers. Each needs to either get wired into a real production path OR be explicitly demoted (with a backlog explanation of why).
+Items captured during conversations or audits but not formal manifest entries.
 
-**A4 — runArchitectAgentV2 not wired into production.** 100+ tests pass but legacy `runArchitectAgent` still handles all real architect traffic. Wired only via shadow wrapper. Block E (cutover) is what flips this.
-
-**G1 — Log-coverage gate is underscoped.** Invariant scans only `runtime/conversation-store.ts` mutators. Misses `message.ts` post-run mutations (escalation override replacement, hedge-gate skip path), tool-handler state mutations, github-client state writes. Fix shape: extend the AST walker to scan every file that mutates platform state; either log or document in the exempt list with justification.
-
-**G5 — Log redaction module has zero callers.** `redactToken/redactPii/redactAll` ship with 12 unit tests but are not called by any production logger. Real GitHub responses still get logged in plaintext. Fix shape: wire `redactToken` into the bot's logger (likely `runtime/logger.ts` or wherever GitHub responses are serialized for log lines).
-
-**L1 — Backup script runs daily but restore never tested.** No off-host destination, no quarterly DR drill performed. Fix shape: pick an off-host destination (S3 with versioning is the recommended path), implement the restore-test side, run a real quarterly drill.
-
-**L4 — Admin audit log module has zero callers.** `recordAdminAuditEvent` exists with 6 unit tests; no real event has ever been recorded. Fix shape: call it from `scripts/offboard-tenant.ts` (already done in code but offboarding has never run for real), call it from any future tenant-onboarding script, call it on `CUTOVER_ENABLED` flip (Block E).
-
-**L5 — Offboarding script never run against real tenant state.** `--dry-run` mode tested locally only. The "delete the GitHub spec files" half is operator-manual, not scripted. Fix shape: run it against a sandbox tenant (Block C1's tenant-B). Add the GitHub-deletion half if appropriate.
-
-**M1 — New-agent scaffold script never used.** Template bugs would only surface in real use. Fix shape: use it next time a new agent is added (Block F2 Coder, Block F3 Reviewer); each use surfaces template gaps.
+- **`.conversation-state.json` is tracked in git instead of gitignored.** Per-tenant operational state, not source code. Should be gitignored alongside `.confirmed-agents.json` and `.conversation-history.json`. Fix: add to `.gitignore`, run `git rm --cached .conversation-state.json`, commit.
+- **Phase enum extension** — rename `complete` → `spec-complete`; add `coding-in-progress`, `code-complete`, `review-in-progress`, `reviewed`, `deployment-pending`, `deployed` placeholders. **M1 dependency before F2 Coder agent ships.** ~1 day pure refactor today; cheap now, expensive after Coder ships.
+- **Cross-references between trackers (deferred).** Numbered regression-catalog bugs (#1-#17) should reference manifest items they relate to. MT-N entries should reference the manifest item they verify. Nice-to-have navigation; nothing forgotten because each item is captured in its own tracker.
+- **Real-Haiku classifier fixture capture (operator task)** — moved to `OPERATOR_TASKS.md` (or future equivalent); not platform code work. Run once before Block E cutover with `ANTHROPIC_API_KEY` to populate baselines.
 
 ---
-
-### Backlog hygiene + smaller items captured 2026-04-30
-
-These are items identified in conversations or audits but not previously formalized as backlog entries. Captured here so they don't drift.
-
-**`.conversation-state.json` is tracked in git instead of gitignored.** Every state mutation auto-commits to the repo. The file is per-tenant operational state, not source code. Should be gitignored alongside `.confirmed-agents.json` and `.conversation-history.json`. Fix shape: add `.conversation-state.json` to `.gitignore`, run `git rm --cached .conversation-state.json`, commit.
-
-**Hook 4 — bundled-fix detector (deferred 2026-04-30).** Pre-commit hook to flag commits touching >5 unrelated source files without per-file rationale in the message. Deferred from "5 hooks for discipline enforcement" discussion in favor of building only Hook 5 (turn audit). Add when we observe a near-miss bundle in real conditions.
-
-**Hooks 1, 2, 3 — additional discipline gates (deferred 2026-04-30).** Hook 1: regression-test-required gate (block runtime commits without `tests/regression/` file added or `MT-NEEDED:` in message). Hook 2: catalog-entry-required gate (block "fix" commits without REGRESSION_CATALOG.md update). Hook 3: verification-evidence gate (require `Verified gate fires:` in commit message when promoting cutover-gate item to `wired-and-exercised`). Deferred from same discussion as Hook 4. Add when we observe a near-miss in real conditions.
-
-**End-to-end integration test for the full agent chain (PM → architect → designer → architect → finalize).** Per the orchestration-continuity gaps section above, no integration test currently drives a feature through all phases as ONE continuous flow with no user-message nudges between agent transitions. Existing `tests/integration/workflows.test.ts` covers individual scenarios. This would be a new top-level scenario like Scenario N100 — chain-of-handoff continuity. Implements after Block N3 (orchestration continuity gaps) lands.
-
-**Cross-references between trackers (deferred 2026-04-30).** Numbered regression-catalog bugs (#1–#10) should reference the cutover-gate manifest item they relate to (e.g. bug #10 ↔ none directly, but "originAgent routing" ↔ Block A bug class). MT-N entries should reference the manifest item they verify. Deferred as nice-to-have navigation; nothing gets forgotten because each individual item is captured in its own tracker — this is just for navigation.
-
-**Block C/G/H/K individual item detail lives only in `docs/cutover-gate-status.json`, not in BACKLOG.md prose.** BACKLOG.md mentions Block C/G/H/K at the block level in the 19-layer plan section. Each individual item (C1 multi-tenant, C2 pre-cutover migration, C3 nightly E2E, C4 real-fixture classifiers; G2 request-id tracing, G3 metrics, G4 alert hooks; H1 eval dataset, H2 eval runner, H3 prompt-drift CI, H4 model-upgrade evals, H5 A/B harness; K1 storage abstraction, K2 RLS, K3 onboarding script, K4 1000-tenant load test, K5 cost monitoring, K6 rate limiting) carries verification status, fix shape, and notes in the manifest. Use the manifest as the source of truth for these.
-
-**Post-cutover Blocks: E (cutover flip), F1 (legacy code cleanup), F2 (Coder agent), F3 (Reviewer agent).** Mentioned in 19-layer plan as future Blocks but not in `docs/cutover-gate-status.json` because they happen AT or AFTER cutover, not as gates before it. Block E = the flip itself when all cutover-gate items are wired-and-exercised. Block F1 = delete legacy `runArchitectAgent`/`runDesignAgent`/`runPmAgent` after V2 runners are in production. Block F2 = build Coder agent on Block M1 scaffold; requires Phase enum extension (separate backlog entry above) to land first. Block F3 = build Reviewer agent on same scaffold. These are tracked here as forward work; each needs its own deliverable list when it becomes the next block to start.
-
-**Block A4-related collision: J3 CODE_MARKER bump enforcement vs A clear-on-restart wipe.** Two enforcements collide: every production-wiring fix bumps CODE_MARKER (J3), which requires a bot restart to verify, which wipes in-flight `escalationNotifications` (Bug A's clear-on-restart logic). User has to redo any in-flight escalation after every fix that bumps the marker. Resolution comes when Bug A is fixed (escalationNotifications get TTL like the other pending state). Not a separate backlog entry; flagged here as a design concern that's resolved by D5 (Bug A fix).
-
----
-
-### Real-Haiku classifier fixture capture — operator-driven, complements Block B3 anchor gate
-
-**Why this exists:** Block B3 ships the producer-side prompt-anchor gate (`tests/invariants/classifier-prompt-anchors.test.ts`) which catches *prompt drift*. The orthogonal failure mode — *model drift*, where the prompt is intact but real Haiku produces unexpected output for a canonical example — requires real captured Haiku output. The capture infrastructure ships with B3 (`scripts/capture-classifier-fixtures.ts`); populating the fixtures requires an `ANTHROPIC_API_KEY` and is operator work, not platform work.
-
-**What's done (Block B3):**
-- Capture script at `scripts/capture-classifier-fixtures.ts`
-- Canonical inputs derived from each classifier's own prompt examples
-- Output writes to `tests/fixtures/agent-output/<classifier-name>/captured.json` with regression flagging in stderr
-
-**What's pending:**
-- Run `npx tsx scripts/capture-classifier-fixtures.ts` once with API access to populate baseline fixtures
-- Build the consumer-side replay test (`tests/invariants/classifier-fixture-replay.test.ts`) that loads the captured.json files, mocks Haiku to return the captured output, asserts each consumer extracts the expected boolean/category
-- Wire a CI cadence for re-capture (quarterly + on prompt change + on model-version bump)
-
-**Cost:** ~30 Haiku calls per run (~2 cents at current pricing). Bounded.
-
-**When:** any time before Block E cutover. Does not block Block A burn-ins or Block C/D/G/H/I/J/K/L/M parallel work.
-
----
-
-### Phase enum extension — rename `complete` → `spec-complete`; add coding/review/deployment phases (must land before Block F2 / Coder agent)
-
-**Why this exists:** today's `complete` phase in `docs/ROUTING_STATE_MACHINE.md` and `runtime/routing/types.ts` means "all three specs approved on main, no drafts/pending state" — i.e. *spec-complete*, not feature-complete in the broader product sense. The terminology will mislead the moment we extend the lifecycle into engineering execution: when a Coder agent starts producing a PR, the feature is no longer "spec-complete" alone — it has additional state (PR open, PR merged, deploy pending, deployed). The `complete` name becomes wrong.
-
-**The change:**
-- Rename phase value `complete` → `spec-complete` everywhere (enum, switch arms, fixtures, decision-table rows in §8 of the spec, user-facing prose like "Feature is complete. Use `/pm`...").
-- Extend the phase enum (forward-compatible placeholders, can stay un-implemented until F2 ships): `coding-in-progress`, `code-complete`, `review-in-progress`, `reviewed`, `deployment-pending`, `deployed`. Each new phase has a deterministic GitHub-derivable signal (PR exists / PR merged / deploy succeeded) and a canonical agent (Coder, Reviewer).
-- Update `phase-detector.ts` to keep returning `spec-complete` for the existing predicate (no behavior change today); the new phases are no-op placeholders until F2 wires them.
-- Update `resolveAgent()` mapping to handle the new phases (Coder for `coding-in-progress`, Reviewer for `review-in-progress`, etc.) — these stay unreachable until F2.
-- User-facing prose in the consultant template needs to change from "Feature is complete" to "All specs are approved" (or similar) so the wording is honest.
-
-**Why before F2:** the rename is a one-day pure refactor today (string replace + enum extension + test-fixture updates). After F2 ships, every new phase reference would have to be split during the rename — cheap now, expensive later. The rename also clarifies the Block E cutover semantics: V2 cutover is about *spec-completion correctness*, not about feature completion in the broader product sense.
-
-**Scope boundary:** this entry adds the phase taxonomy and renames the existing one; it does NOT implement Coder/Reviewer behavior, which is Block F2/F3 + the M1 scaffold. The new phase values are placeholders gated by the deterministic predicates that F2 wires up.
-
-**Priority:** P1 — enables F2 cleanly. Schedule before Block E cutover so the cutover ships with the right names baked in (avoids a follow-on rename that affects the V2 dispatcher).
-
----
-
-### ⚠️ SUPERSEDED — Surgical production patches retired by Block A of the system-wide plan
-
-The three entries below are surgical patches that shipped during the wart-fix arc. Each is retired by Block A (single-path V2 agent runners) of the approved system-wide plan. They remain in the legacy code but are unreachable post-Block-E cutover. **Per the user directive, no further surgical patches in this scope ship. The bugs persist in production until V2 lands; the durable answer is the V2 rewrite, not more patches.**
-
-- **Architect-readiness directive (`43640ab`)** — patched the LLM-agent path of `runArchitectAgent` to inject a `[PLATFORM READINESS DIRECTIVE]` block. Manual testing confirmed the patch is bypassed by the state-query fast-path at line 2682 (one of the architect's 5 internal exits the directive doesn't cover). Block A's V2 architect runner has one entry, one exit; every response goes through `buildReadinessReport()` so the directive is universal by construction.
-- **Prose-vs-state mismatch (`959c604`)** — patched the architect's post-run override to use the queued `pendingEscalation.targetAgent` for CTA text, plus a PM-first conversational override that re-queues from design to PM when PM gaps exist. Block A's V2 architect runner has the same logic structurally, not as a post-run override on a multi-exit handler.
-- **State-query fast-path gate (in-flight, reverted in `c4c9c15`)** — would have patched the architect's check-in fast-path to fall through to LLM agent when upstream has gaps. Reverted because Block A retires the fast-path concept; the V2 deterministic state-query branch calls `buildReadinessReport()` directly and renders user-facing summary from the report.
-
-**Below this divider: the historical entries kept for context only. Do not re-prioritize them.**
-
----
-
-### ✅ Architect readiness messaging must reflect full upstream chain state — P14/P15 enforcement gap (HISTORICAL — superseded by Block A)
-
-**Status: surgical fix shipped (`43640ab`); retired by Block A. Manual test confirmed the surgical fix is bypassed by the state-query fast-path. Durable answer is the V2 rewrite.** Original `Status: FIXED (2026-04-28)` claim was incorrect — `runtime/readiness-builder.ts` produces the directive correctly, but production paths bypass it. Builder remains useful — Block A's V2 runners consume it as the single source of truth.
-
-**Priority: P0 — load-bearing trust violation surfaced during Phase 3 manual testing. Landed as part of Phase 5 wart fixes (separate from routing invariants but same flavor of "system says X, but X isn't true").**
-
-The architect's always-on `archReadinessNotice` runs `auditPhaseCompletion(buildEngineeringSpecRubric)` against the engineering spec content only — it checks engineering completeness, NOT the full upstream chain (PM spec, Design spec). The upstream-spec audits (`auditPmSpec`, `auditDesignSpec`) only fire at `handleFinalizeEngineeringSpec` time. So when the architect says "Nothing blocking — you can review and approve when ready," it can be silently incorrect: the engineering spec is internally complete, but the upstream chain has unresolved findings that will block finalization.
-
-**Validated by manual test 2026-04-27 — TWO turns, SAME state, DIFFERENT answers (this is the worst part):**
-
-Setup state (verified via .conversation-state.json + audit logs): architect's auditPmSpec produced 4 findings against the approved product spec; PM escalation queued, recommendations sitting in `escalationNotifications.onboarding`. Design audit produced 26 findings against the approved design spec. Architect's own engineering-readiness audit catches additional design-side gaps (form-factor coverage) bringing the design count to 41 from architect's perspective.
-
-**Turn A — `/architect hi` (entry E4 — slash command):**
-> "onboarding engineering spec — in progress. ✅ Nothing blocking — you can review and approve when ready. Reply approved when you're done and I'll hand off to the engineering agents."
-
-**Turn B — `Hi, I want to work on this feature` (entry E1 — direct message in #feature-onboarding, NO slash):**
-> "Architect. 2 items to address before implementation handoff. Good to have you back. … I'm looking at **4 PM-scope gaps** and **41 design-scope gaps** that need resolution before this spec can be handed off to engineering agents. That's not a blocker I can route around — those gaps will produce untestable or ambiguous implementation targets. Here's my escalation plan: Step 1 — PM gaps first. Step 2 — Design gaps second. Step 3 — One engineering gap. Say yes and I'll bring in the PM agent now."
-
-**Different entry points (E4 slash vs E1 direct), but identical resolved routing — both produce `kind=run-agent agent=architect mode=primary`** because architect IS the canonical agent for engineering-in-progress. Same agent, same mode, same state. **Different responses.** The architect's readiness assessment is **non-deterministic in the agent's internal response logic** — readiness state is decided by the LLM reading the user message, not by structural code. Direct **Principle 11** violation. Plus the original **Principle 14** violation (Turn A doesn't surface upstream chain at all). Plus **Principle 15** violation (Turn B does the right thing; Turn A doesn't — analogous-path parity broken within the same agent).
-
-**Implication for the fix:** the readiness state must be **assembled before the agent runs** and passed in as a structured directive ("your response MUST report exactly this state, verbatim"), so the LLM can't accidentally minimize it based on user phrasing. Same enforcement pattern as `enforceOpinionatedRecommendations` in `runtime/spec-auditor.ts` — platform decides what's surfaced, prompt rules don't.
-
-Trust-erosion happens the moment the user notices the inconsistency. The BACKLOG fix isn't just "always check upstream" — it's "**architect surfaces the same deterministic readiness state on EVERY turn, regardless of greeting style or agent interpretation.**" The check is structural, not LLM-interpretive.
-
-**Required (three-layer fix):**
-
-**(a) Cheap layer — surface active escalations in `archReadinessNotice`.** The state is already persisted in `escalationNotifications.<featureName>`. Read it and report:
-> "Engineering spec is internally complete. But PM is engaged on N audit findings (see thread above) and Design has M unresolved audit findings. Resolve those before approving."
-
-**(b) Durable layer — run the same upstream audits the finalize handler runs**, in the always-on readiness check. `archReadinessNotice` should call `auditPmSpec(approvedProductSpec)` and `auditDesignSpec(approvedDesignSpec)`. If either returns N>0 findings, surface them. This catches the case where audits were added/strengthened AFTER spec approval — without this, an old approved spec sits in "looks ready" state forever even when it would fail finalize.
-
-**(c) Determinism + labeling — each agent's readiness output must surface the same numbers regardless of message content, AND must label which audit produced each count.** Manual test 2026-04-27 surfaced two related issues: (1) the architect saying "Nothing blocking" on one turn and "41 design gaps" on another with same state — message phrasing changed agent output (Principle 11 violation); (2) the architect's "41 design gaps" includes design's own 26 + 15 architect-only findings, but doesn't label the split — user is confused why design's count differs. Fix: readiness messaging in every agent labels source audit per count. Example: *"Design has 26 design-completeness findings (designer's audit) PLUS 15 engineering-readiness findings I catch as architect — total 41. Resolve the 26 in /design first, then I'll surface the remaining 15 if any persist."* Same labeling requirement applies to designer (when reporting upstream PM findings) and architect (when reporting both upstream layers).
-
-**Implementation:**
-- `archReadinessNotice` builder gets the same `approvedProductSpec` and `approvedDesignSpec` params the finalize handler uses
-- Combine: own-spec readiness (today) + upstream-pm-clean + upstream-design-clean + active-escalations + active-decision-reviews
-- Output template: `"<own-spec status>. <upstream-status>. <next-step>"` — never just one of those.
-
-**Cross-agent parity (P15):**
-- Same fix applies to **designer's `designReadinessNotice`** — should run `auditPmSpec` against approved product spec; if findings, surface them. ("Design spec is internally complete. But PM has N unresolved findings from an earlier audit — resolve those before finalizing.")
-- PM doesn't have an upstream spec, so no equivalent gap there.
-
-**Validation post-fix:** rerun the manual test scenario above; architect's response should change from "Nothing blocking" to "Engineering complete, but PM has 4 findings + Design has 26 — resolve those first."
-
----
-
-### ✅ Architect prose-vs-state mismatch — agent verbally promises one escalation, platform queues another (HISTORICAL — superseded by Block A)
-
-**Status: surgical fix shipped (`959c604`); retired by Block A. Block A's V2 architect runner has the same logic structurally (queued targetAgent → CTA text), not as a post-run override on a multi-exit handler.**
-
-**Priority: P0 — surfaced during manual test session immediately after the architect-readiness gap. Same Phase 5 timing.**
-
-The architect's `auto-trigger` gate (Principle 8 enforcement, post-run) queues `pendingEscalation.targetAgent` based on which gaps are present in context. Manual test 2026-04-27 exposed a new failure mode: the architect's PROSE response can name a different target agent than the platform's queued state.
-
-**Validated by manual test:**
-- Architect's prose: *"My plan: 1. Escalate all 41 design gaps to the Design agent now. 2. Once design resolves them, finalize the full engineering spec... Say yes and I'll bring in the Design agent now."*
-- Platform queued state (verified via .conversation-state.json): `pendingEscalation.onboarding.targetAgent = "pm"` (auto-triggered post-run because PM gaps were in context)
-- When user typed `yes`, the universal-guard fires `run-escalation-confirmed` and **PM runs**, NOT Design. Direct contradiction between architect's commitment and platform action.
-
-**Required:**
-- The architect's prose must be DRIVEN BY the queued state, not independent agent interpretation. If `pendingEscalation.targetAgent === "pm"`, prose says *"Say yes to bring in PM"*; if `"design"`, prose says *"bring in Design"*. Platform-enforced via a structural gate that re-runs the agent with an enforcement directive if the prose's targetAgent doesn't match `pendingEscalation.targetAgent`.
-- Better: agent must EXPLICITLY call `offer_upstream_revision(targetAgent)` with the agent it intends to escalate to. The auto-trigger gate is a fallback when agent didn't call; if it fires, prose alignment is checked structurally.
-- **PM-first ordering enforcement at the conversational layer** (NOT just at finalize-time). When PM has unresolved findings, the architect must NEVER offer Design escalation in prose — it must offer PM escalation first. Today this is enforced at `handleFinalizeEngineeringSpec` only; the conversational offer can still skip PM. **Existing BACKLOG entry "Integrated escalation lifecycle redesign" claims PM-first ordering is DONE (2026-04-25) but the manual test demonstrated it's only DONE at finalize-time, not at the conversational layer.** Both layers must enforce.
-
-**Related:** the BACKLOG entry "Architect readiness messaging must reflect full upstream chain state" (added today) covers the readiness REPORTING side; this entry covers the ESCALATION OFFER side. Same root cause — agent prose doesn't reflect queued/measured state — but distinct manifestations.
-
----
-
-### I23 — Action-menu posture-coherence in slash-override read-only mode (HISTORICAL — subsumed by Block A)
-
-**Status: subsumed by Block A.** I23's three fixes (pre-banner phrasing, action-menu firing cadence, action-menu content) are concerns of the legacy multi-exit handler's post-run notice assembly. Block A's V2 single-path runners build user-facing summaries directly from `buildReadinessReport()`'s `aggregate` state, with read-only-mode behavior expressed in the renderer rather than as post-run patches. The original I23 description below remains as the requirements input for Block A's renderer; do not implement I23 as a separate fix.
-
-**Priority: P0 — surfaced during Phase 3 manual testing. Same flavor as I7-extended/I21/I22. Lands as part of Phase 5 wart fixes.**
-
-When an agent is invoked via slash override (`/design`, `/architect`, `/pm`) on a feature whose owning spec is approved AND in a downstream phase, the agent runs in read-only-consultant mode (I5). The orientation block correctly states "I'm in read-only mode here" (validated by manual test 2026-04-27, both PM and Designer produced this organically). **But the always-on action menu fires regardless of mode and ends with "Say fix 1 2 3 (or fix all) to apply"** — a write-mode affordance that contradicts read-only posture and asks the user to invoke spec-patching tools on an approved spec.
-
-**Required (three distinct fixes, all under I23):**
-
-**(a) Pre-banner phrasing in read-only mode.** The current "<N> items to address before engineering handoff" pre-banner fires on every turn with prescriptive language ("to address", "engineering handoff") that frames read-only conversation as a forced workflow gate. In `readOnly === true`, replace with non-prescriptive summary phrasing: "<N> open audit findings on the approved spec — summary below; ask anything to discuss."
-
-**(b) Action-menu firing cadence in read-only mode.** Today the action menu re-renders the full N-item list on every turn — even on simple discussion questions like "how many screens?". First mention is informative; repeated is noise (scrollback exists). In `readOnly === true`, fire the action menu once per session (first slash-override invocation OR first time the user types something requiring it) and suppress on subsequent turns. Keep a one-line breadcrumb instead: "(N audit findings — say `show issues` to re-list)."
-
-**(c) Action-menu content in read-only mode.** Today's "Say fix 1 2 3 (or fix all) to apply" is a write-mode affordance that contradicts read-only posture and asks the user to invoke spec-patching tools on an approved spec. In `readOnly === true`, replace with: "Want me to draft tightenings for specific items? Each draft will require your explicit approval before patching to main." User selecting items → agent drafts per-item recommendations following the same "Pending your approval — say yes to apply" pattern PM uses for escalation flows. Each tightening, when approved, writes to the affected spec via the existing patch-on-approval infrastructure.
-
-**Platform-enforced via three structural gates in the action-menu builder:**
-- (a) `readOnly === true && banner.text.includes("to address before")` → re-render with summary-only template
-- (b) `readOnly === true && actionMenuEmittedThisSession === true` → skip render, emit breadcrumb instead
-- (c) `readOnly === true && menu.text.includes("apply")` → re-render with read-only Pending-Your-Approval template
-
-**Validated by manual test:**
-- 2026-04-27 user typed `/design hi`, `i have a few questions on the design of this feature`, and `how many screens does this feature have?` in `#feature-onboarding` (engineering phase, design spec approved). On every turn:
-  - Orientation block fired correctly (read-only acknowledged)
-  - Substantive Q&A worked (e.g. "17 screens" answered well)
-  - But pre-banner ("26 items to address before engineering handoff.") repeated each turn
-  - Action menu re-rendered all 26 findings each turn
-  - "Say fix N to apply" appeared each turn
-- Same shape would surface for `/architect` if engineering spec finalization audited. PM in this scenario doesn't have the issue today because PM's escalation flow already uses per-item Pending-Your-Approval — applying that pattern to Designer/Architect is the unification.
-
-**Related:** I21 (orientation-on-resume) — orientation already works; I23 is the "everything after the orientation" half. Together they make the slash-override-on-approved-spec flow coherent.
 
 ---
 
