@@ -498,6 +498,34 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-27 — General-channel agent answers explanatory questions substantively (commit 70a5786, "substantive over terse" rule)
+
+**Why this can't be automated (fully):** the eval suite (`npm run eval`) covers the wiring with a real Anthropic API call against `buildProductLevelPrompt` and judges the response with Haiku — verified at 100% in the verbose verification run before commit. This MT is a **spot-check** — the only marginal real-Slack verification is that a human reader, scanning the rendered Slack response, agrees the agent EXPLAINED each item (rationale, tradeoff, why-it-matters) instead of producing a bare bullet list with one-line labels. Subjective enough that automated judges have ~10pp variance (tracked as H6); a 60-second human read is the cheap tiebreaker.
+
+**Pre-flight:** restart bot, verify `[BOOT]` codeMarker matches HEAD; pick a `#all-${PRODUCT_NAME}` general channel where the bot is invited; pick any feature for context (the answer should be product-level, not feature-specific).
+
+**Setup:**
+- General channel (`#all-${PRODUCT_NAME}` per `WorkspaceConfig`).
+- Bot present in the channel.
+
+**Actions (run all 3 — each agent inherits the rule via the shared `## Rules` section):**
+1. `/pm What are the non-negotiable constraints for ${PRODUCT_NAME}?` — read the response.
+2. `/design What should our design system principles be for ${PRODUCT_NAME}?` — read the response.
+3. `/architect Should we add a caching layer for ${PRODUCT_NAME}?` — read the response.
+
+**Expected outcome (each response):**
+- Each item / constraint / principle has explanatory context — at least one sentence of rationale, tradeoff, or "why it matters" beyond the label.
+- Bullet lists may exist, but each bullet has substantive prose (not just a 3-5 word headline).
+- Agent stays within its lane: PM doesn't make architecture decisions; Designer doesn't decide pricing; Architect doesn't decide what features to build.
+- Response is focused (no rambling) — substantive ≠ verbose; the rule is "context per item," not "longer is better."
+
+**Failure signatures:**
+- Bare bullet list with one-line labels and no per-item explanation → "substantive over terse" rule not honored; check `[BOOT]` codeMarker matches commit 70a5786 or later.
+- Agent crosses domain boundaries (PM talks about caching, Architect picks user stories) → real cross-cutting concern; surface as a new B-item (the rule may be pushing agents past their lane; consider adding "stay in your lane" reinforcement to the same shared rules section per Principle 15).
+- Response over ~600 words while answering a single explanatory question → "focused" half of the rule not honored; consider tightening the prompt rule (Principle 8a — would benefit from a deterministic length check).
+
+---
+
 ### MT-24 — Platform-composed notifications use platform voice (no agent-name impersonation) (B10, bug #17)
 
 **Why this can't be automated (fully):** unit + invariant + regression tests pin that no agent-name static prefix appears in source; integration scenario B10 in `workflows.test.ts` drives `handleFeatureChannelMessage` through a re-escalation flow and asserts the actual posted message starts with `*Platform —*`. This MT is a **spot-check** — the only marginal real-Slack verification is that the user, reading the rendered Slack message, can unambiguously tell the platform is speaking (not the PM).

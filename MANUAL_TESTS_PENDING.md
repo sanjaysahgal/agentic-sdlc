@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-27 — General-channel agent answers explanatory questions substantively (commit 70a5786)
+
+- Added by commit: `70a5786` (eval threshold restoration: "substantive over terse" rule in `buildProductLevelPrompt`)
+- Why spot-check (not blocking): the eval suite (`npm run eval`) covers the wiring with a real Anthropic API call against `buildProductLevelPrompt` and judges the response — verified at 100% in the verbose run before commit. Real-Slack adds the marginal "human reader can confirm explanatory context per item, not bare bullet labels" check. Subjective enough that automated judges have ~10pp variance (tracked as H6); 60-second human read is the cheap tiebreaker.
+- Run opportunistically: any time you're already in the general channel (`#all-${PRODUCT_NAME}`); ask `/pm`, `/design`, `/architect` an explanatory question (constraints, principles, architecture choice) and confirm each agent gives context per item. Naturally rolls into Step 7 cross-surface consistency MT-26 (which also exercises slash-commands across surfaces).
+- Full scenario: see `MANUAL_TESTS.md` MT-27
+
 ### MT-7 — Hedge gate live in production (Block N enforceNoHedging)
 
 - Added by commit: `b914a28` (Block N: hedge gate rewriter + cross-agent prompt contract)
