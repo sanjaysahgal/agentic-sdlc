@@ -45,31 +45,38 @@
 
 ## Blocking pre-push
 
+_(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 because they are now gated by the canonical M0 sequence in BACKLOG.md, not the pre-push hook. See "Demoted from blocking" section below for the per-entry rationale linking each to its canonical-sequence step.)_
+
+## Spot-check during integration walk
+
 ### MT-7 — Hedge gate live in production (Block N enforceNoHedging)
 
 - Added by commit: `b914a28` (Block N: hedge gate rewriter + cross-agent prompt contract)
-- Why blocking: real-LLM compliance with prompt rules cannot be synthesized by mocks. The unit test verifies `enforceNoHedging` rewrites correctly; only real Slack proves the rewritten output renders as intended in production.
+- Why spot-check (not blocking): tests legacy path that V2 retires by construction (Principle 18). Per BACKLOG.md canonical M0 sequence, this MT is in the explicit Step 6 inventory (BLOCKING tier on V2 traffic during the onboarding integration walk). Demoted 2026-05-01 to remove pre-push redundancy with the canonical sequence — the canonical sequence is the single source of truth for when each MT runs.
+- Run opportunistically: during Step 6 V2 walk per the BACKLOG inventory.
 - Full scenario: see `MANUAL_TESTS.md` MT-7
 
 ### MT-8 — Anti-deferral block in agent prompts (Block N buildAntiDeferralBlock)
 
 - Added by commit: `b914a28` (same as MT-7)
-- Why blocking: real LLM must actually obey the prohibition; unit tests verify the block is INJECTED into the prompt, not that the model honors it. Mocks cannot verify model compliance.
+- Why spot-check (not blocking): tests legacy path that V2 retires by construction (Principle 18). Per BACKLOG.md canonical M0 sequence, this MT is in the explicit Step 6 inventory (BLOCKING tier on V2 traffic during the onboarding integration walk). Demoted 2026-05-01 to remove pre-push redundancy with the canonical sequence.
+- Run opportunistically: during Step 6 V2 walk per the BACKLOG inventory.
 - Full scenario: see `MANUAL_TESTS.md` MT-8
 
 ### MT-16 — Tool-name + platform-commentary stripper sentence-drop (Block N2)
 
 - Added by commit: `ad8132c` (Block N2: sentence-drop)
-- Why blocking: stripper drops whole sentences containing tool references. Edge cases — multi-clause sentences mixing legitimate content with the offending token, sentence-end punctuation variations, code blocks, Slack markdown — only surface in real-LLM Slack runs. Mocks cannot synthesize realistic agent prose.
+- Why spot-check (not blocking): tests legacy path that V2 retires by construction (Principle 18). Per BACKLOG.md canonical M0 sequence, this MT is in the explicit Step 6 inventory (BLOCKING tier on V2 traffic during the onboarding integration walk). Demoted 2026-05-01 to remove pre-push redundancy with the canonical sequence.
+- Run opportunistically: during Step 6 V2 walk per the BACKLOG inventory.
 - Full scenario: see `MANUAL_TESTS.md` MT-16
 
 ### MT-18 — EscalationNotification survives bot restart within TTL (D5 fix)
 
 - Added by commit: `a5f8eaf` (D5 fix)
-- Why blocking: integration tests cannot simulate a real process restart with on-disk persistence. The fix relies on `clearStaleEntries` running at startup and `timestamp` surviving the JSON round-trip — only a real `kill -9` + restart proves both ends.
+- Why spot-check (not blocking): per BACKLOG.md canonical M0 sequence, this MT is in the explicit Step 2 inventory (gating the cutover flip — A4 wiring is unsafe until MT-18 + MT-4/5/6 pass). Demoted 2026-05-01 to remove pre-push redundancy with the canonical sequence — Step 2 is where the test will actually be run, not whenever the next push happens to fire.
+- Run opportunistically: during Step 2 V2 burn-in per the BACKLOG inventory; concrete pass criterion documented there (set up pendingEscalation, kill -9, restart, send message in same thread → escalation re-fires; clearStaleEntries runs at startup; timestamp survives JSON round-trip).
 - Full scenario: see `MANUAL_TESTS.md` MT-18
 
-## Spot-check during integration walk
 
 ### MT-17 — Architect→PM escalation resumes to architect (bug #10 fix)
 
