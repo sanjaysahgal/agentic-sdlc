@@ -571,6 +571,34 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-28 — Pre-recommendation audit structural enforcement fires correctly (B19; closes Step 1)
+
+**Why this can't be automated (fully):** the script (Layer 1) IS automated and deterministic — covered by direct invocation. The pre-edit hook (Layer 2) requires observing actual hook-fire behavior in a Claude Code session. The pre-commit gate (Layer 3) requires a synthetic git commit attempt. Mostly deterministic verification + one observational check. Passes the "behaviors automated tests provably cannot exercise" tier because the hooks operate at the runtime / IDE boundary.
+
+**Pre-flight:** `git status` clean (no uncommitted changes); B19 commit landed on main; verify `.claude/settings.json` has the new hooks via `jq '.hooks.PreToolUse | map({matcher, hookCount: (.hooks | length)})' .claude/settings.json`.
+
+**Setup:**
+- Working directory: `/Users/ssahgal/Developer/agentic-sdlc/`.
+- B19 commit + manifest entry shipped.
+
+**Actions:**
+1. **Layer 1 (script):** Run `npx tsx scripts/check-pre-recommendation.ts interfaces/slack/handlers/general.ts` — confirm output contains all 3 sections (A. Prior decisions / B. Test coverage / C. Caller blast-radius), at least 4 DESIGN-REVIEWED comments, commit `07360c4` in recent commits, SYSTEM_ARCHITECTURE.md spec mention.
+2. **Layer 1 (script — second target):** Run `npx tsx scripts/check-pre-recommendation.ts runtime/context-loader.ts` — confirm output contains SYSTEM_ARCHITECTURE.md line 142 reference (the line that proves B17 would have undone prior design).
+3. **Layer 3 (commit gate):** Stage a synthetic edit to a DESIGN-REVIEWED file (e.g., `echo "// SYNTHETIC TEST" >> interfaces/slack/handlers/general.ts && git add interfaces/slack/handlers/general.ts`), then attempt `git commit -m "synthetic test"` — expect block with `[PRE-RECOMMENDATION GATE - B19]` message naming the missing `PRIOR-DECISIONS-CHECKED:` and `TESTS-AUDITED:` annotations. Then `git restore --staged ... && git restore ...` to clean up.
+4. **Layer 2 (auto-inject hook):** Optional — observe whether Claude Code session surfaces the script output to assistant context when assistant attempts an Edit/Write/MultiEdit on a file under `runtime/`, `interfaces/`, or `agents/`. Stderr-emit pattern; surfacing depends on Claude Code runtime. Best-effort layer; commit gate is the hard backstop.
+
+**Expected outcome:**
+- Layer 1: script output for general.ts includes 4+ DESIGN-REVIEWED comments, commit 07360c4, SYSTEM_ARCHITECTURE.md mention; for context-loader.ts includes SYSTEM_ARCHITECTURE.md line 142 reference.
+- Layer 3: synthetic commit BLOCKED with `[PRE-RECOMMENDATION GATE - B19]` deny reason; clean restore leaves working tree clean.
+- Layer 2: stderr emits the script output during synthetic Edit attempts (best-effort).
+
+**Failure signatures:**
+- Layer 1 missing prior decisions → script regex/grep is broken; debug by running with `DEBUG=1` and inspecting raw shell output.
+- Layer 3 not blocking → commit-message check logic failed; debug `.claude/settings.json` PreToolUse Bash hook for B19 by tracing the jq + grep chain manually with a sample staged file list.
+- Layer 2 silent → stderr surfacing not supported by current Claude Code runtime; this is acceptable (best-effort layer); the gate (Layer 3) remains the structural enforcement.
+
+---
+
 ### MT-27 — General-channel agent answers explanatory questions substantively (commit 70a5786, "substantive over terse" rule)
 
 **Why this can't be automated (fully):** the eval suite (`npm run eval`) covers the wiring with a real Anthropic API call against `buildProductLevelPrompt` and judges the response with Haiku — verified at 100% in the verbose verification run before commit. This MT is a **spot-check** — the only marginal real-Slack verification is that a human reader, scanning the rendered Slack response, agrees the agent EXPLAINED each item (rationale, tradeoff, why-it-matters) instead of producing a bare bullet list with one-line labels. Subjective enough that automated judges have ~10pp variance (tracked as H6); a 60-second human read is the cheap tiebreaker.

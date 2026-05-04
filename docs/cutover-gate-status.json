@@ -265,6 +265,28 @@
       "m0_required": true
     },
     {
+      "id": "B18",
+      "title": "Platform-side markdown→Slack-mrkdwn converter (cosmetic rendering polish)",
+      "block": "B",
+      "gates_block_e": false,
+      "status": "pending",
+      "verification": "pending",
+      "retired_by_v2_cutover": "false",
+      "m0_required": false,
+      "verification_note": "Surfaced during Step 1 verification — agent responses across PM/Designer/Architect product-level paths use GitHub markdown (**bold**, ## headings, --- separators) which Slack mrkdwn does not render. Walls of text appear with literal markdown chars in real Slack. Root cause: buildProductLevelPrompt at interfaces/slack/handlers/general.ts does not include the Slack-mrkdwn instruction that agents/design.ts/architect.ts/concierge.ts have, AND no platform-side converter exists (splitForSlack at thinking.ts:32-46 only splits on length). Fix: new pure module runtime/slack-mrkdwn-converter.ts (deterministic, Principle 11), wired into thinking.ts before splitForSlack, applies cross-agent uniformly per Principle 15. Per user judgment during Step 1 verification: cosmetic-only — does NOT affect routing, orchestration, spec quality, or finalize-gate behavior. M0 acceptance criteria are about routing/orchestration solidity + 3 crisp specs on main, not Slack rendering polish. Deferred to M1+ before F2 (Coder agent). 1 day estimated."
+    },
+    {
+      "id": "B19",
+      "title": "Pre-recommendation audit structural enforcement — script + auto-inject hook + commit gate (prior decisions + test coverage + caller blast-radius for every fix)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "pending",
+      "verification": "pending",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true,
+      "verification_note": "Surfaced during Step 1 verification — assistant proposed B17 (lane-scoped context loading) without checking git log, SYSTEM_ARCHITECTURE.md, AGENTS.md, DECISIONS.md, DESIGN-REVIEWED comments at change site, OR test coverage / caller blast-radius. User flagged in two questions: (Q1) 'have you confirmed with all our system specs - routing etc and any prior decisions we may have made over the last month on edge cases?' (Q2) 'our 100s of test cases are not looked at before any new recommendation is given?' B17 cross-check immediately revealed 4 prior decisions (07360c4 Principle 12 design review; 57ed466 'all product-level agents know pipeline status'; 4bf87d8 'product-level agents never refuse domain work'; SYSTEM_ARCHITECTURE.md line 142) that B17 would have silently undone — recommendation reversed. Memory + cognitive discipline alone insufficient (two memory entries already existed and both failed in the B17 episode). Fix: three-layer structural enforcement. (1) NEW SCRIPT scripts/check-pre-recommendation.ts — read-only audit outputting 3 sections per file: A) prior decisions (DESIGN-REVIEWED comments, recent commits, spec mentions), B) test coverage (test files importing the file, per-export test count), C) caller blast-radius (per-export call sites). (2) NEW PRE-EDIT HOOK [PRE-RECOMMENDATION AUTO-INJECT] on PreToolUse Edit/Write — auto-runs the script and INJECTS output as system-reminder when assistant attempts to modify any file under runtime/, interfaces/, agents/. Same pattern as existing UserPromptSubmit log-injection hook. (3) NEW PRE-COMMIT HOOK [PRE-RECOMMENDATION GATE] on PreToolUse Bash for git commit — requires PRIOR-DECISIONS-CHECKED: annotation when commit modifies DESIGN-REVIEWED files or files referenced in specs; requires REVERSES: <commit-hash> because <reason> if commit reverses a prior decision; requires TESTS-AUDITED: <count> annotation. Same shape as LEGACY-FIX-JUSTIFIED, BUNDLE-JUSTIFIED, MT-NEEDED gates. Three layers cover BOTH gaps the user surfaced: proposal time (script), edit time (hook auto-injects), commit time (gate verifies the check happened). Folded into Step 1 — closes Step 1 along with MT verification of all 3 layers via synthetic violations. m0_required: true because the discipline gap is active right now and the cost of recurrence is severe (B17 would have broken integration tests + caused production regressions had user accepted it)."
+    },
+    {
       "id": "C1",
       "title": "Multi-tenant correctness verification (sandbox tenant-B parallel run)",
       "block": "C",

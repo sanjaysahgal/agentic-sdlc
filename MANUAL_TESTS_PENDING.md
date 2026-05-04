@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-28 — Pre-recommendation audit structural enforcement fires correctly (B19; closes Step 1)
+
+- Added by commit: `<this commit>` (B19 implementation + Step 1 closure)
+- Why spot-check (not blocking): mostly deterministic verification (script + commit gate are testable directly). Per BACKLOG.md canonical M0 sequence, this MT closes Step 1 — must pass before Step 2 begins.
+- Run opportunistically: as part of the Step 1 closure session (now). Layer 1 + Layer 3 are quick (~5 min). Layer 2 is best-effort observation.
+- Full scenario: see `MANUAL_TESTS.md` MT-28.
+
 ### MT-25 — Nightly E2E smoke runs end-to-end on V2 against real Slack + real GitHub (Step 5, manifest C3)
 
 - Added by commit: `<this commit>` (sweep to close BACKLOG ↔ MANUAL_TESTS catalog gap)
