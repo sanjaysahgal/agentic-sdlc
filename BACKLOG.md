@@ -105,23 +105,67 @@ Sequenced by dependency. Each step lists its manifest items, an estimated cost, 
 >
 > _Note:_ Step 1 was originally pure docs/process. The "substantive over terse" prompt rule landed during Step 1 work to clear the eval-gate flake (tracked as H6 in the manifest); it's a real runtime change to general-channel slash-command paths and warrants the smoke check above per the "Maintain a documented manual test suite" discipline.
 
-**Step 2 — Block A wiring + burn-in completion (3-5 days) — manifest items: A4, A5, A6, A7, F1**
+**Step 2 — Block A wiring + burn-in completion — manifest items: A4, A5, A6, A7, F1**
 
-- A4: wire `runArchitectAgentV2` to handle real production traffic (currently shadow-only). Cutover threshold = 48h burn-in green
-- A5/A6/A7: complete the in-flight 48h burn-ins. User runs the agent scenarios in real Slack
-- F1: delete legacy `runArchitectAgent` / `runDesignAgent` / `runPmAgent` and the multi-exit handler logic in `interfaces/slack/handlers/message.ts`. Replace with thin V2 dispatcher
-- Verification: every Slack message routes through `runtime/agents/run*AgentV2.ts`; `interfaces/slack/handlers/message.ts` is dramatically smaller; `[V2-*-SHADOW]` log lines disappear (V2 is now production, not shadow)
+Step 2 has **three sequential sub-pieces** with **two manual-test pause-points** (pre-cutover gate + post-cutover smoke). Each sub-piece is explicitly labeled WHEN-ASSISTANT-IS-HERE so the assistant knows whether to ask the user to drive scenarios or perform code work.
 
-> **Manual testing required after Step 2 (gates the cutover flip — A4 wiring is unsafe until ALL pass):**
+---
+
+**Sub-piece 2a — A5/A6/A7 burn-in completion (manual MT pause-point #1; PRE-cutover gate)**
+
+Shadow wiring is already shipped (A5/A6/A7 manifest status: `burn-in/burn-in`; `interfaces/slack/handlers/message.ts:899/1157/1206` calls `shadowDesignerV2` / `shadowArchitectV2` / `shadowPmV2`). This sub-piece is purely manual driving — assistant asks user to drive a bounded scenario set in real Slack against the existing `onboarding` feature. Each scenario produces `[V2-*-SHADOW]` log entries; assistant inspects for `divergence=true`.
+
+> **WHEN ASSISTANT IS WORKING ON SUB-PIECE 2a → ASK USER TO DRIVE (~30 min total):**
 >
-> | MT | Scenario | What it verifies (robustness property) | Pass criterion |
+> | MT | Scenario | What it verifies | Pass criterion |
 > |---|---|---|---|
-> | **MT-4** | Architect V2 shadow burn-in (48h parallel) | V2 architect runner produces equivalent decisions to legacy under real LLM variability across the full range of architect prompts seen in real traffic | Zero `[V2-ARCH-SHADOW] divergence=true` events in 48h of mixed real traffic; aggregate decision-equivalence ≥ 99.5% |
-> | **MT-5** | Designer V2 shadow burn-in (48h parallel) | Same property for designer V2 runner | Zero `[V2-DESIGN-SHADOW] divergence=true` events in 48h; ≥ 99.5% decision-equivalence |
-> | **MT-6** | PM V2 shadow burn-in (48h parallel) | Same property for PM V2 runner | Zero `[V2-PM-SHADOW] divergence=true` events in 48h; ≥ 99.5% decision-equivalence |
-> | **MT-18** | EscalationNotification survives bot restart within TTL (D5 fix) | `pendingEscalation` state durably persists across `kill -9` + restart and is re-served to the next user message — the foundation for orchestration continuity (Block O depends on this) | Set up a pendingEscalation, `kill -9` the bot, restart, send a message in the same thread → escalation re-fires; `clearStaleEntries` runs at startup; `timestamp` survives JSON round-trip |
+> | **MT-4** | Architect V2 shadow against onboarding (engineering-in-progress phase). Drive ~6 scenarios exercising LLM-orchestrated branches (`normal-agent-turn` + `escalation-engaged`); pure branches covered by existing unit tests at 90%+ coverage. | V2 architect's LLM-orchestrated decisions match legacy on real LLM calls. | Zero `[V2-ARCH-SHADOW] divergence=true` entries across the scenario set. |
+> | **MT-5** | Designer V2 shadow via slash `/design` substantive question in `#feature-onboarding` + (if it surfaces) architect→designer escalation. | V2 designer's LLM decisions match legacy. | Zero `[V2-DESIGN-SHADOW] divergence=true` entries across exercised branches. |
+> | **MT-6** | PM V2 shadow via slash `/pm` substantive question in `#feature-onboarding` + (if it surfaces) architect→PM escalation. | V2 PM's LLM decisions match legacy. | Zero `[V2-PM-SHADOW] divergence=true` entries across exercised branches. |
+> | **MT-18** | D5 escalation-survives-restart (~10 min hands-on). Set up pendingEscalation, `kill -9` bot, restart, send message in same thread → escalation re-fires; `clearStaleEntries` runs at startup; `timestamp` survives JSON round-trip. | Orchestration state durably persists across unclean restart. Foundation for Block O. | Escalation re-fires on first post-restart message. |
 >
-> _Robustness verified at end of step:_ V2 single-path runners are decision-equivalent to legacy across all 3 agents AND can resume orchestration state across an unclean restart. After this, the cutover flip is safe. Wall-clock: ~48h burn-in (passive) + ~1h active driving + 30min restart test.
+> _Pass criterion for sub-piece 2a as a whole:_ all 4 MTs green ⇒ A5/A6/A7 manifest status flips to `done/wired-and-exercised` ⇒ unblocks sub-piece 2b. ~30 min active driving.
+
+---
+
+**Sub-piece 2b — A4 cutover wiring (assistant code work; NO MT during)**
+
+Prereq: sub-piece 2a green (zero-divergence proof).
+
+> **WHEN ASSISTANT IS WORKING ON SUB-PIECE 2b → DO NOT ASK USER TO TEST (code change only):**
+> - Flip `CUTOVER_ENABLED = false → true` in `runtime/cutover-flag.ts`.
+> - Run full test suite + canonical-consistency check. Stage all + commit + push.
+> - Verification: production traffic now routes through V2 single-path runners; legacy still fires shadow-mode comparison (no functional change yet, just flipped roles).
+
+---
+
+**Sub-piece 2c — F1 legacy deletion (assistant code work; NO MT during)**
+
+Prereq: sub-piece 2b stable.
+
+> **WHEN ASSISTANT IS WORKING ON SUB-PIECE 2c → DO NOT ASK USER TO TEST (code change only):**
+> - Delete legacy `runArchitectAgent` / `runDesignAgent` / `runPmAgent` from `agents/architect.ts` / `agents/design.ts` / `agents/pm.ts` (their `runXxxAgent` orchestrator functions; the `buildXxxSystemPrompt` prompt-builders survive — V2 calls them via DI).
+> - Delete the multi-exit handler logic in `interfaces/slack/handlers/message.ts`. Replace with thin V2 dispatcher.
+> - Update the ~13 test files that import message.ts (per pre-recommendation audit — some test legacy paths and get deleted with F1; others test dispatcher routing and need updating).
+> - Run full test suite + canonical-consistency. Commit + push.
+> - Verification: `grep "runArchitectAgent\b" interfaces/slack/handlers/message.ts` returns zero matches; every Slack message routes through `runtime/agents/run*AgentV2.ts`; `[V2-*-SHADOW]` log lines disappear (V2 is now production, no shadow comparison needed).
+
+---
+
+**Step 2 closure (manual MT pause-point #2; POST-cutover smoke; closes Step 2)**
+
+> **WHEN SUB-PIECE 2c IS COMPLETE → ASK USER TO DRIVE (~10 min smoke):**
+>
+> Re-run a subset of MT-4/5/6 scenarios on V2-as-production (no shadow comparison; V2 is the only runner now). Goal: confirm V2 actually responds correctly to the same scenarios it shadowed equivalently in 2a.
+> - Drive 1-2 architect turns in `#feature-onboarding`. Verify substantive responses, no errors.
+> - Drive `/design` and `/pm` substantive questions. Same.
+> - Watch logs for any errors or stale-state issues that didn't surface in shadow mode.
+>
+> _Pass criterion:_ zero errors; responses are substantive and on-topic. Step 2 formally done. Step 3 (B-series fixes) begins.
+
+_Robustness verified at end of step:_ V2 single-path runners handle 100% of real production traffic; legacy multi-exit handlers deleted; orchestration state durably persists across unclean restart. The entire B-class of legacy bugs (B6/B7/B8/B9/B10/B11/B13/B16) is structurally retired by the V2 single-path discipline.
+
+Total active time: ~30 min driving (2a) + ~1-2 hours code (2b+2c) + ~10 min smoke (closure) = ~3 hours focused work.
 
 **Step 3 — B-series legacy-bug fixes ported to V2 / shared code (2-3 days) — manifest items: B13, B14, B15, B16**
 
@@ -130,17 +174,18 @@ Sequenced by dependency. Each step lists its manifest items, an estimated cost, 
 - **B14 (auditEngineeringSpec detect B8 residue):** add deterministic check for `## Pre-Engineering Architectural Decisions` section + `### Architect Decision (pre-engineering)` subsection patterns. Surfaces as a finding so architect proactively flags
 - **B15 (patcher section-remove semantics):** extend `applySpecPatch` with section-remove directive so cleanup of unwanted sections becomes possible via the existing tool surface. Cross-agent: applies to PM / Design / Engineering writers
 
-> **Manual testing required after Step 3:** none.
+> **WHEN ASSISTANT FINISHES SUB-PIECES 3a-3d (one per B-fix) → ASK USER TO DRIVE (~20 min closure MT against onboarding):**
 >
-> _Why none:_ each of B13/B14/B15/B16 ships with: unit tests for the new pure function + regression test pinning the post-fix shape + structural invariant assertion (where applicable, per Principle 8a) + integration scenario in `tests/integration/workflows.test.ts` driving `handleFeatureChannelMessage` end-to-end with mocked I/O. The fixes are deterministic (Principle 11) so identical input ⇒ identical output by construction.
+> Each B-fix has a specific real-Slack verification. Drive these scenarios at the end of Step 3 (after all 4 fixes ship). Onboarding feature in current `engineering-in-progress` phase exercises B13/B14/B16 naturally; B15 needs a section-remove directive driven through PM or architect.
 >
-> _Robustness verified at end of step (via automated tests, not real Slack):_
-> - **B13:** state-query response and finalize-gate decision derive from the SAME `buildReadinessReport()` SSOT — no surface can disagree about what's blocking. New assertion in `tests/invariants/cross-surface-consistency.test.ts` pins this.
-> - **B14:** `auditEngineeringSpec` flags B8 historical residue (stale `### Architect Decision (pre-engineering)` blocks) as a deterministic finding so the architect proactively surfaces it (Principle 7).
-> - **B15:** `applySpecPatch` supports section-remove directive — cleanup of unwanted sections (B8 residue, deprecated sections) is now possible via the existing tool surface for PM / Design / Engineering writers (Principle 15 cross-agent parity).
-> - **B16:** auto-trigger PM-escalation override is ADDITIVE to architect prose (appended P.S.), never REPLACEMENT — invariant assertion pins this at the V2 readiness branch.
+> | B-fix | What to drive in real Slack | Pass criterion |
+> |---|---|---|
+> | **B13** | In `#feature-onboarding`: ask architect about state. Observe response. Then attempt finalize. | State-query response and finalize-gate response AGREE. No "Nothing blocking" while finalize would block. Both derive from `buildReadinessReport()` SSOT. |
+> | **B14** | In `#feature-onboarding` (engineering spec has B8 residue: stale `### Architect Decision (pre-engineering)` blocks): drive any architect turn. | Architect proactively surfaces the residue as a finding (Principle 7) — without trigger phrase. |
+> | **B15** | Drive an escalation that produces a section-remove directive (e.g., PM gives "remove the obsolete section X" directive). | GitHub diff on the resulting spec branch shows the section actually removed (not merged on top). |
+> | **B16** | Drive a turn where the auto-trigger PM-escalation override fires. | Architect's prose is preserved AND the override appears as appended P.S. — never replacement. Both visible in same response. |
 >
-> Real-Slack verification of B13-B16 happens naturally as part of the Step 6 integration walk (no separate MT scenarios needed because the full walk exercises every code path).
+> _Pass criterion for Step 3 closure:_ all 4 B-fix scenarios pass in real Slack. Each fix also ships with: unit tests + regression test + structural invariant assertion (per Principle 8a) + integration scenario in `tests/integration/workflows.test.ts`. The MT verifies real-Slack rendering of behaviors the automated tests prove deterministically. Step 3 done ⇒ Step 4 begins.
 
 **Step 4 — Block O (Orchestration continuity, NEW manifest entries) (3-4 days) — manifest items: O1, O2, O3, O4, O5**
 
@@ -151,18 +196,29 @@ Sequenced by dependency. Each step lists its manifest items, an estimated cost, 
 - **O5:** Designer-side symmetry of O1 and O2
 - New integration scenario in `tests/integration/workflows.test.ts` (Scenario N100) drives PM → architect → designer → architect → finalize as ONE continuous flow with no user-message nudges
 
-> **Manual testing required after Step 4:** none.
+> **WHEN ASSISTANT FINISHES SUB-PIECES 4a-4e (one per O-item) → ASK USER TO DRIVE (~20 min closure MT against onboarding):**
 >
-> _Why none:_ Scenario N100 in `tests/integration/workflows.test.ts` drives the full PM → Designer → Architect → Designer → Architect → finalize chain end-to-end with mocked Slack/Anthropic/GitHub. The assertion is structural: zero `userMessage:` events between agent transitions; every handoff is platform-triggered. Per-gap invariant tests (one per Block O item) pin the closure clause / auto-trigger / verifier / state-machine guards.
+> Block O is net new orchestration behavior — automated handoffs that previously required user nudges. The MT verifies the chain works end-to-end in real Slack, not just in mocked Scenario N100.
 >
-> _Robustness verified at end of step (via automated tests, not real Slack):_
-> - **O1:** every PM/Designer escalation-confirmed brief contains the closure clause from `runtime/escalation-closure-clause.ts`; structural invariant pins all sites in lockstep (Principle 15).
-> - **O2:** PM/Designer writeback completion programmatically triggers architect's next turn — V2 dispatcher emits `[ORCHESTRATION] auto-trigger=architect-resume` log line; integration test asserts it fires.
-> - **O3:** deterministic `runtime/orchestration-verifier.ts` confirms the writeback applied as intended before architect resumes (Principle 11).
-> - **O4:** architect's V2 turn auto-chains upstream-resolution → next-phase check → escalate-or-proceed; state machine asserted by branch-coverage test.
-> - **O5:** designer-side symmetry of O1+O2 verified by parity invariant.
+> Drive an end-to-end orchestration chain on `onboarding`:
+> 1. **Trigger an architect→PM upstream escalation** in `#feature-onboarding` (architect detects upstream PM gap, escalates).
+> 2. **Confirm the escalation** with `yes`. PM responds with recommendations.
+> 3. **Approve the PM recommendations** with `yes`. Platform writes back to product spec.
+> 4. **Watch for orchestration auto-chain** — without typing anything, observe whether architect resumes automatically (Block O2). Should see `[ORCHESTRATION] auto-trigger=architect-resume` in logs.
+> 5. **Observe closure clause** in PM/Designer brief (Block O1). Should appear in escalation-confirmed brief.
+> 6. **Observe orchestration verifier log** (Block O3). Should fire after writeback completes, before architect resumes.
+> 7. **Observe architect auto-chain** (Block O4). After upstream-PM is clean, architect should automatically check downstream design phase before proceeding.
+> 8. **Drive an architect→designer escalation** to test designer-side symmetry (Block O5).
 >
-> Real-Slack verification of orchestration continuity happens naturally as part of the Step 6 walk (the user driving onboarding will type fewer nudges between phases as Block O items ship; absence of nudges = success).
+> | Block O item | Pass criterion in real Slack |
+> |---|---|
+> | **O1** | Closure clause text ("done — spec updated, escalation resolved" or equivalent) appears in escalation-confirmed brief from PM and Designer. |
+> | **O2** | Architect's NEXT TURN fires automatically after PM/Designer writeback — without user typing. `[ORCHESTRATION] auto-trigger=architect-resume` log line appears. |
+> | **O3** | `[ORCHESTRATION-VERIFIER]` log line appears between writeback and architect-resume. Verifier confirms writeback applied as intended. |
+> | **O4** | Architect auto-chains upstream-resolved → next-phase-check → escalate-or-proceed. No user nudge needed between phases. |
+> | **O5** | Designer-side mirrors O1 + O2 (closure clause + auto-trigger). Verified during architect→designer leg of the chain. |
+>
+> _Pass criterion for Step 4 closure:_ end-to-end orchestration chain completes with **zero user nudges between agent transitions** (only the initial trigger and the explicit approvals are user-typed). Each O-item also has its own automated invariant test pinning the structural property. Step 4 done ⇒ Step 5 begins.
 
 **Step 5 — Block C nightly E2E smoke (1-2 days) — manifest item: C3**
 
