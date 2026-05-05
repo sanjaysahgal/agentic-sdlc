@@ -265,13 +265,13 @@
     <div class="inv-phase">
       <div class="iph-label">Next</div>
       <div class="iph-name">Work<br>Items</div>
-      <div class="iph-agent">PGM agent</div>
+      <div class="iph-agent">Tech Lead agent</div>
     </div>
     <div class="inv-phase-arrow">→</div>
     <div class="inv-phase">
       <div class="iph-label">Planned</div>
       <div class="iph-name">Code<br>& QA</div>
-      <div class="iph-agent">Backend · Frontend · QA</div>
+      <div class="iph-agent">Coder · QA</div>
     </div>
     <div class="inv-phase-arrow">→</div>
     <div class="inv-phase">
@@ -403,13 +403,13 @@
     </div>
     <div class="rm-row">
       <span class="rm-step">Next</span>
-      <span class="rm-head">Work item generation</span>
-      <span class="rm-detail">PGM agent breaks approved engineering specs into GitHub Issues — one per discrete unit of work, dependency-ordered, acceptance criteria included.</span>
+      <span class="rm-head">Work item distribution</span>
+      <span class="rm-detail">Tech Lead agent breaks approved engineering specs into work items — dependency-ordered, acceptance criteria included — and distributes them to coder agents.</span>
     </div>
     <div class="rm-row">
       <span class="rm-step">Step 3</span>
       <span class="rm-head">Autonomous code generation</span>
-      <span class="rm-detail">Backend and frontend agents implement GitHub Issues against the full spec chain. PRs opened automatically, reviewed by QA agent against acceptance criteria.</span>
+      <span class="rm-detail">A single Coder agent takes on FE, BE, and other roles dynamically, implementing each work item against the full spec chain. PRs opened automatically, reviewed by QA against acceptance criteria.</span>
     </div>
     <div class="rm-row">
       <span class="rm-step">Step 4</span>
@@ -419,7 +419,7 @@
     <div class="rm-row" style="border:none;">
       <span class="rm-step">Step 5</span>
       <span class="rm-head">The loop never closes</span>
-      <span class="rm-detail">Production bugs, user feedback, and monitoring alerts re-enter the same pipeline. Issues become specs. Specs become fixes. The platform compounds with every feature shipped.</span>
+      <span class="rm-detail">Production bugs, user feedback, and monitoring alerts enter the same pipeline as new PM input — no separate triage path. Incidents become specs. Specs become fixes. The platform compounds with every feature shipped.</span>
     </div>
   </div>
   <aside class="notes">Step 5 is what makes this a platform, not a tool. Once production feeds back into the spec chain, Archon Dev becomes the operating system for the entire product lifecycle — indefinitely. We're not promising it's coming next quarter — we're proving the architecture that makes it possible. The spec chain is the foundation everything else builds on.</aside>

@@ -13,20 +13,18 @@ This file is the single source of truth for every claim that appears across the 
 
 ## Agent status
 
-| Agent | Status | Phase |
-|---|---|---|
-| Concierge | ✅ Live | Entry point |
-| PM agent | ✅ Live | Phase 1 — Product Spec |
-| Design agent | ✅ Live | Phase 2 — Design Spec |
-| Architect agent | ✅ Live | Phase 3 — Engineering Spec |
-| PGM agent | 🔜 Next | Phase 4 — Work Items |
-| Backend agent | ⬜ Planned | Phase 4 — Code |
-| Frontend agent | ⬜ Planned | Phase 4 — Code |
-| QA agent | ⬜ Planned | Phase 5 — QA |
-| Spec validator | ⬜ Planned | Cross-cutting |
-| Eng-mgr agent | ⬜ Planned | Cross-cutting |
+| Agent | Status | Phase | Role |
+|---|---|---|---|
+| Concierge | ✅ Live | Entry point | Routes humans to the right feature/agent |
+| PM agent | ✅ Live | Phase 1 — Product Spec | Owns the product spec |
+| Design agent | ✅ Live | Phase 2 — Design Spec | Owns the design spec |
+| Architect agent | ✅ Live | Phase 3 — Engineering Spec | Owns the engineering spec |
+| Tech Lead agent | ⬜ Planned | Phase 4 — Work Items | Takes engineering spec, breaks into work items, distributes to coder agents |
+| Coder agent | ⬜ Planned | Phase 4 — Code | Single agent that takes on FE / BE / other roles dynamically |
+| QA agent | ⬜ Planned | Phase 5 — QA | Validates implementation against spec |
+| Spec Validator | ⬜ Planned | Cross-cutting | End-to-end spec graph integrity across features and phases |
 
-**Headline count:** 4 live · 6 planned
+**Headline count:** 4 live · 4 planned
 
 ---
 
@@ -48,10 +46,10 @@ This file is the single source of truth for every claim that appears across the 
 | Step | Description | Status |
 |---|---|---|
 | Step 1 | Full specification workflow (PM + Design + Architect) | ✅ Complete |
-| Step 2 | Work item generation (PGM agent) | 🔜 Next |
-| Step 3 | Autonomous code generation (Backend + Frontend + QA) | ⬜ Planned |
+| Step 2 | Work item distribution (Tech Lead agent) | 🔜 Next |
+| Step 3 | Autonomous code generation (Coder + QA) | ⬜ Planned |
 | Step 4 | Spec to production, zero humans required (agentic-cicd) | ⬜ Planned |
-| Step 5 | Closed loop — production bugs re-enter as specs | ⬜ Planned |
+| Step 5 | Closed loop — production incidents enter as PM input | ⬜ Planned |
 
 ---
 

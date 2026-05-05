@@ -890,33 +890,12 @@ ${brief}`
     const designIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureKey(featureName), userId) : false
     console.log(`[ROUTER] branch=confirmed-design feature=${featureName}${slashOverrideReadOnly ? " (read-only slash override)" : ""}`)
 
-    // Block A6 — V2 designer runner shadow mode (per ~/.claude/plans/rate-this-plan-zesty-tiger.md).
-    // DESIGN-REVIEWED: shadow invocation per Principle 12 — same shape as the architect shadow above.
-    // (1) Scales: O(1) classifier-only, no LLM, no spec fetches in this minimal phase. (2) Owned by
-    // runtime/agents/shadow.ts; this site is just the call point. (3) Cross-cutting: PM shadow in A7
-    // will reuse this pattern. Logs `[V2-DESIGNER-SHADOW]` per designer-bound message; 48h zero-
-    // divergence burn-in (MT-5) is the manual-test gate that gates A7.
-    shadowDesignerV2({
-      featureName: getFeatureName(channelName),
-      userMessage,
-      intent: {
-        isAffirmative: isAffirmative(userMessage),
-        isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
-        isStateQuery:  false, // LLM-classified inside legacy; shadow stays cheap and degrades to false
-        isOffTopic:    false, // same as above
-      },
-      state: {
-        hasPendingApproval: !!getPendingApproval(featureKey(featureName)),
-        readOnly:           designIsOrientation || slashOverrideReadOnly,
-      },
-      reportInput: {
-        callingAgent:     "ux-design",
-        featureName:      getFeatureName(channelName),
-        ownSpec:          { specType: "design", status: "missing", findingCount: 0 }, // stub; cheap shadow
-        upstreamAudits:   [],
-        activeEscalation: null,
-      },
-    })
+    // B25 — V2 designer shadow now invoked agent-internally inside runDesignAgent (or analogous
+    // legacy designer-running path), so this dispatcher-level call is removed to avoid double
+    // shadow log per natural-phase invocation. Agent-internal shadow captures every designer-bound
+    // path (natural + escalation + slash-override readOnly), which the dispatcher-level call
+    // missed on escalation paths. Pre-B25 design comment (DESIGN-REVIEWED, Principle 12) is
+    // preserved in git history; the shadow contract and logged format are unchanged.
 
     await withThinking({ client, channelId, threadTs, agent: "UX Designer", run: async (update) => {
       await handleDesignPhase({ channelId, threadTs, channelName, featureName: getFeatureName(channelName), userMessage, userImages, client, update, readOnly: designIsOrientation || slashOverrideReadOnly })
@@ -1146,36 +1125,13 @@ ${archPendingEscalation.question}`
     // The orientation key is also computed inside runArchitectAgent for notice suppression.
     const archIsOrientation = (userId && userId.length > 0) ? !isUserOriented(featureKey(featureName), userId) : false
 
-    // Block A5 — V2 architect runner shadow mode (per ~/.claude/plans/rate-this-plan-zesty-tiger.md).
-    // DESIGN-REVIEWED: shadow invocation per Principle 12 — (1) scales because shadow is fire-and-forget
-    // O(1) classifier work that never calls the LLM or fetches specs in this minimal phase; (2) owned by
-    // runtime/agents/shadow.ts exclusively, this site is just the call point; (3) cross-cutting V2-runner
-    // observation pattern that designer + PM shadows in A6/A7 will reuse via the same call shape.
-    // Subsequent A5 commits expand shadow to log proposed deterministic text + LLM-call shape; this
-    // initial commit logs only the classifier's branch decision so divergences from legacy can be
-    // observed in the 48h burn-in window before A6 starts.
-    shadowArchitectV2({
-      featureName: getFeatureName(channelName),
-      userMessage,
-      intent: {
-        isAffirmative: isAffirmative(userMessage),
-        isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
-        isStateQuery:  false, // LLM-classified inside legacy; shadow stays cheap and degrades to false
-        isOffTopic:    false, // same as above
-      },
-      state: {
-        hasPendingApproval:       !!getPendingApproval(featureKey(featureName)),
-        hasPendingDecisionReview: !!getPendingDecisionReview(featureKey(featureName)),
-        readOnly:                 archIsOrientation || slashOverrideReadOnly,
-      },
-      reportInput: {
-        callingAgent:     "architect",
-        featureName:      getFeatureName(channelName),
-        ownSpec:          { specType: "engineering", status: "missing", findingCount: 0 }, // stub; cheap shadow
-        upstreamAudits:   [],
-        activeEscalation: null,
-      },
-    })
+    // B25 — V2 architect shadow now invoked agent-internally inside runArchitectAgent, so
+    // this dispatcher-level call is removed to avoid double shadow log per natural-phase
+    // invocation. Agent-internal shadow captures every architect-bound path (natural +
+    // escalation-engaged + continuation + orientation-followup), which the dispatcher-level
+    // call missed for escalation/continuation paths. Pre-B25 design comment (DESIGN-REVIEWED,
+    // Principle 12 + Block A5) is preserved in git history; the shadow contract and logged
+    // format are unchanged.
 
     await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
       await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage, userImages, client, update, userId, readOnly: archIsOrientation || slashOverrideReadOnly })
@@ -1196,34 +1152,12 @@ ${archPendingEscalation.question}`
     // No phase-advance checks needed — stale state was corrected at the top.
     console.log(`[ROUTER] branch=confirmed-pm feature=${featureName}${slashOverrideReadOnly ? " (read-only slash override)" : ""}`)
 
-    // Block A7 — V2 PM runner shadow mode (per ~/.claude/plans/rate-this-plan-zesty-tiger.md).
-    // DESIGN-REVIEWED: shadow invocation per Principle 12 — same shape as the architect/designer
-    // shadows above. (1) Scales: O(1) classifier-only, no LLM, no spec fetches. (2) Owned by
-    // runtime/agents/shadow.ts; this site is just the call point. (3) Cross-cutting: completes
-    // the V2-runner observation pattern across PM/designer/architect; future Coder/Reviewer
-    // agents will reuse this shape via the M1 scaffold. Logs `[V2-PM-SHADOW]` per PM-bound
-    // message; 48h zero-divergence burn-in (MT-6) is the manual-test gate.
-    shadowPmV2({
-      featureName: getFeatureName(channelName),
-      userMessage,
-      intent: {
-        isAffirmative: isAffirmative(userMessage),
-        isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
-        isStateQuery:  false, // LLM-classified inside legacy; shadow stays cheap and degrades to false
-        isOffTopic:    false, // same as above
-      },
-      state: {
-        hasPendingApproval: !!getPendingApproval(featureKey(featureName)),
-        readOnly:           slashOverrideReadOnly,
-      },
-      reportInput: {
-        callingAgent:     "pm",
-        featureName:      getFeatureName(channelName),
-        ownSpec:          { specType: "product", status: "missing", findingCount: 0 }, // stub; cheap shadow
-        upstreamAudits:   [],  // PM is head of chain — always empty
-        activeEscalation: null,
-      },
-    })
+    // B25 — V2 PM shadow now invoked agent-internally inside runPmAgent, so this dispatcher-
+    // level call is removed to avoid double shadow log per natural-phase invocation. Agent-
+    // internal shadow captures every PM-bound path (natural + escalation-engaged via
+    // architect→PM or design→PM + enforcement re-runs + continuation), which the dispatcher-
+    // level call missed for escalation/enforcement paths. Pre-B25 design comment
+    // (DESIGN-REVIEWED, Principle 12 + Block A7) preserved in git history.
 
     await withThinking({ client, channelId, threadTs, agent: "Product Manager", run: async (update) => {
       await runPmAgent({ channelName, channelId, threadTs, userMessage, userImages, client, update, readOnly: slashOverrideReadOnly })
@@ -1301,6 +1235,32 @@ async function runPmAgent(params: {
 }): Promise<void> {
   const { channelName, channelId, threadTs, userMessage, userImages, client, update, routingNote, readOnly, approvedSpecContext, toolCallsOut: callerToolCallsOut } = params
   const featureName = getFeatureName(channelName)
+
+  // B25 — agent-internal shadow invocation. Captures every PM-bound code path
+  // (natural-phase, escalation-engaged via architect→PM or design→PM, enforcement re-runs,
+  // continuation flows). See runArchitectAgent for the full B25 rationale.
+  shadowPmV2({
+    featureName,
+    userMessage,
+    intent: {
+      isAffirmative: isAffirmative(userMessage),
+      isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
+      isStateQuery:  false, // documented stub artifact (SYSTEM_ARCHITECTURE.md L307/311/315)
+      isOffTopic:    false,
+    },
+    state: {
+      hasPendingApproval:       !!getPendingApproval(featureKey(featureName)),
+      hasPendingDecisionReview: !!getPendingDecisionReview(featureKey(featureName)),
+      readOnly:                 !!readOnly,
+    },
+    reportInput: {
+      callingAgent:     "pm",
+      featureName,
+      ownSpec:          { specType: "product", status: "missing", findingCount: 0 }, // stub; cheap shadow
+      upstreamAudits:   [],
+      activeEscalation: null,
+    },
+  })
 
   // Pending spec approval — check before anything else
   const pendingApproval = getPendingApproval(featureKey(featureName))
@@ -1442,6 +1402,32 @@ async function runDesignAgent(params: {
   readOnly?: boolean
 }): Promise<void> {
   const { channelName, channelId, threadTs, featureName, userMessage, userImages, client, update, routingNote, readOnly } = params
+
+  // B25 — agent-internal shadow invocation. Captures every designer-bound code path
+  // (natural-phase, escalation-engaged via architect→designer, slash-override readOnly).
+  // See runArchitectAgent for the full B25 rationale.
+  shadowDesignerV2({
+    featureName,
+    userMessage,
+    intent: {
+      isAffirmative: isAffirmative(userMessage),
+      isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
+      isStateQuery:  false, // documented stub artifact (SYSTEM_ARCHITECTURE.md L307/311/315)
+      isOffTopic:    false,
+    },
+    state: {
+      hasPendingApproval:       !!getPendingApproval(featureKey(featureName)),
+      hasPendingDecisionReview: !!getPendingDecisionReview(featureKey(featureName)),
+      readOnly:                 !!readOnly,
+    },
+    reportInput: {
+      callingAgent:     "design",
+      featureName,
+      ownSpec:          { specType: "design", status: "missing", findingCount: 0 }, // stub; cheap shadow
+      upstreamAudits:   [],
+      activeEscalation: null,
+    },
+  })
 
   // Pending spec approval — check before fast paths
   const pendingDesignApproval = getPendingApproval(featureKey(featureName))
@@ -2749,6 +2735,36 @@ async function runArchitectAgent(params: {
   userId?: string
 }): Promise<void> {
   const { channelId, threadTs, featureName, userMessage, userImages, update, routingNote, readOnly, userId } = params
+
+  // B25 — agent-internal shadow invocation. Captures every architect-bound code path
+  // (natural-phase, escalation-engaged, continuation, orientation-followup) with a single
+  // shadow log line per invocation. Pre-B25, shadow only fired at the natural-phase
+  // dispatcher site (line 1157), missing 6+ escalation/continuation paths — Step 2a
+  // verification observation #15. Per Principle 15 cross-agent parity, runDesignAgent
+  // and runPmAgent get the same agent-internal shadow at their entry. Shadow is
+  // fire-and-forget per the existing contract; never throws, never blocks.
+  shadowArchitectV2({
+    featureName,
+    userMessage,
+    intent: {
+      isAffirmative: isAffirmative(userMessage),
+      isCheckIn:     CHECK_IN_RE.test(userMessage.trim()),
+      isStateQuery:  false, // documented stub artifact (SYSTEM_ARCHITECTURE.md L307/311/315); F1 thin V2 dispatcher will compute correctly post-cutover
+      isOffTopic:    false,
+    },
+    state: {
+      hasPendingApproval:       !!getPendingApproval(featureKey(featureName)),
+      hasPendingDecisionReview: !!getPendingDecisionReview(featureKey(featureName)),
+      readOnly:                 !!readOnly,
+    },
+    reportInput: {
+      callingAgent:     "architect",
+      featureName,
+      ownSpec:          { specType: "engineering", status: "missing", findingCount: 0 }, // stub; cheap shadow
+      upstreamAudits:   [],
+      activeEscalation: null,
+    },
+  })
 
   // Upstream readiness: informational only — findings injected into agent context via
   // always-on upstream audit (below). Blocking gates apply at finalization time (Principle 14).

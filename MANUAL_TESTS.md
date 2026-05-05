@@ -571,6 +571,35 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-30 — V2 shadow fires on escalation/continuation paths (B25; Step 2a closure)
+
+**Why this can't be automated (fully):** integration scenarios in `tests/integration/workflows.test.ts` (N93 + N94 + Scenario 4 + Scenario N42 etc.) cover the wiring of agent-internal shadow with mocked dependencies. This MT verifies the production wiring fires `[V2-PM-SHADOW]` and `[V2-DESIGNER-SHADOW]` log lines during real escalation flows — the paths that pre-B25 missed entirely (Step 2a verification observation #15).
+
+**Pre-flight:** bot restarted with the B25 commit on main (codeMarker matches HEAD); G6 already shipped (so `[OUTBOUND]` lines are also visible).
+
+**Setup:** `#feature-onboarding` (or any feature in engineering-in-progress phase with upstream PM gaps so an escalation will fire).
+
+**Actions:**
+1. **Architect → PM escalation:** in `#feature-onboarding`, drive a substantive architect turn (`review the engineering spec for any gaps`). Architect detects PM gap (the existing "immediately" finding works), surfaces escalation, posts queue prompt.
+2. **Confirm escalation:** type `yes`. PM runs in escalation-engaged readOnly mode and produces a recommendation.
+3. **Inspect logs** for `[V2-PM-SHADOW]` lines from the PM-in-escalation invocation:
+   ```
+   grep "\[V2-PM-SHADOW\]" logs/bot-$(date +%Y-%m-%d).log | tail -10
+   ```
+
+**Expected outcome:**
+- At LEAST 1 `[V2-PM-SHADOW]` log line appears AFTER the `yes` confirmation (the PM-in-escalation invocation).
+- Pre-B25, this would have been ZERO (escalation paths bypassed the dispatcher-level shadow).
+- The shadow line shows `branch=normal-agent-turn` or `branch=escalation-engaged` depending on V2's classification.
+- No `[V2-PM-SHADOW-ERROR]` lines.
+
+**Failure signatures:**
+- Zero `[V2-PM-SHADOW]` lines after `yes` → agent-internal shadow not firing in `runPmAgent`; check the B25 wiring at the top of `runPmAgent` in `interfaces/slack/handlers/message.ts`.
+- `[V2-PM-SHADOW-ERROR]` lines → shadow's classifier or `buildReadinessReport` threw on the escalation-mode input shape; debug via the error message.
+- Doubled `[V2-PM-SHADOW]` lines per single PM invocation → both the agent-internal AND a leftover dispatcher-level shadow are firing; B25 commit should have removed the dispatcher-level call.
+
+---
+
 ### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update call (G6; Step 2a closure)
 
 **Why this can't be automated (fully):** the unit tests verify `logOutbound` format + `instrumentSlackClient` mutates the SDK methods correctly. But the actual production wiring depends on Bolt's `app.client` being the same WebClient instance every event handler receives. That assumption can only be verified by booting the bot against real Slack and observing whether `[OUTBOUND]` log lines appear for messages emitted from EVERY code path — including fast-path branches (hold-pending-escalation, post-confirm notifications, splitForSlack continuation messages) that don't go through `appendMessage`.

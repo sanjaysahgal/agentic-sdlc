@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-30 — V2 shadow fires on escalation/continuation paths (B25; closes Step 2a shadow-coverage gap)
+
+- Added by commit: `<this commit>` (B25 — V2 shadow coverage for escalation paths)
+- Why spot-check (not blocking): integration scenarios cover the wiring with mocks; this MT verifies real Slack actually emits `[V2-PM-SHADOW]` / `[V2-DESIGNER-SHADOW]` log lines during a real escalation flow (the paths that pre-B25 missed).
+- Run opportunistically: after the B25 commit lands and you restart the bot. Drive an architect→PM escalation through to PM response. ~5 min.
+- Full scenario: see `MANUAL_TESTS.md` MT-30.
+
 ### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update (G6; closes Step 2a operator-inspection gap)
 
 - Added by commit: `<this commit>` (G6 — outbound Slack message logging)

@@ -9947,11 +9947,15 @@ describe("Scenario N93 — V2 architect runner shadow logs alongside legacy", ()
   })
 
   it("shadow runs even when the legacy handler hits the orientation auto-continue path (two architect runs, two shadow lines)", async () => {
-    // Fresh user (not in orientedUsers) → legacy runs orientation pass + auto-continue.
-    // Shadow runs once at the architect-branch entry point (before withThinking),
-    // so we expect exactly ONE shadow line per inbound user message — auto-continue
-    // runs runArchitectAgent again but does NOT re-enter the architect-branch
-    // wiring point.
+    // B25 — shadow is now invoked agent-internally at the top of runArchitectAgent,
+    // so it fires ONCE per agent invocation regardless of caller. The orientation
+    // auto-continue path runs runArchitectAgent twice (orientation pass + full-context
+    // follow-up), so this scenario produces TWO [V2-ARCHITECT-SHADOW] log lines for
+    // a single inbound user message. Pre-B25, shadow fired at the dispatcher level
+    // (single call point before withThinking) and produced exactly one line per
+    // inbound — but that design missed escalation/continuation paths entirely
+    // (Step 2a verification observation #15). The doubled log line in this corner
+    // case is the expected price of complete coverage.
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
 
     mockGetContent.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
@@ -9968,7 +9972,8 @@ describe("Scenario N93 — V2 architect runner shadow logs alongside legacy", ()
       .map((call) => String(call[0] ?? ""))
       .filter((line) => line.includes("[V2-ARCHITECT-SHADOW]"))
 
-    expect(shadowLines).toHaveLength(1)
+    // B25: expect 2 lines — orientation pass + auto-continue full-context pass.
+    expect(shadowLines).toHaveLength(2)
 
     logSpy.mockRestore()
   })
@@ -10043,7 +10048,13 @@ describe("Scenario N94 — V2 designer runner shadow logs alongside legacy", () 
     logSpy.mockRestore()
   })
 
-  it("shadow runs even when the legacy handler hits the orientation auto-continue path (one shadow line per inbound user message)", async () => {
+  it("shadow runs even when the legacy handler hits the orientation auto-continue path (two designer runs, two shadow lines)", async () => {
+    // B25 — shadow is now invoked agent-internally inside the designer-running path
+    // (handleDesignPhase, which is called twice in the orientation auto-continue case).
+    // Pre-B25, shadow fired at the dispatcher level once per inbound; post-B25, it
+    // fires once per designer invocation, so the auto-continue case produces TWO lines.
+    // Same B25 rationale as the architect Scenario N93 above: complete coverage of
+    // escalation/continuation paths is more important than per-inbound counting.
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
 
     mockDesignInProgressState()
@@ -10059,7 +10070,8 @@ describe("Scenario N94 — V2 designer runner shadow logs alongside legacy", () 
       .map((call) => String(call[0] ?? ""))
       .filter((line) => line.includes("[V2-DESIGNER-SHADOW]"))
 
-    expect(shadowLines).toHaveLength(1)
+    // B25: expect 2 lines — orientation pass + auto-continue full-context pass.
+    expect(shadowLines).toHaveLength(2)
 
     logSpy.mockRestore()
   })
