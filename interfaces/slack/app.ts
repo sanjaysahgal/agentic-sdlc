@@ -7,6 +7,7 @@ import { registerReactionHandlers } from "./handlers/reactions"
 import { registerSlashCommands } from "./handlers/commands"
 import { UserImage } from "../../runtime/claude-client"
 import { threadKey } from "../../runtime/routing/types"
+import { instrumentSlackClient } from "../../runtime/slack-output"
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -14,6 +15,15 @@ const app = new App({
   socketMode: true,
   appToken: process.env.SLACK_APP_TOKEN,
 })
+
+// G6 — instrument the Slack WebClient so every chat.postMessage / chat.update
+// emits a structured [OUTBOUND] log line with full content. Required for MT
+// inspection (Step 6 onboarding walk + Step 7 cross-surface consistency
+// fundamentally depend on operators being able to verify "what did the user
+// see?" from logs alone, without operator pastes). Bolt's event handlers
+// receive the same `app.client` instance, so instrumenting once here covers
+// every code path.
+instrumentSlackClient(app.client)
 
 // Welcome message when a feature- channel is created
 app.event("channel_created", async ({ event, client }) => {

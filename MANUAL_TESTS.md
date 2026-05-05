@@ -571,6 +571,41 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update call (G6; Step 2a closure)
+
+**Why this can't be automated (fully):** the unit tests verify `logOutbound` format + `instrumentSlackClient` mutates the SDK methods correctly. But the actual production wiring depends on Bolt's `app.client` being the same WebClient instance every event handler receives. That assumption can only be verified by booting the bot against real Slack and observing whether `[OUTBOUND]` log lines appear for messages emitted from EVERY code path — including fast-path branches (hold-pending-escalation, post-confirm notifications, splitForSlack continuation messages) that don't go through `appendMessage`.
+
+**Pre-flight:** bot restarted with the G6 commit on main; `[BOOT]` codeMarker matches HEAD; `.conversation-state.json` is whatever state you have.
+
+**Setup:** any feature channel (e.g., `#feature-onboarding`) where bot will respond.
+
+**Actions (drive 4 different message types — exercises both `postMessage` and `update`, both fast-path and LLM-orchestrated):**
+1. **State-query (fast-path):** type `hi where are we` in `#feature-onboarding`. Bot responds with state-query summary (no LLM).
+2. **Substantive turn (LLM, with `chat.update` from "thinking..." placeholder):** type `review the spec for any gaps` in same channel. Bot streams via `chat.update` then final text via `chat.update`.
+3. **Concierge in general channel:** type `hi` in `#all-${PRODUCT_NAME}`. Bot responds with orientation.
+4. **Slash command in general channel:** type `/pm what are the constraints?` in `#all-${PRODUCT_NAME}`. Bot responds with PM persona.
+
+After all 4 messages, run:
+```
+grep -c "^\[OUTBOUND\]" logs/bot-$(date +%Y-%m-%d).log
+```
+
+**Expected outcome:**
+- Each of the 4 driven messages produces AT LEAST 1 `[OUTBOUND]` log line (more if the bot's response is split into multiple Slack messages via `splitForSlack` or uses `chat.update` for the "thinking..." placeholder + final text).
+- Each `[OUTBOUND]` line shows: `method=postMessage` or `method=update`, channel ID, thread_ts (or `—`), `text_chars=N`, and the FULL message body on the next line.
+- No `truncated=true` flag for normal responses (only fires for >100k char outputs which Slack itself rejects anyway).
+- Total `grep -c "^\[OUTBOUND\]"` ≥ 4 (likely much higher due to the placeholder + update pattern in `thinking.ts`).
+
+**Failure signatures:**
+- Zero `[OUTBOUND]` lines → instrumentation not wired; check `instrumentSlackClient(app.client)` was called at app boot AND `app.client` is the WebClient that handlers receive (Bolt API).
+- `[OUTBOUND]` for `postMessage` but not `update` (or vice versa) → only one method was instrumented; check `runtime/slack-output.ts` covers both.
+- Some messages are logged but NOT the fast-path ones (hold-pending-escalation, post-PM notification) → instrumentation is at handler-level instead of client-level; re-check that `app.client` is shared.
+- Log lines exist but bodies truncated at 500 chars → instrumentation is using the legacy `[AGENT-RESPONSE]` truncation path instead of the new `logOutbound`.
+
+**Note:** this MT closes the operator-paste-dependent inspection gap. After it passes, all subsequent MTs (Step 6 walk + Step 7 cross-surface matrix) can be inspected from logs alone — operator pastes become a cross-check, not a primary source.
+
+---
+
 ### MT-28 — Pre-recommendation audit structural enforcement fires correctly (B19; closes Step 1)
 
 **Why this can't be automated (fully):** the script (Layer 1) IS automated and deterministic — covered by direct invocation. The pre-edit hook (Layer 2) requires observing actual hook-fire behavior in a Claude Code session. The pre-commit gate (Layer 3) requires a synthetic git commit attempt. Mostly deterministic verification + one observational check. Passes the "behaviors automated tests provably cannot exercise" tier because the hooks operate at the runtime / IDE boundary.

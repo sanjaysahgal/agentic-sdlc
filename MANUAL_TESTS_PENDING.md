@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update (G6; closes Step 2a operator-inspection gap)
+
+- Added by commit: `<this commit>` (G6 — outbound Slack message logging)
+- Why spot-check (not blocking): unit tests cover the logging primitive + SDK mutation logic; this MT verifies the production wiring (Bolt's `app.client` is the same instance handlers receive) which can only be confirmed in real Slack.
+- Run opportunistically: after the G6 commit lands and you restart the bot. Drive 4 message types (per MT-29 scenario). Each produces ≥ 1 `[OUTBOUND]` log line. ~5 min.
+- Full scenario: see `MANUAL_TESTS.md` MT-29.
+
 ### MT-28 — Pre-recommendation audit structural enforcement fires correctly (B19; closes Step 1)
 
 - Added by commit: `<this commit>` (B19 implementation + Step 1 closure)
