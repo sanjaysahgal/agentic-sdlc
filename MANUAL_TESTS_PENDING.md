@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-31 — Hold-pending-escalation message uses correct phase label (B20; closes Step 2a phase-label gap)
+
+- Added by commit: `<this commit>` (B20 — wrong-phase label fix)
+- Why spot-check (not blocking): regression test pins the mapping at PR time; this MT verifies the rendered message in real Slack matches.
+- Run opportunistically: after the B20 commit lands and bot is restarted. Set up an architect→PM escalation, send a non-affirmative reply, eyeball the bot's hold-message text. ~3 min.
+- Full scenario: see `MANUAL_TESTS.md` MT-31.
+
 ### MT-30 — V2 shadow fires on escalation/continuation paths (B25; closes Step 2a shadow-coverage gap)
 
 - Added by commit: `<this commit>` (B25 — V2 shadow coverage for escalation paths)

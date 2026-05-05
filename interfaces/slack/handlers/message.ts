@@ -493,9 +493,20 @@ export async function handleFeatureChannelMessage(params: {
   if (universalPending && !isAffirmative(userMessage)) {
     const holderName = universalPending.targetAgent === "design"
       ? "Designer" : universalPending.targetAgent === "architect" ? "Architect" : "PM"
-    const originPhase = universalPending.targetAgent === "design"
-      ? "Engineering" : "Design"
-    console.log(`[ROUTER] universal-guard: pending escalation hold — targetAgent=${universalPending.targetAgent}`)
+    // B20 — per Step 2a verification observation #12: the prior derivation
+    // of originPhase used targetAgent and only handled 2 cases (design vs
+    // anything-else, defaulting to "Design"). Result: architect→PM escalation
+    // (targetAgent=pm, originAgent=architect) was labeled "Design is paused"
+    // in the engineering-phase channel — wrong-phase label, user-visible
+    // Principle 17 violation. Fix: derive originPhase from originAgent
+    // (which the bug #10 fix already added to pendingEscalation, see Guard 2
+    // below). Mapping: pm→Product, ux-design→Design, architect→Engineering.
+    const originPhase =
+      universalPending.originAgent === "pm"        ? "Product"     :
+      universalPending.originAgent === "ux-design" ? "Design"      :
+      universalPending.originAgent === "architect" ? "Engineering" :
+      "Design" // defensive fallback for any future agent that hasn't been mapped yet
+    console.log(`[ROUTER] universal-guard: pending escalation hold — originAgent=${universalPending.originAgent} targetAgent=${universalPending.targetAgent} originPhase=${originPhase}`)
     console.log(`[ROUTER] branch=hold-pending-escalation feature=${featureName} targetAgent=${universalPending.targetAgent}`)
     await client.chat.postMessage({
       channel: channelId, thread_ts: threadTs,

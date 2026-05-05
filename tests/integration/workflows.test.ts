@@ -9067,6 +9067,72 @@ describe("Scenario N43 — /design during pending escalation shows hold message 
   })
 })
 
+// ─── Scenario B20 — hold-pending-escalation message uses correct phase label ──
+//
+// Step 2a verification observation #12: when a queued escalation has
+// originAgent=architect (architect→PM upstream-revision flow), the hold
+// message must read "Engineering is paused" — NOT "Design is paused" (the
+// pre-B20 buggy default for any non-design target). This scenario covers
+// all three originAgent → originPhase mappings end-to-end through the
+// dispatcher's universal-guard.
+
+describe("Scenario B20 — hold-pending-escalation message phase label derives from originAgent", () => {
+  const THREAD = "workflow-b20"
+
+  beforeEach(() => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"))
+  })
+
+  it("originAgent=architect → 'Engineering is paused' (the canonical Step 2a observation #12 case)", async () => {
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", originAgent: "architect", question: "AC#27 uses vague timing", designContext: "" })
+
+    const params = makeParams(THREAD, "feature-onboarding", "still here?")
+    await handleFeatureChannelMessage(params)
+
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const holdMsg = postCalls.find((c: any) => typeof c[0]?.text === "string" && c[0].text.includes("is paused"))
+    expect(holdMsg).toBeDefined()
+    expect(holdMsg![0].text).toMatch(/^Engineering is paused/)
+    // Pre-B20 this would have started with "Design is paused" — the regression
+    // boundary we never want to cross again.
+    expect(holdMsg![0].text).not.toMatch(/^Design is paused/)
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+  })
+
+  it("originAgent=ux-design → 'Design is paused' (designer→PM escalation, the natural design phase)", async () => {
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", originAgent: "ux-design", question: "Color palette gap", designContext: "" })
+
+    const params = makeParams(THREAD, "feature-onboarding", "let me think")
+    await handleFeatureChannelMessage(params)
+
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const holdMsg = postCalls.find((c: any) => typeof c[0]?.text === "string" && c[0].text.includes("is paused"))
+    expect(holdMsg).toBeDefined()
+    expect(holdMsg![0].text).toMatch(/^Design is paused/)
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+  })
+
+  it("originAgent=pm → 'Product is paused' (PM-originated escalation, e.g. PM→architect for tech feasibility)", async () => {
+    // Forward-looking case — PM-originated escalations don't exist in current product flow,
+    // but the mapping must be defined and correct for when they do.
+    setPendingEscalation(featureKey("onboarding"), { targetAgent: "architect", originAgent: "pm", question: "Tech feasibility unknown", designContext: "" })
+
+    const params = makeParams(THREAD, "feature-onboarding", "give me a moment")
+    await handleFeatureChannelMessage(params)
+
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const holdMsg = postCalls.find((c: any) => typeof c[0]?.text === "string" && c[0].text.includes("is paused"))
+    expect(holdMsg).toBeDefined()
+    expect(holdMsg![0].text).toMatch(/^Product is paused/)
+    expect(mockAnthropicCreate).not.toHaveBeenCalled()
+  })
+})
+
 // ─── Scenario N44: /pm in design-phase → PM runs read-only, no branch created ──
 //
 // When the feature is in design phase and the user addresses the PM via @pm:,

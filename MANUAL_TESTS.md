@@ -571,6 +571,31 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-31 — Hold-pending-escalation message uses correct phase label (B20; Step 2a closure)
+
+**Why this can't be automated (fully):** the regression test (`tests/regression/hold-pending-escalation-phase.test.ts`) AST-pins the source mapping; this MT verifies the actual rendered message in Slack carries the correct phase label end-to-end. Same as the `[OUTBOUND]` log line MT but focused on the specific user-visible string.
+
+**Pre-flight:** bot restarted with B20 commit on main; G6 already shipped (so `[OUTBOUND]` lines visible).
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase) with a queued architect→PM escalation already set up. Easiest setup: type `review the engineering spec for any gaps`; architect detects PM gap; queues escalation. DO NOT type `yes` next.
+
+**Actions:**
+1. Instead of typing `yes`, type any non-affirmative message in the same thread, e.g. `let me think first`.
+2. Bot fires the hold-pending-escalation guard. Read what the bot replies in Slack.
+3. Cross-check the `[OUTBOUND]` log line for the post (G6 makes this easy).
+
+**Expected outcome:**
+- Bot replies: `**Engineering** is paused — the **PM** needs to resolve a constraint: ...`
+- `[ROUTER] universal-guard:` log line shows `originAgent=architect targetAgent=pm originPhase=Engineering`.
+- The `[OUTBOUND]` log line carries the matching text.
+
+**Failure signatures:**
+- Bot replies "Design is paused" or "Product is paused" → B20 regression; the originPhase mapping reverted or the wrong agent's mapping fired. Run `npx vitest run tests/regression/hold-pending-escalation-phase.test.ts` to confirm the structural fix is still intact at HEAD.
+- For other escalation pairings: design→PM (originAgent=ux-design, targetAgent=pm) → "Product is paused" — the **target** is PM (the agent that needs to resolve), the **origin phase** is Product (PM owns the product spec). Wait — actually for design→PM, originAgent IS pm? No — originAgent is the ESCALATING agent, which for design→PM is design. The mapping is originAgent=ux-design → originPhase=Design. So for design→PM the message reads "Design is paused — the PM needs to resolve a constraint." This makes sense: design IS paused waiting for PM clarity.
+- The general principle: originPhase = the phase of the agent that ESCALATED (and is now waiting on input). holderName = the agent whose answer unblocks the escalation. Both pieces of information are user-visible and must be coherent.
+
+---
+
 ### MT-30 — V2 shadow fires on escalation/continuation paths (B25; Step 2a closure)
 
 **Why this can't be automated (fully):** integration scenarios in `tests/integration/workflows.test.ts` (N93 + N94 + Scenario 4 + Scenario N42 etc.) cover the wiring of agent-internal shadow with mocked dependencies. This MT verifies the production wiring fires `[V2-PM-SHADOW]` and `[V2-DESIGNER-SHADOW]` log lines during real escalation flows — the paths that pre-B25 missed entirely (Step 2a verification observation #15).
