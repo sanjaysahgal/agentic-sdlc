@@ -571,6 +571,41 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-32 — Visual-detail strip pass preserves product SLAs (B22; Step 2a closure)
+
+**Why this can't be automated (fully):** unit tests cover the regex narrowing + structural source assertions deterministically. This MT verifies the actual flow end-to-end in real Slack: PM recommends a product-SLA timing → Haiku patches → strip pass does NOT fire on legitimate ACs → spec on main retains all original timing thresholds.
+
+**Pre-flight:** bot restarted with B22 commit on main; G6 already shipped (so `[OUTBOUND]` lines visible; can also grep for `[ESCALATION] product spec writeback` lines).
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase) with PM-spec on main containing existing timing thresholds (e.g., "within 1 second", "60 minutes of inactivity"). The current onboarding product spec on main satisfies this.
+
+**Actions:**
+1. Drive an architect→PM escalation (`review the engineering spec for any gaps` → architect surfaces the "immediately" gap → escalation queued).
+2. Type `yes` to confirm.
+3. PM responds with a recommendation (it might say "within 200ms" or similar product SLA timing).
+4. Type `yes approved` to confirm PM's recommendation.
+5. **Watch the logs:** confirm there is NO `[ESCALATION] product spec writeback: visual details detected in patch` line. Confirm the writeback completes via `[GITHUB] saveApprovedSpec` followed by re-audit.
+6. **Inspect the actual diff on main:**
+   ```
+   cd ../${CUSTOMER_REPO}
+   git fetch origin && git log -1 --oneline main
+   git show main -- specs/features/onboarding/onboarding.product.md
+   ```
+7. Verify the diff replaced ONLY the original "immediately" gap with PM's recommendation. ALL other timing thresholds in unrelated ACs (1 second, 60 minutes, etc.) must be preserved.
+
+**Expected outcome:**
+- Strip-pass log line ABSENT.
+- GitHub diff is targeted: only the AC PM addressed is modified.
+- All pre-existing timing thresholds in unrelated ACs preserved verbatim.
+- `auditPmSpec` runs cleanly post-writeback (or at least: doesn't trigger because of timing-removal regression).
+
+**Failure signatures:**
+- `[ESCALATION] product spec writeback: visual details detected in patch ... running strip pass` line appears → B22 regression: the regex matched a product SLA in the patched spec. Run `npx vitest run tests/unit/pm-escalation-spec-writer.test.ts -t "B22"` to confirm structural fix is intact at HEAD.
+- GitHub diff modified ACs other than the one PM addressed → patcher granularity issue (B23 — separate concern), not B22. File the diff details for the holistic review.
+- Re-audit finds the original "immediately" gap STILL present → B23 / patcher issue (B23 will address; not blocking B22 verification).
+
+---
+
 ### MT-31 — Hold-pending-escalation message uses correct phase label (B20; Step 2a closure)
 
 **Why this can't be automated (fully):** the regression test (`tests/regression/hold-pending-escalation-phase.test.ts`) AST-pins the source mapping; this MT verifies the actual rendered message in Slack carries the correct phase label end-to-end. Same as the `[OUTBOUND]` log line MT but focused on the specific user-visible string.

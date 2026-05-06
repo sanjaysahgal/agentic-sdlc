@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-32 — Visual-detail strip pass preserves product SLAs (B22; closes Step 2a spec-corruption gap)
+
+- Added by commit: `<this commit>` (B22 — visual-detail strip pass scope correction)
+- Why spot-check (not blocking): unit tests cover the regex narrowing + Haiku-prompt-preservation deterministically. This MT verifies end-to-end against real Slack + real GitHub that PM-recommended product SLAs no longer trigger Haiku to remove unrelated AC timings.
+- Run opportunistically: after B22 ships AND a real architect→PM→writeback flow completes. ~10 min including GitHub diff inspection.
+- Full scenario: see `MANUAL_TESTS.md` MT-32.
+
 ### MT-31 — Hold-pending-escalation message uses correct phase label (B20; closes Step 2a phase-label gap)
 
 - Added by commit: `<this commit>` (B20 — wrong-phase label fix)

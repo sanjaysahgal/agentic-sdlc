@@ -19,17 +19,31 @@ const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
 // PM spec encodes WHAT the user experiences — not animation values, colors, or gradients.
 // These are structural signals: if any criterion in the spec contains these, it has leaked
 // design/implementation detail that Haiku was supposed to strip but didn't.
+//
+// B22 — per Step 2a verification observations #24/#25: the original timing patterns
+// (`\d+(ms|s)`) were too broad and matched legitimate product SLAs like "within 1 second",
+// "after 60 minutes of inactivity", "within 200ms of access token expiry detection on the
+// client". The strip pass then triggered Haiku to remove those product SLAs from unrelated
+// ACs — destroying acceptance criteria. The fix: timing patterns must require
+// design-vocabulary context (animation, cycle, loop, fade, transition, ease) within close
+// proximity. Pure SLA timings stay untouched. Color, opacity, gradient, glow-specifics,
+// and easing patterns remain unconditional (they're never product-level SLAs).
 const VISUAL_DETAIL_PATTERNS = [
-  /\b\d+\.?\d*\s*%.*opacit/i,          // opacity percentages: "25% opacity", "opacity 50%"
+  // ─── Unambiguous visual patterns — never product SLAs ────────────────────
+  /\b\d+\.?\d*\s*%.*opacit/i,          // opacity percentages: "25% opacity"
   /opacit.*\d+\.?\d*\s*%/i,            // opacity percentages reversed
-  /\b\d+\.?\d*\s*(ms|milliseconds?)\b/i, // animation timing in ms
-  /\b\d+\.?\d*\s*s(?:econds?)?\s+(?:over|duration|cycle|loop)/i, // "2.5 seconds over", "4 second cycle"
-  /(?:over|duration|cycle|loop)\s+\d+\.?\d*\s*s/i, // "over 2.5s"
   /#[0-9a-fA-F]{3,6}\b/,               // hex color values
   /rgba?\s*\(/i,                        // rgba/rgb color functions
-  /radial.{0,20}gradient|gradient.{0,20}radial/i, // radial gradient specifics
-  /\bglow\s+(?:radius|size|spread|color)\b/i,  // glow implementation details
-  /easing\s+function|cubic.bezier/i,   // animation easing details
+  /radial.{0,20}gradient|gradient.{0,20}radial/i, // gradient specifics
+  /\bglow\s+(?:radius|size|spread|color)\b/i,    // glow implementation details
+  /easing\s+function|cubic.bezier/i,   // animation easing curves
+
+  // ─── Animation timing — context-restricted to design vocabulary (B22) ────
+  // Timing values match ONLY when adjacent to animation/transition/cycle/fade/ease/loop.
+  // Pure product SLAs like "within 1 second" or "after 60 minutes" do NOT match.
+  /\b(?:animation|transition|fade|ease)\b.{0,40}\b\d+\.?\d*\s*(?:ms|milliseconds?|s|seconds?)\b/i,
+  /\b\d+\.?\d*\s*(?:ms|milliseconds?|s|seconds?)\s+(?:cycle|loop|fade|transition|ease|animation)\b/i,
+  /\b(?:cycle|loop|fade|transition|ease|animation)\s+(?:over\s+)?\d+\.?\d*\s*(?:ms|milliseconds?|s|seconds?)\b/i,
 ]
 
 // Fast structural check: does this spec content contain visual/animation details
@@ -48,18 +62,24 @@ async function stripVisualDetailsFromSpec(specContent: string): Promise<string> 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 4096,
-    system: `You are a product spec cleaner. Remove all visual, animation, and technical implementation details from acceptance criteria and edge cases. The PM spec describes WHAT the user experiences — not HOW it looks or is implemented.
+    system: `You are a product spec cleaner. Remove visual, animation, and technical implementation details from acceptance criteria and edge cases. The PM spec describes WHAT the user experiences — not HOW it looks or is implemented.
 
-Remove from every criterion:
+REMOVE from every criterion:
 - Specific opacity percentages (e.g. "25% → 35% opacity", "50–100% opacity")
-- Animation durations (e.g. "2.5 seconds", "4s cycle", "300ms")
 - Color values (hex, rgba, color names)
 - Gradient specifics (radial vs linear, direction, stops)
 - Glow implementation details (radius, spread, combined vs separate)
 - Easing functions (cubic-bezier, ease-in-out)
 - Pixel measurements
+- Animation durations IN ANIMATION CONTEXTS — e.g. "fade-in over 300ms", "2.5 second cycle", "4s ease-in animation". These describe HOW the UI moves, not what the user experiences.
 
-Replace with the behavior the criterion is describing, without the visual specifics. If a criterion is ONLY a visual implementation detail with no underlying user behavior, remove it entirely.
+PRESERVE — do NOT remove these (they are product-level SLAs, not animation):
+- Behavioral timing in user-experience contexts: "within 1 second of valid token receipt", "indicator disappears within 200ms of access token expiry", "session expires after 60 minutes of inactivity", "warning appears 10 minutes before expiry", "applied server-side within one request-response cycle". These ARE acceptance criteria — the PM owns the timing requirement and the user can directly perceive it.
+- Numeric thresholds in any non-animation criterion (e.g. "max 3 user interactions", "60-minute inactivity timeout", "10-minute warning window").
+
+The distinguishing test: is the timing describing a USER-PERCEPTIBLE behavioral requirement (preserve) or a UI-rendering visual detail (remove)? When in doubt, PRESERVE — destroying a product SLA is far worse than leaving an animation duration in the spec.
+
+Replace removed content with the behavior the criterion is describing, without the visual specifics. If a criterion is ONLY a visual implementation detail with no underlying user behavior, remove it entirely.
 
 Output the full spec with all sections preserved. No preamble, no explanation — output only the cleaned spec content.`,
     messages: [{ role: "user", content: specContent }],

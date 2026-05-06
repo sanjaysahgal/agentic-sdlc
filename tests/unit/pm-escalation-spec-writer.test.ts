@@ -441,3 +441,175 @@ describe("patchProductSpecWithRecommendations — post-patch visual detail audit
     expect(result).not.toContain("25% → 35%")
   })
 })
+
+// ─── B22 regression: visual-detail strip pass scope correction ──────────────
+//
+// Step 2a verification observations #24/#25: the pre-B22 VISUAL_DETAIL_PATTERNS
+// regex array matched any `Xms` / `X seconds` / `X minutes` pattern anywhere
+// in the spec. PM legitimately recommended "within 200ms of access token
+// expiry detection" → strip pass triggered → Haiku removed ALL timing values
+// across 6 unrelated ACs (catastrophic spec corruption). B22 narrows the
+// timing patterns to require design-vocabulary context (animation, cycle,
+// loop, fade, transition, ease) within close proximity. Pure product SLAs
+// stay untouched.
+
+describe("B22 — visual-detail strip pass scope correction (regression for Step 2a observation #24/#25)", () => {
+  it("does NOT trigger strip pass on PM-spec with product-SLA timing in acceptance criteria (the canonical bug case)", async () => {
+    // Spec patched with the exact pattern from Step 2a observation #24/#25:
+    // - "within 200ms of access token expiry detection" (PM's recommended SLA)
+    // - "within 1 second of valid authentication token receipt" (existing AC)
+    // - "after 60 minutes of inactivity" (existing AC)
+    // - "applied server-side within one request-response cycle" (existing AC)
+    // Pre-B22, the strip pass would have fired and Haiku would have removed
+    // ALL of these. Post-B22, none of them match the narrowed regex → no
+    // strip pass → only ONE Anthropic call (the patch), not two.
+    const SPEC_WITH_PRODUCT_SLAS = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- The logged-out indicator disappears within 1 second of valid authentication token receipt.
+- The "Not signed in" indicator reappears within 200ms of access token expiry detection on the client.
+- Unauthenticated sessions expire after 60 minutes of inactivity; timer reset is applied server-side within one request-response cycle.
+
+## Edge Cases
+- Session expiry warning appears 10 minutes before timeout.
+`
+    mockReadFile.mockResolvedValue(EXISTING_SPEC)
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: SPEC_WITH_PRODUCT_SLAS }] })
+
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // CRITICAL B22 ASSERTION: only ONE Anthropic call (the patch). If the strip
+    // pass had triggered (pre-B22 behavior on these product SLAs), there would
+    // be TWO calls. This is the structural proof that product SLAs are not
+    // misclassified as visual details.
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+
+    // The saved spec must preserve the product SLAs (they were not stripped).
+    const savedContent = mockSaveApproved.mock.calls[0][0].content
+    expect(savedContent).toContain("within 1 second")
+    expect(savedContent).toContain("within 200ms")
+    expect(savedContent).toContain("60 minutes")
+    expect(savedContent).toContain("within one request-response cycle")
+  })
+
+  it("DOES trigger strip pass on PM-spec with animation-context timing (legitimate visual detail leak)", async () => {
+    // The strip pass should still fire when timing IS in animation context —
+    // these are legitimate visual details that should not be in a PM spec.
+    const SPEC_WITH_ANIMATION_TIMING = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- The auth indicator appears with a fade-in animation over 300ms.
+- The pulsing glow uses a 2.5 second cycle.
+- The login button transitions opacity 25% → 50% on hover.
+`
+    const STRIPPED_SPEC = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- The auth indicator appears.
+- The pulsing glow is visible.
+- The login button responds to hover.
+`
+    mockReadFile.mockResolvedValue(EXISTING_SPEC)
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: SPEC_WITH_ANIMATION_TIMING }] })  // patch
+      .mockResolvedValueOnce({ content: [{ type: "text", text: STRIPPED_SPEC }] })                // strip pass
+
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // Strip pass DID fire — TWO Anthropic calls. Animation timing is correctly
+    // detected as visual detail and removed.
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it("does NOT trigger strip pass on a spec that mixes product SLAs and behavioral language (no animation context)", async () => {
+    // The most realistic case: spec has timing values but ALL are product SLAs,
+    // none in animation context. Pre-B22 this would falsely trigger the strip
+    // pass on every "X minutes" / "X seconds" pattern.
+    const SPEC_PURE_BEHAVIORAL = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- New users sign up within 30 seconds of first interaction.
+- Returning users see their dashboard within 2 seconds of authentication.
+- Idle session times out after 15 minutes; user receives warning 5 minutes before.
+- Server-side validation completes in under 500ms per request.
+`
+    mockReadFile.mockResolvedValue(EXISTING_SPEC)
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: SPEC_PURE_BEHAVIORAL }] })
+
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // No strip pass — these are all product SLAs, no animation context.
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+    const savedContent = mockSaveApproved.mock.calls[0][0].content
+    expect(savedContent).toContain("30 seconds")
+    expect(savedContent).toContain("2 seconds")
+    expect(savedContent).toContain("15 minutes")
+    expect(savedContent).toContain("under 500ms")
+  })
+
+  it("DOES trigger strip pass on color/opacity/gradient/glow patterns (unconditional visual signals)", async () => {
+    // Unambiguous visual patterns must always trigger — the B22 fix only
+    // narrows TIMING patterns; color/opacity/gradient/glow/easing remain
+    // unconditional.
+    const SPEC_WITH_VISUAL = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- Background is #0A0E27 with 25% opacity.
+- Accent uses a radial gradient from violet to teal.
+- Login button has a 4px glow radius.
+`
+    const STRIPPED_VISUAL = `# Onboarding Product Spec
+
+## Acceptance Criteria
+- Background appears.
+- Accent is visible.
+- Login button is highlighted.
+`
+    mockReadFile.mockResolvedValue(EXISTING_SPEC)
+    mockCreate
+      .mockResolvedValueOnce({ content: [{ type: "text", text: SPEC_WITH_VISUAL }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: STRIPPED_VISUAL }] })
+
+    await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: RECOMMENDATIONS,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it("structural: source contains the B22 narrowed timing patterns (animation/transition/fade/ease/cycle context required)", () => {
+    const fs = require("node:fs") as typeof import("node:fs")
+    const path = require("node:path") as typeof import("node:path")
+    const source = fs.readFileSync(path.resolve(__dirname, "..", "..", "runtime/pm-escalation-spec-writer.ts"), "utf8")
+
+    // The buggy pre-B22 broad timing pattern must be GONE.
+    const buggyBroadMs = /\\b\\\\d\+\\\\\.\?\\\\d\*\\\\s\*\(ms\|milliseconds\?\)\\\\b\/i,/
+    expect(source).not.toMatch(buggyBroadMs)
+
+    // The new narrow patterns must be present (each requires animation-context vocabulary).
+    expect(source).toContain("(?:animation|transition|fade|ease)")
+    expect(source).toContain("(?:cycle|loop|fade|transition|ease|animation)")
+
+    // The Haiku strip-prompt must explicitly preserve product SLAs.
+    expect(source).toContain("PRESERVE — do NOT remove these (they are product-level SLAs, not animation):")
+    expect(source).toContain("When in doubt, PRESERVE")
+  })
+})
