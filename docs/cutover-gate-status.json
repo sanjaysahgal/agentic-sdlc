@@ -221,6 +221,61 @@
       "m0_required": false
     },
     {
+      "id": "B20",
+      "title": "Hold-pending-escalation message uses wrong phase label — Step 2a closure (Principle 17)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done",
+      "verification": "infrastructure-only",
+      "verification_note": "Surfaced 2026-05-01 in Step 2a manual testing. Hold-pending-escalation message at interfaces/slack/handlers/message.ts:496-497 derived phase label from targetAgent ('design' ⇒ 'Engineering' / else ⇒ 'Design') — wrong: a PM-target escalation rendered 'Design is paused' even when the originating phase was Engineering. Fixed by deriving originPhase from universalPending.originAgent (already on pendingEscalation per the bug #10 fix at line 514): pm⇒Product, ux-design⇒Design, architect⇒Engineering. 4 regression tests in tests/regression/hold-pending-escalation-phase.test.ts AST-pin the originAgent⇒phase mapping at the source site; integration scenario B20 in tests/integration/workflows.test.ts drives all 3 origin agents through the hold path and asserts the rendered label. retired_by_v2_cutover=partial: the legacy multi-exit dispatcher site is deleted at F1, but F1's thin V2 dispatcher must implement the hold-pending-escalation guard with the same originAgent-based phase derivation. MT-31 spot-check tier.",
+      "retired_by_v2_cutover": "partial",
+      "m0_required": true
+    },
+    {
+      "id": "B21",
+      "title": "B11 v2 — content verifier inference-style detection + BLOCKING wiring in PM spec writeback (covers Step 2a #13/#14/#21 catastrophic)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done",
+      "verification": "infrastructure-only",
+      "verification_note": "Surfaced 2026-05-01 in Step 2a manual testing. PM in escalation-resume cited '200ms matches the threshold used in AC 4 and AC 27' but both ACs use 'within 1 second' — inference-style hallucination that B11 v1 did not catch (v1 only verified QUOTED phrases or non-existent AC numbers). B11 v1 was also wired log-only at PM escalation-resume sites in interfaces/slack/handlers/message.ts, NOT at arch-upstream-revision-reply (the path that produced the corruption); even on covered sites it was log-only, so the writeback ran and Haiku corrupted 6 unrelated ACs. Fix: (1) extended runtime/spec-content-verifier.ts with extractTimingValues (normalizes ms/s/minutes/hours into milliseconds + dedupe) and extractInferenceWindow (tight ±80 char window vs ±200 for quoted-phrase extraction — keeps inference signal local to the same sentence/clause), plus a new inference-claim-not-in-ac AcHallucination reason that fires when a numeric timing in the citation window doesn't match any timing in the cited AC's body. (2) Wired the verifier as BLOCKING inside runtime/pm-escalation-spec-writer.ts.patchProductSpecWithRecommendations BEFORE the Haiku merge — covers BOTH escalation-reply and arch-upstream-revision-reply call sites in one place per Principle 15 cross-agent parity, vs duplicating wiring at every site. (3) On detection: [CONTENT-VERIFIER] BLOCKING site=pm-spec-writeback feature=NAME hallucinations=N log line, return null, no Haiku call, no save — existing callers handle null-return as 'writeback failed → keep escalation active'. 7 new unit tests for inference-style verifier (canonical 200ms-vs-1-second; consistent timing no-flag; no-timing no-flag; ±80-char window respect; unit normalization; determinism per Principle 11) + 4 new unit tests for the writer's BLOCKING contract + 2 regression tests for bug #18 in tests/regression/spec-content-hallucination-detection.test.ts (canonical Step 2a #13 + structural-wiring assertion). False-positive risk is intentional: BLOCKING with FP rejects a writeback the operator can re-author; FN with non-blocking corrupts the spec. MT-33 is the real-Slack scenario.",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true
+    },
+    {
+      "id": "B22",
+      "title": "Visual-detail strip pass scope correction — preserves product SLAs (covers Step 2a #24/#25 catastrophic)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done",
+      "verification": "infrastructure-only",
+      "verification_note": "Surfaced 2026-05-01 in Step 2a manual testing. The pre-B22 VISUAL_DETAIL_PATTERNS regex matched any timing pattern (Xms / X seconds / X minutes), triggering the strip-pass on legitimate product SLAs ('within 1 second of valid token receipt', 'within 200ms of access-token expiry detection', '60 minutes of inactivity', 'within one request-response cycle'). PM recommended a 200ms SLA → strip pass triggered → Haiku removed ALL timing across 6 unrelated ACs (catastrophic spec corruption). Fix: narrowed timing patterns to require design-vocabulary context (animation/transition/fade/ease/cycle/loop) within close proximity (3 patterns: prefix-context, value-then-context, context-then-value); pure SLA timings stay untouched. Color/opacity/gradient/glow/easing patterns remain unconditional. Added explicit PRESERVE block to Haiku strip-prompt with concrete product-SLA examples and 'when in doubt, PRESERVE' tiebreaker. 5 B22 regression tests in tests/unit/pm-escalation-spec-writer.test.ts asserting Anthropic call counts (1 vs 2) under canonical fixtures + structural source assertions. retired_by_v2_cutover=false: pm-escalation-spec-writer.ts is a durable shared module (V2 dispatcher will call into it). MT-32 spot-check tier.",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true
+    },
+    {
+      "id": "B25",
+      "title": "V2 PM/Designer/Architect shadow coverage on escalation paths — Step 2a closure",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done",
+      "verification": "infrastructure-only",
+      "verification_note": "Surfaced 2026-05-01 in Step 2a manual testing. shadowDesignerV2 / shadowPmV2 / shadowArchitectV2 were wired only at dispatcher-level sites in interfaces/slack/handlers/message.ts — natural-phase invocations only. Escalation-driven paths (architect→PM, architect→designer, design→PM) invoked the legacy agents through different code paths (e.g., from inside escalation-reply handlers) that bypassed the dispatcher-level shadow calls. Result: V2 burn-in coverage was incomplete; cutover would have shipped without burn-in evidence on escalation behavior. Fix: moved shadow invocations from 3 dispatcher sites INTO each legacy agent function (top of runArchitectAgent, runDesignAgent, runPmAgent in message.ts). Each agent function now invokes shadow*V2() with stub data (isStateQuery: false documented as a stub artifact — F1 thin V2 dispatcher computes the real classification once and passes it). Agent-internal placement captures every agent-bound path: natural + escalation + slash-override + readOnly + continuation. Updated integration scenarios N93/N94 (1→2 shadow lines for auto-continue flows). retired_by_v2_cutover=false: shadow infrastructure survives cutover for the burn-in window before Block A6/A7 sign-off. MT-30 spot-check tier.",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true
+    },
+    {
+      "id": "G6",
+      "title": "Outbound Slack message content logging — every chat.postMessage / chat.update captured at the adapter boundary",
+      "block": "G",
+      "gates_block_e": true,
+      "status": "done",
+      "verification": "infrastructure-only",
+      "verification_note": "Surfaced 2026-05-01 in Step 2a manual testing. Logs captured state mutations and inbound Slack events but NOT outbound message content; [AGENT-RESPONSE] log line was 500-char truncated; fast-path branches that emit via chat.postMessage without appendMessage left zero record. Operator MT inspection was paste-dependent. Fix: runtime/slack-output.ts exports logOutbound(method, args) + instrumentSlackClient(client) — wraps app.client.chat.postMessage and chat.update so every outbound emits [OUTBOUND] method=X channel=Y thread=Z text=<full content> at INFO level (MAX_LOG_TEXT_LENGTH=100000). Wired in interfaces/slack/app.ts after the App constructor, so EVERY outbound at the adapter boundary is captured — including hold-pending-escalation, post-confirm notifications, fast-paths, escalation closures, anything composed by the platform or any agent. 11 unit tests in tests/unit/slack-output.test.ts cover the wrapper contract, instrumentation idempotence, payload shape preservation, and the [OUTBOUND] log format. retired_by_v2_cutover=false: Slack adapter survives cutover; logging primitive is durable infra. MT-29 spot-check tier.",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true
+    },
+    {
       "id": "B16",
       "title": "Architect prose response disconnected from tool calls + ignored user's literal ask in favor of auto-triggered PM escalation — Principle 7 violation surfaced 2026-05-01",
       "block": "B",

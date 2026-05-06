@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-33 — Inference-style citation BLOCKING in PM spec writeback (B21; closes Step 2a #13/#14/#21 gap)
+
+- Added by commit: `<this commit>` (B21 — B11 v2 verifier extension + BLOCKING wiring)
+- Why spot-check (not blocking): unit + regression tests cover detection logic, BLOCKING contract, and structural wiring deterministically. This MT verifies that when PM produces an inference-style hallucination ("X matches AC N" with X not in AC N) in real Slack, the writeback is rejected and the spec on main is unchanged.
+- Run opportunistically: after the B21 commit lands and bot is restarted. Drive an architect→PM escalation, elicit an inference-style citation from PM, confirm with `yes approved`, watch for `[CONTENT-VERIFIER] BLOCKING` log line + unchanged spec on main. ~10 min.
+- Full scenario: see `MANUAL_TESTS.md` MT-33.
+
 ### MT-32 — Visual-detail strip pass preserves product SLAs (B22; closes Step 2a spec-corruption gap)
 
 - Added by commit: `<this commit>` (B22 — visual-detail strip pass scope correction)

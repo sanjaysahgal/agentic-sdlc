@@ -613,3 +613,104 @@ describe("B22 — visual-detail strip pass scope correction (regression for Step
     expect(source).toContain("When in doubt, PRESERVE")
   })
 })
+
+// ─── B21 — Inference-style AC-citation BLOCKING in writeback ────────────────
+// Catastrophic Step 2a observations #13/#14/#21: PM in escalation-resume cited
+// "200ms matches the threshold used in AC 4 and AC 27" — but both ACs actually
+// say "within 1 second". The B11 v1 verifier did not catch this (it only looked
+// for QUOTED phrases or non-existent AC numbers). B21 extends the verifier to
+// detect inference-style citations (numeric value claimed for a cited AC that
+// doesn't actually contain that value), wires it into the writer as BLOCKING,
+// so the writeback is rejected (returns null) before any spec mutation occurs.
+
+describe("B21 — content verifier BLOCKING in PM spec writeback (regression for Step 2a #13/#14/#21)", () => {
+  it("BLOCKS the writeback when PM recommendation contains inference-style AC hallucination — returns null, no Anthropic call, no save", async () => {
+    const productSpec = `# Onboarding Product Spec
+
+## Acceptance Criteria
+1. The user can sign up.
+2. The user receives confirmation.
+3. The user can log in.
+4. The system applies the new policy within 1 second of receipt.
+27. A subsequent guarantee fires within 1 second of access-token expiry detection.
+`
+    const fabricatedRecommendation = `My recommendation: 200ms threshold. This matches the threshold used in AC 4 and AC 27 — both already use this value.`
+
+    mockReadFile.mockResolvedValue(productSpec)
+
+    const result = await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: fabricatedRecommendation,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    // BLOCKING contract: writeback rejected, NO Haiku call, NO save.
+    expect(result).toBeNull()
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockSaveApproved).not.toHaveBeenCalled()
+  })
+
+  it("BLOCKS the writeback when PM recommendation cites a non-existent AC", async () => {
+    const productSpec = `## Acceptance Criteria
+1. First.
+2. Second.
+3. Third.
+`
+    // AC 27 doesn't exist; PM is inventing a citation.
+    const recommendation = `Per AC 27 — "should require email verification" — this is the gap I'd close.`
+
+    mockReadFile.mockResolvedValue(productSpec)
+
+    const result = await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: recommendation,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    expect(result).toBeNull()
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockSaveApproved).not.toHaveBeenCalled()
+  })
+
+  it("DOES NOT BLOCK when the PM recommendation has NO AC citations", async () => {
+    // No AC# references at all → verifier finds nothing → writeback proceeds normally.
+    mockReadFile.mockResolvedValue(EXISTING_SPEC)
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_PATCH }] })
+
+    const result = await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: "My recommendation: show the in-conversation nudge once per session.",
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    expect(result).not.toBeNull()
+    expect(mockCreate).toHaveBeenCalledOnce()
+    expect(mockSaveApproved).toHaveBeenCalledOnce()
+  })
+
+  it("DOES NOT BLOCK when PM cites an AC and the inference timing is consistent with the AC body", async () => {
+    const productSpec = `# Onboarding Product Spec
+
+## Acceptance Criteria
+1. The system applies the new policy within 200ms of receipt.
+`
+    // PM cites the right value for the right AC.
+    const consistentRecommendation = `My recommendation: 200ms is consistent with AC 1 which already uses this value.`
+
+    mockReadFile.mockResolvedValue(productSpec)
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: VALID_PATCH }] })
+
+    const result = await patchProductSpecWithRecommendations({
+      featureName: "onboarding",
+      question: BLOCKING_QUESTION,
+      recommendations: consistentRecommendation,
+      humanConfirmation: HUMAN_CONFIRM,
+    })
+
+    expect(result).not.toBeNull()
+    expect(mockCreate).toHaveBeenCalledOnce()
+  })
+})

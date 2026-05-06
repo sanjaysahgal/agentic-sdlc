@@ -3,6 +3,7 @@ import {
   extractAcMap,
   findAcReferences,
   extractQuotedPhrasesNear,
+  extractTimingValues,
   verifyAcReferences,
   formatHallucinations,
 } from "../../runtime/spec-content-verifier"
@@ -203,6 +204,100 @@ ${Array.from({ length: 25 }, (_, i) => `${i + 1}. AC body number ${i + 1}.`).joi
     expect(findings).toHaveLength(1)
     expect(findings[0].citedAcNumber).toBe(27)
     expect(findings[0].reason).toBe("ac-does-not-exist")
+  })
+})
+
+describe("extractTimingValues — B21 inference-style numeric extraction", () => {
+  it("extracts millisecond values normalized to ms", () => {
+    const values = extractTimingValues("indicator disappears within 200ms after expiry")
+    expect(values.map(v => v.ms)).toEqual([200])
+    expect(values[0].raw.toLowerCase()).toContain("200ms")
+  })
+
+  it("extracts second values normalized to ms (1s = 1000)", () => {
+    const values = extractTimingValues("warning appears within 1 second of receipt")
+    expect(values.map(v => v.ms)).toEqual([1000])
+  })
+
+  it("extracts minute values normalized to ms (60 minutes = 3_600_000)", () => {
+    const values = extractTimingValues("session expires after 60 minutes of inactivity")
+    expect(values.map(v => v.ms)).toEqual([3_600_000])
+  })
+
+  it("extracts hour values normalized to ms (1 hour = 3_600_000)", () => {
+    const values = extractTimingValues("token TTL is 1 hour by default")
+    expect(values.map(v => v.ms)).toEqual([3_600_000])
+  })
+
+  it("dedupes identical raw+normalized values", () => {
+    const values = extractTimingValues("200ms and 200ms again")
+    expect(values).toHaveLength(1)
+  })
+
+  it("returns empty for text with no timings", () => {
+    expect(extractTimingValues("no timings in this prose")).toEqual([])
+  })
+})
+
+describe("verifyAcReferences — B21 inference-style citations (catastrophic #13/#14)", () => {
+  // Spec where ACs use "1 second" — agent that claims "200ms matches AC 4 and AC 27"
+  // is fabricating; both ACs would have to contain a 200ms timing for the citation to be valid.
+  const specWithSecondTimings = `## Acceptance Criteria
+1. The user can sign up.
+2. The user receives confirmation.
+3. The user can log in.
+4. The system applies the new policy within 1 second of receipt.
+5. Some other AC.
+27. A subsequent guarantee fires within 1 second of access-token expiry detection.
+`
+
+  it("Bug-G canonical inference scenario: '200ms matches AC 4 and AC 27' but both ACs say '1 second'", () => {
+    const response = `My recommendation: 200ms threshold. This matches the threshold used in AC 4 and AC 27.`
+    const findings = verifyAcReferences(response, specWithSecondTimings)
+    // Two findings — one per cited AC where the inference fails
+    expect(findings.filter(f => f.reason === "inference-claim-not-in-ac")).toHaveLength(2)
+    expect(findings.find(f => f.citedAcNumber === 4)?.reason).toBe("inference-claim-not-in-ac")
+    expect(findings.find(f => f.citedAcNumber === 27)?.reason).toBe("inference-claim-not-in-ac")
+    expect(findings.find(f => f.citedAcNumber === 4)?.claimedWording.toLowerCase()).toContain("200ms")
+  })
+
+  it("does NOT flag when the cited AC actually contains the claimed timing", () => {
+    const spec = `## Acceptance Criteria
+1. The user signs up.
+2. The system propagates the change within 200ms of confirmation.
+`
+    const response = `My recommendation: 200ms is consistent with AC 2 which already uses 200ms.`
+    const findings = verifyAcReferences(response, spec)
+    expect(findings.filter(f => f.reason === "inference-claim-not-in-ac")).toEqual([])
+  })
+
+  it("does NOT flag when no timing values appear near the AC citation", () => {
+    const response = `AC 4 covers the policy update behavior. No specific timing claim here.`
+    const findings = verifyAcReferences(response, specWithSecondTimings)
+    expect(findings.filter(f => f.reason === "inference-claim-not-in-ac")).toEqual([])
+  })
+
+  it("respects the tight ±80 char inference window — distant timings don't fire", () => {
+    // Timing value sits >80 chars away from the AC citation; should not be claimed-of-AC.
+    const padding = "x".repeat(120)
+    const response = `Recommendation 200ms. ${padding} AC 4 also covers some unrelated concern.`
+    const findings = verifyAcReferences(response, specWithSecondTimings)
+    expect(findings.filter(f => f.reason === "inference-claim-not-in-ac")).toEqual([])
+  })
+
+  it("normalizes units — '1 second' in AC matches '1000ms' in claim", () => {
+    const response = `Recommendation: 1000ms is consistent with the threshold in AC 4.`
+    const findings = verifyAcReferences(response, specWithSecondTimings)
+    expect(findings.filter(f => f.reason === "inference-claim-not-in-ac")).toEqual([])
+  })
+
+  it("determinism per Principle 11 — same input ⇒ same findings, three times", () => {
+    const response = `200ms matches AC 4 and AC 27.`
+    const a = verifyAcReferences(response, specWithSecondTimings)
+    const b = verifyAcReferences(response, specWithSecondTimings)
+    const c = verifyAcReferences(response, specWithSecondTimings)
+    expect(a).toEqual(b)
+    expect(b).toEqual(c)
   })
 })
 

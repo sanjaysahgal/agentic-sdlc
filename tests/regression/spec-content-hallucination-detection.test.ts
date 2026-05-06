@@ -125,3 +125,58 @@ Anything else.
     expect(source).toMatch(/\[CONTENT-VERIFIER\]/)
   })
 })
+
+describe("bug #18 — B21 inference-style citation BLOCKING in PM spec writeback (catastrophic Step 2a #13/#14)", () => {
+  it("canonical scenario: PM recommends '200ms matches AC 4 and AC 27' but both ACs use '1 second' — flagged inference-claim-not-in-ac", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+
+    const productSpec = `## Acceptance Criteria
+1. The user signs up.
+2. The user receives confirmation.
+3. The user logs in.
+4. The system applies the new policy within 1 second of receipt.
+5. Some other AC.
+6. Another AC.
+27. A subsequent guarantee fires within 1 second of access-token expiry detection on the client.
+`
+
+    const pmRecommendation = `My recommendation is to set the threshold at 200ms. This matches the threshold used in AC 4 and AC 27 — both already use a tight client-side guarantee.`
+
+    const findings = verifyAcReferences(pmRecommendation, productSpec)
+    const inferenceFindings = findings.filter(f => f.reason === "inference-claim-not-in-ac")
+    expect(inferenceFindings.length).toBeGreaterThanOrEqual(2)
+    expect(inferenceFindings.find(f => f.citedAcNumber === 4)).toBeDefined()
+    expect(inferenceFindings.find(f => f.citedAcNumber === 27)).toBeDefined()
+  })
+
+  it("structural assertion: verifier is wired as BLOCKING in pm-escalation-spec-writer (returns null when hallucinations present)", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/pm-escalation-spec-writer.ts"),
+      "utf8",
+    )
+
+    // Verifier must be imported into the writer.
+    expect(source).toMatch(/from\s+["']\.\/spec-content-verifier["']/)
+    expect(source).toMatch(/verifyAcReferences\s*\(/)
+
+    // BLOCKING contract: a [CONTENT-VERIFIER] BLOCKING log line and an early `return null`
+    // must appear when hallucinations are detected — NOT just a log line.
+    expect(source).toMatch(/\[CONTENT-VERIFIER\]\s+BLOCKING/)
+
+    // The writer must call the verifier BEFORE the Haiku merge in
+    // patchProductSpecWithRecommendations. Anchor: verifyAcReferences must
+    // appear above the merge-call inside the export. We anchor by source
+    // position relative to the function entry rather than indexOf("client.messages.create"),
+    // since stripVisualDetailsFromSpec (declared earlier in file scope) also
+    // calls client.messages.create.
+    const fnEntryIdx = source.indexOf("export async function patchProductSpecWithRecommendations")
+    expect(fnEntryIdx).toBeGreaterThan(0)
+    const verifierIdx = source.indexOf("verifyAcReferences(", fnEntryIdx)
+    expect(verifierIdx).toBeGreaterThan(fnEntryIdx)
+    // The Haiku merge call inside the function must appear AFTER the verifier call.
+    const haikuMergeIdx = source.indexOf("client.messages.create", verifierIdx)
+    expect(haikuMergeIdx).toBeGreaterThan(verifierIdx)
+  })
+})

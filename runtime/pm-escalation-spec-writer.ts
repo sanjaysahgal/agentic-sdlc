@@ -11,6 +11,7 @@ import {
   applyCategoryRules,
   findResidualCategoryViolations,
 } from "./category-rule-extractor"
+import { verifyAcReferences, formatHallucinations } from "./spec-content-verifier"
 
 // 60s timeout — spec patch generation is a focused Haiku call; no retries.
 const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
@@ -101,6 +102,21 @@ export async function patchProductSpecWithRecommendations(params: {
   const existingSpec = await readFile(productSpecPath, "main")
   if (!existingSpec) {
     console.log(`[ESCALATION] product spec writeback: spec not found on main for feature=${featureName}, skipping`)
+    return null
+  }
+
+  // B21 — BLOCKING content verifier. Detect AC-citation hallucinations
+  // (ac-does-not-exist, claimed-wording-not-in-ac, inference-claim-not-in-ac)
+  // BEFORE the writeback runs. v1 was log-only at the agent-response sites in
+  // message.ts; v2 is BLOCKING here in the writer so EVERY callsite that
+  // reaches the writeback (escalation-reply, arch-upstream-revision-reply) is
+  // covered (Principle 15 cross-agent parity, Principle 8 platform enforcement).
+  // Canonical case: PM cited "200ms matches AC 4 and AC 27" but both ACs use
+  // "1 second" — the writeback would otherwise corrupt the spec.
+  const hallucinations = verifyAcReferences(recommendations, existingSpec)
+  if (hallucinations.length > 0) {
+    console.log(`[CONTENT-VERIFIER] BLOCKING site=pm-spec-writeback feature=${featureName} hallucinations=${hallucinations.length}\n${formatHallucinations(hallucinations)}`)
+    console.log(`[ESCALATION] product spec writeback: BLOCKED for feature=${featureName} due to ${hallucinations.length} content-verifier finding(s) — patch rejected, spec unchanged`)
     return null
   }
 

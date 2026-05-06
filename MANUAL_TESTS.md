@@ -571,6 +571,46 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-33 — Inference-style citation BLOCKING in PM spec writeback (B21; Step 2a closure for #13/#14/#21)
+
+**Why this can't be automated (fully):** unit + regression tests cover the verifier's detection logic, the BLOCKING contract, and the structural wiring deterministically. This MT verifies the end-to-end flow in real Slack: when PM in escalation-resume mode produces an inference-style hallucination ("X matches AC N" where AC N doesn't contain X), the writeback is rejected and the spec on main is NOT mutated.
+
+**Pre-flight:** bot restarted with B21 commit on main; G6 already shipped (so `[OUTBOUND]` and `[CONTENT-VERIFIER] BLOCKING` log lines are visible).
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase) with the canonical PM spec on main containing timing-bearing ACs (e.g., "within 1 second of valid token receipt", "within 1 second of access-token expiry detection"). This is the current onboarding product spec — no setup change needed.
+
+**Actions:**
+1. Drive an architect→PM escalation (`review the engineering spec for any gaps` → architect surfaces a vague-language or threshold gap → escalation queued).
+2. Type `yes` to confirm. PM resumes in escalation-resume mode with `readOnly: true`.
+3. PM produces a recommendation that cites an AC inferentially. The canonical phrasing is "200ms threshold matches the threshold used in AC 4 and AC 27" — but any phrasing where PM claims a numeric value matches a cited AC's body, when the AC body actually has a different value, will exercise the verifier.
+   - If PM does NOT produce an inference-style citation naturally on this run, type a guidance message in the escalation thread asking PM to cite specific ACs by number for its recommendation. This usually elicits the citation pattern.
+4. Type `yes approved` to confirm.
+5. **Watch the logs:**
+   - `[CONTENT-VERIFIER] BLOCKING site=pm-spec-writeback feature=onboarding hallucinations=N` line MUST appear.
+   - Followed by `[ESCALATION] product spec writeback: BLOCKED for feature=onboarding due to N content-verifier finding(s) — patch rejected, spec unchanged`.
+   - NO `[GITHUB] saveApprovedSpec` line for the product spec on this turn.
+6. **Inspect the spec on main:**
+   ```
+   cd ../${CUSTOMER_REPO}
+   git fetch origin && git log -1 --oneline main -- specs/features/onboarding/onboarding.product.md
+   ```
+7. The product spec on main must be UNCHANGED from before the escalation (last commit timestamp older than the escalation turn).
+8. The escalation should remain ACTIVE (next message in the thread should still be in escalation context) since `patchProductSpecWithRecommendations` returned null and the caller keeps the escalation open.
+
+**Expected outcome:**
+- `[CONTENT-VERIFIER] BLOCKING` log line present with hallucinations >= 1.
+- Product spec on main is byte-identical to pre-turn state.
+- Escalation remains active so PM can re-author the recommendation without an inference-style citation on the next round.
+- No spec corruption — the original gap PM was supposed to fix is also untouched (we did not partially update; we rejected entirely).
+
+**Failure signatures:**
+- `[GITHUB] saveApprovedSpec` for the product spec appears AFTER the BLOCKING log line → wiring regression: the writer returned null but a downstream caller wrote anyway. Check `patchProductSpecWithRecommendations` callsites in `interfaces/slack/handlers/message.ts`.
+- BLOCKING log line absent when PM clearly produced an inference-style citation → verifier detection gap. Capture the exact PM response text and run `npx vitest run tests/unit/spec-content-verifier.test.ts -t "B21"` against it.
+- Spec on main mutated despite BLOCKING log line → audit `patchProductSpecWithRecommendations` for any code path that bypasses the early `return null`.
+- False-positive BLOCKING when PM's citation IS faithful (cited AC body actually contains the claimed value) → verifier over-trigger. Run the failing scenario through `verifyAcReferences` directly (`npx tsx -e "..."`) and inspect findings; either the inference window is too wide or unit normalization missed a case.
+
+---
+
 ### MT-32 — Visual-detail strip pass preserves product SLAs (B22; Step 2a closure)
 
 **Why this can't be automated (fully):** unit tests cover the regex narrowing + structural source assertions deterministically. This MT verifies the actual flow end-to-end in real Slack: PM recommends a product-SLA timing → Haiku patches → strip pass does NOT fire on legitimate ACs → spec on main retains all original timing thresholds.

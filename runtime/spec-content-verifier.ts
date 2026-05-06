@@ -27,8 +27,8 @@ export type AcHallucination = {
   claimedWording: string
   /** What AC N actually contains (or null if AC N doesn't exist in the spec at all) */
   actualWording: string | null
-  /** Reason for flagging — "claimed-wording-not-in-ac" or "ac-does-not-exist" */
-  reason: "claimed-wording-not-in-ac" | "ac-does-not-exist"
+  /** Reason for flagging — quoted-phrase mismatch, missing AC, or inference-style claim mismatch (B21) */
+  reason: "claimed-wording-not-in-ac" | "ac-does-not-exist" | "inference-claim-not-in-ac"
 }
 
 export type ContentVerifierFinding = AcHallucination
@@ -94,8 +94,8 @@ export function extractAcMap(productSpec: string): Map<number, string> {
  * Recognizes: "AC 10", "AC #10", "AC#10", "AC10", "(AC 10)" — case-insensitive.
  * Does NOT match decimal numbers, version numbers, or AC mentions inside code blocks.
  */
-export function findAcReferences(agentResponse: string): Array<{ acNumber: number; surroundingText: string }> {
-  const refs: Array<{ acNumber: number; surroundingText: string }> = []
+export function findAcReferences(agentResponse: string): Array<{ acNumber: number; surroundingText: string; citationStart: number; citationLength: number }> {
+  const refs: Array<{ acNumber: number; surroundingText: string; citationStart: number; citationLength: number }> = []
   const re = /\bAC\s*#?\s*(\d{1,3})\b/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(agentResponse)) !== null) {
@@ -104,7 +104,7 @@ export function findAcReferences(agentResponse: string): Array<{ acNumber: numbe
     const start = Math.max(0, m.index - 200)
     const end = Math.min(agentResponse.length, m.index + m[0].length + 200)
     const surroundingText = agentResponse.slice(start, end)
-    refs.push({ acNumber: acNum, surroundingText })
+    refs.push({ acNumber: acNum, surroundingText, citationStart: m.index, citationLength: m[0].length })
   }
   return refs
 }
@@ -128,6 +128,59 @@ export function extractQuotedPhrasesNear(surroundingText: string): string[] {
     phrases.push(m[1].trim())
   }
   return phrases
+}
+
+/**
+ * B21 — Inference-style claim detection. The agent often cites an AC as
+ * precedent for a numeric value: "200ms matches the threshold used in AC 4
+ * and AC 27." This claims AC 4 / AC 27 contain a 200ms timing — and if they
+ * don't, it's a fabricated citation.
+ *
+ * Returns timing values (normalized to milliseconds) extracted from text. Used
+ * to compare an inference window against the cited AC's body: if the value
+ * appears in the window but not in the AC, the agent's "matches AC N" claim
+ * is fabricated.
+ */
+export type TimingValue = { ms: number; raw: string }
+
+export function extractTimingValues(text: string): TimingValue[] {
+  const values: TimingValue[] = []
+  const seen = new Set<string>()
+  const patterns: Array<{ re: RegExp; toMs: (n: number) => number }> = [
+    { re: /(\d+\.?\d*)\s*(?:ms|milliseconds?)\b/gi, toMs: n => n },
+    { re: /(\d+\.?\d*)\s*(?:s|seconds?)\b/gi, toMs: n => n * 1000 },
+    { re: /(\d+\.?\d*)\s*(?:minutes?|mins?)\b/gi, toMs: n => n * 60_000 },
+    { re: /(\d+\.?\d*)\s*(?:hours?|hrs?)\b/gi, toMs: n => n * 3_600_000 },
+  ]
+  for (const { re, toMs } of patterns) {
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      const n = parseFloat(m[1])
+      if (Number.isNaN(n)) continue
+      const raw = m[0].trim()
+      const key = `${toMs(n)}|${raw.toLowerCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      values.push({ ms: toMs(n), raw })
+    }
+  }
+  return values
+}
+
+/**
+ * Tight inference window around an AC citation — narrower than the ±200 char
+ * window used for quoted-phrase extraction. The inference check needs to be
+ * conservative: a timing value in the SAME sentence/clause as "AC N" is a
+ * claim about AC N. A timing value 150 chars away may be unrelated.
+ *
+ * Window: ±80 chars on either side of the AC citation match. Empirically
+ * captures the canonical inference pattern ("Xms matches AC N", "AC N uses
+ * Xms") without bleeding into adjacent sentences.
+ */
+function extractInferenceWindow(agentResponse: string, citationStart: number, citationLength: number): string {
+  const start = Math.max(0, citationStart - 80)
+  const end = Math.min(agentResponse.length, citationStart + citationLength + 80)
+  return agentResponse.slice(start, end)
 }
 
 /**
@@ -158,9 +211,6 @@ export function verifyAcReferences(agentResponse: string, productSpec: string): 
     // AC N exists. Check if any quoted phrase near the citation actually appears in AC N's body.
     // The agent's claim is "AC N contains X" — if X isn't in AC N's body, it's a hallucination.
     const phrases = extractQuotedPhrasesNear(ref.surroundingText)
-    if (phrases.length === 0) continue  // No specific claim to verify; skip (could be a generic reference)
-
-    // Normalize for substring matching: case-insensitive, collapse whitespace.
     const normalizedActual = actualText.toLowerCase().replace(/\s+/g, " ")
     for (const phrase of phrases) {
       const normalizedPhrase = phrase.toLowerCase().replace(/\s+/g, " ")
@@ -176,6 +226,34 @@ export function verifyAcReferences(agentResponse: string, productSpec: string): 
         })
       }
     }
+
+    // B21 — Inference-style claim check. The agent often cites an AC as
+    // precedent for a numeric value: "200ms matches the threshold used in
+    // AC 4 and AC 27." If the cited AC's body does NOT contain a timing
+    // equal to the claimed value, the citation is fabricated.
+    //
+    // Window: tight ±80 char window around the citation (vs ±200 for quoted
+    // phrases), to keep the inference signal local — a timing value in the
+    // same sentence as "AC N" is a claim about AC N; one 150 chars away may
+    // be unrelated. False positives here are lower-cost than false negatives:
+    // BLOCKING the writeback gives operators a chance to verify; letting a
+    // fabricated citation through corrupts the spec (canonical Step 2a #13).
+    const inferenceWindow = extractInferenceWindow(agentResponse, ref.citationStart, ref.citationLength)
+    const claimedTimings = extractTimingValues(inferenceWindow)
+    if (claimedTimings.length > 0) {
+      const acTimings = extractTimingValues(actualText)
+      const acMsValues = new Set(acTimings.map(t => t.ms))
+      for (const claim of claimedTimings) {
+        if (!acMsValues.has(claim.ms)) {
+          hallucinations.push({
+            citedAcNumber: ref.acNumber,
+            claimedWording: claim.raw,
+            actualWording: actualText,
+            reason: "inference-claim-not-in-ac",
+          })
+        }
+      }
+    }
   }
 
   return hallucinations
@@ -189,6 +267,9 @@ export function formatHallucinations(hallucinations: AcHallucination[]): string 
   return hallucinations.map((h, i) => {
     if (h.reason === "ac-does-not-exist") {
       return `${i + 1}. AC ${h.citedAcNumber} does NOT exist in the spec. Agent claimed: "${h.claimedWording}".`
+    }
+    if (h.reason === "inference-claim-not-in-ac") {
+      return `${i + 1}. AC ${h.citedAcNumber} does NOT contain timing "${h.claimedWording}" — agent cited AC ${h.citedAcNumber} as precedent for that value. Actual AC ${h.citedAcNumber} text: "${h.actualWording}".`
     }
     return `${i + 1}. AC ${h.citedAcNumber} does NOT contain "${h.claimedWording}". Actual AC ${h.citedAcNumber} text: "${h.actualWording}".`
   }).join("\n")
