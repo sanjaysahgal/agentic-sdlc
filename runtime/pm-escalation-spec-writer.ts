@@ -12,6 +12,7 @@ import {
   findResidualCategoryViolations,
 } from "./category-rule-extractor"
 import { verifyAcReferences, formatHallucinations } from "./spec-content-verifier"
+import { summarizeAcDiff, type SpecDiffSummary } from "./spec-diff-summary"
 
 // 60s timeout — spec patch generation is a focused Haiku call; no retries.
 const client = new Anthropic({ maxRetries: 0, timeout: 60_000 })
@@ -89,12 +90,21 @@ Output the full spec with all sections preserved. No preamble, no explanation �
   return cleaned || specContent
 }
 
+/**
+ * B24 — return shape includes a deterministic AC-level diff summary so callers
+ * can surface concrete change reporting in user-facing messages (Principle 17).
+ */
+export type ProductSpecWritebackResult = {
+  mergedSpec: string
+  diffSummary: SpecDiffSummary
+}
+
 export async function patchProductSpecWithRecommendations(params: {
   featureName: string
   question: string          // original blocking questions escalated to PM/Architect
   recommendations: string  // PM/Architect agent response text (confirmed by human)
   humanConfirmation: string // what the human said when confirming
-}): Promise<string | null> {
+}): Promise<ProductSpecWritebackResult | null> {
   const { featureName, question, recommendations, humanConfirmation } = params
   const { paths } = loadWorkspaceConfig()
   const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -213,6 +223,13 @@ RULES — follow exactly:
   }
 
   await saveApprovedSpec({ featureName, filePath: productSpecPath, content: mergedSpec })
-  console.log(`[ESCALATION] product spec writeback: patched ${productSpecPath} on main with confirmed PM recommendations`)
-  return mergedSpec
+
+  // B24 — Truthful change reporting. Compute deterministic AC-level diff
+  // between the pre-writeback existing spec and the merged spec we just saved
+  // so the caller can surface a concrete diff brief in the user-facing
+  // post-writeback message ("Modified ACs 4, 13" instead of vague "spec was
+  // updated"). Pure function, no LLM (Principle 11).
+  const diffSummary = summarizeAcDiff(existingSpec, mergedSpec)
+  console.log(`[ESCALATION] product spec writeback: patched ${productSpecPath} on main with confirmed PM recommendations — diff: ${diffSummary.brief}`)
+  return { mergedSpec, diffSummary }
 }

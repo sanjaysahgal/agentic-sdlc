@@ -243,6 +243,28 @@
       "m0_required": true
     },
     {
+      "id": "B23",
+      "title": "Spec-patcher per-AC granularity — DEFERRED (defense-in-depth no longer needed after B22 + B21)",
+      "block": "B",
+      "gates_block_e": false,
+      "status": "pending",
+      "verification": "pending",
+      "verification_note": "DEFERRED. Proposed in the Step 2a plan as defense-in-depth for the strip-pass corruption (catastrophic Step 2a observations #24/#25/#28). With B22 narrowing the strip-pass scope (timing patterns now require design-vocabulary context) and B21 BLOCKING any AC-citation hallucination before the patch is even composed, no realistic attack surface remains for the patcher's section-level granularity to amplify. Re-evaluate ONLY if a NEW corruption class surfaces post-2a-closure that is structurally caused by section-level (rather than AC-level) patcher semantics. Per-AC granularity would also be a non-trivial change to runtime/spec-patcher.ts that risks introducing new bugs in a path that's working correctly post-B22. Defer rationale: durable-over-fast — don't re-architect a working module to defend against an attack surface that B22 + B21 have already closed. Status field is 'pending' (the schema doesn't have a 'deferred' state) but the verification_note prefix makes the actual disposition explicit; gates_block_e is false so this does not block cutover.",
+      "retired_by_v2_cutover": "false",
+      "m0_required": false
+    },
+    {
+      "id": "B24",
+      "title": "Truthful change reporting after spec writeback — deterministic AC-level diff brief in user-facing closure messages (covers Step 2a #29 catastrophic)",
+      "block": "B",
+      "gates_block_e": true,
+      "status": "done",
+      "verification": "infrastructure-only",
+      "verification_note": "Surfaced 2026-05-01 in Step 2a manual testing. Post-writeback platform message said 'The product spec was partially updated, but 1 PM-scope gap remains' — implied a small leftover after a fix. Reality (catastrophic Step 2a #29): 6 unrelated ACs had been corrupted by the strip-pass and the original gap PM was supposed to fix went untouched. User had no warning that 6 ACs had changed. Principle 17 violation (cross-surface message consistency — what platform says about state must agree with reality). Fix: runtime/spec-diff-summary.ts is @deterministic (pure function, no LLM, no I/O) and exports summarizeAcDiff(before, after) returning addedAcs / removedAcs / modifiedAcs / brief — uses extractAcMap from the spec-content verifier as the AC-extraction primitive, normalizes for cosmetic case+whitespace so trivial differences don't false-flag, produces a concise one-liner like 'Modified ACs 1, 2, 3, 5, 6' or 'No AC changes detected'. Same input ⇒ same brief (Principle 11). Writer return shape changed from string | null to { mergedSpec, diffSummary } | null; both user-facing post-writeback messages in interfaces/slack/handlers/message.ts (escalation-reply closure + arch-upstream-revision-reply closure + their re-audit-fail twins) now interpolate the brief via pmDiffBrief / archUpstreamDiffBrief bridge variables. 9 unit tests in tests/unit/spec-diff-summary.test.ts (no-changes; modify; add; remove; cosmetic-whitespace tolerance; multi-class composition; multi-AC list formatting; determinism per Principle 11 over 3 runs; canonical Step 2a #29 6-AC corruption brief) + 4 regression tests for bug #19 in tests/regression/spec-writeback-truthful-diff.test.ts (writer returns diffSummary; structural-wiring assertion at writer + handler call sites; canonical corruption case end-to-end). Cross-agent parity for design-spec + engineering-spec writers tracked as a follow-on (the design-target arch-upstream-revision-reply closure currently keeps the legacy generic text — same primitive plugs in once those two writers adopt the new return-shape contract). retired_by_v2_cutover=false: pure helper module + handler wiring; both survive cutover. MT-34 spot-check tier.",
+      "retired_by_v2_cutover": "false",
+      "m0_required": true
+    },
+    {
       "id": "B22",
       "title": "Visual-detail strip pass scope correction — preserves product SLAs (covers Step 2a #24/#25 catastrophic)",
       "block": "B",

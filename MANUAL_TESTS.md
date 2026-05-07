@@ -571,6 +571,39 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-34 — Truthful diff brief in post-writeback closure message (B24; Step 2a closure for #29 catastrophic)
+
+**Why this can't be automated (fully):** unit + regression tests cover the diff helper deterministically and AST-pin the wiring at PR time. This MT verifies that the actual rendered Slack message in a real architect→PM escalation flow shows the diff brief, not the legacy "partially updated" framing.
+
+**Pre-flight:** bot restarted with B24 commit on main; G6 already shipped (so `[OUTBOUND]` lines are visible — easiest way to capture the rendered message text without paste).
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase) with the canonical PM spec on main. No setup change needed.
+
+**Actions:**
+1. Drive an architect→PM escalation through to PM response (`review the engineering spec for any gaps` → architect surfaces a real gap → escalation queued).
+2. Type `yes` to confirm. PM resumes in escalation-resume mode and authors a recommendation that addresses the gap (cleanly — no inference-style citations, since B21 will block those).
+3. Type `yes approved` to confirm.
+4. **Watch the logs:**
+   - `[ESCALATION] product spec writeback: patched … on main with confirmed PM recommendations — diff: <brief>` line MUST appear with a non-empty brief that lists modified/added ACs (e.g., `Modified AC 13` or `Modified ACs 1, 13`).
+   - The `[OUTBOUND]` log line for the closure chat.postMessage MUST contain that same brief inline in the message text.
+5. **Inspect the rendered Slack message:** The closure message must read approximately: `*Platform —* The product spec was updated with the confirmed PM decisions — Modified AC X (or ACs X, Y). The design phase can now continue.` (NOT the legacy "The product spec was updated with the confirmed PM decisions. The design phase can now continue." with no diff information.)
+6. **Cross-check the GitHub diff:** the brief's claim must match the actual `git show main` diff on the customer repo's product spec — i.e., if brief says "Modified AC 13", AC 13 (and only AC 13) should appear modified in the diff.
+7. **Re-audit-fail variant:** if the re-audit catches a residual gap, the partial message must read approximately: `*Platform —* The product spec was updated — Modified AC X. N PM-scope gap remains. Reply *yes* …` — the diff brief is present BEFORE the gap-count reporting, NOT replacing it.
+
+**Expected outcome:**
+- Closure message contains the diff brief inline.
+- Brief is concrete (specific AC numbers) — never vague.
+- Brief matches the actual GitHub diff.
+- Re-audit-fail message also includes the brief.
+
+**Failure signatures:**
+- Closure message reads "The product spec was updated with the confirmed PM decisions. The design phase can now continue." with no diff brief between them → wiring regression: pmDiffBrief is null or not interpolated. Check writer return shape + handler call site at `interfaces/slack/handlers/message.ts` line ~894.
+- `[ESCALATION] product spec writeback: patched … — diff:` log line is missing → writer regression: summarizeAcDiff not called. Run `npx vitest run tests/unit/spec-diff-summary.test.ts` to confirm helper still works.
+- Brief reports "No AC changes detected." but the GitHub diff clearly shows changes → AC-extraction regression: extractAcMap may have failed to parse the spec format. Capture the spec content and run `npx vitest run tests/unit/spec-content-verifier.test.ts -t "extractAcMap"`.
+- Brief reports modified ACs that match no actual change in the diff → cosmetic-whitespace normalization regression in summarizeAcDiff. Capture the before/after spec content for unit-test reproduction.
+
+---
+
 ### MT-33 — Inference-style citation BLOCKING in PM spec writeback (B21; Step 2a closure for #13/#14/#21)
 
 **Why this can't be automated (fully):** unit + regression tests cover the verifier's detection logic, the BLOCKING contract, and the structural wiring deterministically. This MT verifies the end-to-end flow in real Slack: when PM in escalation-resume mode produces an inference-style hallucination ("X matches AC N" where AC N doesn't contain X), the writeback is rejected and the spec on main is NOT mutated.

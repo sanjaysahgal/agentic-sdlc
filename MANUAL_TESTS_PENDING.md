@@ -49,6 +49,13 @@ _(empty — all prior blocking entries demoted to spot-check tier on 2026-05-01 
 
 ## Spot-check during integration walk
 
+### MT-34 — Truthful diff brief in post-writeback closure message (B24; closes Step 2a #29 gap)
+
+- Added by commit: `<this commit>` (B24 — truthful change reporting via deterministic AC-level diff brief)
+- Why spot-check (not blocking): unit + regression tests cover the diff helper deterministically + AST-pin the wiring at PR time. This MT verifies the rendered Slack message contains the brief in a real flow.
+- Run opportunistically: after the B24 commit lands and bot is restarted. Drive an architect→PM escalation to completion, eyeball the closure message + cross-check against `git show main` on the customer repo. ~10 min.
+- Full scenario: see `MANUAL_TESTS.md` MT-34.
+
 ### MT-33 — Inference-style citation BLOCKING in PM spec writeback (B21; closes Step 2a #13/#14/#21 gap)
 
 - Added by commit: `<this commit>` (B21 — B11 v2 verifier extension + BLOCKING wiring)

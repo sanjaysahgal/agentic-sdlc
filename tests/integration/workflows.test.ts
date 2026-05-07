@@ -566,6 +566,15 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     )
     expect(closurePost).toBeDefined()
 
+    // B24 — truthful change reporting: closure message must contain the
+    // deterministic AC-level diff brief from summarizeAcDiff. The Haiku merge
+    // mock above produces an updated spec with AC#1 changed (whatever
+    // existingSpec is, the patch's AC 1 differs); verify the brief surfaces in
+    // the user-facing message instead of the legacy bare "spec was updated"
+    // framing. Catastrophic Step 2a #29 fix: user must see what changed, not
+    // just "partially updated".
+    expect(closurePost![0].text).toMatch(/(Modified|added|removed)\s+ACs?\s+\d+|No AC changes detected\./)
+
     // EscalationNotification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
     expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()

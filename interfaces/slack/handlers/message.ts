@@ -824,6 +824,9 @@ ${brief}`
       // - PM escalation → product spec (auditor won't re-discover same gaps)
       // - Architect escalation → engineering spec (decision captured before engineering begins)
       // NOTE: escalationNotification is cleared AFTER writeback succeeds — not before.
+      // B24 — pmDiffBrief carries the deterministic AC-level diff from the PM
+      // writeback (when applicable) into the post-writeback closure message.
+      let pmDiffBrief: string | null = null
       if (escalationNotification.recommendations) {
         if (isArchitectEscalation) {
           await patchEngineeringSpecWithDecision({
@@ -833,24 +836,26 @@ ${brief}`
           }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
           clearEscalationNotification(featureKey(featureName))
         } else {
-          const patchedSpec = await patchProductSpecWithRecommendations({
+          const writeback = await patchProductSpecWithRecommendations({
             featureName,
             question: escalationNotification.question,
             recommendations: escalationNotification.recommendations,
             humanConfirmation: userMessage,
           }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback FAILED: ${err}`); return null })
 
-          if (!patchedSpec) {
+          if (!writeback) {
             // Writeback failed — keep escalation active, don't resume design
             console.log(`[ESCALATION] product spec writeback failed — keeping escalation active for ${featureName}`)
             return
           }
+          const patchedSpec = writeback.mergedSpec
+          pmDiffBrief = writeback.diffSummary.brief
           clearEscalationNotification(featureKey(featureName))
 
           // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
           // Deterministic re-audit: verify the patched PM spec is now clean.
           // If findings remain, trigger a new escalation brief instead of resuming design.
-          if (patchedSpec) {
+          {
             const { verifyEscalationResolution } = await import("../../../runtime/escalation-orchestrator")
             const reaudit = verifyEscalationResolution("pm", patchedSpec, "ux-design", targetFormFactors)
             if (!reaudit.ready && reaudit.escalationBrief) {
@@ -862,10 +867,14 @@ ${brief}`
                 designContext: "",
                 productSpec: patchedSpec,
               })
+              // B24 — truthful change reporting: include the deterministic AC-level
+              // diff brief so the user sees what actually changed (catastrophic #29
+              // showed the prior "1 PM-scope gap remains" framing under-reported a
+              // 6-AC corruption).
               await client.chat.postMessage({
                 channel: channelId,
                 thread_ts: threadTs,
-                text: `${PLATFORM_MESSAGE_PREFIX} The product spec was partially updated, but ${reaudit.findings.length} PM-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the PM agent back into this thread.`,
+                text: `${PLATFORM_MESSAGE_PREFIX} The product spec was updated — ${pmDiffBrief} ${reaudit.findings.length} PM-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the PM agent back into this thread.`,
               }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
               return
             }
@@ -877,13 +886,16 @@ ${brief}`
       // Clear notification if not already cleared (no-recommendations path)
       if (getEscalationNotification(featureKey(featureName))) clearEscalationNotification(featureKey(featureName))
 
-      // PM posts closure message — PM owns the spec update, not the design agent
+      // PM posts closure message — PM owns the spec update, not the design agent.
+      // B24 — include the deterministic diff brief on the PM path; engineering-spec
+      // path keeps the legacy generic text (cross-agent diff parity tracked separately).
       if (escalationNotification.recommendations) {
+        const diffSuffix = pmDiffBrief ? ` — ${pmDiffBrief}` : ""
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: threadTs,
-          text: `${PLATFORM_MESSAGE_PREFIX} The product spec was updated with the confirmed PM decisions. The design phase can now continue.`,
-        }).catch(err => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
+          text: `${PLATFORM_MESSAGE_PREFIX} The product spec was updated with the confirmed PM decisions${diffSuffix} The design phase can now continue.`,
+        }).catch((err: unknown) => console.log(`[ESCALATION] PM closure message failed (non-blocking): ${err}`))
       }
 
       const injectedMessage = `PM decisions confirmed and product spec updated. Continue the design.`
@@ -1057,18 +1069,27 @@ ${archPendingEscalation.question}`
       // `### Architect Decision (pre-engineering)` heading would create two
       // sources of truth (Principle 1) and produce append-only duplicate-heading
       // blocks (one per escalation). Engineering-spec writeback retired.
+      // B24 — archUpstreamDiffBrief carries the deterministic AC-level diff from
+      // the upstream PM-spec writeback (when applicable) into the post-writeback
+      // closure messages. Design-spec parallel diff brief tracked separately
+      // (cross-agent parity follow-on for the design-spec writer).
+      let archUpstreamDiffBrief: string | null = null
       if (archEscalationNotification.recommendations) {
         // Write to upstream spec — product spec for PM escalations, design spec for design escalations
         // Capture the patched spec for re-audit below.
         let patchedUpstreamSpec: string | null = null
         if (archNotifTarget === "pm") {
-          patchedUpstreamSpec = await patchProductSpecWithRecommendations({
+          const writeback = await patchProductSpecWithRecommendations({
             featureName,
             question: archEscalationNotification.question,
             recommendations: archEscalationNotification.recommendations,
             humanConfirmation: userMessage,
           }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
-          console.log(`[ESCALATION] product spec patched with confirmed PM recommendation for ${featureName}`)
+          if (writeback) {
+            patchedUpstreamSpec = writeback.mergedSpec
+            archUpstreamDiffBrief = writeback.diffSummary.brief
+            console.log(`[ESCALATION] product spec patched with confirmed PM recommendation for ${featureName} — diff: ${archUpstreamDiffBrief}`)
+          }
         }
         if (archNotifTarget === "design") {
           patchedUpstreamSpec = await patchDesignSpecWithRecommendations({
@@ -1103,10 +1124,13 @@ ${archPendingEscalation.question}`
               designContext: "",
               productSpec: blockingSpec === "pm" ? patchedUpstreamSpec : undefined,
             })
+            // B24 — truthful change reporting on PM-target re-audit. Design-target
+            // diff brief tracked separately (design-spec writer parity follow-on).
+            const diffSuffix = archUpstreamDiffBrief ? ` — ${archUpstreamDiffBrief}` : ""
             await client.chat.postMessage({
               channel: channelId,
               thread_ts: threadTs,
-              text: `${PLATFORM_MESSAGE_PREFIX} The ${targetLabel === "PM" ? "product" : "design"} spec was partially updated, but ${reaudit.findings.length} ${targetLabel}-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the ${targetLabel} agent back into this thread.`,
+              text: `${PLATFORM_MESSAGE_PREFIX} The ${targetLabel === "PM" ? "product" : "design"} spec was updated${diffSuffix} ${reaudit.findings.length} ${targetLabel}-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the ${targetLabel} agent back into this thread.`,
             }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
             clearEscalationNotification(featureKey(featureName))
             return
@@ -1115,13 +1139,16 @@ ${archPendingEscalation.question}`
         // ─── END RE-AUDIT ───────────────────────────────────────────────────
       }
 
-      // Closure message — confirm to user that the upstream spec was updated
+      // Closure message — confirm to user that the upstream spec was updated.
+      // B24 — include the deterministic diff brief on PM-target path; design-target
+      // path keeps the legacy generic text (cross-agent diff parity tracked separately).
       const respondingRole = archNotifTarget === "design" ? "Designer" : "PM"
+      const archDiffSuffix = archUpstreamDiffBrief ? ` — ${archUpstreamDiffBrief}` : ""
       await client.chat.postMessage({
         channel: channelId,
         thread_ts: threadTs,
-        text: `${PLATFORM_MESSAGE_PREFIX} The ${respondingRole === "PM" ? "product" : "design"} spec was updated with the confirmed ${respondingRole} decision. The architect will now resume.`,
-      }).catch(err => console.log(`[ESCALATION] closure message failed (non-blocking): ${err}`))
+        text: `${PLATFORM_MESSAGE_PREFIX} The ${respondingRole === "PM" ? "product" : "design"} spec was updated with the confirmed ${respondingRole} decision${archDiffSuffix} The architect will now resume.`,
+      }).catch((err: unknown) => console.log(`[ESCALATION] closure message failed (non-blocking): ${err}`))
 
       clearEscalationNotification(featureKey(featureName))
       const injectedMessage = `${respondingRole} resolved the upstream constraint: "${archEscalationNotification.question}" → "${userMessage}". The upstream spec has been revised. Resume engineering spec development with this revision applied — update the affected sections and continue.`

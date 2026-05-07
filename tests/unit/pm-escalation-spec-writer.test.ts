@@ -111,9 +111,11 @@ describe("patchProductSpecWithRecommendations — consumer (gate logic)", () => 
     expect(saveArgs.filePath).toContain("onboarding.product.md")
     // Merged spec must contain the new acceptance criterion from the patch
     expect(saveArgs.content).toContain("once per session")
-    // Return value must be the merged spec content (for post-patch adversarial audit)
+    // B24 — return value is { mergedSpec, diffSummary }; mergedSpec contains the patch.
     expect(result).not.toBeNull()
-    expect(result).toContain("once per session")
+    expect(result!.mergedSpec).toContain("once per session")
+    expect(result!.diffSummary).toBeDefined()
+    expect(typeof result!.diffSummary.brief).toBe("string")
   })
 
   it("returns null when Anthropic returns text without ## headers (patch invalid)", async () => {
