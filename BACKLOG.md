@@ -105,47 +105,66 @@ Sequenced by dependency. Each step lists its manifest items, an estimated cost, 
 >
 > _Note:_ Step 1 was originally pure docs/process. The "substantive over terse" prompt rule landed during Step 1 work to clear the eval-gate flake (tracked as H6 in the manifest); it's a real runtime change to general-channel slash-command paths and warrants the smoke check above per the "Maintain a documented manual test suite" discipline.
 
-**Step 2 — Block A wiring + burn-in completion — manifest items: A4, A5, A6, A7, F1**
+**Step 2 — Block A wiring + burn-in completion — manifest items: A4, A5, A6, A7, F1, plus Step 2a closure-work items B20-B25 / B21 / B24 / G6**
 
-Step 2 has **three sequential sub-pieces** with **two manual-test pause-points** (pre-cutover gate + post-cutover smoke). Each sub-piece is explicitly labeled WHEN-ASSISTANT-IS-HERE so the assistant knows whether to ask the user to drive scenarios or perform code work.
+Step 2 has **three sequential phases — Step 2a, Step 2b, Step 2c** — with **two manual-test pause-points** (pre-cutover gate + post-cutover smoke). Each phase is explicitly labeled WHEN-ASSISTANT-IS-HERE so the assistant knows whether to ask the user to drive scenarios or perform code work.
 
 ---
 
-**Sub-piece 2a — A5/A6/A7 burn-in completion (manual MT pause-point #1; PRE-cutover gate)**
+**Step 2a — A5/A6/A7 burn-in completion + Step 2a closure-work fixes (manual MT pause-point #1; PRE-cutover gate)**
 
-Shadow wiring is already shipped (A5/A6/A7 manifest status: `burn-in/burn-in`; `interfaces/slack/handlers/message.ts:899/1157/1206` calls `shadowDesignerV2` / `shadowArchitectV2` / `shadowPmV2`). This sub-piece is purely manual driving — assistant asks user to drive a bounded scenario set in real Slack against the existing `onboarding` feature. Each scenario produces `[V2-*-SHADOW]` log entries; assistant inspects for `divergence=true`.
+Shadow wiring is already shipped (A5/A6/A7 manifest status: `burn-in/burn-in`; agent-internal shadow placement after B25). User drove the canonical Step 2a MTs (MT-4 + MT-18 + an architect→PM escalation flow) circa 2026-05-01 against the existing `onboarding` feature; that drive surfaced 30 observations including 7 catastrophic findings (#13/#14/#21/#24/#25/#28/#29 — fabricated AC citations corrupting spec; visual-detail strip pass over-stripping product SLAs; user-facing message under-reporting actual change). Per the user-approved Step 2a closure plan (`humble-squishing-starlight.md`, A2 FULL scope), the catastrophic items had to be fixed BEFORE Step 2a could close so V2 cutover (Step 2b) does not inherit known-broken behavior. Six closure-work fixes shipped this session: G6 (outbound logging), B25 (V2 shadow on escalation paths), B20 (hold-pending-escalation phase label), B22 (visual-detail strip-pass scope), B21 (content verifier inference-style detection + BLOCKING), B24 (truthful AC-level diff brief in closure messages). B23 (per-AC patcher granularity) DEFERRED — no real attack surface remains post-B22+B21.
 
-> **WHEN ASSISTANT IS WORKING ON SUB-PIECE 2a → ASK USER TO DRIVE (~30 min total):**
+> **WHEN ASSISTANT IS WORKING ON STEP 2a → ASK USER TO DRIVE (~60 min total):**
+>
+> Order: closure-work MTs first (verify the fixes work; needed before re-driving the canonical MTs so we're not chasing known issues), then canonical Step 2a MTs (the actual gate criterion).
+>
+> _Closure-work tier (verify the 6 fixes from this session):_
 >
 > | MT | Scenario | What it verifies | Pass criterion |
 > |---|---|---|---|
-> | **MT-4** | Architect V2 shadow against onboarding (engineering-in-progress phase). Drive ~6 scenarios exercising LLM-orchestrated branches (`normal-agent-turn` + `escalation-engaged`); pure branches covered by existing unit tests at 90%+ coverage. | V2 architect's LLM-orchestrated decisions match legacy on real LLM calls. | Zero `[V2-ARCH-SHADOW] divergence=true` entries across the scenario set. |
-> | **MT-5** | Designer V2 shadow via slash `/design` substantive question in `#feature-onboarding` + (if it surfaces) architect→designer escalation. | V2 designer's LLM decisions match legacy. | Zero `[V2-DESIGN-SHADOW] divergence=true` entries across exercised branches. |
-> | **MT-6** | PM V2 shadow via slash `/pm` substantive question in `#feature-onboarding` + (if it surfaces) architect→PM escalation. | V2 PM's LLM decisions match legacy. | Zero `[V2-PM-SHADOW] divergence=true` entries across exercised branches. |
-> | **MT-18** | D5 escalation-survives-restart (~10 min hands-on). Set up pendingEscalation, `kill -9` bot, restart, send message in same thread → escalation re-fires; `clearStaleEntries` runs at startup; `timestamp` survives JSON round-trip. | Orchestration state durably persists across unclean restart. Foundation for Block O. | Escalation re-fires on first post-restart message. |
+> | **MT-33** | B21 BLOCKING — drive architect→PM escalation; PM produces a recommendation; confirm with `yes approved`. Try a clean recommendation AND (if it surfaces naturally) one with an inference-style AC citation. | Clean PM recommendations pass through; only AC-citation hallucinations get blocked. Highest false-positive risk in the queue. | Clean flow: `[GITHUB] saveApprovedSpec` for product spec fires. Hallucination flow: `[CONTENT-VERIFIER] BLOCKING` log line + `[ESCALATION] product spec writeback: BLOCKED` + spec on main UNCHANGED. |
+> | **MT-34** | B24 truthful diff brief — same flow as MT-33 (clean path). | Closure message contains AC-level diff brief (`Modified ACs N` / `added AC N`), not vague "spec was updated." Brief matches actual `git show main` diff. | `[OUTBOUND]` log shows closure text with diff brief inline; brief matches GitHub diff. |
+> | **MT-32** | B22 strip-pass scope — drive escalation flow where PM recommends a product-SLA timing (e.g., "within 200ms"). | Strip pass does NOT fire on legitimate product SLAs. Other ACs' timing thresholds preserved. | NO `[ESCALATION] product spec writeback: visual details detected` log; GitHub diff modifies only the targeted AC. |
+> | **MT-31** | B20 phase label — set up architect→PM escalation, send a non-affirmative reply in the thread. | Hold-pending-escalation message renders with the originAgent-derived phase label. | Message reads "Engineering is paused" (not "Design is paused") for an architect-origin escalation. |
+> | **MT-29** | G6 outbound logging — any flow that emits Slack messages. | Every `chat.postMessage` and `chat.update` produces `[OUTBOUND] method=X channel=Y thread=Z text=<full content>` log lines. | At least one `[OUTBOUND]` line per posted message; full content captured (not truncated). |
+> | **MT-30** | B25 V2 shadow on escalation paths — drive architect→PM escalation through to PM response. | `[V2-PM-SHADOW]` (and `[V2-DESIGN-SHADOW]` if designer escalation) log lines fire on the escalation path, not just natural-phase invocations. | Shadow log line appears for the PM escalation-resume invocation. |
 >
-> _Pass criterion for sub-piece 2a as a whole:_ all 4 MTs green ⇒ A5/A6/A7 manifest status flips to `done/wired-and-exercised` ⇒ unblocks sub-piece 2b. ~30 min active driving.
+> _Canonical Step 2a tier (the actual gate criterion per the original Step 2a inventory; re-drive MT-4/MT-18 because the closure-work fixes invalidated the prior runs; MT-5/MT-6 are fresh drives that didn't happen in the prior session):_
+>
+> | MT | Scenario | What it verifies | Pass criterion |
+> |---|---|---|---|
+> | **MT-4** | Architect V2 shadow against onboarding (engineering-in-progress phase). Drive ~6 scenarios exercising LLM-orchestrated branches (`normal-agent-turn` + `escalation-engaged`); pure branches covered by existing unit tests at 90%+ coverage. **RE-DRIVE post-fix** (prior run produced the catastrophic findings; this re-drive must show zero divergence + zero spec corruption). | V2 architect's LLM-orchestrated decisions match legacy on real LLM calls; no spec-corruption end-to-end. | Zero `[V2-ARCH-SHADOW] divergence=true` entries across the scenario set; zero `[CONTENT-VERIFIER] BLOCKING` UNLESS a hallucination is being driven intentionally; spec on main reflects only intended changes. |
+> | **MT-5** | Designer V2 shadow via slash `/design` substantive question in `#feature-onboarding` + (if it surfaces) architect→designer escalation. **FIRST DRIVE — never run before.** | V2 designer's LLM decisions match legacy. | Zero `[V2-DESIGN-SHADOW] divergence=true` entries across exercised branches. |
+> | **MT-6** | PM V2 shadow via slash `/pm` substantive question in `#feature-onboarding` + (if it surfaces) architect→PM escalation. **FIRST DRIVE — never run before.** | V2 PM's LLM decisions match legacy. | Zero `[V2-PM-SHADOW] divergence=true` entries across exercised branches. |
+> | **MT-18** | D5 escalation-survives-restart (~10 min hands-on). Set up pendingEscalation, `kill -9` bot, restart, send message in same thread → escalation re-fires; `clearStaleEntries` runs at startup; `timestamp` survives JSON round-trip. **RE-DRIVE post-fix** (prior run pre-dated G6; with G6 the inspection is now log-driven, not paste-driven). | Orchestration state durably persists across unclean restart. Foundation for Block O. | Escalation re-fires on first post-restart message. |
+>
+> _Pass criterion for Step 2a as a whole:_ all 10 MTs green ⇒ A5/A6/A7 manifest status flips to `done/wired-and-exercised` ⇒ B20/B21/B22/B24/B25/G6 manifest verification flips from `infrastructure-only` to `wired-and-exercised` ⇒ unblocks Step 2b. ~60 min active driving (closure-work tier ~30 min + canonical tier ~30 min).
 
 ---
 
-**Sub-piece 2b — A4 cutover wiring (assistant code work; NO MT during)**
+**Step 2b — A4 cutover wiring (assistant code work; NO MT during)**
 
-Prereq: sub-piece 2a green (zero-divergence proof).
+Prereq: Step 2a green (zero-divergence proof + closure-work MTs all pass).
 
-> **WHEN ASSISTANT IS WORKING ON SUB-PIECE 2b → DO NOT ASK USER TO TEST (code change only):**
+> **WHEN ASSISTANT IS WORKING ON STEP 2b → DO NOT ASK USER TO TEST (code change only):**
 > - Flip `CUTOVER_ENABLED = false → true` in `runtime/cutover-flag.ts`.
 > - Run full test suite + canonical-consistency check. Stage all + commit + push.
 > - Verification: production traffic now routes through V2 single-path runners; legacy still fires shadow-mode comparison (no functional change yet, just flipped roles).
 
 ---
 
-**Sub-piece 2c — F1 legacy deletion (assistant code work; NO MT during)**
+**Step 2c — F1 legacy deletion (assistant code work; NO MT during)**
 
-Prereq: sub-piece 2b stable.
+Prereq: Step 2b stable.
 
-> **WHEN ASSISTANT IS WORKING ON SUB-PIECE 2c → DO NOT ASK USER TO TEST (code change only):**
+> **WHEN ASSISTANT IS WORKING ON STEP 2c → DO NOT ASK USER TO TEST (code change only):**
 > - Delete legacy `runArchitectAgent` / `runDesignAgent` / `runPmAgent` from `agents/architect.ts` / `agents/design.ts` / `agents/pm.ts` (their `runXxxAgent` orchestrator functions; the `buildXxxSystemPrompt` prompt-builders survive — V2 calls them via DI).
 > - Delete the multi-exit handler logic in `interfaces/slack/handlers/message.ts`. Replace with thin V2 dispatcher.
+> - F1 acceptance criteria (added during Step 2a closure):
+>   - V2 thin dispatcher must implement the hold-pending-escalation guard with the same originAgent-based phase derivation as B20 (legacy site at `interfaces/slack/handlers/message.ts:496-497`).
+>   - V2 thin dispatcher must compute `isStateQuery` once at the dispatcher boundary (using legacy's `isSpecStateQuery` heuristic) and pass it into V2 production. The current Step 2a B25 shadow stub passes `isStateQuery: false` — that stub artifact must be replaced with the real classification, NOT carried into V2 production.
+>   - V2 thin dispatcher must preserve the `*Platform —*` prefix discipline from B10 at every platform-composed message site (B27 follow-on; required by Principle 17).
 > - Update the ~13 test files that import message.ts (per pre-recommendation audit — some test legacy paths and get deleted with F1; others test dispatcher routing and need updating).
 > - Run full test suite + canonical-consistency. Commit + push.
 > - Verification: `grep "runArchitectAgent\b" interfaces/slack/handlers/message.ts` returns zero matches; every Slack message routes through `runtime/agents/run*AgentV2.ts`; `[V2-*-SHADOW]` log lines disappear (V2 is now production, no shadow comparison needed).
@@ -154,16 +173,16 @@ Prereq: sub-piece 2b stable.
 
 **Step 2 closure (manual MT pause-point #2; POST-cutover smoke; closes Step 2)**
 
-> **WHEN SUB-PIECE 2c IS COMPLETE → ASK USER TO DRIVE (~10 min smoke):**
+> **WHEN STEP 2c IS COMPLETE → ASK USER TO DRIVE (~10 min smoke):**
 >
-> Re-run a subset of MT-4/5/6 scenarios on V2-as-production (no shadow comparison; V2 is the only runner now). Goal: confirm V2 actually responds correctly to the same scenarios it shadowed equivalently in 2a.
+> Re-run a subset of MT-4/5/6 scenarios on V2-as-production (no shadow comparison; V2 is the only runner now). Goal: confirm V2 actually responds correctly to the same scenarios it shadowed equivalently in Step 2a.
 > - Drive 1-2 architect turns in `#feature-onboarding`. Verify substantive responses, no errors.
 > - Drive `/design` and `/pm` substantive questions. Same.
 > - Watch logs for any errors or stale-state issues that didn't surface in shadow mode.
 >
 > _Pass criterion:_ zero errors; responses are substantive and on-topic. Step 2 formally done. Step 3 (B-series fixes) begins.
 
-_Robustness verified at end of step:_ V2 single-path runners handle 100% of real production traffic; legacy multi-exit handlers deleted; orchestration state durably persists across unclean restart. The entire B-class of legacy bugs (B6/B7/B8/B9/B10/B11/B13/B16) is structurally retired by the V2 single-path discipline.
+_Robustness verified at end of step:_ V2 single-path runners handle 100% of real production traffic; legacy multi-exit handlers deleted; orchestration state durably persists across unclean restart. Catastrophic spec-corruption attack surface (#13/#14/#21/#24/#25/#28/#29) closed end-to-end via B21 (BLOCKING content verifier) + B22 (strip-pass scope) + B24 (truthful diff brief). The entire B-class of legacy bugs (B6/B7/B8/B9/B10/B11/B13/B16) is structurally retired by the V2 single-path discipline.
 
 Total active time: ~30 min driving (2a) + ~1-2 hours code (2b+2c) + ~10 min smoke (closure) = ~3 hours focused work.
 
