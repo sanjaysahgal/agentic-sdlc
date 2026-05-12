@@ -2,7 +2,15 @@
   "pendingEscalations": {},
   "pendingApprovals": {},
   "pendingDecisionReviews": {},
-  "escalationNotifications": {},
+  "escalationNotifications": {
+    "onboarding": {
+      "targetAgent": "pm",
+      "question": "1. [PM] AC uses undefined timing: \"immediately\" without a numeric value in seconds or minutes. — Replace \"immediately\" with a specific duration (e.g. \"within 200ms\", \"after 60 seconds of inactivity\").",
+      "recommendations": "Take your time. I'll be here when you're ready to pick it up again.",
+      "originAgent": "architect",
+      "timestamp": 1778552437880
+    }
+  },
   "threadAgents": {
     "1777052952.437459": "architect",
     "1777053753.153509": "ux-design",
