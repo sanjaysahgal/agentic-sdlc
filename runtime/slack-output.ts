@@ -45,7 +45,23 @@ export function logOutbound(
   console.log(`[OUTBOUND] method=${method} channel=${channel} thread=${thread}${tsField} text_chars=${rawText.length}${truncField}\n${content}`)
 }
 
+// Idempotency marker — prevents double-wrapping when the same client is
+// instrumented twice (e.g. via Bolt middleware that fires per-event AND
+// against `app.client` directly). Without this, the second call would wrap
+// the already-wrapped function, producing two `[OUTBOUND]` lines per call.
+const G6_INSTRUMENTED = Symbol.for("G6_INSTRUMENTED")
+
 export function instrumentSlackClient(client: WebClient): void {
+  // B32 — per Step 2a observation #41: the prior single-call instrumentation
+  // at `app.client` boundary did not cover Bolt's per-event clients (each
+  // handler receives a distinct WebClient instance with proper auth/retry
+  // context — `app.client` is never the object used to post from handlers).
+  // Fix: the Bolt middleware in `interfaces/slack/app.ts` now calls this
+  // function on every event's `args.client`, so every outbound is captured.
+  // Idempotent — safe to call multiple times on the same client.
+  if ((client as unknown as Record<symbol, boolean>)[G6_INSTRUMENTED]) return
+  ;(client as unknown as Record<symbol, boolean>)[G6_INSTRUMENTED] = true
+
   const origPost = client.chat.postMessage.bind(client.chat)
   const origUpdate = client.chat.update.bind(client.chat)
 

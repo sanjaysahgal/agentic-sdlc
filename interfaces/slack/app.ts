@@ -16,14 +16,26 @@ const app = new App({
   appToken: process.env.SLACK_APP_TOKEN,
 })
 
-// G6 — instrument the Slack WebClient so every chat.postMessage / chat.update
+// G6 — instrument every Slack WebClient so every chat.postMessage / chat.update
 // emits a structured [OUTBOUND] log line with full content. Required for MT
 // inspection (Step 6 onboarding walk + Step 7 cross-surface consistency
 // fundamentally depend on operators being able to verify "what did the user
-// see?" from logs alone, without operator pastes). Bolt's event handlers
-// receive the same `app.client` instance, so instrumenting once here covers
-// every code path.
-instrumentSlackClient(app.client)
+// see?" from logs alone, without operator pastes).
+//
+// B32 — per Step 2a observation #41: the original implementation wrapped
+// `app.client` only, but Bolt passes a distinct per-event `client` to each
+// handler. `app.client` is never the object used by handlers, so the wrapper
+// was a no-op and zero `[OUTBOUND]` lines fired across the entire MT-33 +
+// MT-4 runs. Fix: register a global middleware that instruments the per-event
+// `client` on every incoming event (idempotent — the marker in
+// `runtime/slack-output.ts` prevents double-wrapping). This is the structural
+// fix; instrumenting `app.client` would only cover code paths that explicitly
+// use it (currently none — all handlers use per-event client).
+// DESIGN-REVIEWED: B32 — instrumentation at per-event client boundary per Principle 8 (platform enforcement); idempotency marker per Principle 11 (deterministic).
+app.use(async ({ client, next }) => {
+  if (client) instrumentSlackClient(client)
+  await next?.()
+})
 
 // Welcome message when a feature- channel is created
 app.event("channel_created", async ({ event, client }) => {

@@ -733,11 +733,13 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
-### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update call (G6; Step 2a closure)
+### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update call (G6 + B32; Step 2a closure round 2)
 
-**Why this can't be automated (fully):** the unit tests verify `logOutbound` format + `instrumentSlackClient` mutates the SDK methods correctly. But the actual production wiring depends on Bolt's `app.client` being the same WebClient instance every event handler receives. That assumption can only be verified by booting the bot against real Slack and observing whether `[OUTBOUND]` log lines appear for messages emitted from EVERY code path — including fast-path branches (hold-pending-escalation, post-confirm notifications, splitForSlack continuation messages) that don't go through `appendMessage`.
+**Why this can't be automated (fully):** the unit tests verify `logOutbound` format + `instrumentSlackClient` mutates the SDK methods correctly + the new B32 idempotency contract. But the actual production wiring depends on Bolt's per-event `client` being the WebClient instance every event handler receives. That assumption can only be verified by booting the bot against real Slack and observing whether `[OUTBOUND]` log lines appear for messages emitted from EVERY code path.
 
-**Pre-flight:** bot restarted with the G6 commit on main; `[BOOT]` codeMarker matches HEAD; `.conversation-state.json` is whatever state you have.
+**Context:** initial G6 v1 wiring (`instrumentSlackClient(app.client)`) was a no-op in production — observation #41 surfaced during the round-1 MT walk. **Root cause:** Bolt passes a distinct per-event `client` to handlers; `app.client` is never used by handler code. **B32 fix:** moved instrumentation into a Bolt global middleware (`app.use`) that wraps the per-event `client` on every event; added a Symbol-keyed idempotency marker so the same client passing through the middleware multiple times doesn't double-wrap.
+
+**Pre-flight:** bot restarted with the B32 commit on main; `[BOOT]` codeMarker matches HEAD; `.conversation-state.json` is whatever state you have.
 
 **Setup:** any feature channel (e.g., `#feature-onboarding`) where bot will respond.
 
@@ -759,10 +761,11 @@ grep -c "^\[OUTBOUND\]" logs/bot-$(date +%Y-%m-%d).log
 - Total `grep -c "^\[OUTBOUND\]"` ≥ 4 (likely much higher due to the placeholder + update pattern in `thinking.ts`).
 
 **Failure signatures:**
-- Zero `[OUTBOUND]` lines → instrumentation not wired; check `instrumentSlackClient(app.client)` was called at app boot AND `app.client` is the WebClient that handlers receive (Bolt API).
+- Zero `[OUTBOUND]` lines → B32 middleware not wired; check `app.use(async ({ client, next }) => { instrumentSlackClient(client); await next?.() })` is registered at app boot in `interfaces/slack/app.ts` BEFORE any event handler registration.
 - `[OUTBOUND]` for `postMessage` but not `update` (or vice versa) → only one method was instrumented; check `runtime/slack-output.ts` covers both.
-- Some messages are logged but NOT the fast-path ones (hold-pending-escalation, post-PM notification) → instrumentation is at handler-level instead of client-level; re-check that `app.client` is shared.
-- Log lines exist but bodies truncated at 500 chars → instrumentation is using the legacy `[AGENT-RESPONSE]` truncation path instead of the new `logOutbound`.
+- Some messages are logged but NOT the fast-path ones (hold-pending-escalation, post-PM notification) → middleware may be registered AFTER specific event handlers; confirm `app.use` is the first thing after the App constructor + idempotency marker.
+- Each `chat.postMessage` produces TWO `[OUTBOUND]` lines → idempotency marker isn't preventing double-wrap. Check the Symbol marker (`G6_INSTRUMENTED`) is being set in `runtime/slack-output.ts`.
+- Log lines exist but bodies truncated at 500 chars → some code path is logging via the legacy `[AGENT-RESPONSE]` truncation path at `runtime/claude-client.ts:168` rather than going through `chat.postMessage`. The `[AGENT-RESPONSE]` log line is a separate (legacy) channel; `[OUTBOUND]` is the full-content channel.
 
 **Note:** this MT closes the operator-paste-dependent inspection gap. After it passes, all subsequent MTs (Step 6 walk + Step 7 cross-surface matrix) can be inspected from logs alone — operator pastes become a cross-check, not a primary source.
 

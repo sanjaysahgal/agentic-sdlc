@@ -163,20 +163,44 @@ describe("G6 — slack-output (outbound logging)", () => {
       expect(consoleLogSpy.mock.calls[2][0]).toContain("third")
     })
 
-    it("instrumenting a client twice produces two log lines per call (idempotency caveat documented)", async () => {
-      // Calling instrumentSlackClient twice on the same client double-wraps —
-      // each call would log twice. App boot calls it once; if anyone re-calls
-      // it (e.g., during tests or a hot-reload), they'll see the doubling.
-      // This test pins the behavior so any future change to make it idempotent
-      // is a deliberate choice.
+    it("B32 — instrumenting a client twice is IDEMPOTENT (one log line per call)", async () => {
+      // Per Step 2a observation #41, the B32 fix re-instrumentation runs
+      // via a Bolt global middleware that fires on every event. The same
+      // client object can pass through the middleware multiple times in
+      // succession (Bolt may reuse the same client per socket connection).
+      // The Symbol-keyed idempotency marker in `runtime/slack-output.ts`
+      // prevents double-wrapping. Without this, every middleware pass would
+      // double-log → 2x, 4x, 8x... events per actual postMessage.
       const { client } = fakeClient()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       instrumentSlackClient(client as any)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       instrumentSlackClient(client as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      instrumentSlackClient(client as any)  // three times — still one log per call
 
-      await client.chat.postMessage({ channel: "C1", text: "double" } as never)
+      await client.chat.postMessage({ channel: "C1", text: "single" } as never)
+      expect(consoleLogSpy.mock.calls.length).toBe(1)
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("single")
+    })
+
+    it("B32 — independent clients are independently instrumented (idempotency is per-client, not global)", async () => {
+      // The Symbol marker is set on each client object individually, so two
+      // distinct clients each get their own wrapping. Critical for Bolt's
+      // per-event client model: each event's client must be wrapped on its
+      // first pass through the middleware.
+      const { client: clientA } = fakeClient()
+      const { client: clientB } = fakeClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      instrumentSlackClient(clientA as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      instrumentSlackClient(clientB as any)
+
+      await clientA.chat.postMessage({ channel: "CA", text: "from-A" } as never)
+      await clientB.chat.postMessage({ channel: "CB", text: "from-B" } as never)
       expect(consoleLogSpy.mock.calls.length).toBe(2)
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("from-A")
+      expect(consoleLogSpy.mock.calls[1][0]).toContain("from-B")
     })
   })
 })
