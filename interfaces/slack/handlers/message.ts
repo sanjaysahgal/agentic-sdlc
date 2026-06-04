@@ -2669,11 +2669,18 @@ async function runDesignAgent(params: {
   const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureKey(featureName))
 
   // Platform-enforced assertive escalation text: when escalation was just offered this turn
-  // (via tool call, N18 gate, or fallback prose-detection gate) but the agent's prose is passive
-  // (asked a question instead of asserting the block), override with the assertive CTA.
-  // "Assertive" means the prose already contains the required escalation language — "bring the PM"
-  // or "Design cannot move forward" — in which case it is preserved. Passive prose ("Want me to
-  // escalate?", "Would you like to call the PM?") is always overridden.
+  // (via tool call, N18 gate, or fallback prose-detection gate), APPEND a structured CTA after
+  // the agent's substantive prose. The CTA is built from the QUEUED targetAgent — not from agent
+  // prose (which can name the wrong target).
+  //
+  // B33 — per Step 2a observation #50/#51: the prior implementation REPLACED the agent's prose
+  // with the CTA, which silently discarded substantive content (e.g. designer's gap analysis).
+  // User saw only the CTA, leading to a loop UX after stale-state eviction (#51) and lost trust
+  // in the platform. Fix: append the structured CTA after the agent's prose (separated by a
+  // markdown horizontal rule for visual clarity). Both surfaces are surfaced — agent's analysis
+  // PLUS the platform's queued action. Cross-agent parity: same fix shape at the architect
+  // override site (3386-3391) per Principle 15.
+  // DESIGN-REVIEWED: B33 — override APPENDS CTA after designer prose per #50; substantive content preserved.
   // Scoped: only overrides PM escalation (not architect escalation, which has different language).
   const agentCalledPmEscalationTool = toolCallsOutDesign.some(t => t.name === "offer_pm_escalation")
   let finalResponse = response
@@ -2682,11 +2689,15 @@ async function runDesignAgent(params: {
     // !agentCalledEscalation: fallback gate fired (agent didn't call any escalation tool)
     const pending = getPendingEscalation(featureKey(featureName))
     if (pending?.targetAgent === "pm") {
-      // Always replace with the structured format — agent prose may say "bring the PM"
-      // without listing the actual gaps, leaving the user without actionable content.
       const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
-      finalResponse = `${pending.question}\n\n${assertionText}`
-      console.log(`[ESCALATION] Override applied for ${featureName}. pending.question:\n${pending.question}`)
+      const ctaBlock = `${pending.question}\n\n${assertionText}`
+      // APPEND not REPLACE — preserves agent's substantive prose. If agent emitted no prose
+      // (response is empty / whitespace-only), fall through to CTA-only so the user still
+      // sees the action they need to take.
+      finalResponse = response.trim().length > 0
+        ? `${response}\n\n---\n\n${ctaBlock}`
+        : ctaBlock
+      console.log(`[ESCALATION] Override APPENDED for ${featureName} (B33; response_chars=${response.length}). pending.question:\n${pending.question}`)
     }
   }
 
@@ -3372,13 +3383,22 @@ ${response}`
 
   // ─── POST-RUN: Escalation assertive language override (Principle 10) ───────
   // Same pattern as design agent: if escalation was offered (agent called
-  // offer_upstream_revision or auto-gate fired), replace agent prose with
-  // structured CTA built from the QUEUED targetAgent — not from agent prose
-  // (which can name the wrong target). This is the platform-enforced
-  // prose-state alignment described in BACKLOG: "Architect prose-vs-state
-  // mismatch — agent verbally promises one escalation, platform queues
-  // another." Same root cause as the architect-readiness gap (agent prose
-  // doesn't reflect platform-measured state).
+  // offer_upstream_revision or auto-gate fired), APPEND a structured CTA built
+  // from the QUEUED targetAgent — not from agent prose (which can name the
+  // wrong target). This is the platform-enforced prose-state alignment
+  // described in BACKLOG: "Architect prose-vs-state mismatch — agent verbally
+  // promises one escalation, platform queues another."
+  //
+  // B33 — per Step 2a observation #50/#51: the prior implementation REPLACED
+  // the architect's prose with the CTA, which silently discarded substantive
+  // content (e.g. "Good to have you back. Here's where we stand — I found 40
+  // gaps across the spec chain..."). User saw only the CTA. After stale-state
+  // TTL eviction this created a loop UX (#51): same CTA appeared twice, user
+  // had no acknowledgment their prior "yes" was processed. Fix: APPEND the
+  // CTA after the architect's prose (separated by markdown horizontal rule).
+  // Cross-agent parity per Principle 15 — same fix shape at the designer
+  // override site (2679-2700).
+  // DESIGN-REVIEWED: B33 — override APPENDS CTA after architect prose per #50; substantive content preserved.
   const escalationAfterRunArch = getPendingEscalation(featureKey(featureName))
   const escalationJustOfferedArch =
     (!escalationBeforeRunArchSnapshot && !!escalationAfterRunArch) ||
@@ -3386,8 +3406,13 @@ ${response}`
   let finalArchResponse = response
   if (escalationJustOfferedArch && escalationAfterRunArch && !readOnly) {
     const escLabel = escalationAfterRunArch.targetAgent === "pm" ? "PM" : "Design"
-    finalArchResponse = `${escalationAfterRunArch.question}\n\nUpstream ${escLabel} gaps must be resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
-    console.log(`[ESCALATION] architect assertive override applied for ${featureName} (queued target=${escalationAfterRunArch.targetAgent})`)
+    const ctaBlock = `${escalationAfterRunArch.question}\n\nUpstream ${escLabel} gaps must be resolved before engineering can proceed. Say *yes* and I'll bring in the ${escLabel} agent to close them.`
+    // APPEND not REPLACE — preserves architect's substantive prose. If architect emitted no
+    // prose, fall through to CTA-only.
+    finalArchResponse = response.trim().length > 0
+      ? `${response}\n\n---\n\n${ctaBlock}`
+      : ctaBlock
+    console.log(`[ESCALATION] architect assertive override APPENDED for ${featureName} (B33; response_chars=${response.length}; queued target=${escalationAfterRunArch.targetAgent})`)
   }
   // ─── END ESCALATION ASSERTIVE OVERRIDE ─────────────────────────────────────
 

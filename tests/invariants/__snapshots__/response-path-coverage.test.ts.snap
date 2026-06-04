@@ -4,27 +4,27 @@ exports[`Response-path coverage invariant — Block A1 spike > runArchitectAgent
 [
   {
     "callee": "update",
-    "line": 2824,
+    "line": 2835,
     "snippet": "confirmMessage",
   },
   {
     "callee": "update",
-    "line": 2843,
+    "line": 2854,
     "snippet": ""The engineering spec has been modified since the approval was offered. Please …",
   },
   {
     "callee": "update",
-    "line": 2856,
+    "line": 2867,
     "snippet": "approvalMessage",
   },
   {
     "callee": "update",
-    "line": 2873,
+    "line": 2884,
     "snippet": "msg",
   },
   {
     "callee": "update",
-    "line": 2927,
+    "line": 2938,
     "snippet": "msg",
   },
 ]

@@ -4103,14 +4103,17 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
     expect(pending).not.toBeNull()
     expect(pending?.question).toContain("Session expiry")
 
-    // Platform must override passive prose with assertive text
+    // Platform appends assertive text after agent's prose (B33).
     const text = lastUpdateText(params.client)
     expect(text).toContain("Design cannot move forward")
     expect(text).toContain("Say *yes*")
     // The questions from the tool call must appear
     expect(text).toContain("Session expiry")
-    // The passive question must NOT appear — platform overrode it
-    expect(text).not.toContain("Want to address these now")
+    // B33 — agent's passive prose is PRESERVED (appended-not-replaced); user sees
+    // both the agent's analysis AND the platform's assertive CTA.
+    expect(text).toContain("Want to address these now")
+    // B33 — markdown horizontal rule separates the two surfaces.
+    expect(text).toContain("---")
 
     // Action menu must be suppressed
     expect(text).not.toContain("OPEN ITEMS")
@@ -4246,11 +4249,14 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
     expect(pending?.question).toContain("Acceptance criteria")
     expect(pending?.question).toContain("Conversation carry-over")
 
-    // Passive offer question must be replaced with assertive escalation text
+    // B33 — platform CTA is APPENDED after agent's passive prose (not replaced).
     const text = lastUpdateText(params.client)
     expect(text).toContain("Design cannot move forward")
     expect(text).toContain("Say *yes*")
-    expect(text).not.toContain("Want me to escalate")
+    // B33 — agent's passive prose is PRESERVED.
+    expect(text).toContain("Want me to escalate")
+    // B33 — markdown horizontal rule separates the two surfaces.
+    expect(text).toContain("---")
 
     // Action menu must be suppressed
     expect(text).not.toContain("OPEN ITEMS")
@@ -9682,14 +9688,20 @@ describe("Scenario N88 — Architect prose-vs-state mismatch: assertive override
     expect(pending, "expected auto-trigger to queue PM").not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
-    // The post-run override should have replaced the agent's "Design" prose
-    // with a platform-built PM CTA derived from the queued targetAgent.
+    // B33 — the post-run override APPENDS a platform-built PM CTA derived from
+    // the queued targetAgent. The agent's "Design" prose is PRESERVED (per #50:
+    // suppressing substantive content was catastrophic UX). The platform CTA
+    // surfaces the corrective target alongside.
     const updateCalls = (params.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
     const finalPostedText = (updateCalls.at(-1)?.[0] as any)?.text as string | undefined
     expect(finalPostedText, "expected final posted text to be present").toBeDefined()
+    // Platform CTA correct (PM)
     expect(finalPostedText).toMatch(/bring in the PM agent/)
-    expect(finalPostedText).not.toMatch(/bring in the Design agent/)
     expect(finalPostedText).toMatch(/Upstream PM gaps/)
+    // Architect's prose preserved (B33 — APPEND not REPLACE)
+    expect(finalPostedText).toMatch(/bring in the Design agent/)
+    // Markdown horizontal rule separates the two surfaces
+    expect(finalPostedText).toMatch(/---/)
   })
 })
 

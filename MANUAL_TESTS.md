@@ -733,6 +733,38 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-35 — Escalation override appends agent prose alongside platform CTA (B33; Step 2a closure round 2)
+
+**Why this can't be automated (fully):** unit + regression + integration tests pin source-level invariants (APPEND construction, log marker, DESIGN-REVIEWED comments) and rendered-output assertions (agent prose preserved alongside platform CTA in mocked Slack output). This MT verifies the rendered Slack message in a real flow — particularly that the markdown horizontal rule renders as a visible separator and that the user-perceived experience is "agent analysis followed by platform action."
+
+**Pre-flight:** bot restarted with B33 commit on main; `[BOOT]` codeMarker matches HEAD; G6 (B32) shipped so `[OUTBOUND]` lines are visible for log inspection.
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase). Fresh thread so no stuck escalation state interferes.
+
+**Actions:**
+1. In a NEW thread, post a question that elicits substantive architect analysis AND triggers escalation, e.g.: `walk me through what's blocking engineering progress`.
+2. Wait for architect response.
+3. Inspect the response in Slack:
+   - Does it start with substantive analysis (architect's gap counts, observations, findings)?
+   - Is there a visible horizontal rule (thin line) separating prose from CTA?
+   - Does the CTA below say "Say *yes* and I'll bring in the PM agent" (or Design — whichever was queued)?
+4. Inspect the `[OUTBOUND]` log line for that message — verify the text contains the architect's prose, a `\n\n---\n\n` separator, and the CTA block all in one message body.
+5. Inspect the `[ESCALATION] architect assertive override APPENDED` log line — verify `response_chars=` is greater than 0 (indicates APPEND fired with prose preserved).
+
+**Expected outcome:**
+- User sees BOTH substantive analysis AND platform CTA in a single message, separated by `---`.
+- `[OUTBOUND]` log shows the full content (post-G6 fix).
+- `[ESCALATION] override APPENDED` log fires with `response_chars > 0`.
+- After confirming with `yes`, no loop UX (the prior MT-18 #51 catastrophe doesn't recur because the user has a clear acknowledgment that the bot processed the prior response).
+
+**Failure signatures:**
+- User sees ONLY the CTA, no agent analysis → REPLACE semantics still in effect; check source still has `finalArchResponse = response.trim().length > 0 ? ... : ctaBlock` and not the legacy `finalArchResponse = ${pending.question}\n\n...` direct assignment.
+- `[ESCALATION] override applied` log line appears (legacy wording) → wrong code path is firing; pre-commit hook should have blocked this since the regression test (bug #20) AST-asserts the new log marker.
+- Agent prose appears but separator is missing → `\n\n---\n\n` not in template; check exact template string.
+- After `yes`, user sees same message twice (loop UX) → other failure mode; possibly B30 state leak or stale-state TTL eviction still producing identical CTAs. Re-check after B30 ships.
+
+---
+
 ### MT-29 — Outbound Slack message logging captures every chat.postMessage / chat.update call (G6 + B32; Step 2a closure round 2)
 
 **Why this can't be automated (fully):** the unit tests verify `logOutbound` format + `instrumentSlackClient` mutates the SDK methods correctly + the new B32 idempotency contract. But the actual production wiring depends on Bolt's per-event `client` being the WebClient instance every event handler receives. That assumption can only be verified by booting the bot against real Slack and observing whether `[OUTBOUND]` log lines appear for messages emitted from EVERY code path.
