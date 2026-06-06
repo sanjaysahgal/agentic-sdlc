@@ -495,7 +495,7 @@ describe("handleArchitectTool", () => {
         archCtx(),
         deps,
       )
-      expect(deps.setPendingEscalation).toHaveBeenCalledWith(featureKey("onboarding"), expect.objectContaining({
+      expect(deps.setPendingEscalation).toHaveBeenCalledWith(expect.objectContaining({
         targetAgent: "pm",
         question: "AC doesn't cover edge case X",
       }))
@@ -509,7 +509,7 @@ describe("handleArchitectTool", () => {
         archCtx(),
         deps,
       )
-      expect(deps.setPendingEscalation).toHaveBeenCalledWith(featureKey("onboarding"), expect.objectContaining({
+      expect(deps.setPendingEscalation).toHaveBeenCalledWith(expect.objectContaining({
         targetAgent: "design",
       }))
       expect((result.result as string)).toContain("Designer")
@@ -799,7 +799,7 @@ describe("handleDesignTool", () => {
     it("stores escalation when PM gaps found", async () => {
       const deps = buildDesignDeps()
       const result = await handleOfferPmEscalation({ question: "What session TTL?" }, buildDesignCtx(), deps)
-      expect(deps.setPendingEscalation).toHaveBeenCalledWith(featureKey("onboarding"), expect.objectContaining({
+      expect(deps.setPendingEscalation).toHaveBeenCalledWith(expect.objectContaining({
         targetAgent: "pm",
         question: "What session TTL?",
       }))
@@ -858,7 +858,7 @@ describe("handleDesignTool", () => {
     it("stores escalation for architecture gap", async () => {
       const deps = buildDesignDeps()
       const result = await handleOfferArchitectEscalation({ question: "What DB?" }, buildDesignCtx(), deps)
-      expect(deps.setPendingEscalation).toHaveBeenCalledWith(featureKey("onboarding"), expect.objectContaining({
+      expect(deps.setPendingEscalation).toHaveBeenCalledWith(expect.objectContaining({
         targetAgent: "architect",
         question: "What DB?",
       }))

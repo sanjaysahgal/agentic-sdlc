@@ -66,7 +66,7 @@ import {
   clearPendingEscalation,
   disableFilePersistence,
 } from "../../runtime/conversation-store"
-import { featureKey } from "../../runtime/routing/types"
+import { featureKey, threadKey } from "../../runtime/routing/types"
 import { patchProductSpecWithRecommendations } from "../../runtime/pm-escalation-spec-writer"
 import { auditPhaseCompletion } from "../../runtime/phase-completion-auditor"
 import { auditPmSpec } from "../../runtime/deterministic-auditor"
@@ -113,7 +113,7 @@ function makeAnthropic529Error(): Error & { status: number } {
 
 describe("D1.1 — GitHub 502 mid-escalation does not leave half-state", () => {
   it("createOrUpdateFileContents throws 502 → writer surfaces error; no escalationNotification phantom", async () => {
-    setPendingEscalation(featureKey("d1-feature-a"), {
+    setPendingEscalation(featureKey("d1-feature-a"), threadKey("d1-thread"), {
       targetAgent: "pm",
       question: "AC#5 vague",
       productSpec: "# Approved Product Spec\n\n## AC\n1. Vague.\n",
@@ -148,10 +148,10 @@ describe("D1.1 — GitHub 502 mid-escalation does not leave half-state", () => {
     // Phantom state check: escalationNotification must NOT be set just
     // because the writer was invoked. It's the handler's job to set it
     // only after a successful commit.
-    expect(getEscalationNotification(featureKey("d1-feature-a"))).toBeNull()
+    expect(getEscalationNotification(featureKey("d1-feature-a"), threadKey("d1-thread"))).toBeNull()
 
     // Cleanup
-    clearPendingEscalation(featureKey("d1-feature-a"))
+    clearPendingEscalation(featureKey("d1-feature-a"), threadKey("d1-thread"))
   })
 })
 

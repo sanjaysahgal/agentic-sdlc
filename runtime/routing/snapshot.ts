@@ -29,8 +29,8 @@ import {
 } from "./types"
 import {
   getConfirmedAgent,
-  getPendingEscalation,
-  getEscalationNotification,
+  getAnyPendingEscalationForFeature,
+  getAnyEscalationNotificationForFeature,
   getPendingApproval,
   getPendingDecisionReview,
   isUserOriented,
@@ -59,8 +59,13 @@ export function buildFeatureStateSnapshot(
 
   return {
     confirmedAgent,
-    pendingEscalation:      getPendingEscalation(key),
-    escalationNotification: getEscalationNotification(key),
+    // B30 — feature-level read for V2 shadow snapshot. This is a known
+    // cross-thread leak in the V2 path (currently shadow-mode only, not user-
+    // facing). Production-correct thread-scoping happens at the legacy handler
+    // boundary; F1 must thread `threadKey` through `buildFeatureStateSnapshot`
+    // when the V2 dispatcher becomes production (Step 2c acceptance criterion).
+    pendingEscalation:      getAnyPendingEscalationForFeature(key),
+    escalationNotification: getAnyEscalationNotificationForFeature(key),
     pendingApproval:        getPendingApproval(key),
     pendingDecisionReview:  getPendingDecisionReview(key),
     isUserOriented:         user ? isUserOriented(key, user) : false,

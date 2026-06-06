@@ -440,19 +440,19 @@ export async function handleFeatureChannelMessage(params: {
   // in .conversation-state.json. If the user is affirming and a pending escalation exists,
   // restore confirmedAgent from the escalation's origin so the escalation-confirmation branch
   // runs correctly without requiring a new message from the user.
-  if (!confirmedAgent && isAffirmative(rawUserMessage) && getPendingEscalation(featureKey(featureName))) {
-    const recovered = getPendingEscalation(featureKey(featureName))!
+  if (!confirmedAgent && isAffirmative(rawUserMessage) && getPendingEscalation(featureKey(featureName), threadKey(threadTs))) {
+    const recovered = getPendingEscalation(featureKey(featureName), threadKey(threadTs))!
     const validTargets = ["pm", "architect", "design"]
     if (!validTargets.includes(recovered.targetAgent)) {
       console.log(`[ROUTER] escalation-state-recovered: INVALID targetAgent="${recovered.targetAgent}" — clearing stale escalation for ${featureName}`)
-      clearPendingEscalation(featureKey(featureName))
+      clearPendingEscalation(featureKey(featureName), threadKey(threadTs))
     } else {
       const recoveredAgent: string = recovered.targetAgent === "design" ? "architect" : "ux-design"
       confirmedAgent = recoveredAgent
       setConfirmedAgent(featureKey(featureName), recoveredAgent)
       console.log(`[ROUTER] escalation-state-recovered: restored confirmedAgent=${recoveredAgent} from persisted pendingEscalation targetAgent=${recovered.targetAgent} for feature=${featureName}`)
     }
-  } else if (!threadAgent && !getPendingEscalation(featureKey(featureName)) && !getPendingApproval(featureKey(featureName))) {
+  } else if (!threadAgent && !getPendingEscalation(featureKey(featureName), threadKey(threadTs)) && !getPendingApproval(featureKey(featureName))) {
     // No thread agent, no active escalation or approval — resolve from GitHub phase (single source of truth).
     // Skip during active escalation/approval/thread-agent flows to avoid overriding mid-flow state.
     confirmedAgent = await resolveAgent(featureName, resolvedPhase)
@@ -489,7 +489,7 @@ export async function handleFeatureChannelMessage(params: {
   // Slash command overrides cannot bypass these.
 
   // Guard 1: Pending escalation — blocks ALL agents until resolved.
-  const universalPending = getPendingEscalation(featureKey(featureName))
+  const universalPending = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
   if (universalPending && !isAffirmative(userMessage)) {
     const holderName = universalPending.targetAgent === "design"
       ? "Designer" : universalPending.targetAgent === "architect" ? "Architect" : "PM"
@@ -569,7 +569,7 @@ export async function handleFeatureChannelMessage(params: {
   if (confirmedAgent === "ux-design") {
     // If the design agent offered a PM escalation last turn and the user is confirming it,
     // run the PM agent with the blocking question as its opening brief.
-    const pendingEscalation = getPendingEscalation(featureKey(featureName))
+    const pendingEscalation = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
     if (pendingEscalation && isAffirmative(userMessage)) {
       console.log(`[ROUTER] branch=pending-escalation-confirmed feature=${featureName} targetAgent=${pendingEscalation.targetAgent} question="${pendingEscalation.question.slice(0, 100)}"`)
 
@@ -676,7 +676,7 @@ ${brief}`
         }
       }})
       // Clear after agent ran and output is captured — safe to commit now.
-      clearPendingEscalation(featureKey(featureName))
+      clearPendingEscalation(featureKey(featureName), threadKey(threadTs))
 
       if (isArchitectEscalation) {
         // Architect is a human — hold for their reply before writing to the engineering spec.
@@ -685,12 +685,12 @@ ${brief}`
           thread_ts: threadTs,
           text: `${mention} — review the recommendations above and reply here to confirm or adjust. Once you reply, the design agent will use each confirmed recommendation to unblock and advance the design spec.`,
         })
-        setEscalationNotification(featureKey(featureName), { targetAgent: "architect", question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
+        setEscalationNotification(featureKey(featureName), threadKey(threadTs), { targetAgent: "architect", question: pendingEscalation.question, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       } else {
         // PM recommendations require explicit human approval before spec is patched and design resumes.
         // Two-step pattern: PM runs → human says yes → spec patched → design resumes.
         // This matches the architect path and makes the "pending your approval" note in PM output honest.
-        setEscalationNotification(featureKey(featureName), { targetAgent: "pm", question: comprehensiveQuestion, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
+        setEscalationNotification(featureKey(featureName), threadKey(threadTs), { targetAgent: "pm", question: comprehensiveQuestion, recommendations: capturedAgentResponse || undefined, originAgent: "design" })
       }
       return
     }
@@ -705,7 +705,7 @@ ${brief}`
     // the message routes back to the escalated agent (PM or Architect) for continued conversation.
     // This mirrors real-world behavior: once you're in a PM conversation, you stay in it until
     // you explicitly confirm and close it.
-    const escalationNotification = getEscalationNotification(featureKey(featureName))
+    const escalationNotification = getEscalationNotification(featureKey(featureName), threadKey(threadTs))
     if (escalationNotification && escalationNotification.originAgent !== "architect") {
       const isArchitectEscalation = escalationNotification.targetAgent === "architect"
       const notifAgentLabel = isArchitectEscalation ? "Architect" : "Product Manager"
@@ -749,14 +749,14 @@ ${brief}`
               return
             }
             console.log(`[ESCALATION] auto-close: PM branch content applied to main for ${featureName}`)
-            clearEscalationNotification(featureKey(featureName))
+            clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
 
             // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
             const { verifyEscalationResolution } = await import("../../../runtime/escalation-orchestrator")
             const reaudit = verifyEscalationResolution("pm", updatedPmSpec, "ux-design", targetFormFactors)
             if (!reaudit.ready && reaudit.escalationBrief) {
               console.log(`[ESCALATION] auto-close re-audit: PM spec still has ${reaudit.findings.length} finding(s) — re-escalating`)
-              setPendingEscalation(featureKey(featureName), {
+              setPendingEscalation(featureKey(featureName), threadKey(threadTs), {
                 targetAgent: "pm",
                 originAgent: "ux-design",  // design's auto-close re-audit found gaps; design is resuming after PM
                 question: reaudit.escalationBrief,
@@ -775,7 +775,7 @@ ${brief}`
             // Branch read failed — PM saved but we can't read the content.
             // Clear escalation anyway — PM's work is done, resume design.
             console.log(`[ESCALATION] auto-close: could not read PM branch — clearing escalation and resuming`)
-            clearEscalationNotification(featureKey(featureName))
+            clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
           }
 
           // If the PM also called offer_architect_escalation this turn, surface it before resuming design.
@@ -783,7 +783,7 @@ ${brief}`
           const archEscalationCall = continuationToolCalls.find(t => t.name === "offer_architect_escalation")
           if (archEscalationCall) {
             const archQuestion = archEscalationCall.input.question as string
-            setPendingEscalation(featureKey(featureName), { targetAgent: "architect", originAgent: "pm", question: archQuestion, designContext: "" })
+            setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "architect", originAgent: "pm", question: archQuestion, designContext: "" })
             console.log(`[ROUTER] branch=escalation-auto-close-arch feature=${featureName} — PM flagged architecture gap: "${archQuestion.slice(0, 80)}"`)
             await client.chat.postMessage({
               channel: channelId,
@@ -809,7 +809,7 @@ ${brief}`
         const preservedRecommendations = pmResponseHasRecommendations
           ? updatedRecommendations
           : (escalationNotification.recommendations || updatedRecommendations)
-        setEscalationNotification(featureKey(featureName), { ...escalationNotification, recommendations: preservedRecommendations })
+        setEscalationNotification(featureKey(featureName), threadKey(threadTs), { ...escalationNotification, recommendations: preservedRecommendations })
         return
       }
 
@@ -834,7 +834,7 @@ ${brief}`
             question: escalationNotification.question,
             decision: escalationNotification.recommendations,
           }).catch(err => console.log(`[ESCALATION] engineering spec writeback failed (non-blocking): ${err}`))
-          clearEscalationNotification(featureKey(featureName))
+          clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
         } else {
           const writeback = await patchProductSpecWithRecommendations({
             featureName,
@@ -850,7 +850,7 @@ ${brief}`
           }
           const patchedSpec = writeback.mergedSpec
           pmDiffBrief = writeback.diffSummary.brief
-          clearEscalationNotification(featureKey(featureName))
+          clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
 
           // ─── RE-AUDIT AFTER WRITEBACK (Principle 14) ────────────────────────
           // Deterministic re-audit: verify the patched PM spec is now clean.
@@ -860,7 +860,7 @@ ${brief}`
             const reaudit = verifyEscalationResolution("pm", patchedSpec, "ux-design", targetFormFactors)
             if (!reaudit.ready && reaudit.escalationBrief) {
               console.log(`[ESCALATION] re-audit: PM spec still has ${reaudit.findings.length} finding(s) after writeback — re-escalating`)
-              setPendingEscalation(featureKey(featureName), {
+              setPendingEscalation(featureKey(featureName), threadKey(threadTs), {
                 targetAgent: "pm",
                 originAgent: "ux-design",  // design's writeback re-audit found gaps; design resumes after PM
                 question: reaudit.escalationBrief,
@@ -884,7 +884,7 @@ ${brief}`
       }
 
       // Clear notification if not already cleared (no-recommendations path)
-      if (getEscalationNotification(featureKey(featureName))) clearEscalationNotification(featureKey(featureName))
+      if (getEscalationNotification(featureKey(featureName), threadKey(threadTs))) clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
 
       // PM posts closure message — PM owns the spec update, not the design agent.
       // B24 — include the deterministic diff brief on the PM path; engineering-spec
@@ -935,7 +935,7 @@ ${brief}`
   if (confirmedAgent === "architect") {
     // Upstream escalation: architect offered to escalate a constraint to PM or Designer.
     // Mirrors the design agent's pendingEscalation / escalationNotification pattern exactly.
-    const archPendingEscalation = getPendingEscalation(featureKey(featureName))
+    const archPendingEscalation = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
     if (archPendingEscalation && isAffirmative(userMessage)) {
       const target = archPendingEscalation.targetAgent  // "pm" or "design"
       console.log(`[ROUTER] branch=arch-upstream-escalation-confirmed feature=${featureName} target=${target}`)
@@ -1011,8 +1011,8 @@ ${archPendingEscalation.question}`
           ? `${mention} — the architect needs a design revision before engineering can proceed. Review the recommendations above and reply here to confirm or adjust. Once you reply, the architect will resume with your decision applied.`
           : `${mention} — the architect needs a product decision before engineering can proceed. Review the recommendations above and reply here to confirm or adjust. Once you reply, the architect will resume with your decision applied.`,
       })
-      clearPendingEscalation(featureKey(featureName))
-      setEscalationNotification(featureKey(featureName), { targetAgent: target, question: archPendingEscalation.question, recommendations: capturedResponse || undefined, originAgent: "architect" })
+      clearPendingEscalation(featureKey(featureName), threadKey(threadTs))
+      setEscalationNotification(featureKey(featureName), threadKey(threadTs), { targetAgent: target, question: archPendingEscalation.question, recommendations: capturedResponse || undefined, originAgent: "architect" })
       return
     }
     // Pending escalation hold is handled by the universal pre-routing guard above.
@@ -1020,7 +1020,7 @@ ${archPendingEscalation.question}`
     // Upstream revision reply — Designer or PM is responding to architect's upstream escalation.
     // If standalone confirmation → resume architect. Otherwise → continue the conversation with
     // the design/PM agent, keeping the notification active until the human explicitly confirms.
-    const archEscalationNotification = getEscalationNotification(featureKey(featureName))
+    const archEscalationNotification = getEscalationNotification(featureKey(featureName), threadKey(threadTs))
     if (archEscalationNotification && archEscalationNotification.originAgent === "architect") {
       const archNotifTarget = archEscalationNotification.targetAgent
       const archNotifAgentLabel = archNotifTarget === "design" ? "UX Designer" : "Product Manager"
@@ -1056,7 +1056,7 @@ ${archPendingEscalation.question}`
             console.log(`[CONTENT-VERIFIER] feature=${featureName} site=arch-upstream-continuation verify-failed err=${String(err).slice(0, 200)}`)
           }
         }
-        setEscalationNotification(featureKey(featureName), { ...archEscalationNotification, recommendations: updatedRecommendations || archEscalationNotification.recommendations })
+        setEscalationNotification(featureKey(featureName), threadKey(threadTs), { ...archEscalationNotification, recommendations: updatedRecommendations || archEscalationNotification.recommendations })
         return
       }
 
@@ -1117,7 +1117,7 @@ ${archPendingEscalation.question}`
           if (!reaudit.ready && reaudit.escalationBrief) {
             const targetLabel = blockingSpec === "pm" ? "PM" : "Design"
             console.log(`[ESCALATION] re-audit: ${targetLabel} spec still has ${reaudit.findings.length} finding(s) after writeback — re-escalating`)
-            setPendingEscalation(featureKey(featureName), {
+            setPendingEscalation(featureKey(featureName), threadKey(threadTs), {
               targetAgent: blockingSpec,
               originAgent: "architect",  // architect's writeback re-audit found gaps; architect resumes
               question: reaudit.escalationBrief,
@@ -1132,7 +1132,7 @@ ${archPendingEscalation.question}`
               thread_ts: threadTs,
               text: `${PLATFORM_MESSAGE_PREFIX} The ${targetLabel === "PM" ? "product" : "design"} spec was updated${diffSuffix} ${reaudit.findings.length} ${targetLabel}-scope gap${reaudit.findings.length === 1 ? " remains" : "s remain"}. Reply *yes* and we'll bring the ${targetLabel} agent back into this thread.`,
             }).catch((err: unknown) => console.log(`[ESCALATION] re-audit message failed (non-blocking): ${err}`))
-            clearEscalationNotification(featureKey(featureName))
+            clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
             return
           }
         }
@@ -1150,7 +1150,7 @@ ${archPendingEscalation.question}`
         text: `${PLATFORM_MESSAGE_PREFIX} The ${respondingRole === "PM" ? "product" : "design"} spec was updated with the confirmed ${respondingRole} decision${archDiffSuffix} The architect will now resume.`,
       }).catch((err: unknown) => console.log(`[ESCALATION] closure message failed (non-blocking): ${err}`))
 
-      clearEscalationNotification(featureKey(featureName))
+      clearEscalationNotification(featureKey(featureName), threadKey(threadTs))
       const injectedMessage = `${respondingRole} resolved the upstream constraint: "${archEscalationNotification.question}" → "${userMessage}". The upstream spec has been revised. Resume engineering spec development with this revision applied — update the affected sections and continue.`
       await withThinking({ client, channelId, threadTs, agent: "Architect", run: async (update) => {
         await runArchitectAgent({ channelName, channelId, threadTs, featureName: getFeatureName(channelName), userMessage: injectedMessage, userImages: [], client, update })
@@ -2016,8 +2016,9 @@ async function runDesignAgent(params: {
   let designReadinessDirective = ""
   if (!readOnly) {
     const fkDesign = featureKey(featureName)
-    const pendingEscD      = getPendingEscalation(fkDesign)
-    const escNotificationD = getEscalationNotification(fkDesign)
+    const tkDesign = threadKey(threadTs)
+    const pendingEscD      = getPendingEscalation(fkDesign, tkDesign)
+    const escNotificationD = getEscalationNotification(fkDesign, tkDesign)
     const activeRawD = pendingEscD ?? escNotificationD
     const activeEscD = activeRawD
       ? {
@@ -2057,7 +2058,7 @@ async function runDesignAgent(params: {
   const prefix = routingNote ? `${routingNote}\n\n` : ""
   const toolCallsOutDesign: ToolCallRecord[] = []
   // Snapshot escalation state before agent runs — used after to detect if escalation was just offered
-  const escalationBeforeRun = getPendingEscalation(featureKey(featureName))
+  const escalationBeforeRun = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
 
   // Extract the approved product spec from context for use in the audit.
   const productSpecMatch = context.currentDraft.match(/## Approved Product Spec\n([\s\S]*?)(?:\n\n## |$)/)
@@ -2156,7 +2157,7 @@ async function runDesignAgent(params: {
     classifyForPmGaps,
     classifyForArchGap,
     preseedEngineeringSpec,
-    setPendingEscalation,
+    setPendingEscalation: (escalation) => setPendingEscalation(featureKey(featureName), threadKey(threadTs), escalation),
     generateDesignPreview,
     saveDraftHtmlPreview,
     filterDesignContent,
@@ -2593,12 +2594,12 @@ async function runDesignAgent(params: {
   // this makes product gap escalation structurally deterministic regardless of agent prose choices.
   // [PM-GAP] is a rubric-level tag — it never appears in the design spec itself (root cause fix).
   const productFindings = designReadinessFindings.filter(f => f.issue.includes("[PM-GAP]"))
-  const agentCalledEscalation = !!getPendingEscalation(featureKey(featureName))
+  const agentCalledEscalation = !!getPendingEscalation(featureKey(featureName), threadKey(threadTs))
   console.log(`[ESCALATION] gate check for ${featureName}: productFindings=${productFindings.length}, agentCalledEscalation=${agentCalledEscalation}, toolCalls=${toolCallsOutDesign.map(t => t.name).join(",") || "none"}`)
   if (productFindings.length > 0 && !agentCalledEscalation) {
     console.log(`[ESCALATION] Gate 2 (N18) fired — productFindings:\n${productFindings.map(f => f.issue).join("\n")}`)
     const consolidated = productFindings.map((f, i) => `${i + 1}. ${f.issue}`).join("\n")
-    setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "ux-design", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+    setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "pm", originAgent: "ux-design", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
     const escalationResponse = `${consolidated}\n\n${assertionText}`
     appendMessage(featureKey(featureName), { role: "assistant", content: escalationResponse })
@@ -2636,7 +2637,7 @@ async function runDesignAgent(params: {
         const g3FilteredQuestion = g3Classification.gaps.length === 1
           ? g3Classification.gaps[0]
           : g3Classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
-        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "ux-design", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+        setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "pm", originAgent: "ux-design", question: g3FilteredQuestion, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       }
     } else {
       console.log(`[ESCALATION] Gate 3 (fallback prose) — no pattern match`)
@@ -2648,7 +2649,7 @@ async function runDesignAgent(params: {
   // Final safety net — only runs when all earlier gates passed and no escalation is set.
   // Skipped when the agent saved the spec (no PM gap prose to classify in a save response).
   // Fail-safe at call site: .catch returns empty gaps, never blocks the response.
-  if (!agentCalledEscalation && !getPendingEscalation(featureKey(featureName)) && !didSave && !agentStillSeeking && !gate3ClassifierRan) {
+  if (!agentCalledEscalation && !getPendingEscalation(featureKey(featureName), threadKey(threadTs)) && !didSave && !agentStillSeeking && !gate3ClassifierRan) {
     console.log(`[ESCALATION] Gate 4 (Haiku classifier) running for ${featureName}`)
     const classification = await classifyForPmGaps({
       agentResponse: response,
@@ -2657,16 +2658,16 @@ async function runDesignAgent(params: {
     console.log(`[ESCALATION] Gate 4 result: ${classification.gaps.length} gaps — ${classification.gaps.length === 0 ? "NONE" : classification.gaps.join(" | ")}`)
     if (classification.gaps.length > 0) {
       const consolidated = classification.gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")
-      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "ux-design", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+      setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "pm", originAgent: "ux-design", question: consolidated, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     }
   } else {
-    console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureKey(featureName))}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}, gate3ClassifierRan=${gate3ClassifierRan}`)
+    console.log(`[ESCALATION] Gate 4 (Haiku classifier) skipped — agentCalledEscalation=${agentCalledEscalation}, pendingAlreadySet=${!!getPendingEscalation(featureKey(featureName), threadKey(threadTs))}, didSave=${didSave}, agentStillSeeking=${agentStillSeeking}, gate3ClassifierRan=${gate3ClassifierRan}`)
   }
 
   // If escalation was just offered this turn (via tool call, N18 gate, fallback prose-detection
   // gate, or Haiku classifier above), suppress the action menu — showing fixable design items
   // when the user cannot act on them until PM gaps close is actively misleading.
-  const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureKey(featureName))
+  const escalationJustOffered = !escalationBeforeRun && !!getPendingEscalation(featureKey(featureName), threadKey(threadTs))
 
   // Platform-enforced assertive escalation text: when escalation was just offered this turn
   // (via tool call, N18 gate, or fallback prose-detection gate), APPEND a structured CTA after
@@ -2687,7 +2688,7 @@ async function runDesignAgent(params: {
   if (escalationJustOffered && (agentCalledPmEscalationTool || !agentCalledEscalation)) {
     // agentCalledPmEscalationTool: tool was explicitly called this turn (PM-specific)
     // !agentCalledEscalation: fallback gate fired (agent didn't call any escalation tool)
-    const pending = getPendingEscalation(featureKey(featureName))
+    const pending = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
     if (pending?.targetAgent === "pm") {
       const assertionText = `Design cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now.`
       const ctaBlock = `${pending.question}\n\n${assertionText}`
@@ -2759,7 +2760,7 @@ async function runDesignAgent(params: {
   // PM gaps close, so showing a count with no action menu is misleading. For architect escalations,
   // the count stays visible: the arch question does not resolve all design gaps, and the agent
   // must not be able to claim "engineering-ready" when the rubric shows items remaining.
-  const escalationJustOfferedPm = escalationJustOffered && getPendingEscalation(featureKey(featureName))?.targetAgent === "pm"
+  const escalationJustOfferedPm = escalationJustOffered && getPendingEscalation(featureKey(featureName), threadKey(threadTs))?.targetAgent === "pm"
   const totalEffectiveItems = effectiveStructuralFindings.length + effectiveBrandDrifts.length + effectiveAnimDrifts.length +
     effectiveMissingTokens.length + effectiveLlmQuality.length +
     effectiveReadinessFindings.filter(f => !f.issue.includes("[PM-GAP]")).length
@@ -3125,8 +3126,9 @@ async function runArchitectAgent(params: {
   let archReadinessDirective = ""
   if (!readOnly) {
     const fkArch = featureKey(featureName)
-    const pendingEsc      = getPendingEscalation(fkArch)
-    const escNotification = getEscalationNotification(fkArch)
+    const tkArch = threadKey(threadTs)
+    const pendingEsc      = getPendingEscalation(fkArch, tkArch)
+    const escNotification = getEscalationNotification(fkArch, tkArch)
     const activeRaw = pendingEsc ?? escNotification
     const activeEsc = activeRaw
       ? {
@@ -3174,7 +3176,7 @@ async function runArchitectAgent(params: {
   // the override didn't fire on auto-trigger paths and the agent's prose
   // (which can name the wrong target agent) reached the user verbatim. This
   // was the root cause of BACKLOG: "Architect prose-vs-state mismatch".
-  const escalationBeforeRunArchSnapshot = !!getPendingEscalation(featureKey(featureName))
+  const escalationBeforeRunArchSnapshot = !!getPendingEscalation(featureKey(featureName), threadKey(threadTs))
 
   // When called via escalation (readOnly=true), pass EMPTY history. The escalation brief
   // contains everything the architect needs. Prior-phase conversation history causes hallucination.
@@ -3209,7 +3211,7 @@ async function runArchitectAgent(params: {
       auditDownstreamReadiness,
       auditSpecStructure,
       clearHandoffSection,
-      setPendingEscalation,
+      setPendingEscalation: (escalation) => setPendingEscalation(featureKey(featureName), threadKey(threadTs), escalation),
       readFile: (path, branch) => readFile(path, branch),
     }, archToolState),
     toolCallsOut: toolCallsOutArch,
@@ -3261,8 +3263,8 @@ async function runArchitectAgent(params: {
     const pmGapText = parsePmGapText(upstreamNoticeArch)
     if (pmGapText) {
       console.log(`[ESCALATION-GATE] architect post-run: PM-first override — agent called offer_upstream_revision(design) but PM gaps must close first. Re-queuing target=pm.`)
-      clearPendingEscalation(featureKey(featureName))
-      setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+      clearPendingEscalation(featureKey(featureName), threadKey(threadTs))
+      setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
     }
   }
 
@@ -3277,7 +3279,7 @@ async function runArchitectAgent(params: {
   // and Principle 8 (platform enforcement). Manifest B6, regression catalog
   // bug #13.
   {
-    const archPending = getPendingEscalation(featureKey(featureName))
+    const archPending = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
     if (!readOnly && archPending && archPending.originAgent === "architect") {
       if (archPending.targetAgent === "pm" && pmGapsInNotice) {
         const fullBrief = parsePmGapText(upstreamNoticeArch)
@@ -3286,7 +3288,7 @@ async function runArchitectAgent(params: {
           const agentCount = countAgentGapItems(archPending.question)
           if (platformCount > 1 && agentCount < platformCount) {
             console.log(`[ESCALATION-GATE] B6: architect's PM escalation enumerated ${agentCount} of ${platformCount} platform-detected gaps — overriding question with consolidated brief`)
-            setPendingEscalation(featureKey(featureName), { ...archPending, question: fullBrief })
+            setPendingEscalation(featureKey(featureName), threadKey(threadTs), { ...archPending, question: fullBrief })
           }
         }
       } else if (archPending.targetAgent === "design" && designGapsInNotice) {
@@ -3296,14 +3298,14 @@ async function runArchitectAgent(params: {
           const agentCount = countAgentGapItems(archPending.question)
           if (platformCount > 1 && agentCount < platformCount) {
             console.log(`[ESCALATION-GATE] B6: architect's design escalation enumerated ${agentCount} of ${platformCount} platform-detected gaps — overriding question with consolidated brief`)
-            setPendingEscalation(featureKey(featureName), { ...archPending, question: fullBrief })
+            setPendingEscalation(featureKey(featureName), threadKey(threadTs), { ...archPending, question: fullBrief })
           }
         }
       }
     }
   }
 
-  if (!readOnly && !getPendingEscalation(featureKey(featureName))) {
+  if (!readOnly && !getPendingEscalation(featureKey(featureName), threadKey(threadTs))) {
     const archCalledPmEscalation = toolCallsOutArch.some(t => t.name === "offer_upstream_revision" && (t.input as any)?.target === "pm")
 
     if (pmGapsInNotice && !archCalledPmEscalation) {
@@ -3311,14 +3313,14 @@ async function runArchitectAgent(params: {
       const pmGapText = parsePmGapText(upstreamNoticeArch)
       if (pmGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: PM gaps in context but agent did not call offer_upstream_revision(pm) — auto-triggering`)
-        setPendingEscalation(featureKey(featureName), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
+        setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "pm", originAgent: "architect", question: pmGapText, designContext: "", productSpec: context.approvedProductSpec ?? undefined })
       }
     } else if (designGapsInNotice && !archCalledDesignEscalation) {
       // No PM gaps (or already escalated) — now check design gaps
       const designGapText = parseDesignGapText(upstreamNoticeArch)
       if (designGapText) {
         console.log(`[ESCALATION-GATE] architect post-run: design gaps in context but agent did not call offer_upstream_revision(design) — auto-triggering`)
-        setPendingEscalation(featureKey(featureName), { targetAgent: "design", originAgent: "architect", question: designGapText, designContext: "" })
+        setPendingEscalation(featureKey(featureName), threadKey(threadTs), { targetAgent: "design", originAgent: "architect", question: designGapText, designContext: "" })
       }
     }
   }
@@ -3328,7 +3330,7 @@ async function runArchitectAgent(params: {
   // Same pattern as PM brief enforcement. If the architect identifies blocking
   // issues but doesn't provide "My recommendation:" for each one, re-run with
   // enforcement. Only on substantive turns (not orientation, not auto-escalation).
-  if (!readOnly && !getPendingEscalation(featureKey(featureName))) {
+  if (!readOnly && !getPendingEscalation(featureKey(featureName), threadKey(threadTs))) {
     // Count blocking issues: lines starting with a number followed by "**" (bold issue header)
     const blockingIssueCount = (response.match(/^\d+\.\s+\*\*/gm) ?? []).length
     const recommendationCount = (response.match(/my recommendation:/gi) ?? []).length
@@ -3371,7 +3373,7 @@ ${response}`
           auditDownstreamReadiness,
           auditSpecStructure,
           clearHandoffSection,
-          setPendingEscalation,
+          setPendingEscalation: (escalation) => setPendingEscalation(featureKey(featureName), threadKey(threadTs), escalation),
           readFile: (path, branch) => readFile(path, branch),
         }, archToolState),
         toolCallsOut: toolCallsOutArch,
@@ -3399,7 +3401,7 @@ ${response}`
   // Cross-agent parity per Principle 15 — same fix shape at the designer
   // override site (2679-2700).
   // DESIGN-REVIEWED: B33 — override APPENDS CTA after architect prose per #50; substantive content preserved.
-  const escalationAfterRunArch = getPendingEscalation(featureKey(featureName))
+  const escalationAfterRunArch = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
   const escalationJustOfferedArch =
     (!escalationBeforeRunArchSnapshot && !!escalationAfterRunArch) ||
     toolCallsOutArch.some((t) => t.name === "offer_upstream_revision")
@@ -3459,7 +3461,7 @@ ${response}`
   // ─── POST-RUN: Platform status line (Principle 7) ──────────────────────────
   // Same pattern as design agent: authoritative audit count prepended when items remain.
   // Suppress only when upstream escalation just fired (user can't act until upstream resolves).
-  const escalationJustOfferedUpstream = escalationJustOfferedArch && !!getPendingEscalation(featureKey(featureName))
+  const escalationJustOfferedUpstream = escalationJustOfferedArch && !!getPendingEscalation(featureKey(featureName), threadKey(threadTs))
   const archTotalEffectiveItems = archStructuralFindings.length +
     (engDraftContent ? auditEngineeringSpec(engDraftContent).findings.length : 0)
   const archStatusPrefix = (!escalationJustOfferedUpstream && archTotalEffectiveItems > 0 && !readOnly)
@@ -3471,7 +3473,7 @@ ${response}`
   appendMessage(featureKey(featureName), { role: "assistant", content: finalArchResponse })
 
   // If auto-escalation was triggered, append the escalation CTA after the agent's response
-  const postRunEscalation = getPendingEscalation(featureKey(featureName))
+  const postRunEscalation = getPendingEscalation(featureKey(featureName), threadKey(threadTs))
   if (postRunEscalation && !readOnly) {
     await update(`${prefix}${archStatusPrefix}${finalArchResponse}${archUncommittedNote}`)
   } else if (archToolState.pendingDecisionReview && !readOnly) {

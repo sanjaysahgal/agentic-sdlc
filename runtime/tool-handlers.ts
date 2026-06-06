@@ -239,7 +239,7 @@ export type ArchitectToolDeps = {
   auditDownstreamReadiness: PmToolDeps["auditDownstreamReadiness"]
   auditSpecStructure: (content: string, specType: "design" | "product" | "engineering") => Array<{ issue: string; recommendation: string }>
   clearHandoffSection: (params: { featureName: string; filePath: string; sectionHeading: string }) => Promise<void>
-  setPendingEscalation: (key: FeatureKey, escalation: PendingEscalation) => void
+  setPendingEscalation: (escalation: PendingEscalation) => void
   readFile: FileReader
 }
 
@@ -469,7 +469,7 @@ export async function handleOfferUpstreamRevision(
   const target = input.targetAgent as "pm" | "design"
   const question = input.question as string
   console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
-  deps.setPendingEscalation(featureKey(ctx.featureName), {
+  deps.setPendingEscalation({
     targetAgent: target,
     originAgent: "architect",  // offer_upstream_revision is called by the architect agent
     question,
@@ -503,7 +503,7 @@ export type DesignToolDeps = {
   classifyForPmGaps: (params: { agentResponse: string; approvedProductSpec?: string }) => Promise<{ gaps: string[]; architectItems: string[]; designItems: string[] }>
   classifyForArchGap: (question: string) => Promise<string>
   preseedEngineeringSpec: (params: { featureName: string; filePath: string; architectItems: string[] }) => Promise<void>
-  setPendingEscalation: (key: FeatureKey, escalation: PendingEscalation) => void
+  setPendingEscalation: (escalation: PendingEscalation) => void
   generateDesignPreview: (params: { specContent: string; featureName: string; brandContent?: string }) => Promise<{ html: string; warnings: string[] }>
   saveDraftHtmlPreview: (params: { featureName: string; filePath: string; content: string }) => Promise<void>
   filterDesignContent: (html: string) => Promise<string>
@@ -757,7 +757,7 @@ export async function handleOfferPmEscalation(
   if (classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
     console.log(`[ESCALATION] Gate 2 classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
   }
-  deps.setPendingEscalation(featureKey(ctx.featureName), {
+  deps.setPendingEscalation({
     targetAgent: "pm",
     originAgent: "ux-design",  // design agent calling offer_pm_escalation
     question: filteredQuestion,
@@ -787,7 +787,7 @@ export async function handleOfferArchitectEscalation(
       result: `[PLATFORM REJECTION] This question is an implementation detail — the UI design does not depend on the answer. Do NOT escalate this to the architect.\n\nInstead:\n1. Decide the user-visible behavior (e.g. "conversation is preserved when the user signs in").\n2. Add an entry to the ## Design Assumptions section documenting what the architect will need to confirm.\n3. Continue designing — the architect resolves this during engineering, not before.\n\nExample Design Assumption entry: "- Conversation data is preserved on sign-in via server-side or client-side storage (implementation TBD by architect)."`,
     }
   }
-  deps.setPendingEscalation(featureKey(ctx.featureName), {
+  deps.setPendingEscalation({
     targetAgent: "architect",
     originAgent: "ux-design",  // design agent calling offer_architect_escalation
     question: archQuestion,

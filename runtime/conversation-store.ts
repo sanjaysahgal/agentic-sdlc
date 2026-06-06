@@ -79,12 +79,35 @@ export type PendingDecisionReview = {
 
 const store = new Map<string, Message[]>()
 const confirmedAgents = new Map<string, string>()                       // threadTs → confirmed agent type
-const pendingEscalations = new Map<string, PendingEscalation>()         // threadTs → pending escalation
+// B30 — thread-scoped escalation state. Per Step 2a observation #40 (catastrophic
+// cross-thread leak), pending escalations and escalation notifications are now
+// keyed by composite `${featureKey}:${threadKey}` rather than the bare feature
+// key. A new thread in the same feature channel gets a fresh state slot; state
+// from another thread cannot bleed across. Legacy entries (no `:` in key) are
+// preserved on load under a synthetic `${featureKey}:legacy` key — readable for
+// observability but never matched by new reads (new threads pass a real
+// threadKey, never "legacy").
+//
+// DESIGN-REVIEWED: B30 — state maps thread-scoped per #40; cross-thread state-leak structurally impossible after this.
+const pendingEscalations = new Map<string, PendingEscalation>()         // `feature:thread` → pending escalation (B30)
 const pendingApprovals = new Map<string, PendingApproval>()             // threadTs → pending spec approval
 const pendingDecisionReviews = new Map<string, PendingDecisionReview>() // threadTs → pending decision review
-const escalationNotifications = new Map<string, EscalationNotification>() // featureName → active notification
+const escalationNotifications = new Map<string, EscalationNotification>() // `feature:thread` → active notification (B30)
 const threadAgents = new Map<string, string>()                           // general channel threadTs → agent type (persisted)
 const orientedUsers = new Set<string>()                                  // featureName:userId → oriented (persisted)
+
+// B30 — synthetic threadKey value used for legacy entries lifted on startup. New
+// callers pass real thread identifiers via `threadKey(threadTs)` and never see
+// legacy entries; ops scripts that introspect the persisted state can still find
+// them by querying with `LEGACY_THREAD_SUFFIX`.
+const LEGACY_THREAD_SUFFIX = "legacy"
+
+// B30 — composite key for thread-scoped escalation state. Keeping the join
+// character (`:`) inline rather than via a builder keeps the persisted JSON
+// human-readable: `onboarding:1780539633.544909` survives a `jq` inspection.
+function escalationStateKey(fk: FeatureKey, tk: ThreadKey): string {
+  return `${featureKeyToString(fk)}:${threadKeyToString(tk)}`
+}
 
 const CONFIRMED_AGENTS_FILE = path.join(__dirname, "../.confirmed-agents.json")
 const CONVERSATION_HISTORY_FILE = path.join(__dirname, "../.conversation-history.json")
@@ -289,6 +312,38 @@ loadConfirmedAgents()
 loadConversationHistory()
 loadConversationState()
 migrateThreadTsKeys()
+migrateEscalationStateToThreadScoped()
+
+/**
+ * B30 — one-way migration from feature-keyed to `feature:thread`-keyed escalation
+ * state. Lifts legacy entries (no `:` in key) into a synthetic
+ * `${feature}:${LEGACY_THREAD_SUFFIX}` slot so they remain visible to ops tools
+ * that introspect the on-disk JSON, but are never matched by new reads (which
+ * pass a real thread identifier, never "legacy"). Idempotent — running it again
+ * after migration is a no-op because all keys already contain `:`.
+ */
+function migrateEscalationStateToThreadScoped(): void {
+  let lifted = 0
+  for (const map of [pendingEscalations, escalationNotifications]) {
+    const liftEntries: Array<[string, PendingEscalation | EscalationNotification]> = []
+    for (const [key, value] of map) {
+      if (!key.includes(":")) {
+        liftEntries.push([key, value])
+      }
+    }
+    for (const [oldKey, value] of liftEntries) {
+      const newKey = `${oldKey}:${LEGACY_THREAD_SUFFIX}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.set(newKey, value as any)
+      map.delete(oldKey)
+      lifted++
+    }
+  }
+  if (lifted > 0) {
+    console.log(`[STORE] B30 migration: lifted ${lifted} legacy feature-keyed escalation entr${lifted === 1 ? "y" : "ies"} to thread-scoped synthetic key (${LEGACY_THREAD_SUFFIX}). Legacy entries are visible for inspection but not matched by new reads.`)
+    persistConversationState()
+  }
+}
 
 // Escalation state is persisted to disk and survives restarts intentionally.
 // The user's pending "yes" confirmation should still work after a bot restart.
@@ -428,25 +483,42 @@ export function markUserOriented(key: FeatureKey, userId: string): void {
 
 // Pending escalation — set when an agent offers to pull another agent into the thread.
 // Cleared when the user confirms (escalation runs) or declines (normal routing resumes).
-export function getPendingEscalation(key: FeatureKey): PendingEscalation | null {
-  return pendingEscalations.get(featureKeyToString(key)) ?? null
+// B30 — keyed by composite `${feature}:${thread}` so escalations are thread-scoped
+// (closes cross-thread state-leak #40 surfaced in Step 2a MT-31).
+export function getPendingEscalation(fk: FeatureKey, tk: ThreadKey): PendingEscalation | null {
+  return pendingEscalations.get(escalationStateKey(fk, tk)) ?? null
 }
 
-export function setPendingEscalation(key: FeatureKey, escalation: PendingEscalation): void {
+export function setPendingEscalation(fk: FeatureKey, tk: ThreadKey, escalation: PendingEscalation): void {
   // Normalize inline numbered items (e.g. "1. gap one 2. gap two") to newline-separated
   // so Slack renders each gap on its own line instead of running them together
   const normalizedQuestion = escalation.question.replace(/(?<=[^\n])(\s+)(\d+\.\s)/g, "\n$2")
-  const flat = featureKeyToString(key)
-  console.log(`[STORE] setPendingEscalation: feature=${flat} targetAgent=${escalation.targetAgent}`)
-  pendingEscalations.set(flat, { ...escalation, question: normalizedQuestion, timestamp: Date.now() })
+  const stateKey = escalationStateKey(fk, tk)
+  console.log(`[STORE] setPendingEscalation: stateKey=${stateKey} targetAgent=${escalation.targetAgent}`)
+  pendingEscalations.set(stateKey, { ...escalation, question: normalizedQuestion, timestamp: Date.now() })
   persistConversationState()
 }
 
-export function clearPendingEscalation(key: FeatureKey): void {
-  const flat = featureKeyToString(key)
-  console.log(`[STORE] clearPendingEscalation: feature=${flat}`)
-  pendingEscalations.delete(flat)
+export function clearPendingEscalation(fk: FeatureKey, tk: ThreadKey): void {
+  const stateKey = escalationStateKey(fk, tk)
+  console.log(`[STORE] clearPendingEscalation: stateKey=${stateKey}`)
+  pendingEscalations.delete(stateKey)
   persistConversationState()
+}
+
+/**
+ * B30 — Legacy-feature-level read for callers that haven't been migrated to
+ * thread-scoped state yet (e.g. background snapshot builders). Returns any
+ * pending escalation matching the feature regardless of thread. Should only be
+ * used by code paths that genuinely need cross-thread visibility (rare). Most
+ * callers must use `getPendingEscalation(fk, tk)`.
+ */
+export function getAnyPendingEscalationForFeature(fk: FeatureKey): PendingEscalation | null {
+  const featurePrefix = `${featureKeyToString(fk)}:`
+  for (const [key, value] of pendingEscalations) {
+    if (key.startsWith(featurePrefix)) return value
+  }
+  return null
 }
 
 export function getPendingApproval(key: FeatureKey): PendingApproval | null {
@@ -485,23 +557,56 @@ export function clearPendingDecisionReview(key: FeatureKey): void {
   persistConversationState()
 }
 
-export function getEscalationNotification(key: FeatureKey): EscalationNotification | null {
-  return escalationNotifications.get(featureKeyToString(key)) ?? null
+// B30 — thread-scoped escalation notification per #40.
+export function getEscalationNotification(fk: FeatureKey, tk: ThreadKey): EscalationNotification | null {
+  return escalationNotifications.get(escalationStateKey(fk, tk)) ?? null
 }
 
-export function setEscalationNotification(key: FeatureKey, notification: EscalationNotification): void {
-  const flat = featureKeyToString(key)
-  console.log(`[STORE] setEscalationNotification: feature=${flat} targetAgent=${notification.targetAgent}`)
+export function setEscalationNotification(fk: FeatureKey, tk: ThreadKey, notification: EscalationNotification): void {
+  const stateKey = escalationStateKey(fk, tk)
+  console.log(`[STORE] setEscalationNotification: stateKey=${stateKey} targetAgent=${notification.targetAgent}`)
   // D5 fix: stamp timestamp so clearStaleEntries on next startup respects TTL
   // (instead of the previous clear-all-on-restart that wiped in-flight escalations
   // every time the bot was restarted to verify a CODE_MARKER bump).
-  escalationNotifications.set(flat, { ...notification, timestamp: Date.now() })
+  escalationNotifications.set(stateKey, { ...notification, timestamp: Date.now() })
   persistConversationState()
 }
 
-export function clearEscalationNotification(key: FeatureKey): void {
-  const flat = featureKeyToString(key)
-  console.log(`[STORE] clearEscalationNotification: feature=${flat}`)
-  escalationNotifications.delete(flat)
+export function clearEscalationNotification(fk: FeatureKey, tk: ThreadKey): void {
+  const stateKey = escalationStateKey(fk, tk)
+  console.log(`[STORE] clearEscalationNotification: stateKey=${stateKey}`)
+  escalationNotifications.delete(stateKey)
   persistConversationState()
+}
+
+/**
+ * B30 — Legacy-feature-level read for callers that haven't been migrated to
+ * thread-scoped notification state. Returns any notification matching the
+ * feature regardless of thread.
+ */
+export function getAnyEscalationNotificationForFeature(fk: FeatureKey): EscalationNotification | null {
+  const featurePrefix = `${featureKeyToString(fk)}:`
+  for (const [key, value] of escalationNotifications) {
+    if (key.startsWith(featurePrefix)) return value
+  }
+  return null
+}
+
+/**
+ * B30 — Clear ALL escalation state for a feature across every thread. Used by
+ * test setup hooks that need a clean slate before each test. Production code
+ * should use the thread-scoped `clearPendingEscalation` and
+ * `clearEscalationNotification` instead — clearing every thread is almost
+ * always a bug outside of test infrastructure.
+ */
+export function clearAllEscalationStateForFeature(fk: FeatureKey): void {
+  const featurePrefix = `${featureKeyToString(fk)}:`
+  let cleared = 0
+  for (const key of [...pendingEscalations.keys()]) {
+    if (key.startsWith(featurePrefix)) { pendingEscalations.delete(key); cleared++ }
+  }
+  for (const key of [...escalationNotifications.keys()]) {
+    if (key.startsWith(featurePrefix)) { escalationNotifications.delete(key); cleared++ }
+  }
+  console.log(`[STORE] clearAllEscalationStateForFeature: feature=${featureKeyToString(fk)} cleared=${cleared}`)
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { featureKey } from "../../runtime/routing/types"
+import { featureKey, threadKey } from "../../runtime/routing/types"
 
 // conversation-store calls fs.readFileSync at module load (loadConfirmedAgents).
 // Mock fs so tests never touch disk and module state is isolated per test.
@@ -102,14 +102,14 @@ describe("conversation-store", () => {
 
   it("getPendingEscalation returns null when no escalation is set", async () => {
     const { getPendingEscalation } = await import("../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("thread-1"))).toBeNull()
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))).toBeNull()
   })
 
   it("setPendingEscalation stores escalation and getPendingEscalation retrieves it", async () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
     const escalation = { targetAgent: "pm" as const, question: "Should social login be supported?", designContext: "## Screens\n..." }
-    setPendingEscalation(featureKey("thread-1"), escalation)
-    const stored = getPendingEscalation(featureKey("thread-1"))
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), escalation)
+    const stored = getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))
     expect(stored).toMatchObject(escalation)
     expect(stored?.timestamp).toBeTypeOf("number")
   })
@@ -117,30 +117,30 @@ describe("conversation-store", () => {
   it("setPendingEscalation stores productSpec when provided and retrieves it", async () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
     const escalation = { targetAgent: "pm" as const, question: "Q?", designContext: "", productSpec: "## Acceptance Criteria\n1. SSO sign-in." }
-    setPendingEscalation(featureKey("thread-1"), escalation)
-    expect(getPendingEscalation(featureKey("thread-1"))?.productSpec).toBe("## Acceptance Criteria\n1. SSO sign-in.")
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), escalation)
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))?.productSpec).toBe("## Acceptance Criteria\n1. SSO sign-in.")
   })
 
   it("setPendingEscalation productSpec is optional — omitting it does not break retrieval", async () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: "Q?", designContext: "" })
-    expect(getPendingEscalation(featureKey("thread-1"))?.productSpec).toBeUndefined()
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: "Q?", designContext: "" })
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))?.productSpec).toBeUndefined()
   })
 
   it("clearPendingEscalation removes the escalation", async () => {
     const { getPendingEscalation, setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: "Q", designContext: "" })
-    clearPendingEscalation(featureKey("thread-1"))
-    expect(getPendingEscalation(featureKey("thread-1"))).toBeNull()
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: "Q", designContext: "" })
+    clearPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))).toBeNull()
   })
 
   it("escalation is thread-isolated — clearing thread-1 does not affect thread-2", async () => {
     const { getPendingEscalation, setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: "Q1", designContext: "" })
-    setPendingEscalation(featureKey("thread-2"), { targetAgent: "pm", question: "Q2", designContext: "" })
-    clearPendingEscalation(featureKey("thread-1"))
-    expect(getPendingEscalation(featureKey("thread-1"))).toBeNull()
-    expect(getPendingEscalation(featureKey("thread-2"))?.question).toBe("Q2")
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: "Q1", designContext: "" })
+    setPendingEscalation(featureKey("thread-2"), threadKey("test-thread"), { targetAgent: "pm", question: "Q2", designContext: "" })
+    clearPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))).toBeNull()
+    expect(getPendingEscalation(featureKey("thread-2"), threadKey("test-thread"))?.question).toBe("Q2")
   })
 
   // ─── question normalization ───────────────────────────────────────────────
@@ -148,23 +148,23 @@ describe("conversation-store", () => {
   it("normalizes inline numbered items to newline-separated", async () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
     const inline = "1. What is the session expiry? 2. Should SSO be supported? 3. Which tiers get access?"
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: inline, designContext: "" })
-    const stored = getPendingEscalation(featureKey("thread-1"))!.question
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: inline, designContext: "" })
+    const stored = getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))!.question
     expect(stored).toBe("1. What is the session expiry?\n2. Should SSO be supported?\n3. Which tiers get access?")
   })
 
   it("does not double-add newlines when items already newline-separated", async () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
     const alreadySplit = "1. Gap one.\n2. Gap two.\n3. Gap three."
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: alreadySplit, designContext: "" })
-    expect(getPendingEscalation(featureKey("thread-1"))!.question).toBe("1. Gap one.\n2. Gap two.\n3. Gap three.")
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: alreadySplit, designContext: "" })
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))!.question).toBe("1. Gap one.\n2. Gap two.\n3. Gap three.")
   })
 
   it("leaves plain-text question unchanged when no numbered items present", async () => {
     const { getPendingEscalation, setPendingEscalation } = await import("../../runtime/conversation-store")
     const plain = "Should social login be supported?"
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: plain, designContext: "" })
-    expect(getPendingEscalation(featureKey("thread-1"))!.question).toBe(plain)
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: plain, designContext: "" })
+    expect(getPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))!.question).toBe(plain)
   })
 
   // ─── state persistence (restart survival) ────────────────────────────────
@@ -172,15 +172,15 @@ describe("conversation-store", () => {
   it("setPendingEscalation calls fs.writeFileSync to persist state to disk", async () => {
     const { setPendingEscalation } = await import("../../runtime/conversation-store")
     const callsBefore = fsMocks.writeFileSync.mock.calls.length
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: "Q", designContext: "" })
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: "Q", designContext: "" })
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
   it("clearPendingEscalation calls fs.writeFileSync to persist cleared state to disk", async () => {
     const { setPendingEscalation, clearPendingEscalation } = await import("../../runtime/conversation-store")
-    setPendingEscalation(featureKey("thread-1"), { targetAgent: "pm", question: "Q", designContext: "" })
+    setPendingEscalation(featureKey("thread-1"), threadKey("test-thread"), { targetAgent: "pm", question: "Q", designContext: "" })
     const callsBefore = fsMocks.writeFileSync.mock.calls.length
-    clearPendingEscalation(featureKey("thread-1"))
+    clearPendingEscalation(featureKey("thread-1"), threadKey("test-thread"))
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
@@ -188,9 +188,10 @@ describe("conversation-store", () => {
     // Simulate: a previously-set escalation was persisted to .conversation-state.json
     // and the process restarted (module re-imported). On restart, pending escalations
     // are restored so the user can still confirm them after a restart.
+    // B30 — composite `feature:thread` key in persisted state
     const savedState = {
       pendingEscalations: {
-        "onboarding": { targetAgent: "pm", question: "What is the session expiry?", designContext: "", timestamp: Date.now() }
+        "onboarding:test-thread": { targetAgent: "pm", question: "What is the session expiry?", designContext: "", timestamp: Date.now() }
       },
       pendingApprovals: {},
       escalationNotifications: {},
@@ -201,7 +202,7 @@ describe("conversation-store", () => {
       .mockReturnValueOnce(JSON.stringify(savedState))              // state
 
     const { getPendingEscalation } = await import("../../runtime/conversation-store")
-    const loaded = getPendingEscalation(featureKey("onboarding"))
+    const loaded = getPendingEscalation(featureKey("onboarding"), threadKey("test-thread"))
     expect(loaded).not.toBeNull()  // restored on startup — survives restarts
     expect(loaded?.question).toBe("What is the session expiry?")
   })
@@ -271,16 +272,16 @@ describe("conversation-store", () => {
 
   it("getEscalationNotification returns null when none is set", async () => {
     const { getEscalationNotification } = await import("../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))).toBeNull()
   })
 
   it("setEscalationNotification stores notification and getEscalationNotification retrieves it", async () => {
     const { getEscalationNotification, setEscalationNotification } = await import("../../runtime/conversation-store")
     const notification = { targetAgent: "pm" as const, question: "What is the session expiry?", recommendations: "1 week" }
-    setEscalationNotification(featureKey("onboarding"), notification)
+    setEscalationNotification(featureKey("onboarding"), threadKey("test-thread"), notification)
     // D5 fix: setEscalationNotification adds a timestamp field. Verify the input fields
     // are preserved verbatim, and timestamp is set to a recent value.
-    const got = getEscalationNotification(featureKey("onboarding"))
+    const got = getEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))
     expect(got).toMatchObject(notification)
     expect(got!.timestamp).toBeDefined()
     expect(got!.timestamp!).toBeLessThanOrEqual(Date.now())
@@ -289,22 +290,22 @@ describe("conversation-store", () => {
   it("setEscalationNotification calls fs.writeFileSync to persist state to disk", async () => {
     const { setEscalationNotification } = await import("../../runtime/conversation-store")
     const callsBefore = fsMocks.writeFileSync.mock.calls.length
-    setEscalationNotification(featureKey("onboarding"), { targetAgent: "pm", question: "Q" })
+    setEscalationNotification(featureKey("onboarding"), threadKey("test-thread"), { targetAgent: "pm", question: "Q" })
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
   it("clearEscalationNotification removes the notification", async () => {
     const { getEscalationNotification, setEscalationNotification, clearEscalationNotification } = await import("../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), { targetAgent: "pm", question: "Q" })
-    clearEscalationNotification(featureKey("onboarding"))
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    setEscalationNotification(featureKey("onboarding"), threadKey("test-thread"), { targetAgent: "pm", question: "Q" })
+    clearEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))).toBeNull()
   })
 
   it("clearEscalationNotification calls fs.writeFileSync to persist cleared state to disk", async () => {
     const { setEscalationNotification, clearEscalationNotification } = await import("../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), { targetAgent: "pm", question: "Q" })
+    setEscalationNotification(featureKey("onboarding"), threadKey("test-thread"), { targetAgent: "pm", question: "Q" })
     const callsBefore = fsMocks.writeFileSync.mock.calls.length
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))
     expect(fsMocks.writeFileSync.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
@@ -312,10 +313,13 @@ describe("conversation-store", () => {
     // Simulate production state on disk with all three map types populated.
     // Timestamps must be recent (within 24h) to survive TTL cleanup on startup.
     // escalationNotifications are cleared on startup unconditionally — they don't survive restart.
+    // B30 — state file uses composite `feature:thread` keys for escalation maps.
+    // pendingApprovals continues to use feature-only keys (not thread-scoped per
+    // current scope).
     const savedState = {
-      pendingEscalations: { "onboarding": { targetAgent: "pm", question: "Q", designContext: "", timestamp: Date.now() } },
+      pendingEscalations: { "onboarding:test-thread": { targetAgent: "pm", question: "Q", designContext: "", timestamp: Date.now() } },
       pendingApprovals: { "onboarding": { specType: "product", specContent: "...", filePath: "x", featureName: "onboarding", timestamp: Date.now() } },
-      escalationNotifications: { "onboarding": { targetAgent: "pm", question: "Q" } },
+      escalationNotifications: { "onboarding:test-thread": { targetAgent: "pm", question: "Q" } },
     }
     fsMocks.readFileSync
       .mockImplementationOnce(() => { throw new Error("ENOENT") })       // confirmed-agents
@@ -326,15 +330,15 @@ describe("conversation-store", () => {
 
     // Before disableFilePersistence: timestamped state survives startup.
     // escalationNotifications are cleared on startup (no timestamp support).
-    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()  // restored (within 24h TTL)
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey("test-thread"))).not.toBeNull()  // restored (within 24h TTL)
     expect(getPendingApproval(featureKey("onboarding"))?.specType).toBe("product")  // restored (within 24h TTL)
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()  // cleared on startup (always)
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))).toBeNull()  // cleared on startup (always)
 
     // After disableFilePersistence: all state is wiped — tests start clean
     disableFilePersistence()
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey("test-thread"))).toBeNull()
     expect(getPendingApproval(featureKey("onboarding"))).toBeNull()
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey("test-thread"))).toBeNull()
     expect(getHistory(featureKey("onboarding"))).toEqual([])
   })
 })

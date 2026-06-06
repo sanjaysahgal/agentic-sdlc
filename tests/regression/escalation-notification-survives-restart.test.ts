@@ -1,3 +1,4 @@
+import { threadKey } from "../../runtime/routing/types"
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Regression test for D5 (was Bug A): EscalationNotification must survive bot restart within TTL.
@@ -19,20 +20,20 @@ describe("bug #11 — EscalationNotification survives bot restart within TTL (ma
     const key = { product: "test", feature: "f1" }
 
     const before = Date.now()
-    setEscalationNotification(key, {
+    setEscalationNotification(key, threadKey("test-thread"), {
       targetAgent: "pm",
       originAgent: "architect",
       question: "vague language in AC#1",
     })
     const after = Date.now()
 
-    const got = getEscalationNotification(key)
+    const got = getEscalationNotification(key, threadKey("test-thread"))
     expect(got).not.toBeNull()
     expect(got!.timestamp).toBeDefined()
     expect(got!.timestamp!).toBeGreaterThanOrEqual(before)
     expect(got!.timestamp!).toBeLessThanOrEqual(after)
 
-    clearEscalationNotification(key)
+    clearEscalationNotification(key, threadKey("test-thread"))
   })
 
   it("setEscalationNotification overrides any provided timestamp with current time", async () => {
@@ -43,19 +44,19 @@ describe("bug #11 — EscalationNotification survives bot restart within TTL (ma
     const key = { product: "test", feature: "f2" }
 
     const yesterday = Date.now() - 24 * 60 * 60 * 1000 - 1000  // 24h+1sec ago = stale
-    setEscalationNotification(key, {
+    setEscalationNotification(key, threadKey("test-thread"), {
       targetAgent: "pm",
       originAgent: "architect",
       question: "q",
       timestamp: yesterday,
     })
 
-    const got = getEscalationNotification(key)
+    const got = getEscalationNotification(key, threadKey("test-thread"))
     expect(got).not.toBeNull()
     // Stamped fresh, NOT preserved from the input
     expect(got!.timestamp!).toBeGreaterThan(yesterday + 1000)
 
-    clearEscalationNotification(key)
+    clearEscalationNotification(key, threadKey("test-thread"))
   })
 
   it("the in-memory notification carries the timestamp through round-trip via parseConversationState", async () => {

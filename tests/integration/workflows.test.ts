@@ -73,6 +73,7 @@ import {
   getPendingEscalation,
   clearPendingEscalation,
   clearEscalationNotification,
+  clearAllEscalationStateForFeature,
   clearConfirmedAgent,
   disableFilePersistence,
 } from "../../../runtime/conversation-store"
@@ -82,7 +83,7 @@ import {
 // would wipe .conversation-state.json and lose real pending escalation state.
 disableFilePersistence()
 import { clearSummaryCache } from "../../../runtime/conversation-summarizer"
-import { featureKey } from "../../runtime/routing/types"
+import { featureKey, threadKey } from "../../runtime/routing/types"
 
 const originalEnv = process.env
 
@@ -176,10 +177,10 @@ beforeEach(() => {
   // Clear escalation notification state — tests that run the escalation confirmation path
   // set this as a side effect. Without global cleanup, it leaks into subsequent tests that
   // use confirmedAgent=ux-design, causing the escalation-continuation branch to fire.
-  clearEscalationNotification(featureKey("onboarding"))
-  clearEscalationNotification(featureKey("dashboard"))
-  clearPendingEscalation(featureKey("onboarding"))
-  clearPendingEscalation(featureKey("dashboard"))
+  // B30 — use the all-threads clear helper since this is a test setup hook
+  // without a specific thread in scope; production code uses thread-scoped clears.
+  clearAllEscalationStateForFeature(featureKey("onboarding"))
+  clearAllEscalationStateForFeature(featureKey("dashboard"))
   // Clear confirmedAgent so phase-transition detection in setConfirmedAgent doesn't
   // accidentally clear history when a test sets a different agent than a prior test left.
   clearConfirmedAgent(featureKey("onboarding"))
@@ -445,7 +446,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
     // Escalation was stored — platform can serve it on Turn 2
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.question).toBe("Should chips be permanent for authenticated users?")
 
@@ -464,7 +465,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     appendMessage(featureKey("onboarding"), { role: "assistant", content: "Should chips be permanent for authenticated users?\n\nDesign cannot move forward until the PM closes these gaps. Say *yes* and I'll bring the PM into this thread now." })
 
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "Should social login be supported?",
@@ -494,11 +495,11 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
     // Pending escalation cleared (PM ran successfully)
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // EscalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notif = getEscalationNotification(featureKey("onboarding"))
+    const notif = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notif).not.toBeNull()
     expect(notif?.targetAgent).toBe("pm")
     expect(notif?.originAgent).toBe("design")
@@ -520,7 +521,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     appendMessage(featureKey("onboarding"), { role: "assistant", content: "1. My recommendation: Support Google OAuth..." })
 
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "Should social login be supported?",
       recommendations: "1. My recommendation: Support Google OAuth as the primary social login method.\n→ Rationale: Broad coverage.",
@@ -577,7 +578,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
 
     // EscalationNotification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Design agent ran — 7 calls total: Haiku merge (patchProductSpecWithRecommendations) +
     // isOffTopicForAgent + isSpecStateQuery + extractLockedDecisions (history≥6) +
@@ -594,7 +595,7 @@ describe("Scenario 4 — PM escalation round-trip from design agent", () => {
     appendMessage(featureKey("onboarding"), { role: "assistant", content: "1. SSO failure path undefined.\n\nDesign cannot move forward. Say *yes*..." })
 
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. SSO failure path undefined — what is the recovery path?",
@@ -1697,7 +1698,7 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     await handleFeatureChannelMessage(params)
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("architect")
     expect(pending?.question).toContain("streaming responses")
@@ -1714,7 +1715,7 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
     appendMessage(featureKey("onboarding"), { role: "assistant", content: "I've flagged this for the architect — design is paused until they weigh in on the storage model." })
 
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "architect",
       originAgent: "ux-design",
       question: "Where is user state persisted between logged-out and logged-in sessions?",
@@ -1743,11 +1744,11 @@ describe("Scenario 18 — Architect escalation round-trip from design agent", ()
 
     // Pending cleared
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // EscalationNotification set for architect reply
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notif = getEscalationNotification(featureKey("onboarding"))
+    const notif = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notif).not.toBeNull()
     expect(notif?.targetAgent).toBe("architect")
   })
@@ -2655,13 +2656,13 @@ describe("Scenario N1 — Non-affirmative during PM escalation → reminder, esc
   beforeEach(() => { clearHistory(featureKey("onboarding")) })
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("user says 'no' → reminder posted, escalation NOT cleared, no agent call", async () => {
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "Should social login be supported?",
@@ -2683,7 +2684,7 @@ describe("Scenario N1 — Non-affirmative during PM escalation → reminder, esc
     expect(reminder[0].text).toContain("Say *yes*")
 
     // Escalation still pending — not cleared
-    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).not.toBeNull()
   })
 })
 
@@ -2698,13 +2699,13 @@ describe("Scenario N2 — Non-affirmative during architect escalation → remind
   beforeEach(() => { clearHistory(featureKey("onboarding")) })
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("user says 'no' to pending architect escalation → reminder posted, escalation NOT cleared", async () => {
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
 
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "architect",
       originAgent: "ux-design",
       question: "Where is user state persisted between sessions?",
@@ -2725,7 +2726,7 @@ describe("Scenario N2 — Non-affirmative during architect escalation → remind
     expect(reminder[0].text).toContain("Where is user state persisted")
 
     // Escalation still pending — not cleared
-    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).not.toBeNull()
   })
 })
 
@@ -3382,7 +3383,7 @@ describe("Scenario N14 — Action menu suppressed when escalation just offered",
 
     // Escalation was stored
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).not.toBeNull()
 
     // Action menu must NOT appear — no "OPEN ITEMS" in the response
     const text = lastUpdateText(params.client)
@@ -3442,7 +3443,7 @@ describe("Scenario N26 — classifier filters non-PM items from offer_pm_escalat
     await handleFeatureChannelMessage(params)
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
 
     // Only PM-scope items stored — design/brand items (3 and 4) are stripped
@@ -3469,7 +3470,7 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "What happens to the guest session when the user signs up mid-conversation?",
@@ -3479,7 +3480,7 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("sends reminder message, does not call runAgent, does not clear pending escalation", async () => {
@@ -3499,7 +3500,7 @@ describe("Scenario N15 — Non-affirmative message during pending escalation →
 
     // Escalation still stored — not cleared
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).not.toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).not.toBeNull()
   })
 })
 
@@ -3518,7 +3519,7 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "What happens to the guest session when the user signs up mid-conversation?",
     })
@@ -3526,7 +3527,7 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("reply clears notification and resumes design agent with injected PM answer", async () => {
@@ -3546,7 +3547,7 @@ describe("Scenario N16 — Any reply when escalation notification active resumes
 
     // Notification cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Design agent was called with the resume directive
     const agentCall = mockAnthropicCreate.mock.calls.find((c: any) =>
@@ -3569,7 +3570,7 @@ describe("Scenario N17 — Escalation reply injected message contains question +
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "What happens to the guest session when the user signs up mid-conversation?",
     })
@@ -3577,7 +3578,7 @@ describe("Scenario N17 — Escalation reply injected message contains question +
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("design agent resumes with a clean continuation message after spec is updated", async () => {
@@ -3627,7 +3628,7 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "Should the in-conversation nudge show once per session or repeat after dismissal?",
       recommendations: "1. My recommendation: Show once per session — does not repeat after dismissal.\n→ Rationale: Repeating erodes trust.",
@@ -3636,7 +3637,7 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("writes patched spec to GitHub when product spec exists on main and Anthropic returns a valid patch", async () => {
@@ -3682,7 +3683,7 @@ describe("Scenario N30 — Escalation reply triggers product spec writeback when
 
     // Escalation notification cleared — design resumed
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
   })
 })
 
@@ -3713,7 +3714,7 @@ describe("Scenario N19 — Design spec with only engineering open questions runs
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("spec with [type: engineering] open question → agent runs, no premature escalation gate", async () => {
@@ -3747,7 +3748,7 @@ describe("Scenario N19 — Design spec with only engineering open questions runs
 
     // No pre-run gate should have fired — agent ran and responded.
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     const text = lastUpdateText(params.client)
     expect(text).toContain("Here is the design update.")
@@ -3770,7 +3771,7 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("agent gives prose without calling offer_pm_escalation → platform sets pending escalation from product findings", async () => {
@@ -3814,7 +3815,7 @@ describe("Scenario N18 — Platform auto-triggers escalation when agent skips of
 
     // Platform must have set pending escalation — agent skipped the tool
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
     expect(pending?.question).toContain("[PM-GAP]")
@@ -3966,7 +3967,7 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("agent prose 'say yes' + 'bring the PM' → pendingEscalation set, action menu absent", async () => {
@@ -4018,7 +4019,7 @@ describe("Scenario N22 — Fallback prose-detection gate suppresses action menu 
 
     // Platform must have set pending escalation from prose detection
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
     expect(pending?.question).toContain("SSO error path")
@@ -4054,7 +4055,7 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("passive prose is replaced with assertive escalation text built from pendingEscalation.question", async () => {
@@ -4099,7 +4100,7 @@ describe("Scenario N23 — Platform overrides passive prose when agent calls off
 
     // Platform must have stored pending escalation from the tool call
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.question).toContain("Session expiry")
 
@@ -4137,7 +4138,7 @@ describe("Scenario N25 — Haiku classifier catches PM gaps buried in flat prose
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("flat prose PM gaps — classifier fires, pendingEscalation set, assertive text shown, action menu absent", async () => {
@@ -4172,7 +4173,7 @@ describe("Scenario N25 — Haiku classifier catches PM gaps buried in flat prose
 
     // Classifier must have fired — pendingEscalation set
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
 
@@ -4204,7 +4205,7 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("agent 'want me to escalate to PM?' + numbered PM gaps → pendingEscalation set, assertive text shown, action menu absent", async () => {
@@ -4242,7 +4243,7 @@ describe("Scenario N24 — Fallback gate detects 'want me to escalate to PM?' of
 
     // Fallback gate must have fired — pendingEscalation set with extracted PM questions
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending?.targetAgent).toBe("pm")
     expect(pending?.question).toContain("SSO failure path")
@@ -4281,7 +4282,7 @@ describe("Scenario N27 — Gate 3 strips non-PM items from agent prose before st
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("Gate 3 filters design/brand items — only PM gaps stored in pending question", async () => {
@@ -4319,7 +4320,7 @@ describe("Scenario N27 — Gate 3 strips non-PM items from agent prose before st
     await handleFeatureChannelMessage(params)
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
 
     // PM-scope gaps stored
@@ -4359,7 +4360,7 @@ describe("Scenario N28 — Gate 2 rejects offer_pm_escalation when 0 PM gaps fou
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("does not store pending escalation when classifier finds 0 PM gaps in tool question", async () => {
@@ -4400,7 +4401,7 @@ describe("Scenario N28 — Gate 2 rejects offer_pm_escalation when 0 PM gaps fou
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     // No pending escalation stored — brand conflicts are not PM-scope
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
   })
 })
 
@@ -4420,7 +4421,7 @@ describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in 
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("does not store pending escalation when Gate 3 classifier finds 0 PM gaps", async () => {
@@ -4457,7 +4458,7 @@ describe("Scenario N29 — Gate 3 suppresses escalation when 0 PM gaps found in 
 
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
     // No pending escalation — brand/design conflicts are not PM-scope
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
   })
 })
 
@@ -4481,7 +4482,7 @@ describe("Scenario N52 — Gate 4 skipped when Gate 3 already ran the classifier
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("makes exactly 5 Anthropic calls — Gate 4 does not add a 6th when Gate 3 classified", async () => {
@@ -4521,7 +4522,7 @@ describe("Scenario N52 — Gate 4 skipped when Gate 3 already ran the classifier
 
     // No pending escalation — DESIGN-scope item suppressed correctly
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
   })
 })
 
@@ -4545,7 +4546,7 @@ describe("Scenario N31 — Gate 2 pre-seeds architect-scope filtered items into 
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     mockGetRef.mockReset()
     mockCreateRef.mockReset()
   })
@@ -4591,7 +4592,7 @@ describe("Scenario N31 — Gate 2 pre-seeds architect-scope filtered items into 
 
     // PM-scope gap stored in pendingEscalation
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending!.question).toContain("SSO")
 
@@ -4625,13 +4626,13 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("user confirms yes → design agent runs with upstream constraint brief, notification set with originAgent:architect", async () => {
     // Pre-seed architect upstream escalation
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "design",
       originAgent: "architect",
       question: "The modal sheet must support partial-height drag — current design specifies full-screen only, which the native nav stack cannot support.",
@@ -4661,10 +4662,10 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
 
     // Pending escalation cleared after @mention posted
     const { getPendingEscalation: getEsc, getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEsc(featureKey("onboarding"))).toBeNull()
+    expect(getEsc(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Escalation notification set with originAgent: "architect" so architect resumes on reply
-    const notification = getEscalationNotification(featureKey("onboarding"))
+    const notification = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notification).not.toBeNull()
     expect(notification!.targetAgent).toBe("design")
     expect(notification!.originAgent).toBe("architect")
@@ -4679,7 +4680,7 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
   it("designer reply → architect resumes with injected design decision, notification cleared", async () => {
     // Pre-seed escalation notification (architect-originated, awaiting designer reply)
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "design",
       question: "The modal sheet must support partial-height drag — current design specifies full-screen only.",
       recommendations: "1. My recommendation: Use a bottom sheet pattern limited to 60% height.\n→ Rationale: Native half-sheet fits nav stack constraints.",
@@ -4718,7 +4719,7 @@ describe("Scenario N32 — Architect upstream escalation to Designer round-trip"
 
     // Escalation notification cleared after designer reply
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Architect was called — the injected message contains the design decision
     const runAgentCall = mockAnthropicCreate.mock.calls.find((call: any) => {
@@ -4743,7 +4744,7 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // Pre-seed pending escalation — user will confirm "yes" to trigger PM brief
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "Should the onboarding nudge be dismissable? If so, does it re-appear after session reset?",
@@ -4753,8 +4754,8 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clrEsc(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("structural gate: clarification-stall (0 'My recommendation:' lines) triggers enforcement re-run", async () => {
@@ -4788,11 +4789,11 @@ describe("Scenario N33 — PM deferral triggers enforcement re-run, recommendati
     expect(enforcementUpdate).toBeDefined()
 
     // pendingEscalation cleared
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Two-step: escalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification(featureKey("onboarding"))
+    const notification = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
     expect(notification?.recommendations).toContain("My recommendation:")
@@ -4816,7 +4817,7 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "Should the onboarding nudge be dismissable?",
       recommendations: "1. My recommendation: The nudge should be dismissable.\n→ Rationale: Forcing UI erodes trust.",
@@ -4826,7 +4827,7 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("mixed approval+request routes to PM, escalation notification updated not cleared", async () => {
@@ -4848,7 +4849,7 @@ describe("Scenario N34 — Partial approval during escalation routes to PM, noti
 
     // Notification must still be active — design did NOT resume
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification(featureKey("onboarding"))
+    const notification = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notification).not.toBeNull()
 
     // Recommendations updated to PM's latest response
@@ -4881,7 +4882,7 @@ describe("Scenario N36 — DESIGN: items from Gate 2 classifier returned to agen
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("DESIGN: items returned to agent as self-resolution list — no pendingEscalation set", async () => {
@@ -4917,7 +4918,7 @@ describe("Scenario N36 — DESIGN: items from Gate 2 classifier returned to agen
 
     // No PM escalation stored — these were design decisions, not PM gaps
     const { getPendingEscalation } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Agent's final response is present (it resolved independently)
     const text = lastUpdateText(params.client)
@@ -4939,7 +4940,7 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     // Two-item brief — PM must produce 2 "My recommendation:" lines
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. When SSO fails for a returning user, should they remain logged out with an error, or enter a retry state?\n2. Define what the logged-out indicator must communicate to the user and the conditions under which it appears.",
@@ -4949,8 +4950,8 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clrEsc(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("1-of-2 partial answer triggers enforcement — final notification contains 2 recommendations", async () => {
@@ -4983,7 +4984,7 @@ describe("Scenario N35 — Structural gate fires when PM answers fewer items tha
 
     // Two-step: escalationNotification IS set with both recommendations — awaiting human approval
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification(featureKey("onboarding"))
+    const notification = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
     // Final notification contains BOTH recommendations (enforcement run produced full 2-item answer)
@@ -5009,7 +5010,7 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
     clearHistory(featureKey("onboarding"))
     // Simulate restart: confirmed agent is ABSENT (not in store)
     // but pendingEscalation was loaded from .conversation-state.json
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. Replace 'ambient awareness only' with a concrete measurable requirement.\n2. Specify the exact text the logged-out indicator should display.",
@@ -5020,8 +5021,8 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clrEsc(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("yes routes to PM escalation (not design agent) when confirmedAgent is absent but pendingEscalation exists", async () => {
@@ -5045,10 +5046,10 @@ describe("Scenario N37 — Server restart clears confirmedAgent but pendingEscal
 
     // pendingEscalation cleared
     const { getPendingEscalation, getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Two-step: escalationNotification IS set — awaiting human approval
-    const notification = getEscalationNotification(featureKey("onboarding"))
+    const notification = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
     expect(notification?.recommendations).toContain("My recommendation:")
@@ -5067,7 +5068,7 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
     clearHistory(featureKey("onboarding"))
     // pendingEscalation without productSpec — simulates state restored from disk without the field,
     // or set by the pre-run structural gate before the main-branch fallback was implemented.
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. What is the exact copy for the logged-out indicator?",
@@ -5079,8 +5080,8 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc, clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clrEsc(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clrEsc(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("PM agent receives approved product spec from main-branch fallback when productSpec absent from pendingEscalation", async () => {
@@ -5123,7 +5124,7 @@ describe("Scenario N38 — loadAgentContext falls back to main when draft branch
 
     // Two-step: escalationNotification IS set — awaiting human approval of PM recommendations
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    const notification = getEscalationNotification(featureKey("onboarding"))
+    const notification = getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     expect(notification).not.toBeNull()
     expect(notification?.targetAgent).toBe("pm")
   })
@@ -5191,7 +5192,7 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
     clearHistory(featureKey("n40feature"))
     setConfirmedAgent(featureKey("n40feature"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("n40feature"), {
+    setEscalationNotification(featureKey("n40feature"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "1. What is the exact copy for the logged-out indicator?",
       recommendations: "1. My recommendation: Use 'Not signed in'.\n→ Rationale: Standard phrasing.",
@@ -5200,7 +5201,7 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
   afterEach(async () => {
     clearHistory(featureKey("n40feature"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("n40feature"))
+    clearEscalationNotification(featureKey("n40feature"), threadKey(THREAD))
   })
 
   it("non-affirmative message that causes PM to save spec → escalation cleared, design agent runs", async () => {
@@ -5237,7 +5238,7 @@ describe("Scenario N40 — PM saves spec in continuation path → escalation aut
 
     // Escalation notification must be cleared — not stuck in PM loop
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("n40feature"))).toBeNull()
+    expect(getEscalationNotification(featureKey("n40feature"), threadKey(THREAD))).toBeNull()
 
     // Design agent must have been called — verified by checking the last update text
     const text = lastUpdateText(params.client)
@@ -5343,7 +5344,7 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
     clearHistory(featureKey("n43feature"))
     setConfirmedAgent(featureKey("n43feature"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("n43feature"), {
+    setEscalationNotification(featureKey("n43feature"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "1. Define what 'ambient awareness only' means operationally.",
       recommendations: "1. My recommendation: Non-clickable text only.",
@@ -5353,8 +5354,8 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
   afterEach(async () => {
     clearHistory(featureKey("n43feature"))
     const { clearEscalationNotification, clearPendingEscalation } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("n43feature"))
-    clearPendingEscalation(featureKey("n43feature"))
+    clearEscalationNotification(featureKey("n43feature"), threadKey(THREAD))
+    clearPendingEscalation(featureKey("n43feature"), threadKey(THREAD))
   })
 
   it("PM saves spec and calls offer_architect_escalation → architect escalation surfaced, design does NOT run", async () => {
@@ -5393,7 +5394,7 @@ describe("Scenario N43 — PM offer_architect_escalation in auto-close path surf
 
     // pendingEscalation must be set to architect
     const { getPendingEscalation: getPE } = await import("../../../runtime/conversation-store")
-    const pending = getPE(featureKey("n43feature"))
+    const pending = getPE(featureKey("n43feature"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("architect")
 
@@ -5422,7 +5423,7 @@ describe("Scenario N44 — Architect escalation confirmation routes writeback to
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "architect",
       question: QUESTION,
       recommendations: DECISION,
@@ -5432,7 +5433,7 @@ describe("Scenario N44 — Architect escalation confirmation routes writeback to
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("writes decision to engineering spec branch; does NOT write to product spec on main", async () => {
@@ -5485,7 +5486,7 @@ describe("Scenario N30 variant — isArchitectEscalation=true → product spec N
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "architect",
       question: "What caching strategy should the auth token use?",
       recommendations: "1. My recommendation: 15-minute TTL with sliding window.",
@@ -5495,7 +5496,7 @@ describe("Scenario N30 variant — isArchitectEscalation=true → product spec N
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("does not write to product spec on main when targetAgent=architect", async () => {
@@ -5537,7 +5538,7 @@ describe("Scenario N44b — Arch upstream escalation confirmation writes to engi
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: ARCH_QUESTION,
       recommendations: PM_DECISION,
@@ -5547,7 +5548,7 @@ describe("Scenario N44b — Arch upstream escalation confirmation writes to engi
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("writes PM decision to product spec ONLY — engineering spec is NOT touched (B8 / Principle 16)", async () => {
@@ -5939,7 +5940,7 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
 
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. What is the exact copy for the logged-out indicator?",
@@ -5951,8 +5952,8 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     clearHistory(featureKey("onboarding"))
     const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
     const { clearEscalationNotification: clrNotif } = await import("../../../runtime/conversation-store")
-    clrEsc(featureKey("onboarding"))
-    clrNotif(featureKey("onboarding"))
+    clrEsc(featureKey("onboarding"), threadKey(THREAD))
+    clrNotif(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("Turn 2: PM brief contains only the design-agent-identified question — no audit inflation; design does not run yet", async () => {
@@ -5979,9 +5980,9 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
     expect(briefText).toContain("What is the exact copy for the logged-out indicator?")
 
     // pendingEscalation cleared, escalationNotification set — awaiting approval
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
     const { getEscalationNotification: getNotif } = await import("../../../runtime/conversation-store")
-    const notif = getNotif(featureKey("onboarding"))
+    const notif = getNotif(featureKey("onboarding"), threadKey(THREAD))
     expect(notif).not.toBeNull()
     expect(notif?.targetAgent).toBe("pm")
 
@@ -5992,9 +5993,9 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
   it("Turn 3: human approves → spec patched, design resumes", async () => {
     // Set up Turn 3 state directly (Turn 2 was the PM round)
     const { clearPendingEscalation: clrEsc } = await import("../../../runtime/conversation-store")
-    clrEsc(featureKey("onboarding"))
+    clrEsc(featureKey("onboarding"), threadKey(THREAD))
     const { setEscalationNotification: setNotif } = await import("../../../runtime/conversation-store")
-    setNotif(featureKey("onboarding"), {
+    setNotif(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "1. What is the exact copy for the logged-out indicator?",
       recommendations: "1. My recommendation: Use 'Not signed in' text.\n→ Rationale: Clear and concise.",
@@ -6026,7 +6027,7 @@ describe("Scenario N50 — PM escalation two-step: PM brief content, approval, a
 
     // EscalationNotification cleared
     const { getEscalationNotification: getNotif } = await import("../../../runtime/conversation-store")
-    expect(getNotif(featureKey("onboarding"))).toBeNull()
+    expect(getNotif(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Design ran
     const designCall = mockAnthropicCreate.mock.calls.find((c: any) => Array.isArray(c[0]?.system))
@@ -6646,7 +6647,7 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
     clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     mockAnthropicCreate.mockReset()
     mockGetContent.mockReset()
   })
@@ -6655,7 +6656,7 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
     clearHistory(featureKey("onboarding"))
     clearSummaryCache("onboarding")
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("implementation-only question → gate rejects, no pending escalation stored", async () => {
@@ -6709,7 +6710,7 @@ describe("Scenario N57 — arch escalation gate rejects implementation-only ques
     })
 
     // Gate rejected — no pending escalation stored
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
     // Design items remain → platform status line still shows (no suppression without pending escalation)
     const text = lastUpdateText(client)
     expect(text).toContain("1 item to address before engineering handoff")
@@ -8403,7 +8404,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
     await handleFeatureChannelMessage(params2)
 
     // Architect ran — gate did NOT fire (no pendingEscalation set)
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Verify the agent actually ran (last mock was the agent response)
     const updateCalls = (params2.client.chat.update as ReturnType<typeof vi.fn>).mock.calls
@@ -8502,7 +8503,7 @@ describe("Scenario N80 — Architect pre-run gate uses ARCHITECT_UPSTREAM_PM_RUB
 
     // Architect ran (not blocked pre-run) but post-run gate auto-escalated to PM
     // because PM gaps were in context and agent didn't call offer_upstream_revision(pm)
-    const esc = getPendingEscalation(featureKey("onboarding"))
+    const esc = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(esc).not.toBeNull()
     expect(esc?.targetAgent).toBe("pm")
 
@@ -8787,7 +8788,7 @@ describe("Scenario N39 — Re-audit after design→PM escalation reply re-escala
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "AC#1 uses vague language: seamless",
       recommendations: "My recommendation: replace seamless with 200ms cross-fade.",
@@ -8795,8 +8796,8 @@ describe("Scenario N39 — Re-audit after design→PM escalation reply re-escala
   })
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("patched spec with remaining findings triggers new pending escalation", async () => {
@@ -8827,14 +8828,14 @@ describe("Scenario N39 — Re-audit after design→PM escalation reply re-escala
     await handleFeatureChannelMessage(params)
 
     // Re-audit should have found remaining findings → new pending escalation
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
     expect(pending!.question).toContain("PRODUCT MANAGER")
 
     // Escalation notification should be cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Design agent should NOT have been called — no "UX Designer is thinking" message
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
@@ -8865,7 +8866,7 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "AC#1 uses vague error behavior",
       recommendations: "My recommendation: define error UI as inline toast with specific copy.",
@@ -8874,8 +8875,8 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
   })
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("patched spec with remaining findings triggers new pending escalation", async () => {
@@ -8907,13 +8908,13 @@ describe("Scenario N40 — Re-audit after architect→PM escalation reply re-esc
     await handleFeatureChannelMessage(params)
 
     // Re-audit should have found remaining findings → new pending escalation
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
     // Escalation notification should be cleared
     const { getEscalationNotification } = await import("../../../runtime/conversation-store")
-    expect(getEscalationNotification(featureKey("onboarding"))).toBeNull()
+    expect(getEscalationNotification(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
 
     // Architect should NOT have resumed
     const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
@@ -8945,7 +8946,7 @@ describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", 
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "AC#1 uses vague language",
       recommendations: "My recommendation: replace seamless with 200ms cross-fade.",
@@ -8953,8 +8954,8 @@ describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", 
   })
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("PM saves to branch → platform applies to main → re-audit finds remaining gaps → re-escalates", async () => {
@@ -9001,7 +9002,7 @@ describe("Scenario N41 — Auto-close applies PM branch to main and re-audits", 
     expect(mainWriteCall).toBeDefined()
 
     // Re-audit should find remaining findings → new pending escalation
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending).not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
@@ -9024,11 +9025,11 @@ describe("Scenario N42 — /pm during pending escalation shows hold message", ()
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "design", originAgent: "architect", question: "Color palette unspecified", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), { targetAgent: "design", originAgent: "architect", question: "Color palette unspecified", designContext: "" })
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("@pm: message blocked by universal guard — hold message mentions Designer, no Anthropic calls", async () => {
@@ -9059,11 +9060,11 @@ describe("Scenario N43 — /design during pending escalation shows hold message 
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", originAgent: "architect", question: "AC#1 uses vague language", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), { targetAgent: "pm", originAgent: "architect", question: "AC#1 uses vague language", designContext: "" })
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("@design: message blocked by universal guard — hold message mentions PM", async () => {
@@ -9100,11 +9101,11 @@ describe("Scenario B20 — hold-pending-escalation message phase label derives f
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("originAgent=architect → 'Engineering is paused' (the canonical Step 2a observation #12 case)", async () => {
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", originAgent: "architect", question: "AC#27 uses vague timing", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), { targetAgent: "pm", originAgent: "architect", question: "AC#27 uses vague timing", designContext: "" })
 
     const params = makeParams(THREAD, "feature-onboarding", "still here?")
     await handleFeatureChannelMessage(params)
@@ -9120,7 +9121,7 @@ describe("Scenario B20 — hold-pending-escalation message phase label derives f
   })
 
   it("originAgent=ux-design → 'Design is paused' (designer→PM escalation, the natural design phase)", async () => {
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "pm", originAgent: "ux-design", question: "Color palette gap", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), { targetAgent: "pm", originAgent: "ux-design", question: "Color palette gap", designContext: "" })
 
     const params = makeParams(THREAD, "feature-onboarding", "let me think")
     await handleFeatureChannelMessage(params)
@@ -9135,7 +9136,7 @@ describe("Scenario B20 — hold-pending-escalation message phase label derives f
   it("originAgent=pm → 'Product is paused' (PM-originated escalation, e.g. PM→architect for tech feasibility)", async () => {
     // Forward-looking case — PM-originated escalations don't exist in current product flow,
     // but the mapping must be defined and correct for when they do.
-    setPendingEscalation(featureKey("onboarding"), { targetAgent: "architect", originAgent: "pm", question: "Tech feasibility unknown", designContext: "" })
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), { targetAgent: "architect", originAgent: "pm", question: "Tech feasibility unknown", designContext: "" })
 
     const params = makeParams(THREAD, "feature-onboarding", "give me a moment")
     await handleFeatureChannelMessage(params)
@@ -9160,11 +9161,11 @@ describe("Scenario N44 — /pm in design-phase runs PM read-only, no branch writ
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("PM runs via slash override in design phase — Anthropic called, no file writes", async () => {
@@ -9233,12 +9234,12 @@ describe("Scenario N48 — Design runs with upstream PM findings as informationa
     clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("PM spec has vague language — design agent runs, no blocking escalation set", async () => {
@@ -9277,7 +9278,7 @@ describe("Scenario N48 — Design runs with upstream PM findings as informationa
     expect(text).toContain("onboarding flow design")
 
     // No blocking escalation set — upstream findings are informational only
-    expect(getPendingEscalation(featureKey("onboarding"))).toBeNull()
+    expect(getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))).toBeNull()
   })
 })
 
@@ -9511,10 +9512,10 @@ describe("Scenario N74 — Universal-guard hold emits a branch=hold-pending-esca
 
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
     setConfirmedAgent(featureKey("onboarding"), "ux-design")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "AC#5 uses vague language: 'soon'",
@@ -9523,8 +9524,8 @@ describe("Scenario N74 — Universal-guard hold emits a branch=hold-pending-esca
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("non-affirmative message during pending escalation → hold message + [ROUTER] branch=hold-pending-escalation feature=onboarding targetAgent=pm", async () => {
@@ -9651,12 +9652,12 @@ describe("Scenario N88 — Architect prose-vs-state mismatch: assertive override
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     setConfirmedAgent(featureKey("onboarding"), "architect")
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("auto-trigger queues PM, agent prose names Design → final response is PM CTA built from queued state", async () => {
@@ -9684,7 +9685,7 @@ describe("Scenario N88 — Architect prose-vs-state mismatch: assertive override
     await handleFeatureChannelMessage(params)
 
     // Auto-trigger queued target=pm because PM gaps exist + agent didn't call offer_upstream_revision(pm)
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending, "expected auto-trigger to queue PM").not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
@@ -9823,12 +9824,12 @@ describe("Scenario N90 — PM-first conversational override redirects offer_upst
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     setConfirmedAgent(featureKey("onboarding"), "architect")
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("architect calls offer_upstream_revision(target=design) → platform redirects to PM, final state is PM target", async () => {
@@ -9862,7 +9863,7 @@ describe("Scenario N90 — PM-first conversational override redirects offer_upst
 
     // PM-first override: even though architect called offer_upstream_revision(design),
     // the platform must redirect to PM because PM gaps exist.
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending, "expected pending escalation to be set").not.toBeNull()
     expect(pending!.targetAgent, "PM-first conversational override must redirect from design to pm").toBe("pm")
   })
@@ -9879,7 +9880,7 @@ describe("Scenario N91 — Readiness directive surfaces active escalation when o
     setConfirmedAgent(featureKey("onboarding"), "architect")
     // Pre-seed an active escalation so the readiness directive's escalation-active branch fires.
     const { setPendingEscalation } = await import("../../../runtime/conversation-store")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "architect",
       question: "1. AC#1 vague\n2. Missing error path",
@@ -9889,7 +9890,7 @@ describe("Scenario N91 — Readiness directive surfaces active escalation when o
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("active pendingEscalation → directive's escalation line names target + item count + 'do not propose handoff yet'", async () => {
@@ -9934,7 +9935,7 @@ describe("Scenario N92 — readOnly (escalation-reply) path does NOT receive the
     // Set escalationNotification — this is the readOnly-triggering condition.
     // The architect runs in readOnly mode to compose the escalation reply brief.
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey("onboarding"), {
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       question: "AC#1 vague",
       recommendations: "My recommendation: define error UI as inline toast.",
@@ -9944,8 +9945,8 @@ describe("Scenario N92 — readOnly (escalation-reply) path does NOT receive the
   afterEach(async () => {
     clearHistory(featureKey("onboarding"))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("escalation-reply readOnly path does NOT inject the readiness directive (brief carries readiness)", async () => {
@@ -10359,7 +10360,7 @@ describe("Scenario B10 — re-escalation notification uses PLATFORM_MESSAGE_PREF
     clearPhaseAuditCaches()
     setConfirmedAgent(featureKey(FEATURE), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey(FEATURE), {
+    setEscalationNotification(featureKey(FEATURE), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. Vague timing across multiple ACs.",
@@ -10369,7 +10370,7 @@ describe("Scenario B10 — re-escalation notification uses PLATFORM_MESSAGE_PREF
   afterEach(async () => {
     clearHistory(featureKey(FEATURE))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey(FEATURE))
+    clearEscalationNotification(featureKey(FEATURE), threadKey(THREAD))
   })
 
   it("re-escalation notification uses PLATFORM prefix and platform-first-person voice (no agent-name impersonation)", async () => {
@@ -10455,7 +10456,7 @@ Sign-up flow.
     clearPhaseAuditCaches()
     setConfirmedAgent(featureKey(FEATURE), "ux-design")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey(FEATURE), {
+    setEscalationNotification(featureKey(FEATURE), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "ux-design",
       question: "1. Vague timing — multiple ACs use 'immediately' without a numeric bound.",
@@ -10465,7 +10466,7 @@ Sign-up flow.
   afterEach(async () => {
     clearHistory(featureKey(FEATURE))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey(FEATURE))
+    clearEscalationNotification(featureKey(FEATURE), threadKey(THREAD))
   })
 
   it("standalone confirmation triggers patchProductSpecWithRecommendations; deterministic category-rule application substitutes ALL 4 'immediately' instances even if Haiku returns a no-op patch", async () => {
@@ -10551,7 +10552,7 @@ Toast appears fast after submit.
     clearPhaseAuditCaches()
     setConfirmedAgent(featureKey(FEATURE), "architect")
     const { setEscalationNotification } = await import("../../../runtime/conversation-store")
-    setEscalationNotification(featureKey(FEATURE), {
+    setEscalationNotification(featureKey(FEATURE), threadKey(THREAD), {
       targetAgent: "design",
       originAgent: "architect",
       question: "Vague animation timing — multiple screens use 'fast' without numeric duration.",
@@ -10561,7 +10562,7 @@ Toast appears fast after submit.
   afterEach(async () => {
     clearHistory(featureKey(FEATURE))
     const { clearEscalationNotification } = await import("../../../runtime/conversation-store")
-    clearEscalationNotification(featureKey(FEATURE))
+    clearEscalationNotification(featureKey(FEATURE), threadKey(THREAD))
   })
 
   it("standalone confirmation triggers patchDesignSpecWithRecommendations; deterministic category-rule application substitutes ALL 'fast' instances even if Haiku returns a buggy patch", async () => {
@@ -10633,9 +10634,9 @@ describe("Scenario B7 — architect→PM escalation brief carries READONLY_AGENT
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     setConfirmedAgent(featureKey("onboarding"), "architect")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "architect",
       question: "1. AC#1 timing is vague — what's the bound?",
@@ -10644,8 +10645,8 @@ describe("Scenario B7 — architect→PM escalation brief carries READONLY_AGENT
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("the brief sent to the PM agent contains the readOnly clause marker (B7 / Principle 15 cross-agent parity)", async () => {
@@ -10731,12 +10732,12 @@ describe("Scenario B6 — architect's PM escalation question is overridden when 
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     clearPhaseAuditCaches()
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     setConfirmedAgent(featureKey("onboarding"), "architect")
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("architect calls offer_upstream_revision(pm) with 1-item question → B6 gate overrides with consolidated 3-gap brief", async () => {
@@ -10781,7 +10782,7 @@ describe("Scenario B6 — architect's PM escalation question is overridden when 
     const params = { ...makeParams(THREAD, "feature-onboarding", "Hi, where are we?"), userId: "U_B6" }
     await handleFeatureChannelMessage(params)
 
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending, "expected architect to have queued PM escalation").not.toBeNull()
     expect(pending!.targetAgent).toBe("pm")
 
@@ -10834,7 +10835,7 @@ describe("Scenario B6 — architect's PM escalation question is overridden when 
     const params = { ...makeParams(THREAD, "feature-onboarding", "Hi, where are we?"), userId: "U_B6_NEG" }
     await handleFeatureChannelMessage(params)
 
-    const pending = getPendingEscalation(featureKey("onboarding"))
+    const pending = getPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
     expect(pending, "expected architect to have queued PM escalation").not.toBeNull()
     // Agent's faithful enumeration kept verbatim — no override.
     expect(pending!.question).toBe(FAITHFUL_ENUMERATION)
@@ -10875,7 +10876,7 @@ describe("Scenario B11 v1 — arch-upstream-escalation-confirmed wires verifyAcR
   beforeEach(() => {
     clearHistory(featureKey("onboarding"))
     setConfirmedAgent(featureKey("onboarding"), "architect")
-    setPendingEscalation(featureKey("onboarding"), {
+    setPendingEscalation(featureKey("onboarding"), threadKey(THREAD), {
       targetAgent: "pm",
       originAgent: "architect",
       question: "AC#1 has vague timing — what's the bound?",
@@ -10884,8 +10885,8 @@ describe("Scenario B11 v1 — arch-upstream-escalation-confirmed wires verifyAcR
   })
   afterEach(() => {
     clearHistory(featureKey("onboarding"))
-    clearPendingEscalation(featureKey("onboarding"))
-    clearEscalationNotification(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
   })
 
   it("PM cites AC 99 in escalation-resume → [CONTENT-VERIFIER] log line emitted with hallucination=ac-does-not-exist", async () => {

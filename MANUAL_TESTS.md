@@ -733,6 +733,37 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-36 — New thread in feature channel gets fresh state (B30; Step 2a closure round 2, cross-thread leak fix)
+
+**Why this can't be automated (fully):** unit + regression tests pin the in-memory thread-scoping invariant. This MT verifies the end-to-end UX: a user opens a new thread in the SAME feature channel where another thread has a stuck `pendingEscalation` or `escalationNotification` — the new thread should route normally (architect/PM/designer per phase), NOT hit the prior thread's stale escalation state.
+
+**Pre-flight:** bot restarted with the B30 commit on main; `[BOOT]` codeMarker matches HEAD. State file may contain in-flight escalations from prior threads — that's the test substrate.
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase). At least one existing thread with a pending architect→PM escalation queued (you can drive one via the "walk me through what's blocking" prompt that fires the auto-trigger override).
+
+**Actions:**
+1. Verify the existing thread has a pending escalation: bot's last response there contains `Say *yes* and I'll bring in the PM agent` and `.conversation-state.json` shows `pendingEscalations: { "onboarding:<existing-thread-ts>": {...} }`.
+2. **Start a brand new thread** in `#feature-onboarding`.
+3. Type a substantive architect message, e.g.: `what's the current state of the engineering spec?`
+4. Verify the bot's response is a FRESH architect run — NOT a `Say yes` reminder for the prior thread's escalation.
+5. Inspect logs:
+   - `[ROUTER] handleFeatureChannelMessage: feature=onboarding confirmedAgent=architect msg=...`
+   - `[ROUTER] branch=confirmed-architect feature=onboarding` (NOT `branch=arch-upstream-continuation` and NOT `branch=hold-pending-escalation`)
+   - `[STORE]` lines for the new thread show composite `stateKey=onboarding:<new-thread-ts>` references when state is queried
+6. Verify the prior thread's pendingEscalation is UNTOUCHED in `.conversation-state.json` — only its thread sees it.
+
+**Expected outcome:**
+- Brand-new thread routes to architect (fresh phase-aware agent), not the prior escalation hold.
+- `.conversation-state.json` shows TWO separate entries: one keyed `onboarding:<old-thread>` (the existing escalation) and one keyed `onboarding:<new-thread>` (any new escalation the architect queues).
+- The two threads are fully independent — replies in one don't affect the other's state.
+
+**Failure signatures:**
+- New thread hits `branch=hold-pending-escalation` or `branch=arch-upstream-continuation` → cross-thread leak still happening; check the migration ran (`grep "B30 migration" logs`) and that source-level get/set/clear calls in message.ts include `threadKey(threadTs)`.
+- `[STORE]` log lines show `stateKey=onboarding` (no `:` suffix) → migration didn't run or state was written via a legacy code path that bypasses the new APIs.
+- Replying in the OLD thread accidentally affects state in the NEW thread (or vice versa) → composite key collision; check `escalationStateKey` builder.
+
+---
+
 ### MT-35 — Escalation override appends agent prose alongside platform CTA (B33; Step 2a closure round 2)
 
 **Why this can't be automated (fully):** unit + regression + integration tests pin source-level invariants (APPEND construction, log marker, DESIGN-REVIEWED comments) and rendered-output assertions (agent prose preserved alongside platform CTA in mocked Slack output). This MT verifies the rendered Slack message in a real flow — particularly that the markdown horizontal rule renders as a visible separator and that the user-perceived experience is "agent analysis followed by platform action."

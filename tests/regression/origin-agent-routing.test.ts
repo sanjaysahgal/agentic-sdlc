@@ -1,3 +1,4 @@
+import { threadKey } from "../../runtime/routing/types"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // Regression test for bug #10: architect→PM escalations resumed to designer instead of architect.
@@ -25,17 +26,17 @@ describe("bug #10 — PendingEscalation carries originAgent so architect→PM es
     const { setPendingEscalation, getPendingEscalation, clearPendingEscalation, disableFilePersistence } = await import("../../runtime/conversation-store")
     disableFilePersistence()
     const key = { product: "test", feature: "f1" }
-    setPendingEscalation(key, {
+    setPendingEscalation(key, threadKey("test-thread"), {
       targetAgent: "pm",
       originAgent: "architect",
       question: "vague language in AC#1",
       designContext: "",
     })
-    const got = getPendingEscalation(key)
+    const got = getPendingEscalation(key, threadKey("test-thread"))
     expect(got).not.toBeNull()
     expect(got!.originAgent).toBe("architect")
     expect(got!.targetAgent).toBe("pm")
-    clearPendingEscalation(key)
+    clearPendingEscalation(key, threadKey("test-thread"))
   })
 
   it("the three documented scenarios round-trip correctly", async () => {
@@ -44,20 +45,20 @@ describe("bug #10 — PendingEscalation carries originAgent so architect→PM es
     const key = { product: "test", feature: "f2" }
 
     // Scenario A: design → PM (the historically working case)
-    setPendingEscalation(key, { targetAgent: "pm", originAgent: "ux-design", question: "q", designContext: "" })
-    expect(getPendingEscalation(key)?.originAgent).toBe("ux-design")
+    setPendingEscalation(key, threadKey("test-thread"), { targetAgent: "pm", originAgent: "ux-design", question: "q", designContext: "" })
+    expect(getPendingEscalation(key, threadKey("test-thread"))?.originAgent).toBe("ux-design")
 
     // Scenario B: architect → design (the historically working case)
-    clearPendingEscalation(key)
-    setPendingEscalation(key, { targetAgent: "design", originAgent: "architect", question: "q", designContext: "" })
-    expect(getPendingEscalation(key)?.originAgent).toBe("architect")
+    clearPendingEscalation(key, threadKey("test-thread"))
+    setPendingEscalation(key, threadKey("test-thread"), { targetAgent: "design", originAgent: "architect", question: "q", designContext: "" })
+    expect(getPendingEscalation(key, threadKey("test-thread"))?.originAgent).toBe("architect")
 
     // Scenario C: architect → PM (the historically BROKEN case — bug #10)
-    clearPendingEscalation(key)
-    setPendingEscalation(key, { targetAgent: "pm", originAgent: "architect", question: "q", designContext: "" })
-    const got = getPendingEscalation(key)
+    clearPendingEscalation(key, threadKey("test-thread"))
+    setPendingEscalation(key, threadKey("test-thread"), { targetAgent: "pm", originAgent: "architect", question: "q", designContext: "" })
+    const got = getPendingEscalation(key, threadKey("test-thread"))
     expect(got?.originAgent).toBe("architect")
     expect(got?.targetAgent).toBe("pm")
-    clearPendingEscalation(key)
+    clearPendingEscalation(key, threadKey("test-thread"))
   })
 })

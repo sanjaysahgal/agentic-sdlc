@@ -1,6 +1,6 @@
 {
   "pendingEscalations": {
-    "onboarding": {
+    "onboarding:legacy": {
       "targetAgent": "pm",
       "originAgent": "architect",
       "question": "1. [PM] AC uses undefined timing: \"immediately\" without a numeric value in seconds or minutes. — Replace \"immediately\" with a specific duration (e.g. \"within 200ms\", \"after 60 seconds of inactivity\").",

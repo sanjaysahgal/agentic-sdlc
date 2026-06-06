@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../agentic-health360"
+		},
+		{
+			"path": "../agentic-cicd"
+		}
+	],
+	"settings": {}
+}
