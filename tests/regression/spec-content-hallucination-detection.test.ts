@@ -304,3 +304,61 @@ describe("bug #22 — B29 verifier precision tightening (catastrophic Step 2a MT
     expect(b).toEqual(c)
   })
 })
+
+describe("bug #23 — B28 BLOCKING writeback produces a user-facing message (catastrophic Step 2a #32)", () => {
+  it("B28 buildBlockedWritebackMessage — contains platform prefix, role, finding count, formatted findings, and re-author CTA", async () => {
+    const { buildBlockedWritebackMessage } = await import("../../runtime/spec-content-verifier")
+    const hallucinations = [
+      { citedAcNumber: 4, claimedWording: "fake claim about AC 4", actualWording: "real AC 4 text", reason: "claimed-wording-not-in-ac" as const },
+    ]
+    const msg = buildBlockedWritebackMessage(hallucinations, "PM")
+    expect(msg).toContain("*Platform —*")
+    expect(msg).toContain("PM's recommendation")
+    expect(msg).toContain("1 citation issue")  // singular wording
+    expect(msg).toContain("AC 4")
+    expect(msg).toContain("Reply with a revised recommendation")
+    expect(msg).toContain("spec on main is unchanged")
+  })
+
+  it("B28 buildBlockedWritebackMessage — pluralizes 'issues' for N > 1, lists each finding", async () => {
+    const { buildBlockedWritebackMessage } = await import("../../runtime/spec-content-verifier")
+    const hallucinations = [
+      { citedAcNumber: 4, claimedWording: "first fake", actualWording: "real 4", reason: "claimed-wording-not-in-ac" as const },
+      { citedAcNumber: 7, claimedWording: "second fake", actualWording: "real 7", reason: "claimed-wording-not-in-ac" as const },
+    ]
+    const msg = buildBlockedWritebackMessage(hallucinations, "Architect")
+    expect(msg).toContain("Architect's recommendation")
+    expect(msg).toContain("2 citation issues")
+    expect(msg).toContain("AC 4")
+    expect(msg).toContain("AC 7")
+  })
+
+  it("B28 structural — pm-escalation-spec-writer returns { blocked, hallucinations } on hallucination, not null", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/pm-escalation-spec-writer.ts"),
+      "utf8",
+    )
+    // Type exported
+    expect(source).toMatch(/export type ProductSpecWritebackBlocked\b/)
+    // BLOCKING path returns { blocked: true, hallucinations }
+    expect(source).toMatch(/return\s+\{\s*blocked:\s*true\s*,\s*hallucinations\s*\}/)
+  })
+
+  it("B28 structural — message.ts wires buildBlockedWritebackMessage at BOTH writeback call sites (Principle 15)", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "interfaces/slack/handlers/message.ts"),
+      "utf8",
+    )
+    expect(source).toMatch(/import\s+\{[^}]*buildBlockedWritebackMessage[^}]*\}\s+from\s+["'][^"']*spec-content-verifier/)
+    // Both call sites must post the BLOCKED message.
+    const builderCalls = source.match(/buildBlockedWritebackMessage\(/g) ?? []
+    expect(builderCalls.length).toBeGreaterThanOrEqual(2)
+    // Both must include a DESIGN-REVIEWED comment referencing B28.
+    const designReviewedB28 = source.match(/DESIGN-REVIEWED:\s*B28/g) ?? []
+    expect(designReviewedB28.length).toBeGreaterThanOrEqual(2)
+  })
+})

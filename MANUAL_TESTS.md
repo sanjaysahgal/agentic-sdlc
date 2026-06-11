@@ -733,6 +733,49 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-37 — BLOCKING writeback posts a user-facing message (B28 + B29 + B21; Step 2a closure round 2)
+
+**Why this can't be automated (fully):** unit + regression tests pin the message builder and structural wiring deterministically. This MT verifies end-to-end: PM (or architect) produces a recommendation containing an AC-citation hallucination, the user confirms with `yes approved`, the verifier BLOCKS at the writeback, AND the user sees a clear platform message naming the issues. The B21 + B29 + B28 stack only delivers value if all three layers fire correctly under a real fabrication.
+
+**Pre-flight:** bot restarted on the B28 commit; G6 (`[OUTBOUND]`) lines visible for inspection.
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase). State file should be clean of stuck escalations (otherwise drive in a new thread per the B30 thread-scoped contract — every thread is now independent).
+
+**Actions — drive the BLOCKING path:**
+1. In a NEW thread, post: `walk me through what's blocking engineering progress`. Architect fires the auto-trigger override and queues a PM escalation (the architect tends to hallucinate AC 27 "immediately" per the known #43 — that's expected until B31 ships).
+2. Reply `yes`. PM activates in escalation-resume mode.
+3. **Drive PM to produce a fabricated citation.** If PM's natural response includes one, great; otherwise, prompt: `please cite specific AC numbers for your recommendation and quote the AC's exact text`. PM will produce inference-style citations (e.g. "200ms matches the threshold used in AC 4 and AC 27") that likely don't match the actual AC bodies.
+4. Reply `yes approved`.
+5. **Watch for the B28 user-facing message in Slack:**
+   - `*Platform — PM's recommendation contained N citation issues that need re-authoring. Here's what was flagged: ...`
+   - List of findings with AC numbers
+   - `Reply with a revised recommendation and we'll try the writeback again. (The spec on main is unchanged.)`
+6. Inspect logs:
+   - `[CONTENT-VERIFIER] BLOCKING site=pm-spec-writeback feature=onboarding hallucinations=N`
+   - `[ESCALATION] product spec writeback: BLOCKED ...`
+   - `[OUTBOUND] method=postMessage ... text_chars=...` with the B28 message body
+7. Verify the spec on `main` is UNCHANGED (`git fetch && git log -1 onboarding.product.md`).
+8. Verify the escalation stays active so PM can re-author.
+
+**Actions — drive the FAITHFUL path (no false-positive):**
+1. In a NEW thread, run the same flow but PM should produce a FAITHFUL recommendation (e.g. specifies a concrete value without inference-style citations).
+2. Reply `yes approved`.
+3. Verify the writeback PROCEEDS normally (B29 algorithm tightening prevents the catastrophic MT-33 false-positives):
+   - `[ESCALATION] product spec writeback: patched ... — diff: Modified AC N` (B24 diff brief)
+   - No `[CONTENT-VERIFIER] BLOCKING` line
+   - Spec on `main` updated
+
+**Expected outcome:**
+- BLOCKING path: user sees the B28 message, knows what's wrong, escalation stays active.
+- Faithful path: writeback proceeds with B24 diff brief, no false-positive block.
+
+**Failure signatures:**
+- BLOCKING fires but no user-facing message → B28 wiring missing. Check both call sites in `interfaces/slack/handlers/message.ts` use `buildBlockedWritebackMessage` and post via `client.chat.postMessage`.
+- BLOCKING fires on a faithful recommendation → B29 algorithm regression. Capture the exact PM response + log line; run `verifyAcReferences` directly to inspect findings.
+- Faithful recommendation gets through but `[CONTENT-VERIFIER]` log shows hallucinations the user can't see → B29 is permissive enough that the writeback proceeds, but the operator may want to inspect why (architect-side hallucinations still slip through until B31 ships).
+
+---
+
 ### MT-36 — New thread in feature channel gets fresh state (B30; Step 2a closure round 2, cross-thread leak fix)
 
 **Why this can't be automated (fully):** unit + regression tests pin the in-memory thread-scoping invariant. This MT verifies the end-to-end UX: a user opens a new thread in the SAME feature channel where another thread has a stuck `pendingEscalation` or `escalationNotification` — the new thread should route normally (architect/PM/designer per phase), NOT hit the prior thread's stale escalation state.

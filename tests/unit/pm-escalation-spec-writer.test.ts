@@ -647,8 +647,11 @@ describe("B21 — content verifier BLOCKING in PM spec writeback (regression for
       humanConfirmation: HUMAN_CONFIRM,
     })
 
-    // BLOCKING contract: writeback rejected, NO Haiku call, NO save.
-    expect(result).toBeNull()
+    // B28 — BLOCKING contract: writeback returns the blocked result with hallucinations
+    // (was null pre-B28), Haiku NOT called, save NOT called.
+    expect(result).not.toBeNull()
+    expect(result).toHaveProperty("blocked", true)
+    expect((result as { hallucinations: unknown[] }).hallucinations.length).toBeGreaterThan(0)
     expect(mockCreate).not.toHaveBeenCalled()
     expect(mockSaveApproved).not.toHaveBeenCalled()
   })
@@ -671,7 +674,9 @@ describe("B21 — content verifier BLOCKING in PM spec writeback (regression for
       humanConfirmation: HUMAN_CONFIRM,
     })
 
-    expect(result).toBeNull()
+    // B28 — BLOCKING contract: writeback returns the blocked result
+    expect(result).not.toBeNull()
+    expect(result).toHaveProperty("blocked", true)
     expect(mockCreate).not.toHaveBeenCalled()
     expect(mockSaveApproved).not.toHaveBeenCalled()
   })

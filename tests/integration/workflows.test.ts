@@ -10962,3 +10962,65 @@ describe("Scenario B11 v1 — arch-upstream-escalation-confirmed wires verifyAcR
     logSpy.mockRestore()
   })
 })
+
+// ─── Scenario B28 — BLOCKING writeback posts a user-facing message ──────────
+//
+// Step 2a observation #32 catastrophic UX fix: when the content verifier
+// BLOCKS a writeback on hallucination detection, the user-facing platform
+// message names the count + lists the findings + offers a re-author CTA.
+
+describe("Scenario B28 — BLOCKING writeback posts user-facing message (catastrophic Step 2a #32)", () => {
+  const THREAD = "workflow-b28"
+
+  beforeEach(async () => {
+    clearHistory(featureKey("onboarding"))
+    setConfirmedAgent(featureKey("onboarding"), "architect")
+    const { setEscalationNotification } = await import("../../../runtime/conversation-store")
+    setEscalationNotification(featureKey("onboarding"), threadKey(THREAD), {
+      targetAgent: "pm",
+      originAgent: "architect",
+      question: "AC 1 needs a numeric threshold",
+      recommendations: `My recommendation: tighten the threshold. Per AC 4 — "the system must require fingerprint authentication on every screen transition" — this is the existing rule we should respect.`,
+    })
+  })
+  afterEach(() => {
+    clearHistory(featureKey("onboarding"))
+    clearPendingEscalation(featureKey("onboarding"), threadKey(THREAD))
+    clearEscalationNotification(featureKey("onboarding"), threadKey(THREAD))
+  })
+
+  it("PM recommendation cites AC 4 with phrase NOT in AC 4 body → BLOCKED writeback posts user-facing message naming the issue + re-author CTA", async () => {
+    const PRODUCT_SPEC_4_ACS = [
+      "# Onboarding Product Spec",
+      "",
+      "## Acceptance Criteria",
+      "1. The user can sign up with email and password.",
+      "2. The user receives a confirmation email after sign up.",
+      "3. The user can log in with the same credentials.",
+      "4. The system must validate the email format before submission.",
+      "",
+      "## Non-Goals",
+      "- Fingerprint authentication is out of scope",
+    ].join("\n")
+
+    mockGetContent.mockImplementation(async ({ path, ref }: any) => {
+      if (path?.includes("onboarding.product.md") && ref === "main") {
+        return { data: { content: Buffer.from(PRODUCT_SPEC_4_ACS).toString("base64"), type: "file", encoding: "base64" } }
+      }
+      throw Object.assign(new Error("not found"), { status: 404 })
+    })
+
+    const params = makeParams(THREAD, "feature-onboarding", "yes approved")
+    await handleFeatureChannelMessage(params)
+
+    const postCalls = (params.client.chat.postMessage as ReturnType<typeof vi.fn>).mock.calls
+    const blockedPost = postCalls.find((c: any) =>
+      c[0]?.text?.includes("*Platform —*") &&
+      c[0]?.text?.includes("citation issue") &&
+      c[0]?.text?.includes("AC 4") &&
+      c[0]?.text?.includes("Reply with a revised recommendation"),
+    )
+    expect(blockedPost, "expected BLOCKED user-facing message to be posted").toBeDefined()
+    expect(blockedPost![0].text).toContain("spec on main is unchanged")
+  })
+})

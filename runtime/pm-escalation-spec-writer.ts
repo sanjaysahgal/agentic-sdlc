@@ -11,7 +11,7 @@ import {
   applyCategoryRules,
   findResidualCategoryViolations,
 } from "./category-rule-extractor"
-import { verifyAcReferences, formatHallucinations } from "./spec-content-verifier"
+import { verifyAcReferences, formatHallucinations, type AcHallucination } from "./spec-content-verifier"
 import { summarizeAcDiff, type SpecDiffSummary } from "./spec-diff-summary"
 
 // 60s timeout — spec patch generation is a focused Haiku call; no retries.
@@ -99,12 +99,28 @@ export type ProductSpecWritebackResult = {
   diffSummary: SpecDiffSummary
 }
 
+/**
+ * B28 — discriminated return for the BLOCKING content-verifier path. Per Step
+ * 2a observation #32, the prior `null` return on hallucination detection left
+ * the caller without enough info to post a user-facing message — the user saw
+ * silence. Now the writer returns this struct on BLOCK; the caller posts the
+ * message and keeps the escalation active so the user can re-author.
+ *
+ * `null` remains the return for non-BLOCK failure modes (spec not found on
+ * main; Haiku returned no valid patch) — those are infrastructure failures
+ * that don't have a clear user-facing message.
+ */
+export type ProductSpecWritebackBlocked = {
+  blocked: true
+  hallucinations: AcHallucination[]
+}
+
 export async function patchProductSpecWithRecommendations(params: {
   featureName: string
   question: string          // original blocking questions escalated to PM/Architect
   recommendations: string  // PM/Architect agent response text (confirmed by human)
   humanConfirmation: string // what the human said when confirming
-}): Promise<ProductSpecWritebackResult | null> {
+}): Promise<ProductSpecWritebackResult | ProductSpecWritebackBlocked | null> {
   const { featureName, question, recommendations, humanConfirmation } = params
   const { paths } = loadWorkspaceConfig()
   const productSpecPath = `${paths.featuresRoot}/${featureName}/${featureName}.product.md`
@@ -127,7 +143,10 @@ export async function patchProductSpecWithRecommendations(params: {
   if (hallucinations.length > 0) {
     console.log(`[CONTENT-VERIFIER] BLOCKING site=pm-spec-writeback feature=${featureName} hallucinations=${hallucinations.length}\n${formatHallucinations(hallucinations)}`)
     console.log(`[ESCALATION] product spec writeback: BLOCKED for feature=${featureName} due to ${hallucinations.length} content-verifier finding(s) — patch rejected, spec unchanged`)
-    return null
+    // B28 — return the hallucinations so the caller can post a user-facing
+    // message (per Step 2a observation #32 catastrophic UX). null was the
+    // prior return; now reserved for non-BLOCK failure modes only.
+    return { blocked: true, hallucinations }
   }
 
   // B9 — Deterministic category-rule application (Principle 11).

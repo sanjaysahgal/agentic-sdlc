@@ -12,7 +12,7 @@ import { auditSpecDraft, auditSpecDecisions, applyDecisionCorrections, extractLo
 import { auditPhaseCompletion, auditDownstreamReadiness, PM_RUBRIC, PM_DESIGN_READINESS_RUBRIC, buildDesignRubric, ENGINEER_RUBRIC, ARCHITECT_UPSTREAM_PM_RUBRIC } from "../../../runtime/phase-completion-auditor"
 import { auditBrandTokens, auditAnimationTokens, auditMissingBrandTokens } from "../../../runtime/brand-auditor"
 import { auditPmSpec, auditPmDesignReadiness, auditDesignSpec, auditEngineeringSpec, enforceNoHedging } from "../../../runtime/deterministic-auditor"
-import { verifyAcReferences, formatHallucinations } from "../../../runtime/spec-content-verifier"
+import { verifyAcReferences, formatHallucinations, buildBlockedWritebackMessage } from "../../../runtime/spec-content-verifier"
 import { READONLY_AGENT_BRIEF_CLAUSE } from "../../../runtime/readonly-brief-clause"
 import { PLATFORM_MESSAGE_PREFIX } from "../../../runtime/platform-message-prefix"
 import { verifyActionClaims } from "../../../runtime/action-verifier"
@@ -844,8 +844,25 @@ ${brief}`
           }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback FAILED: ${err}`); return null })
 
           if (!writeback) {
-            // Writeback failed — keep escalation active, don't resume design
-            console.log(`[ESCALATION] product spec writeback failed — keeping escalation active for ${featureName}`)
+            // Writeback failed (non-BLOCK: spec not found on main, Haiku empty patch).
+            // Keep escalation active, don't resume design.
+            console.log(`[ESCALATION] product spec writeback failed (non-block) — keeping escalation active for ${featureName}`)
+            return
+          }
+          // B28 — BLOCKING returned a structured result with hallucinations.
+          // Post a user-facing message naming the issues, keep the escalation
+          // active so the user can re-author. Closes Step 2a catastrophic #32
+          // (prior code returned silently; user saw black-box stuck state).
+          // DESIGN-REVIEWED: B28 — restore Principle 17 cross-surface consistency on BLOCKING path; user-facing message required when writeback returns null.
+          if ("blocked" in writeback) {
+            const respondingRoleForBlock = (isArchitectEscalation && roles.architectUser && userId === roles.architectUser)
+              ? "Architect"
+              : "PM"
+            await client.chat.postMessage({
+              channel: channelId,
+              thread_ts: threadTs,
+              text: buildBlockedWritebackMessage(writeback.hallucinations, respondingRoleForBlock),
+            }).catch((err: unknown) => console.log(`[ESCALATION] BLOCKED user-message failed (non-blocking): ${err}`))
             return
           }
           const patchedSpec = writeback.mergedSpec
@@ -1085,6 +1102,19 @@ ${archPendingEscalation.question}`
             recommendations: archEscalationNotification.recommendations,
             humanConfirmation: userMessage,
           }).catch((err: unknown) => { console.log(`[ESCALATION] product spec writeback failed (non-blocking): ${err}`); return null })
+          if (writeback && "blocked" in writeback) {
+            // B28 — BLOCKING returned hallucinations. Post user-facing message and
+            // keep the escalation active so PM can re-author. Closes Step 2a #32
+            // at the arch-upstream-revision-reply call site (cross-agent parity
+            // with the escalation-reply site per Principle 15).
+            // DESIGN-REVIEWED: B28 — BLOCKING user-message at arch-upstream-revision-reply site per Principle 15 cross-agent parity.
+            await client.chat.postMessage({
+              channel: channelId,
+              thread_ts: threadTs,
+              text: buildBlockedWritebackMessage(writeback.hallucinations, "PM"),
+            }).catch((err: unknown) => console.log(`[ESCALATION] BLOCKED user-message failed (non-blocking): ${err}`))
+            return
+          }
           if (writeback) {
             patchedUpstreamSpec = writeback.mergedSpec
             archUpstreamDiffBrief = writeback.diffSummary.brief

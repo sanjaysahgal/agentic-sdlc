@@ -351,6 +351,37 @@ export function verifyAcReferences(agentResponse: string, productSpec: string): 
  * Format a list of hallucinations as a human-readable diagnostic string,
  * suitable for log lines or user-facing notices.
  */
+/**
+ * B28 — User-facing message for the BLOCKING writeback path. Per Step 2a
+ * observation #32 (catastrophic UX), the prior code returned `null` from the
+ * writer on hallucination detection and the caller `return`ed silently. User
+ * typed `approved`, saw nothing — black-box stuck state.
+ *
+ * Now the caller posts this message to Slack on BLOCK. The message is in
+ * platform voice (per Principle 17 cross-surface consistency), names the
+ * concrete count, includes the verifier's formatted findings so the user can
+ * see exactly which citations were fabricated, and ends with a clear next-step
+ * CTA. The user can re-author the recommendation and re-confirm without
+ * needing to know about the platform's internal verifier.
+ *
+ * Pure, deterministic. Same input ⇒ same output (Principle 11).
+ */
+export function buildBlockedWritebackMessage(
+  hallucinations: AcHallucination[],
+  agentRole: "PM" | "Architect" | "Designer",
+): string {
+  const n = hallucinations.length
+  const itemWord = n === 1 ? "issue" : "issues"
+  const findings = formatHallucinations(hallucinations)
+  return [
+    `*Platform —* ${agentRole}'s recommendation contained ${n} citation ${itemWord} that need re-authoring before the spec can be updated. Here's what was flagged:`,
+    "",
+    findings,
+    "",
+    `Reply with a revised recommendation and we'll try the writeback again. (The spec on main is unchanged.)`,
+  ].join("\n")
+}
+
 export function formatHallucinations(hallucinations: AcHallucination[]): string {
   return hallucinations.map((h, i) => {
     if (h.reason === "ac-does-not-exist") {
