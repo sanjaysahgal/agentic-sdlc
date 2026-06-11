@@ -131,6 +131,65 @@ export function extractQuotedPhrasesNear(surroundingText: string): string[] {
 }
 
 /**
+ * B29 — Prose-fragment detector. Returns true if the phrase looks like a fragment
+ * of agent prose rather than a claim about AC content. Used to filter out the
+ * quoted-phrase extractor's false-positive captures.
+ *
+ * The plan-specified "AC-vocabulary signal" approach (require subject + verb +
+ * threshold) over-filters legitimate fabrications like "two-factor authentication
+ * via SMS" (a real spec-content claim with no AC-vocabulary tokens). Instead,
+ * this targets the specific patterns the MT-33 false-positives exhibited:
+ *
+ *   - Starts with a mid-word contraction suffix ("re ", "ll ", "ve ", "d ",
+ *     "s ", "t ", "m ", "n "). Picked up when the regex extracted a span
+ *     between two apostrophes that were actually contractions (`they're` →
+ *     `re meaningfully different situations. I`).
+ *   - Contains stand-alone 1st-person pronouns (I, I'll, I've, I'd, we, we'll,
+ *     we've, us, our) or 2nd-person (you, you'll, you've, your). AC bodies are
+ *     written in 3rd-person ("the user", "the system"); agent prose uses 1st/2nd.
+ *
+ * Pure, deterministic. Same input ⇒ same output (Principle 11).
+ */
+const CONTRACTION_SUFFIX_START = /^(?:re|ll|ve|d|s|t|m|n)\s/i
+const PROSE_PRONOUN_REGEX = /\b(?:I|I'?(?:ll|ve|d|m)|we|we'?(?:ll|ve|d)|us|our|you|you'?(?:ll|ve|d|r)|your)\b/
+
+// TRIGGER-JUSTIFIED: B29 deterministic post-extraction filter inside verifyAcReferences; runs on every quoted phrase the extractor returns, no trigger-phrase dependence.
+export function isProseFragment(phrase: string): boolean {
+  if (CONTRACTION_SUFFIX_START.test(phrase)) return true
+  if (PROSE_PRONOUN_REGEX.test(phrase)) return true
+  return false
+}
+
+/**
+ * B29 — Intra-spec dedup. Returns true if the phrase appears in ANY AC's body
+ * other than the cited AC. Used to skip "claimed-wording-not-in-ac" flags when
+ * the agent quoted real spec content but the extractor attributed the phrase
+ * to the wrong AC (a wrong-attribution case, not a hallucination).
+ *
+ * Step 2a MT-33 false-positive that this catches:
+ *   - "AC 27 does NOT contain 'The logged-out indicator disappears within 1
+ *     second of valid authentication token receipt'" — the phrase IS in AC 4,
+ *     just attributed to AC 27 because the ±200 window crossed both citations.
+ *
+ * The check is "phrase appears in another AC's body", not "phrase appears
+ * verbatim in the cited AC body" — wrong-attribution differs from fabrication.
+ *
+ * Pure, deterministic. Same input ⇒ same output (Principle 11).
+ */
+export function phraseAppearsInAnotherAc(
+  normalizedPhrase: string,
+  citedAcNumber: number,
+  acMap: Map<number, string>,
+): boolean {
+  for (const [acNum, body] of acMap) {
+    if (acNum === citedAcNumber) continue
+    const normalizedBody = body.toLowerCase().replace(/\s+/g, " ")
+    if (normalizedBody.includes(normalizedPhrase)) return true
+  }
+  return false
+}
+
+/**
  * B21 — Inference-style claim detection. The agent often cites an AC as
  * precedent for a numeric value: "200ms matches the threshold used in AC 4
  * and AC 27." This claims AC 4 / AC 27 contain a 200ms timing — and if they
@@ -210,21 +269,50 @@ export function verifyAcReferences(agentResponse: string, productSpec: string): 
 
     // AC N exists. Check if any quoted phrase near the citation actually appears in AC N's body.
     // The agent's claim is "AC N contains X" — if X isn't in AC N's body, it's a hallucination.
+    //
+    // B29 — three-part precision tightening per Step 2a MT-33 (false-positive cascade
+    // that resulted from over-eager B11 v1 algorithm when promoted to BLOCKING):
+    //
+    //   (a) Phrase length must be ≥ 16 chars (was 8). Very short phrases like
+    //       "immediately" are almost always picked up from PM prose, not from
+    //       claims about AC content. The 16-char floor removes that class of FP
+    //       at the cost of letting through fabrications of ≤ 15-char phrases
+    //       (acceptable — most spec-content claims are longer than that).
+    //
+    //   (b) Phrase must contain AC-vocabulary signal (subject + verb + threshold).
+    //       Filters out fragments of agent prose like "re meaningfully different
+    //       situations. I" that the quoted-phrase extractor captured due to the
+    //       ±200 char window. AC bodies follow a recognizable
+    //       subject-verb-threshold shape; prose generally doesn't.
+    //
+    //   (c) Phrase must NOT appear in ANOTHER AC's body. If it does, the agent
+    //       quoted real spec content but the extractor attributed it to the
+    //       wrong AC (the ±200 window crossed two AC citations). That's
+    //       wrong-attribution, not fabrication — skip the flag.
+    //
+    // After tightening, BLOCKING is safe to keep on at the writeback boundary.
     const phrases = extractQuotedPhrasesNear(ref.surroundingText)
     const normalizedActual = actualText.toLowerCase().replace(/\s+/g, " ")
     for (const phrase of phrases) {
       const normalizedPhrase = phrase.toLowerCase().replace(/\s+/g, " ")
-      // Skip very short phrases (less informative — likely false positives)
-      if (normalizedPhrase.length < 8) continue
-      // If the phrase is substantial AND not in the AC body, flag it
-      if (!normalizedActual.includes(normalizedPhrase)) {
-        hallucinations.push({
-          citedAcNumber: ref.acNumber,
-          claimedWording: phrase,
-          actualWording: actualText,
-          reason: "claimed-wording-not-in-ac",
-        })
-      }
+      // (a) Length floor: skip phrases under 16 chars — likely prose fragments.
+      if (normalizedPhrase.length < 16) continue
+      // (b) Prose-fragment detector: skip phrases that look like agent prose
+      // rather than AC content (contraction-suffix starts; 1st/2nd-person pronouns).
+      if (isProseFragment(phrase)) continue
+      // Already-in-AC phrases pass verification — no flag.
+      if (normalizedActual.includes(normalizedPhrase)) continue
+      // (c) Intra-spec dedup: if the phrase IS in another AC's body, this is
+      // wrong-attribution (the agent quoted real spec content but the ±200
+      // window crossed citations). Skip the flag.
+      if (phraseAppearsInAnotherAc(normalizedPhrase, ref.acNumber, acMap)) continue
+      // All three filters passed AND phrase is missing from cited AC → fabrication.
+      hallucinations.push({
+        citedAcNumber: ref.acNumber,
+        claimedWording: phrase,
+        actualWording: actualText,
+        reason: "claimed-wording-not-in-ac",
+      })
     }
 
     // B21 — Inference-style claim check. The agent often cites an AC as

@@ -180,3 +180,127 @@ describe("bug #18 — B21 inference-style citation BLOCKING in PM spec writeback
     expect(haikuMergeIdx).toBeGreaterThan(verifierIdx)
   })
 })
+
+describe("bug #22 — B29 verifier precision tightening (catastrophic Step 2a MT-33 false-positives)", () => {
+  // Step 2a MT-33 produced 4 catastrophic false-positives that BLOCKED a faithful
+  // PM recommendation. The B11 v1 algorithm at that point was: extract every quoted
+  // phrase in the ±200 char window around an AC citation, flag any phrase not in
+  // the cited AC's body. Bug class: regex over-extracted spans between two
+  // apostrophes that were actually contractions; and extracted quoted phrases
+  // that legitimately quoted OTHER ACs' bodies (within the same ±200 char window).
+  //
+  // B29 fix: three-part precision tightening: (a) raise min-length from 8 to 16
+  // chars; (b) skip phrases that look like prose fragments (contraction-suffix
+  // start, 1st/2nd-person pronouns); (c) skip phrases that appear in ANOTHER
+  // AC's body (wrong-attribution, not fabrication).
+  //
+  // These regression tests use the EXACT phrases from the MT-33 log lines to
+  // pin "BLOCKING is safe to keep on at the writeback boundary."
+
+  // Canonical product spec from the onboarding feature where MT-33 was driven.
+  // Contains AC 4 / AC 27 / AC 21 with "within 1 second" timings — the substrate
+  // for the architect's hallucinated "200ms matches AC 4 and AC 27" brief.
+  const ONBOARDING_PRODUCT_SPEC = `## Acceptance Criteria
+1. The user can sign up.
+2. The user receives confirmation.
+3. The user can log in.
+4. The logged-out indicator disappears within 1 second of valid authentication token receipt, before conversation history loads.
+21. If authentication state resolution succeeds during initial load, the logged-out indicator disappears within 1 second of valid token receipt and conversation history becomes visible once loaded.
+27. If a user's authentication token expires mid-session, the "Not signed in" indicator reappears within 1 second of access token expiry detection on the client and all chat functionality becomes read-only.
+`
+
+  it("MT-33 FP #1 — short phrase 'immediately' (10 chars) extracted from PM prose: NO LONGER flagged (part-a length floor)", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    const pmResponse = `Looking at the spec, "immediately" appears in two places. **AC 4** — "The logged-out indicator disappears within 1 second of valid authentication token receipt" — this one is already numeric.`
+    const findings = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    const flagForImmediately = findings.find(f => f.claimedWording.toLowerCase().includes("immediately"))
+    expect(flagForImmediately).toBeUndefined()
+  })
+
+  it("MT-33 FP #2 — prose fragment 're meaningfully different situations. I' extracted between two contraction apostrophes: NO LONGER flagged (part-b prose-fragment + pronoun)", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    // Regex extracts the span between 'they’re' and 'I’ll', yielding a 39-char prose fragment.
+    // Note: using actual apostrophe characters as they would appear in PM's prose.
+    const pmResponse = `**AC 4** — they're meaningfully different situations. I'll address each. The logged-out indicator disappears within 1 second.`
+    const findings = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    const flagForFragment = findings.find(f => /meaningfully different/.test(f.claimedWording))
+    expect(flagForFragment).toBeUndefined()
+  })
+
+  it("MT-33 FP #3 — full AC 4 body quoted near AC 27 citation: NO LONGER flagged (part-c intra-spec dedup)", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    // The architect/PM quotes AC 4's text near an AC 27 citation; the ±200 char window
+    // attributes the AC 4 quote to AC 27. The phrase IS real spec content — just attributed
+    // to the wrong AC. Part-c intra-spec dedup catches this.
+    const pmResponse = `AC 27 covers token expiry. For context, "The logged-out indicator disappears within 1 second of valid authentication token receipt" is the AC 4 case.`
+    const findings = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    const flagForAttribution = findings.find(f => f.citedAcNumber === 27 && f.claimedWording.includes("logged-out indicator"))
+    expect(flagForAttribution).toBeUndefined()
+  })
+
+  it("MT-33 FP #4 — same as #1, second instance: NO LONGER flagged (part-a length floor)", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    // AC 21 cited near 'immediately' quote — same length-floor case.
+    const pmResponse = `**AC 21** — "immediately" — needs to be addressed.`
+    const findings = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    const flagForImmediately = findings.find(f => f.citedAcNumber === 21 && f.claimedWording.toLowerCase().includes("immediately"))
+    expect(flagForImmediately).toBeUndefined()
+  })
+
+  it("B29 part-a positive control — phrase exactly 15 chars (one under floor) is NOT flagged", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    const productSpec = `## Acceptance Criteria
+1. AC body number one.
+`
+    const pmResponse = `AC 1 contains "fifteen chars X" which is borderline.` // 15-char phrase
+    const findings = verifyAcReferences(pmResponse, productSpec)
+    const flag = findings.find(f => f.reason === "claimed-wording-not-in-ac")
+    expect(flag).toBeUndefined()
+  })
+
+  it("B29 part-a positive control — phrase 16+ chars IS flagged when not in AC and passes other filters", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    const productSpec = `## Acceptance Criteria
+1. The user can sign up with email and password.
+`
+    // 33-char phrase, contains no contraction-start, no pronouns, not in any other AC.
+    const pmResponse = `Per AC 1 — "two-factor authentication via SMS" — that needs work.`
+    const findings = verifyAcReferences(pmResponse, productSpec)
+    const flag = findings.find(f => f.reason === "claimed-wording-not-in-ac" && f.claimedWording.includes("two-factor"))
+    expect(flag).toBeDefined()
+  })
+
+  it("B29 part-b positive control — phrase with 1st-person pronoun 'I' is NOT flagged", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    const productSpec = `## Acceptance Criteria
+1. The user can sign up.
+`
+    const pmResponse = `AC 1 — "I think this should require something more substantial" — needs work.`
+    const findings = verifyAcReferences(pmResponse, productSpec)
+    const flag = findings.find(f => f.reason === "claimed-wording-not-in-ac")
+    expect(flag).toBeUndefined()
+  })
+
+  it("B29 part-c positive control — phrase in another AC's body is NOT flagged when attributed to wrong AC", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    const productSpec = `## Acceptance Criteria
+1. The user can sign up with two-factor authentication via SMS.
+2. The user receives an email confirmation.
+`
+    // PM cites AC 2 but quotes AC 1's content. The phrase IS real spec content; just attributed to the wrong AC.
+    const pmResponse = `AC 2 — "two-factor authentication via SMS" — should be addressed.`
+    const findings = verifyAcReferences(pmResponse, productSpec)
+    const flag = findings.find(f => f.reason === "claimed-wording-not-in-ac" && f.citedAcNumber === 2)
+    expect(flag).toBeUndefined()
+  })
+
+  it("B29 determinism — same input ⇒ same findings across three runs (Principle 11)", async () => {
+    const { verifyAcReferences } = await import("../../runtime/spec-content-verifier")
+    const pmResponse = `Looking at the spec, "immediately" appears in two places. **AC 4** — they're meaningfully different. I'll address each.`
+    const a = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    const b = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    const c = verifyAcReferences(pmResponse, ONBOARDING_PRODUCT_SPEC)
+    expect(a).toEqual(b)
+    expect(b).toEqual(c)
+  })
+})
