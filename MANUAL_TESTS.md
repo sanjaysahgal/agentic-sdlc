@@ -733,6 +733,37 @@ If a fix touches one of those paths, the corresponding scenario in this file is 
 
 ---
 
+### MT-38 — Architect escalation brief verifier catches AC hallucinations (B31; Step 2a closure round 2, catastrophic #43)
+
+**Why this can't be automated (fully):** unit + regression tests pin the helper + the 3 tool-handler wirings + the BLOCKED-vs-PASS contract deterministically. This MT verifies end-to-end in real Slack: the architect's natural #43 hallucination class (e.g. "AC 27 uses 'immediately'", "200ms threshold in AC 4 and 8") is caught at the architect's `offer_upstream_revision` tool boundary BEFORE PM is brought in.
+
+**Pre-flight:** bot restarted on the B31 commit; G6 (`[OUTBOUND]`) lines visible.
+
+**Setup:** `#feature-onboarding` (engineering-in-progress phase). State file clean of stuck escalations (drive in a new thread for fresh state per B30).
+
+**Actions:**
+1. In a NEW thread, post: `walk me through what's blocking engineering progress`.
+2. Wait for architect's response. Watch the logs:
+   - If the architect fabricates an AC citation (e.g. claims "AC 27 uses 'immediately'") AND its inference-style citation pattern triggers B21 (e.g. "200ms in AC 4 and AC 8"), expect `[CONTENT-VERIFIER] BLOCKING site=offer_upstream_revision feature=onboarding hallucinations=N` in the logs.
+   - In Slack, the architect will see a `[PLATFORM REJECTION]` message (the tool result) and should retry the escalation with corrected content.
+3. Inspect the rendered Slack output:
+   - Architect's substantive analysis preserved (B33 append).
+   - NO escalation queued for PM (the architect's brief was BLOCKED).
+   - The architect's retry should either fix the citation OR re-emit substantive content without fabricated citations.
+
+**Expected outcome:**
+- `[CONTENT-VERIFIER] BLOCKING site=offer_upstream_revision` log line.
+- No `pendingEscalation` queued in `.conversation-state.json` for `:onboarding:<thread>`.
+- Architect's retry response in Slack either: (a) repeats the analysis with cleaned-up citations, OR (b) explicitly acknowledges the fabricated citation and corrects it.
+- User does NOT see the "Say yes" CTA for PM escalation until the architect produces a faithful brief.
+
+**Failure signatures:**
+- Architect's fabrication passes through and `pendingEscalation` is queued with the fabricated content → B31 not wired or `verifyEscalationQuestion` not invoked. Check `runtime/tool-handlers.ts` for `verifyEscalationQuestion(` calls in all 3 handlers.
+- `[CONTENT-VERIFIER] BLOCKING` log line present but architect's retry never happens → tool result error not surfaced to the LLM correctly; check that `handleOfferUpstreamRevision` returns `{ error: ... }` not `{ result: ... }` on rejection.
+- BLOCKING fires on a faithful architect brief → B31 over-triggering. Inspect the brief in the log + the architect's quote pattern; the verifier may be picking up benign architect prose. Tune via B29-style follow-on if needed.
+
+---
+
 ### MT-37 — BLOCKING writeback posts a user-facing message (B28 + B29 + B21; Step 2a closure round 2)
 
 **Why this can't be automated (fully):** unit + regression tests pin the message builder and structural wiring deterministically. This MT verifies end-to-end: PM (or architect) produces a recommendation containing an AC-citation hallucination, the user confirms with `yes approved`, the verifier BLOCKS at the writeback, AND the user sees a clear platform message naming the issues. The B21 + B29 + B28 stack only delivers value if all three layers fire correctly under a real fabrication.

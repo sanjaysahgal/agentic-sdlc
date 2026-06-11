@@ -15,6 +15,35 @@ import type { FeatureKey } from "./routing/types"
 import { featureKey } from "./routing/types"
 import type { DecisionCorrection, DecisionAuditResult } from "./spec-auditor"
 import type { DownstreamRole } from "./phase-completion-auditor"
+import { verifyAcReferences, formatHallucinations } from "./spec-content-verifier"
+
+/**
+ * B31 — Verify the escalation tool input against the approved product spec.
+ * Returns a `[PLATFORM REJECTION]` error string if the question contains
+ * fabricated AC citations (caller returns this verbatim as the tool result so
+ * the agent sees the rejection and re-tries with corrected content).
+ * Returns `null` if the verifier finds no hallucinations or if no PM spec is
+ * loaded (verification falls open in the no-spec case — the spec writeback
+ * boundary remains the BLOCKING gate per B21/B28).
+ *
+ * Cross-agent parity per Principle 15: same shape at architect's
+ * `offer_upstream_revision`, designer's `offer_pm_escalation`, and designer's
+ * `offer_architect_escalation` — every code path that emits an escalation
+ * question containing potentially-fabricated AC citations gets the same
+ * verifier check at the tool boundary.
+ */
+function verifyEscalationQuestion(
+  question: string,
+  approvedProductSpec: string | null | undefined,
+  ctx: { featureName: string },
+  toolName: string,
+): string | null {
+  if (!approvedProductSpec || approvedProductSpec.length === 0) return null
+  const hallucinations = verifyAcReferences(question, approvedProductSpec)
+  if (hallucinations.length === 0) return null
+  console.log(`[CONTENT-VERIFIER] BLOCKING site=${toolName} feature=${ctx.featureName} hallucinations=${hallucinations.length}\n${formatHallucinations(hallucinations)}`)
+  return `[PLATFORM REJECTION] Your escalation question contains ${hallucinations.length} fabricated AC citation${hallucinations.length === 1 ? "" : "s"}:\n\n${formatHallucinations(hallucinations)}\n\nRevise to use only ACs and content that actually appear in the approved product spec. Then re-call this tool.`
+}
 
 /**
  * Compares open questions between old and new spec drafts. Returns the list of
@@ -469,6 +498,14 @@ export async function handleOfferUpstreamRevision(
   const target = input.targetAgent as "pm" | "design"
   const question = input.question as string
   console.log(`[ESCALATION] offer_upstream_revision: targetAgent=${target} question="${question.slice(0, 100)}"`)
+  // B31 — verifier check at architect's escalation tool boundary. Per Step 2a
+  // observation #43 (catastrophic class), the architect can fabricate AC content
+  // in its escalation brief, which then flows to PM via pendingEscalation. B21
+  // catches PM-side fabrications at the writeback boundary but architect-side
+  // fabrications slip through. Verify the question NOW so the architect re-tries
+  // with corrected content before PM is brought in.
+  const rejection = verifyEscalationQuestion(question, ctx.context.approvedProductSpec, ctx, "offer_upstream_revision")
+  if (rejection) return { error: rejection }
   deps.setPendingEscalation({
     targetAgent: target,
     originAgent: "architect",  // offer_upstream_revision is called by the architect agent
@@ -757,6 +794,10 @@ export async function handleOfferPmEscalation(
   if (classification.gaps.length < rawQuestion.split(/\d+\.\s/).filter(Boolean).length) {
     console.log(`[ESCALATION] Gate 2 classifier filtered ${rawQuestion.split(/\d+\.\s/).filter(Boolean).length - classification.gaps.length} non-PM items from tool question`)
   }
+  // B31 — verifier check at designer's PM-escalation tool boundary (cross-agent
+  // parity with architect per Principle 15). Same shape as offer_upstream_revision.
+  const rejection = verifyEscalationQuestion(filteredQuestion, ctx.context.approvedProductSpec, ctx, "offer_pm_escalation")
+  if (rejection) return { error: rejection }
   deps.setPendingEscalation({
     targetAgent: "pm",
     originAgent: "ux-design",  // design agent calling offer_pm_escalation
@@ -787,6 +828,11 @@ export async function handleOfferArchitectEscalation(
       result: `[PLATFORM REJECTION] This question is an implementation detail — the UI design does not depend on the answer. Do NOT escalate this to the architect.\n\nInstead:\n1. Decide the user-visible behavior (e.g. "conversation is preserved when the user signs in").\n2. Add an entry to the ## Design Assumptions section documenting what the architect will need to confirm.\n3. Continue designing — the architect resolves this during engineering, not before.\n\nExample Design Assumption entry: "- Conversation data is preserved on sign-in via server-side or client-side storage (implementation TBD by architect)."`,
     }
   }
+  // B31 — verifier check at designer's architect-escalation tool boundary.
+  // Designers occasionally cite PM ACs as the product rationale driving the
+  // architecture question; verify those citations are real per Principle 15.
+  const rejection = verifyEscalationQuestion(archQuestion, ctx.context.approvedProductSpec, ctx, "offer_architect_escalation")
+  if (rejection) return { error: rejection }
   deps.setPendingEscalation({
     targetAgent: "architect",
     originAgent: "ux-design",  // design agent calling offer_architect_escalation

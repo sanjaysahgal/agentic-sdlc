@@ -362,3 +362,177 @@ describe("bug #23 — B28 BLOCKING writeback produces a user-facing message (cat
     expect(designReviewedB28.length).toBeGreaterThanOrEqual(2)
   })
 })
+
+describe("bug #24 — B31 cross-agent verifier coverage at escalation tool boundary (catastrophic Step 2a #43)", () => {
+  it("structural: verifyEscalationQuestion helper exists in tool-handlers.ts and is invoked by all 3 escalation tool handlers", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "runtime/tool-handlers.ts"),
+      "utf8",
+    )
+    // Helper is defined.
+    expect(source).toMatch(/function verifyEscalationQuestion\b/)
+    // Imports the verifier primitives from spec-content-verifier.
+    expect(source).toMatch(/from\s+["']\.\/spec-content-verifier["']/)
+    // Invoked in all 3 escalation handlers (architect + designer × PM + designer × architect).
+    const invocations = source.match(/verifyEscalationQuestion\(/g) ?? []
+    expect(invocations.length).toBeGreaterThanOrEqual(4) // 1 declaration + 3 invocations
+    // Each invocation uses a distinct toolName arg (offer_upstream_revision, offer_pm_escalation, offer_architect_escalation).
+    expect(source).toMatch(/"offer_upstream_revision"/)
+    expect(source).toMatch(/"offer_pm_escalation"/)
+    expect(source).toMatch(/"offer_architect_escalation"/)
+  })
+
+  it("verifier rejects question with fabricated AC citation — returns [PLATFORM REJECTION] error string", async () => {
+    // Use the integration-ready dispatch — but for unit testing, we exercise the helper directly via
+    // its sibling export by importing tool-handlers and calling handleOfferUpstreamRevision with a
+    // mocked deps. The helper itself isn't exported (private), so we test through the handler.
+    const { handleOfferUpstreamRevision } = await import("../../runtime/tool-handlers")
+    const setPendingMock = vi.fn()
+    const productSpec = `## Acceptance Criteria
+1. The user can sign up.
+2. The user receives confirmation.
+`
+    const ctx = {
+      featureName: "test-feature",
+      specFilePath: "spec/path",
+      specBranchName: "branch",
+      context: { approvedProductSpec: productSpec, currentDraft: null } as never,
+      update: vi.fn(),
+      readFile: vi.fn(),
+      getHistory: () => [],
+      loadWorkspaceConfig: () => ({ githubOwner: "x", githubRepo: "y", paths: { featuresRoot: "specs/features" } }),
+    }
+    const deps = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setPendingEscalation: setPendingMock as any,
+    } as never
+
+    const result = await handleOfferUpstreamRevision(
+      { targetAgent: "pm", question: `AC 99 says "the user must use biometric authentication every time" — this is too strict.` },
+      ctx as never,
+      deps,
+    )
+
+    // The verifier should have rejected (AC 99 doesn't exist).
+    expect(result.error).toBeDefined()
+    expect(result.error).toContain("[PLATFORM REJECTION]")
+    expect(result.error).toContain("fabricated AC citation")
+    expect(result.error).toContain("AC 99")
+    expect(result.error).toContain("Revise to use only ACs")
+
+    // setPendingEscalation MUST NOT have been called (BLOCKING contract).
+    expect(setPendingMock).not.toHaveBeenCalled()
+  })
+
+  it("verifier passes question with faithful AC citation — setPendingEscalation IS called", async () => {
+    const { handleOfferUpstreamRevision } = await import("../../runtime/tool-handlers")
+    const setPendingMock = vi.fn()
+    const productSpec = `## Acceptance Criteria
+1. The user can sign up with email and password.
+2. The user receives confirmation.
+`
+    const ctx = {
+      featureName: "test-feature",
+      specFilePath: "spec/path",
+      specBranchName: "branch",
+      context: { approvedProductSpec: productSpec, currentDraft: null } as never,
+      update: vi.fn(),
+      readFile: vi.fn(),
+      getHistory: () => [],
+      loadWorkspaceConfig: () => ({ githubOwner: "x", githubRepo: "y", paths: { featuresRoot: "specs/features" } }),
+    }
+    const deps = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setPendingEscalation: setPendingMock as any,
+    } as never
+
+    const result = await handleOfferUpstreamRevision(
+      // Faithful citation: AC 1 actually contains "sign up with email and password".
+      { targetAgent: "pm", question: `Per AC 1 — "sign up with email and password" — the threshold needs to be sharpened.` },
+      ctx as never,
+      deps,
+    )
+
+    expect(result.error).toBeUndefined()
+    expect(result.result).toContain("Upstream revision request stored")
+    expect(setPendingMock).toHaveBeenCalledOnce()
+  })
+
+  it("verifier passes when no approved product spec is loaded (falls open — writeback boundary is the BLOCKING gate)", async () => {
+    const { handleOfferUpstreamRevision } = await import("../../runtime/tool-handlers")
+    const setPendingMock = vi.fn()
+    const ctx = {
+      featureName: "test-feature",
+      specFilePath: "spec/path",
+      specBranchName: "branch",
+      // No approvedProductSpec — verifier has nothing to check against.
+      context: { approvedProductSpec: null, currentDraft: null } as never,
+      update: vi.fn(),
+      readFile: vi.fn(),
+      getHistory: () => [],
+      loadWorkspaceConfig: () => ({ githubOwner: "x", githubRepo: "y", paths: { featuresRoot: "specs/features" } }),
+    }
+    const deps = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setPendingEscalation: setPendingMock as any,
+    } as never
+
+    const result = await handleOfferUpstreamRevision(
+      { targetAgent: "pm", question: `Per AC 99 — "fabricated content" — should be fixed.` },
+      ctx as never,
+      deps,
+    )
+
+    // No spec to check against → verifier falls open → setPendingEscalation runs.
+    // The writeback boundary (B21) remains the BLOCKING gate.
+    expect(result.error).toBeUndefined()
+    expect(setPendingMock).toHaveBeenCalledOnce()
+  })
+
+  it("MT-4 canonical regression — architect fabricates '200ms threshold in ACs 4 and 8' (actual ACs say 'within 1 second' and don't contain 200ms) → BLOCKED at architect tool boundary via B21 inference-style detection", async () => {
+    const { handleOfferUpstreamRevision } = await import("../../runtime/tool-handlers")
+    const setPendingMock = vi.fn()
+    // Onboarding PM spec excerpt: AC 4 says "within 1 second", AC 8 has no timing.
+    // The architect's claim of "200ms in ACs 4 and 8" is the canonical Step 2a #43 hallucination.
+    const productSpec = `## Acceptance Criteria
+1. The user can sign up.
+4. The logged-out indicator disappears within 1 second of valid authentication token receipt.
+8. When a logged-out user's session has 10 minutes of inactivity time remaining, a warning banner appears.
+`
+    const ctx = {
+      featureName: "onboarding",
+      specFilePath: "spec/path",
+      specBranchName: "branch",
+      context: { approvedProductSpec: productSpec, currentDraft: null } as never,
+      update: vi.fn(),
+      readFile: vi.fn(),
+      getHistory: () => [],
+      loadWorkspaceConfig: () => ({ githubOwner: "x", githubRepo: "y", paths: { featuresRoot: "specs/features" } }),
+    }
+    const deps = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setPendingEscalation: setPendingMock as any,
+    } as never
+
+    // Architect brief — MT-4 #43 hallucination pattern, normalized to the singular
+    // AC-citation form ("AC 4" rather than "ACs 4 and 8") which is the form the
+    // verifier's findAcReferences regex matches. Real architect output uses both
+    // singular and plural; the verifier's regex extension to plural is a separate
+    // backlog item (out of scope for B31).
+    const archMt4Brief = `Replace "immediately" with "within 200ms of access token expiry detection on the client" — consistent with the 200ms threshold in AC 4 and AC 8.`
+
+    const result = await handleOfferUpstreamRevision(
+      { targetAgent: "pm", question: archMt4Brief },
+      ctx as never,
+      deps,
+    )
+
+    // The architect's inference-style hallucination is caught by B21's inference-window
+    // check (200ms in ±80 char of AC 4 / AC 8, neither AC body contains 200ms).
+    expect(result.error).toBeDefined()
+    expect(result.error).toContain("[PLATFORM REJECTION]")
+    expect(setPendingMock).not.toHaveBeenCalled()
+  })
+})
